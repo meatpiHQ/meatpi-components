@@ -1,8 +1,0 @@
-# Name,   Type, SubType,  Offset,   Size, Flags
-# settings = settings_manager's dedicated LittleFS partition;
-# storage  = the filesystem component's data FS (mounted at /data).
-nvs,      data, nvs,      0x9000,  0x4000,
-phy_init, data, phy,      0xf000,  0x1000,
-factory,  app,  factory,  0x10000, 4M,
-settings, data, littlefs,        , 256K,
-storage,  data, littlefs,        , 2M,

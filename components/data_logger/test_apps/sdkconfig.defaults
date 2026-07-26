@@ -1,0 +1,14 @@
+# Coding Standard rev 2.1 (§7): main firmware's partition table, no fork.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="../../../wican_pro_partitions_table.csv"
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+# PSRAM matches the main firmware (WiCAN Pro S3: octal, 80 MHz).
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
+CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY=y
+
+# Test-only override (Standard §7, sanctioned): the serial-capture harness
+# reads at 115200; the root defaults pin the 2 Mbaud console.
+CONFIG_ESP_CONSOLE_UART_BAUDRATE=115200

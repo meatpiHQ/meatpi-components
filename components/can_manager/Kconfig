@@ -1,0 +1,36 @@
+menu "WiCAN CAN manager"
+
+    config WICAN_CAN_TX_GPIO
+        int "CAN (TWAI) TX GPIO"
+        default 2
+        help
+            WiCAN Pro: GPIO2 (legacy hw_config.h TX_GPIO_NUM).
+
+    config WICAN_CAN_RX_GPIO
+        int "CAN (TWAI) RX GPIO"
+        default 1
+        help
+            WiCAN Pro: GPIO1 (legacy hw_config.h RX_GPIO_NUM).
+
+    config WICAN_CAN_STDBY_GPIO
+        int "CAN transceiver standby GPIO"
+        default 38
+        help
+            Driven LOW while the bus is up, HIGH when parked. Same
+            pin sleep_manager holds HIGH through light sleep (WiCAN
+            Pro: GPIO38, legacy hw_config.h CAN_STDBY_GPIO_NUM).
+
+
+    config WICAN_CAN_ISR_CORE
+        int "TWAI interrupt + RX task core (0 or 1)"
+        range 0 1
+        default 0
+        help
+            Core the TWAI node registers its interrupt on (the driver
+            binds the ISR to the core that runs the init call) and the
+            can_core RX task is pinned to. Core 0 hosts WiFi/BT/USB by
+            IDF default; 1 spreads the load and doubles the usable
+            per-core interrupt-slot pool. Benchmark before shipping a
+            change (2026-07-21 affinity experiment).
+
+endmenu

@@ -1,0 +1,52 @@
+menu "WiCAN usb_host_manager"
+
+    config WICAN_USB_ID_GPIO
+        int "USB OTG ID GPIO"
+        default 39
+        help
+            Low (grounded by the OTG cable) = a device is attached
+            (WiCAN Pro: GPIO39, legacy hw_config.h USB_ID_PIN).
+
+    config WICAN_USB_MODE_GPIO
+        int "USB mux mode GPIO"
+        default 11
+        help
+            High routes the USB connector to the ESP32-S3 OTG host;
+            low = the CH342 UART bridge / device role (WiCAN Pro:
+            GPIO11, legacy hw_config.h USB_ESP_MODE_EN). VBUS uses
+            WICAN_SLEEP_USB_PWR_GPIO (the shared power rail).
+
+    config WICAN_USB_DEV_VID
+        hex "USB device-mode Vendor ID"
+        default 0x16D0
+        help
+            VID advertised when the connector runs in DEVICE role
+            (role=device: CherryUSB CDC-NCM/RNDIS/CDC-ACM — the J2534
+            USB transport, TASK_j2534_server.md §5). A host-side J2534
+            DLL matches its device by VID/PID. 0x16D0 = MCS Electronics
+            (shared VID pool).
+
+    config WICAN_USB_DEV_PID
+        hex "USB device-mode Product ID (NCM/RNDIS network device)"
+        default 0x1262
+        help
+            PID advertised in DEVICE role with device_class=ncm|rndis
+            (see WICAN_USB_DEV_VID).
+            NOT 0x1261: that PID is the shipped MeatPi USB-CAN product,
+            and its Windows INF claims VID_16D0&PID_1261&MI_00 as a COM
+            port — it outranks the inbox class-match NCM driver and
+            breaks enumeration on any PC that ever installed it
+            (bench-hit 2026-07-08, Code 10).
+
+    config WICAN_USB_DEV_PID_CDC
+        hex "USB device-mode Product ID (CDC-ACM serial device)"
+        default 0x1263
+        help
+            PID advertised in DEVICE role with device_class=cdc (the
+            J2534-over-serial virtual COM port). MUST differ from
+            WICAN_USB_DEV_PID: one PID per USB function, or Windows
+            caches the wrong driver class across mode switches (the same
+            Code 10 failure mode as 0x1261). 0x1263 confirmed safe for
+            production by meatpi 2026-07-18.
+
+endmenu

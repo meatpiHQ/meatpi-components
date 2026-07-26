@@ -1,0 +1,26 @@
+menu "WiCAN battery_monitor"
+
+config WICAN_BATT_ADC_CHANNEL
+    int "Battery sense ADC1 channel"
+    default 3
+    help
+        ADC unit 1 channel wired to the battery divider (WiCAN Pro:
+        channel 3 = GPIO4). Per-hardware-revision; override in the
+        board's sdkconfig.
+
+config WICAN_BATT_DIVIDER_X100
+    int "Battery divider ratio x100"
+    default 1100
+    help
+        Volts at the battery per volt at the ADC pin, times 100
+        (WiCAN Pro: 11.00 -> 1100).
+
+config WICAN_BATT_OFFSET_MV
+    int "Battery reading offset (mV at the battery)"
+    default 100
+    help
+        Constant offset added to the scaled reading, in millivolts
+        (field calibration; WiCAN Pro: +100 mV, from the legacy
+        firmware's bench calibration).
+
+endmenu

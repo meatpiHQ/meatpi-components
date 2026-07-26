@@ -1,0 +1,16 @@
+menu "WiCAN i2c_bus"
+
+config WICAN_I2C_SDA_GPIO
+    int "I2C SDA GPIO"
+    default 5
+    help
+        SDA pin of the shared peripheral I2C bus (WiCAN Pro: GPIO5).
+        Per-hardware-revision; override in the board's sdkconfig.
+
+config WICAN_I2C_SCL_GPIO
+    int "I2C SCL GPIO"
+    default 6
+    help
+        SCL pin of the shared peripheral I2C bus (WiCAN Pro: GPIO6).
+
+endmenu

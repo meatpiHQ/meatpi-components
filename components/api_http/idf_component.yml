@@ -1,0 +1,5 @@
+## Managed component dependencies for api_http.
+dependencies:
+  # IDF v6 removed the bundled `json` component; cJSON comes from the
+  # registry. Private: the public header exposes no cJSON types.
+  espressif/cjson: "^1.7.18"

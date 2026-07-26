@@ -1,0 +1,18 @@
+menu "WiCAN sleep_manager"
+
+    config WICAN_SLEEP_CAN_STDBY_GPIO
+        int "CAN transceiver standby GPIO"
+        default 38
+        help
+            Driven HIGH on sleep entry (WiCAN Pro: GPIO38, legacy
+            hw_config.h CAN_STDBY_GPIO_NUM).
+
+    config WICAN_SLEEP_USB_PWR_GPIO
+        int "USB OTG power-enable GPIO"
+        default 10
+        help
+            Held LOW (open-drain + pulldown + gpio_hold) through the
+            naps so the USB rail stays off (WiCAN Pro: GPIO10, legacy
+            hw_config.h USB_OTG_PWR_EN).
+
+endmenu

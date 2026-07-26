@@ -1,0 +1,11 @@
+# Test-only overlay (standard §7): the main firmware's sdkconfig.defaults is
+# inherited first via SDKCONFIG_DEFAULTS in the project CMakeLists.
+# Loopback so the test app can reach its own servers on 127.0.0.1 without RF
+# (test topology only — the shipped firmware serves real clients).
+CONFIG_LWIP_NETIF_LOOPBACK=y
+# The main partition-table path is relative to the project dir — restate it
+# from this app's location (same file the main firmware builds with).
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="../../../wican_pro_partitions_table.csv"
+# Test-console rate for the serial-capture harness (main runs 2 Mbaud) —
+# sanctioned overlay option per standard §7 (test runner/console only).
+CONFIG_ESP_CONSOLE_UART_BAUDRATE=115200

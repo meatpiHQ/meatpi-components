@@ -1,0 +1,10 @@
+idf_component_register(
+    SRCS
+        usb_net_device.c
+    INCLUDE_DIRS
+        include
+    PRIV_REQUIRES
+        cherryusb
+        esp_netif
+        esp_hw_support
+)

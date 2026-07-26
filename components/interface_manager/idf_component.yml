@@ -1,0 +1,5 @@
+## Managed component dependencies for interface_manager.
+dependencies:
+  # IDF v6 removed the bundled `json` component; cJSON comes from the
+  # registry. Private: only on_apply reads cJSON values.
+  espressif/cjson: "^1.7.18"

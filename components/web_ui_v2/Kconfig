@@ -1,0 +1,23 @@
+menu "WiCAN built-in web UI"
+
+choice WICAN_WEBUI
+    prompt "Built-in web UI to compile + serve"
+    default WICAN_WEBUI_V2
+    help
+        Which web front-end the firmware embeds and serves from the HTTP
+        catch-all. Only one is compiled into flash. API routes always win
+        over the UI, so "None" leaves the full /api + /ws surface working
+        for a headless build or an external app.
+
+    config WICAN_WEBUI_V2
+        bool "v2 (single-page app, all features)"
+        help
+            The v2 UI in components/web_ui_v2 — a self-contained,
+            responsive single-page app covering every /api feature.
+
+    config WICAN_WEBUI_NONE
+        bool "None (headless — API/WS only)"
+
+endchoice
+
+endmenu

@@ -1,0 +1,10 @@
+idf_component_register(
+    SRCS
+        usb_cdc_device.c
+    INCLUDE_DIRS
+        include
+    PRIV_REQUIRES
+        cherryusb
+        j2534_server
+        esp_hw_support
+)

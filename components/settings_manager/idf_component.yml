@@ -1,0 +1,9 @@
+## Managed component dependencies for settings_manager.
+## LittleFS is the filesystem the Settings Manager owns (see ARCHITECTURE.md §5).
+dependencies:
+  joltwallet/littlefs: "^1.14.0"
+  # IDF v6 removed the bundled `json` component; cJSON now comes from the
+  # registry. `require: public` because the public header exposes cJSON types.
+  espressif/cjson:
+    version: "^1.7.18"
+    require: public

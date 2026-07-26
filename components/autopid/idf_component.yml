@@ -1,0 +1,4 @@
+## Managed dependencies for autopid.
+dependencies:
+  # cJSON is PUBLIC: the header exposes cJSON types (snapshot API).
+  espressif/cjson: "^1.7.18"

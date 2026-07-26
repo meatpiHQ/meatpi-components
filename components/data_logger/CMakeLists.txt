@@ -1,0 +1,25 @@
+idf_component_register(
+    SRCS "data_logger.c"
+         "data_logger_settings.c"
+         "data_logger_db.c"
+         "data_logger_append.c"
+         "data_logger_mf4.c"
+         "data_logger_blf.c"
+         "data_logger_can.c"
+         "data_logger_files.c"
+         "data_logger_events.c"
+         "data_logger_http.c"
+         "data_logger_cli.c"
+    INCLUDE_DIRS "include"
+    PRIV_INCLUDE_DIRS "."
+    # Feature: producers register params and push records; this owns the
+    # sqlite/csv/wdl files on the SD card (batching/rotation/retention —
+    # see BENCHMARKS.md for why the pragmas look the way they do). Two
+    # streams: params (autopid sink + logger.write rules) and CAN frames
+    # (can_manager RX subscription — hence the can_manager dep; autopid
+    # stays decoupled, main wires its value sink). /api/logger and the
+    # `logger` command are optional (main wires them).
+    PRIV_REQUIRES sqlite3 external_storage event_manager
+                  http_server_manager settings_manager log_manager
+                  cmdline_manager can_manager
+)

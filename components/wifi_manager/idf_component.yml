@@ -1,0 +1,6 @@
+## Managed component dependencies for wifi_manager.
+## cJSON: scan-result JSON + parsing the settings object in on_apply
+## (IDF v6 dropped the bundled `json` component). Private: the public
+## header exposes no cJSON types.
+dependencies:
+  espressif/cjson: "^1.7.18"

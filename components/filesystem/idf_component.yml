@@ -1,0 +1,4 @@
+## Managed component dependencies for filesystem.
+## LittleFS backs the internal-flash data FS (/data) this component owns.
+dependencies:
+  joltwallet/littlefs: "^1.14.0"

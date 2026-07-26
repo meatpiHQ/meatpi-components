@@ -1,0 +1,7 @@
+# Test-only overlay (standard §7): main sdkconfig.defaults inherited first
+# (CONFIG_BT_ENABLED etc. come from there — same stack the product ships).
+# The main partition-table path is relative to the project dir.
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="../../../wican_pro_partitions_table.csv"
+# Test-console rate for the serial-capture harness (main runs 2 Mbaud) —
+# sanctioned overlay option per standard §7 (test runner/console only).
+CONFIG_ESP_CONSOLE_UART_BAUDRATE=115200

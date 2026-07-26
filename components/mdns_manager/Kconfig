@@ -1,0 +1,28 @@
+menu "WiCAN mdns_manager"
+
+config WICAN_HW_VERSION
+    string "Hardware version string"
+    default "WiCAN-PRO"
+    help
+        Advertised in the mDNS TXT record `hardware` (and available to
+        other surfaces). Per-hardware-revision; override in the board's
+        sdkconfig.
+
+config WICAN_DEVICE_TYPE
+    string "Device type slug"
+    default "wican_pro"
+    help
+        The MeatPi HA-integration profile slug (device-contract v2):
+        lowercase, stable per product ("wican_pro", "wican_usb",
+        "wican", "espnetlink", ...). Advertised in the mDNS TXT record
+        `device_type` and returned by GET /api/info. Per-product;
+        override in the board's sdkconfig.
+
+config WICAN_MODEL_NAME
+    string "Product model name"
+    default "WiCAN Pro"
+    help
+        Human-readable model ("WiCAN Pro"). Returned by GET /api/info;
+        shown in the HA device registry.
+
+endmenu

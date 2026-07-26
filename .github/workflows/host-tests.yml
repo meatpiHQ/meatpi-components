@@ -1,0 +1,25 @@
+# Host unit tests — every components/*/host_test built and run on the
+# ESP-IDF `linux` target. No hardware involved; hardware benches live in
+# the firmware project's private test infrastructure.
+name: Host unit tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  host-tests:
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:v6.0.2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install host-test deps
+        run: |
+          apt-get update -q
+          apt-get install -y -q libbsd-dev
+      - name: Run host suites
+        run: |
+          . $IDF_PATH/export.sh
+          bash tools/run_host_tests.sh

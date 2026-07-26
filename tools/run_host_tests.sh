@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# MeatPi components — host unit tests.
+#
+# Builds and runs every components/*/host_test on the ESP-IDF `linux`
+# target (no hardware needed) and prints a compact PASS/FAIL summary
+# with per-suite test counts. An optional argument limits the run to
+# one component:
+#
+#   tools/run_host_tests.sh                # everything
+#   tools/run_host_tests.sh wifi_manager   # one suite
+#
+# Requirements: Linux with gcc/cmake/ninja/libbsd-dev and ESP-IDF
+# (the version in the repo README). Two ways to provide IDF:
+#   - an environment where `idf.py` is already on PATH (e.g. after
+#     `. $IDF_PATH/export.sh`, or inside the espressif/idf container —
+#     this is what CI uses), or
+#   - a plain checkout at ~/esp-idf (or $IDF_PATH) with its python env
+#     installed; the script then invokes idf.py through that env
+#     directly (export.sh is NOT required for the linux target).
+set -u
+cd "$(dirname "$0")/.."
+ONLY="${1:-*}"
+
+if command -v idf.py > /dev/null 2>&1; then
+    idf() { idf.py "$@"; }
+else
+    export IDF_PATH="${IDF_PATH:-$HOME/esp-idf}"
+    export IDF_PYTHON_CHECK_CONSTRAINTS=no
+    IDF_PY=$(ls -d "$HOME"/.espressif/python_env/*/bin/python 2>/dev/null | head -1)
+    if [ -z "${IDF_PY:-}" ] || [ ! -d "$IDF_PATH" ]; then
+        echo "idf.py not on PATH and no IDF checkout found — install ESP-IDF" >&2
+        exit 1
+    fi
+    idf() { "$IDF_PY" "$IDF_PATH/tools/idf.py" "$@"; }
+fi
+
+summary=""
+rc=0
+total=0
+
+for ht in components/$ONLY/host_test; do
+    [ -d "$ht" ] || { echo "no host_test matches '$ONLY'"; exit 1; }
+    comp=$(basename "$(dirname "$ht")")
+    echo "=== $comp ==="
+
+    run=$(
+        cd "$ht" || exit 1
+        rm -rf sdkconfig
+        [ -f build/CMakeCache.txt ] || rm -rf build
+        idf --preview set-target linux > settarget.log 2>&1 \
+            || { echo SET_TARGET_FAILED; tail -20 settarget.log; exit 2; }
+        idf build > build.log 2>&1 || { echo BUILD_FAILED; tail -30 build.log; exit 2; }
+        elf=$(ls build/*.elf 2>/dev/null | head -1)
+        [ -n "$elf" ] || { echo NO_ELF; exit 2; }
+        # the FreeRTOS POSIX port never exits after UNITY_END -> timeout
+        # kills the process; judge by Unity's summary line, not exit code
+        out=$(timeout 30 "$elf" 2>&1)
+        echo "$out" | tail -15
+        echo "$out" | grep -qE '[0-9]+ Tests 0 Failures' || exit 3
+        exit 0
+    )
+    st=$?
+    echo "$run"
+    n=$(echo "$run" | grep -oE '[0-9]+ Tests' | tail -1 | cut -d' ' -f1)
+    case $st in
+        0) summary="$summary$comp: PASS (${n:-?} tests)\n"; total=$((total + ${n:-0})) ;;
+        2) summary="$summary$comp: BUILD FAILED\n"; rc=1 ;;
+        *) summary="$summary$comp: TEST FAILURES\n"; rc=1 ;;
+    esac
+done
+
+echo "=== SUMMARY ==="
+printf "%b" "$summary"
+echo "TOTAL: $total tests"
+exit $rc

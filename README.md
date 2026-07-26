@@ -17,6 +17,33 @@ Add the `components/` directory to your project's `EXTRA_COMPONENT_DIRS`:
 list(APPEND EXTRA_COMPONENT_DIRS "path/to/meatpi-components/components")
 ```
 
+## Testing
+
+Most components carry a `host_test/` unit suite that builds and runs on
+the ESP-IDF **`linux` target** — no hardware needed. CI runs all of
+them on every push and pull request
+([host-tests workflow](.github/workflows/host-tests.yml)).
+
+Run them locally on Linux (gcc/cmake/ninja/libbsd-dev + ESP-IDF):
+
+```sh
+tools/run_host_tests.sh                # every suite + summary
+tools/run_host_tests.sh wifi_manager   # one component
+```
+
+Or a single suite by hand:
+
+```sh
+cd components/wifi_manager/host_test
+idf.py --preview set-target linux && idf.py build
+./build/*.elf     # Unity output; "N Tests 0 Failures" = green
+```
+
+Components also ship on-target test apps (`components/*/test_apps*/`):
+flash one to an ESP32-S3 with `idf.py set-target esp32s3 flash monitor`
+and watch for its pass banner. Radio/vehicle-level scenarios are
+exercised on MeatPi's hardware bench and are not part of this repo.
+
 ## Licensing
 
 - Most components are open source under **AGPL-3.0-or-later** (see

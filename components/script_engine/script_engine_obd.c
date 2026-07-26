@@ -46,7 +46,7 @@
 #include "esp_attr.h"
 
 /* biggest single TransferData block we frame (2-byte 36+bsc header keeps
- * the ISO-TP PDU under the elm327_isotp 8192 payload ceiling) */
+ * the ISO-TP PDU under the transport's 8192 payload ceiling) */
 #define SE_OBD_XFER_MAX_BLOCK 4096
 
 /* standard reflected CRC-32 (poly 0xEDB88320) — matches zlib.crc32 and

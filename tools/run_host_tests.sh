@@ -52,10 +52,28 @@ for ht in components/$ONLY/host_test; do
         idf build > build.log 2>&1 || { echo BUILD_FAILED; tail -30 build.log; exit 2; }
         elf=$(ls build/*.elf 2>/dev/null | head -1)
         [ -n "$elf" ] || { echo NO_ELF; exit 2; }
-        # the FreeRTOS POSIX port never exits after UNITY_END -> timeout
-        # kills the process; judge by Unity's summary line, not exit code
-        out=$(timeout 30 "$elf" 2>&1)
+        # The FreeRTOS POSIX port never exits after UNITY_END, so we
+        # kill the process OURSELVES the moment Unity's summary line
+        # appears (a fixed `timeout N` burned N seconds on EVERY suite
+        # and still false-failed slow CI runners). Budget only guards
+        # against a truly hung binary.
+        budget=120
+        "$elf" > run.log 2>&1 &
+        pid=$!
+        i=0
+        while [ $i -lt $((budget * 2)) ]; do
+            grep -qE '[0-9]+ Tests [0-9]+ Failures' run.log && break
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 0.5
+            i=$((i + 1))
+        done
+        kill "$pid" 2>/dev/null
+        wait "$pid" 2>/dev/null
+        out=$(cat run.log)
         echo "$out" | tail -15
+        if ! echo "$out" | grep -qE '[0-9]+ Tests'; then
+            echo "RUN TIMED OUT (no Unity summary within ${budget}s)"
+        fi
         echo "$out" | grep -qE '[0-9]+ Tests 0 Failures' || exit 3
         exit 0
     )

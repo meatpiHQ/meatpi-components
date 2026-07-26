@@ -598,7 +598,10 @@ void test_filter_stream_truncation_recovers(void)
 
 void test_config_filter_monitor_bounds(void)
 {
-    ap_config_t cfg;
+    /* ~1 MB struct (2048-param pool) — STATIC, never on the task stack
+     * (the linux-port task stack is FreeRTOS-sized; x86-64 frames blew
+     * it and the suite segfaulted in CI, 2026-07-27; §2 discipline) */
+    static ap_config_t cfg;
     char err[96] = "";
 
     TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG,
@@ -740,7 +743,10 @@ void test_config_parse_happy(void)
         "{\"name\":\"rpm_raw\",\"expression\":\"[B2:B3]\"}]}],"
         "\"filters\":[{\"frame_id\":666,\"monitor_ms\":800,"
         "\"parameters\":[{\"name\":\"soc\",\"expression\":\"B4/2\"}]}]}";
-    ap_config_t cfg;
+    /* ~1 MB struct (2048-param pool) — STATIC, never on the task stack
+     * (the linux-port task stack is FreeRTOS-sized; x86-64 frames blew
+     * it and the suite segfaulted in CI, 2026-07-27; §2 discipline) */
+    static ap_config_t cfg;
     char err[96] = "";
 
     TEST_ASSERT_EQUAL(ESP_OK,
@@ -762,7 +768,10 @@ void test_config_parse_rejects_bad_expression(void)
     const char *json =
         "{\"pids\":[{\"name\":\"x\",\"cmd\":\"0105\",\"parameters\":["
         "{\"name\":\"t\",\"expression\":\"[B3:B0]\"}]}]}";
-    ap_config_t cfg;
+    /* ~1 MB struct (2048-param pool) — STATIC, never on the task stack
+     * (the linux-port task stack is FreeRTOS-sized; x86-64 frames blew
+     * it and the suite segfaulted in CI, 2026-07-27; §2 discipline) */
+    static ap_config_t cfg;
     char err[96] = "";
 
     TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG,
@@ -773,7 +782,10 @@ void test_config_parse_rejects_bad_expression(void)
 
 void test_config_parse_rejects_unknown_group_and_dupes(void)
 {
-    ap_config_t cfg;
+    /* ~1 MB struct (2048-param pool) — STATIC, never on the task stack
+     * (the linux-port task stack is FreeRTOS-sized; x86-64 frames blew
+     * it and the suite segfaulted in CI, 2026-07-27; §2 discipline) */
+    static ap_config_t cfg;
     char err[96] = "";
 
     TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG,
@@ -796,7 +808,10 @@ void test_config_parse_rejects_unknown_group_and_dupes(void)
 
 void test_config_parse_empty_and_garbage(void)
 {
-    ap_config_t cfg;
+    /* ~1 MB struct (2048-param pool) — STATIC, never on the task stack
+     * (the linux-port task stack is FreeRTOS-sized; x86-64 frames blew
+     * it and the suite segfaulted in CI, 2026-07-27; §2 discipline) */
+    static ap_config_t cfg;
     char err[96] = "";
 
     /* empty object = valid empty tables + the auto default group */
@@ -904,7 +919,10 @@ void test_config_parse_sanitizes_cmd_and_init(void)
     const char *json =
         "{\"pids\":[{\"name\":\"w\",\"cmd\":\"ATSP6\","
         "\"init\":\"ATM1;atsp7\"}]}";
-    ap_config_t cfg;
+    /* ~1 MB struct (2048-param pool) — STATIC, never on the task stack
+     * (the linux-port task stack is FreeRTOS-sized; x86-64 frames blew
+     * it and the suite segfaulted in CI, 2026-07-27; §2 discipline) */
+    static ap_config_t cfg;
     char err[96] = "";
 
     TEST_ASSERT_EQUAL(ESP_OK,
@@ -1805,7 +1823,10 @@ void test_config_parse_mux_param(void)
         "{\"filters\":[{\"frame_id\":291,\"monitor_ms\":800,"
         "\"parameters\":[{\"name\":\"gear\",\"expression\":\"B1\","
         "\"mux_expr\":\"B0&15\",\"mux_val\":2}]}]}";
-    ap_config_t cfg;
+    /* ~1 MB struct (2048-param pool) — STATIC, never on the task stack
+     * (the linux-port task stack is FreeRTOS-sized; x86-64 frames blew
+     * it and the suite segfaulted in CI, 2026-07-27; §2 discipline) */
+    static ap_config_t cfg;
     char err[96] = "";
 
     TEST_ASSERT_EQUAL(ESP_OK,

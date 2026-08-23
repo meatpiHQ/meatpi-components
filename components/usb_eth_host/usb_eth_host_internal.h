@@ -31,6 +31,13 @@ extern "C" {
 void usb_eth_host_notify_driver_started(usb_eth_host_driver_t driver, const char *ifkey);
 void usb_eth_host_notify_driver_stopped(usb_eth_host_driver_t driver);
 
+/* Called by the netif glue right before it destroys a netif so the cached
+ * g_last_usb_eth_netif pointer never outlives the netif. Without this, a
+ * WiFi STA got-ip event after a USB detach dereferences the destroyed
+ * netif in usb_eth_host_on_sta_got_ip (LoadProhibited — bench-hit
+ * 2026-07-30, ESPNetLink full-system GPS test). */
+void usb_eth_host_notify_netif_destroyed(esp_netif_t *netif);
+
 #ifdef __cplusplus
 }
 #endif

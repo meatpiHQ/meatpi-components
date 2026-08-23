@@ -29,6 +29,7 @@
 
 #include "lwip/opt.h"
 
+#include "usb_eth_host_internal.h"
 #include "usb_eth_netif_glue_internal.h"
 
 static const char *TAG = "usb_eth_netif";
@@ -182,6 +183,7 @@ void usb_eth_netif_glue_stop(usb_eth_netif_glue_t *glue)
         glue->got_ip_registered = false;
     }
     esp_netif_action_stop(glue->base.netif, NULL, 0, NULL);
+    usb_eth_host_notify_netif_destroyed(glue->base.netif);
     esp_netif_destroy(glue->base.netif);
 
     memset(glue, 0, sizeof(*glue));

@@ -29,6 +29,8 @@
 #include <string.h>
 
 #include "driver/gpio.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "soc/rtc_cntl_struct.h"
 #include "soc/usb_wrap_struct.h"
 
@@ -60,6 +62,34 @@ static int cmd_usb(int argc, char **argv)
         gpio_set_level(CONFIG_WICAN_SLEEP_USB_PWR_GPIO, atoi(argv[2]));
         cmdline_printf("vbus io%d = %d\n",
                        CONFIG_WICAN_SLEEP_USB_PWR_GPIO, atoi(argv[2]));
+        return 0;
+    }
+
+    /* WiCAN DEBUG (temporary): DWC2 port suspend/resume — quiets the bus
+     * (no SOF) without dropping enumeration. GPS-desense experiment
+     * 2026-07-30: CherryUSB's HUB_PORT_FEATURE_SUSPEND is a no-op stub,
+     * so poke HPRT directly. W1C bits (PCDET|PENA|PENCHNG|POCCHNG =
+     * 0x2E) must be masked on write or the port disables itself. */
+    if (argc >= 2 && strcmp(argv[1], "suspend") == 0)
+    {
+        uint32_t v = UHM_DBG_HPRT & ~0x2Eu;
+
+        UHM_DBG_HPRT = v | 0x80u; /* PrtSusp */
+        cmdline_printf("port suspended, HPRT=0x%08lx\n",
+                       (unsigned long)UHM_DBG_HPRT);
+        return 0;
+    }
+
+    if (argc >= 2 && strcmp(argv[1], "resume") == 0)
+    {
+        uint32_t v = UHM_DBG_HPRT & ~(0x2Eu | 0x80u);
+
+        UHM_DBG_HPRT = v | 0x40u; /* PrtRes */
+        vTaskDelay(pdMS_TO_TICKS(25));
+        v = UHM_DBG_HPRT & ~(0x2Eu | 0x80u | 0x40u);
+        UHM_DBG_HPRT = v;
+        cmdline_printf("port resumed, HPRT=0x%08lx\n",
+                       (unsigned long)UHM_DBG_HPRT);
         return 0;
     }
 

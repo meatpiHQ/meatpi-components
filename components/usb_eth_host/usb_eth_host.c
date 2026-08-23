@@ -28,6 +28,9 @@
 #include "esp_check.h"
 #include "esp_event.h"
 #include "esp_netif.h"
+#include "esp_timer.h"
+
+#include "lwip/dns.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -48,6 +51,8 @@ static usb_eth_host_driver_t g_active_driver = USB_ETH_HOST_DRIVER_MAX;
 static char g_active_ifkey[8];
 
 static esp_netif_t *g_last_usb_eth_netif;
+static uint32_t g_usb_dns_addr;         /* uplink resolver (lwIP u32) */
+static esp_timer_handle_t g_dns_guard;  /* see usb_eth_host_dns_guard_cb */
 static esp_event_handler_instance_t g_ip_eth_got_ip_inst;
 static esp_event_handler_instance_t g_ip_sta_got_ip_inst;
 static esp_event_handler_instance_t g_ip_sta_lost_ip_inst;
@@ -157,6 +162,18 @@ void usb_eth_host_notify_driver_stopped(usb_eth_host_driver_t driver)
 
     g_active_driver = USB_ETH_HOST_DRIVER_MAX;
     g_active_ifkey[0] = '\0';
+}
+
+void usb_eth_host_notify_netif_destroyed(esp_netif_t *netif)
+{
+    /* The sta-got-ip handler (event-loop task) dereferences
+     * g_last_usb_eth_netif; clear it BEFORE the glue destroys the netif
+     * or the next WiFi got-ip after a USB detach crashes on the stale
+     * pointer (LoadProhibited, bench-hit 2026-07-30). */
+    if (netif != NULL && g_last_usb_eth_netif == netif)
+    {
+        g_last_usb_eth_netif = NULL;
+    }
 }
 
 static void usb_eth_host_try_set_default_netif(esp_netif_t *netif)
@@ -308,6 +325,31 @@ static void usb_eth_host_restore_after_overlap(const char *reason)
     }
 }
 
+/** Other netifs' DHCP clients (e.g. a WiFi STA cycling through failed
+ *  associations) CLEAR lwIP's global resolver list on lease loss —
+ *  taking the USB uplink's DNS with them. While the USB uplink holds
+ *  an address, refill slot 0 whenever it goes empty; a valid different
+ *  server (a connected WiFi lease) is left alone. */
+static void usb_eth_host_dns_guard_cb(void *arg)
+{
+    (void)arg;
+
+    if (g_last_usb_eth_netif == NULL || g_usb_dns_addr == 0)
+    {
+        return;
+    }
+    if (!ip_addr_isany(dns_getserver(0)))
+    {
+        return;
+    }
+
+    ip_addr_t lw;
+
+    ip_addr_set_ip4_u32_val(lw, g_usb_dns_addr);
+    dns_setserver(0, &lw);
+    ESP_LOGI(TAG, "restored USB ETH DNS after external clear");
+}
+
 static void usb_eth_host_on_eth_got_ip(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
 {
     ip_event_got_ip_t *event;
@@ -336,6 +378,47 @@ static void usb_eth_host_on_eth_got_ip(void *handler_args, esp_event_base_t base
     g_ip_overlap_suspended = false;
     g_suspended_ifkey[0] = '\0';
     usb_eth_host_try_set_default_netif(g_last_usb_eth_netif);
+
+    /* Tethered-uplink DNS: the adapter's DHCP server offers a resolver
+     * (the ESPNetLink tether offers its DNS proxy = the gateway), but
+     * the lease's DNS only lands on THIS netif — lwIP's GLOBAL resolver
+     * table (the one getaddrinfo actually reads) stays empty and every
+     * lookup fails with the USB link as the only uplink. Feed it
+     * directly; fall back to the gateway when the lease carried no DNS
+     * option, and arm the guard timer (see usb_eth_host_dns_guard_cb —
+     * other netifs' DHCP clients CLEAR the global list on lease loss,
+     * bench-proven with a scanning-but-unconnected WiFi STA). */
+    {
+        esp_netif_dns_info_t dns;
+
+        memset(&dns, 0, sizeof(dns));
+        if (esp_netif_get_dns_info(event->esp_netif, ESP_NETIF_DNS_MAIN,
+                                   &dns) != ESP_OK ||
+            dns.ip.u_addr.ip4.addr == 0)
+        {
+            dns.ip.type = ESP_IPADDR_TYPE_V4;
+            dns.ip.u_addr.ip4.addr = event->ip_info.gw.addr;
+        }
+        if (dns.ip.u_addr.ip4.addr != 0)
+        {
+            (void)esp_netif_set_dns_info(event->esp_netif,
+                                         ESP_NETIF_DNS_MAIN, &dns);
+
+            ip_addr_t lw;
+
+            ip_addr_set_ip4_u32_val(lw, dns.ip.u_addr.ip4.addr);
+            dns_setserver(0, &lw);
+            g_usb_dns_addr = dns.ip.u_addr.ip4.addr;
+            if (g_dns_guard != NULL)
+            {
+                (void)esp_timer_start_periodic(g_dns_guard,
+                                               5 * 1000 * 1000);
+            }
+            ESP_LOGI(TAG, "USB ETH DNS " IPSTR,
+                     IP2STR(&dns.ip.u_addr.ip4));
+        }
+    }
+
     if (g_cfg.on_eth_ip_up)
     {
         g_cfg.on_eth_ip_up();
@@ -350,6 +433,10 @@ static void usb_eth_host_on_eth_lost_ip(void *handler_args, esp_event_base_t bas
     (void)event_data;
 
     g_last_usb_eth_netif = NULL;
+    if (g_dns_guard != NULL)
+    {
+        (void)esp_timer_stop(g_dns_guard);
+    }
     if (!g_ip_overlap_suspended && g_cfg.on_eth_ip_lost)
     {
         g_cfg.on_eth_ip_lost();
@@ -679,6 +766,17 @@ esp_err_t usb_eth_host_start(const usb_eth_host_config_t *config)
     (void)esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, usb_eth_host_on_sta_got_ip, NULL, &g_ip_sta_got_ip_inst);
     (void)esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_LOST_IP, usb_eth_host_on_sta_lost_ip, NULL, &g_ip_sta_lost_ip_inst);
 
+    if (g_dns_guard == NULL)
+    {
+        const esp_timer_create_args_t targs =
+        {
+            .callback = usb_eth_host_dns_guard_cb,
+            .name = "usb_eth_dns",
+        };
+
+        (void)esp_timer_create(&targs, &g_dns_guard);
+    }
+
     err = usbh_initialize((uint8_t)g_cfg.bus_id, g_cfg.reg_base);
     ESP_RETURN_ON_ERROR(err, TAG, "usbh_initialize failed");
 
@@ -699,6 +797,11 @@ void usb_eth_host_stop(void)
     (void)esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_ETH_LOST_IP, g_ip_eth_lost_ip_inst);
     (void)esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, g_ip_sta_got_ip_inst);
     (void)esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_STA_LOST_IP, g_ip_sta_lost_ip_inst);
+    if (g_dns_guard != NULL)
+    {
+        (void)esp_timer_stop(g_dns_guard);
+    }
+    g_usb_dns_addr = 0;
     g_last_usb_eth_netif = NULL;
     g_active_driver = USB_ETH_HOST_DRIVER_MAX;
     g_active_ifkey[0] = '\0';

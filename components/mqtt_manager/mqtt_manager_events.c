@@ -97,9 +97,16 @@ static esp_err_t act_publish(const cJSON *with, const em_event_t *ev)
         t = full;
     }
 
-    return mqtt_manager_publish_async(
+    esp_err_t err = mqtt_manager_publish_async(
         t, payload->valuestring, strlen(payload->valuestring),
         cJSON_IsNumber(qos) ? qos->valueint : 0, cJSON_IsTrue(retain));
+
+    /* Offline is the async path's contract, not a rule error: the drop
+       is already counted (stats.dropped_offline) and event actions are
+       fire-and-forget — surfacing it would make event_manager warn on
+       EVERY event while MQTT is disconnected or disabled (default
+       imu.bump/motion rules -> endless console spam on the bench). */
+    return (err == ESP_ERR_INVALID_STATE) ? ESP_OK : err;
 }
 
 void mm_events_register(void)

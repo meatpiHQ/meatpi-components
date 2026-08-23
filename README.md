@@ -17,6 +17,15 @@ Add the `components/` directory to your project's `EXTRA_COMPONENT_DIRS`:
 list(APPEND EXTRA_COMPONENT_DIRS "path/to/meatpi-components/components")
 ```
 
+## Contributing
+
+Every component follows the
+[MeatPi Component Coding Standard](MEATPI_COMPONENT_STANDARD.md)
+(lifecycle, PSRAM-first memory placement, settings/logging/CLI
+integration, flash-write discipline, testing requirements). Read it
+before writing or reviewing component code; where it conflicts with
+habit, the standard wins.
+
 ## Testing
 
 Most components carry a `host_test/` unit suite that builds and runs on

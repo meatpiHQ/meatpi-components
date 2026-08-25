@@ -49,6 +49,36 @@ static bool g_started;
 static usb_eth_host_config_t g_cfg;
 static usb_eth_host_driver_t g_active_driver = USB_ETH_HOST_DRIVER_MAX;
 static char g_active_ifkey[8];
+static uint16_t g_active_vid;
+static uint16_t g_active_pid;
+/* on_eth_ip_up / on_eth_ip_lost are a balanced PAIR for the policy layer:
+ * lwIP does not post IP_EVENT_ETH_LOST_IP when a netif is simply stopped
+ * and destroyed (USB unplug / the ESPNetLink's data-line cut — bench
+ * 2026-08-24: usb_host_manager kept "uplink up" after the dongle cut), so
+ * the lost edge is derived from this flag on every teardown path. */
+static bool g_ip_reported_up;
+
+static void usb_eth_host_report_ip_up(void)
+{
+    g_ip_reported_up = true;
+    if (g_cfg.on_eth_ip_up)
+    {
+        g_cfg.on_eth_ip_up();
+    }
+}
+
+static void usb_eth_host_report_ip_lost(void)
+{
+    if (!g_ip_reported_up)
+    {
+        return;
+    }
+    g_ip_reported_up = false;
+    if (g_cfg.on_eth_ip_lost)
+    {
+        g_cfg.on_eth_ip_lost();
+    }
+}
 
 static esp_netif_t *g_last_usb_eth_netif;
 static uint32_t g_usb_dns_addr;         /* uplink resolver (lwIP u32) */
@@ -160,8 +190,38 @@ void usb_eth_host_notify_driver_stopped(usb_eth_host_driver_t driver)
         return;
     }
 
+    /* the glue stops + destroys the netif next; lwIP posts no LOST_IP
+     * for that, so report the edge here (no-op when nothing was up) */
+    usb_eth_host_report_ip_lost();
+
     g_active_driver = USB_ETH_HOST_DRIVER_MAX;
     g_active_ifkey[0] = '\0';
+    g_active_vid = 0;
+    g_active_pid = 0;
+}
+
+void usb_eth_host_note_device_ids(uint16_t vid, uint16_t pid)
+{
+    g_active_vid = vid;
+    g_active_pid = pid;
+}
+
+bool usb_eth_host_get_active_device_ids(uint16_t *vid, uint16_t *pid)
+{
+    if (g_active_driver == USB_ETH_HOST_DRIVER_MAX || g_active_vid == 0)
+    {
+        return false;
+    }
+
+    if (vid != NULL)
+    {
+        *vid = g_active_vid;
+    }
+    if (pid != NULL)
+    {
+        *pid = g_active_pid;
+    }
+    return true;
 }
 
 void usb_eth_host_notify_netif_destroyed(esp_netif_t *netif)
@@ -272,9 +332,9 @@ static bool usb_eth_host_suspend_for_overlap(esp_netif_t *usb_netif,
     }
 
     g_ip_overlap_suspended = true;
-    if (!already_suspended && g_cfg.on_eth_ip_lost)
+    if (!already_suspended)
     {
-        g_cfg.on_eth_ip_lost();
+        usb_eth_host_report_ip_lost();
     }
 
     return true;
@@ -319,9 +379,9 @@ static void usb_eth_host_restore_after_overlap(const char *reason)
     g_ip_overlap_suspended = false;
     g_suspended_ifkey[0] = '\0';
 
-    if (g_cfg.netif.mode == USB_ETH_HOST_IP_MODE_STATIC && g_cfg.on_eth_ip_up)
+    if (g_cfg.netif.mode == USB_ETH_HOST_IP_MODE_STATIC)
     {
-        g_cfg.on_eth_ip_up();
+        usb_eth_host_report_ip_up();
     }
 }
 
@@ -419,10 +479,7 @@ static void usb_eth_host_on_eth_got_ip(void *handler_args, esp_event_base_t base
         }
     }
 
-    if (g_cfg.on_eth_ip_up)
-    {
-        g_cfg.on_eth_ip_up();
-    }
+    usb_eth_host_report_ip_up();
 }
 
 static void usb_eth_host_on_eth_lost_ip(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
@@ -437,9 +494,9 @@ static void usb_eth_host_on_eth_lost_ip(void *handler_args, esp_event_base_t bas
     {
         (void)esp_timer_stop(g_dns_guard);
     }
-    if (!g_ip_overlap_suspended && g_cfg.on_eth_ip_lost)
+    if (!g_ip_overlap_suspended)
     {
-        g_cfg.on_eth_ip_lost();
+        usb_eth_host_report_ip_lost();
     }
 }
 
@@ -565,13 +622,18 @@ static void usb_eth_host_apply_gpio(const usb_eth_host_gpio_t *gpio_cfg, bool en
 
     if (enable)
     {
-        /* POWER-CYCLE, not just power-on (v6 change): the rail enable
-         * has a board pull-up, so an adapter may have been powered for
-         * hours before host mode starts and never produces a fresh
-         * connect edge for the DWC2. Legacy got the cycle for free
-         * because its stop path had driven the rail off. */
-        gpio_set_level((gpio_num_t)gpio_cfg->vbus_en_gpio, gpio_cfg->vbus_en_active_high ? 0 : 1);
-        vTaskDelay(pdMS_TO_TICKS(300));
+        /* Power ON only — NO power-cycle (2026-08-24 change). The rail's
+         * board pull-up means an attached device (the ESPNetLink dongle)
+         * may have been running for a long time — power-cycling it here
+         * rebooted it and killed its GPS fix on every host start / WiCAN
+         * reboot. The v6 cycle existed for the "already attached = no
+         * fresh connect edge for the DWC2" worry, but on this board the
+         * connector MUX flips to the OTG in host_up() right before
+         * usbh_initialize(), so the device's D+ pull-up always appears
+         * at the PHY as a fresh edge and the DWC2 raises PCDET
+         * (bench-verified 2026-08-24: parallel-booted dongle enumerated
+         * at host start with no cycle). Boards without a mux would need
+         * a synthesized connect event instead of reinstating the cycle. */
         gpio_set_level((gpio_num_t)gpio_cfg->vbus_en_gpio, gpio_cfg->vbus_en_active_high ? 1 : 0);
 
         if (gpio_cfg->vbus_on_delay_ms > 0)
@@ -792,6 +854,7 @@ void usb_eth_host_stop(void)
     }
 
     usbh_deinitialize((uint8_t)g_cfg.bus_id);
+    usb_eth_host_report_ip_lost();
 
     (void)esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_ETH_GOT_IP, g_ip_eth_got_ip_inst);
     (void)esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_ETH_LOST_IP, g_ip_eth_lost_ip_inst);

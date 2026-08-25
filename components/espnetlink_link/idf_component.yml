@@ -1,0 +1,7 @@
+## Managed component dependencies for espnetlink_link.
+## cJSON: the settings store (wifi_manager + own objects), the dongle's
+## settings document in usb_ncm mode, the HTTP status/pair bodies, and the
+## migration (IDF v6 dropped the bundled `json` component). Private: the
+## public header exposes no cJSON types.
+dependencies:
+  espressif/cjson: "^1.7.18"

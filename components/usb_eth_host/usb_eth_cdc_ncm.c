@@ -85,6 +85,11 @@ void usbh_cdc_ncm_run(struct usbh_cdc_ncm *cdc_ncm_class)
                              usb_eth_host_get_netif_config(),
                              usb_eth_cdc_ncm_transmit);
 
+    if (cdc_ncm_class->hport != NULL)
+    {
+        usb_eth_host_note_device_ids(cdc_ncm_class->hport->device_desc.idVendor,
+                                     cdc_ncm_class->hport->device_desc.idProduct);
+    }
     usb_eth_host_notify_driver_started(USB_ETH_HOST_DRIVER_CDC_NCM, "u1");
 
     usb_osal_thread_create("usbh_cdc_ncm_rx", 2048, CONFIG_USBHOST_PSC_PRIO + 1, usbh_cdc_ncm_rx_thread, NULL);

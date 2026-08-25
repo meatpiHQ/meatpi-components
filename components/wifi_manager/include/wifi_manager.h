@@ -141,6 +141,17 @@ esp_err_t wifi_manager_resume_sta(void);
 esp_err_t wifi_manager_suspend_ap(void);
 esp_err_t wifi_manager_resume_ap(void);
 
+/**
+ * Drop the current STA association NOW; the normal selection path
+ * reconnects (same candidate rules, no settings touched). For a consumer
+ * that KNOWS the association is dead while the driver still reports it
+ * connected — an AP that rebooted and came back inside the beacon-loss
+ * window forgets its clients, so every socket times out on a "connected"
+ * STA (espnetlink_link, bench 2026-08-24: the dongle's AP after a VBUS
+ * cycle). ESP_ERR_INVALID_STATE when STA is not connected.
+ */
+esp_err_t wifi_manager_sta_reconnect(void);
+
 /** Whether the BOOT-CONFIGURED mode includes STA / AP (regardless of any
  *  runtime suspension) — policy inputs for interface_manager. */
 bool wifi_manager_mode_has_sta(void);

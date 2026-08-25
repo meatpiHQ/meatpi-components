@@ -340,9 +340,17 @@ static bool select_and_connect(void)
 
         apply_sta_network(cfg, 0);
 
-        if (esp_wifi_connect() == ESP_OK)
+        /* stamp BEFORE the call: a fast DISCONNECTED (e.g. NO_AP_FOUND
+         * from the driver's cached scan) can land in the event task and
+         * clear the guard before esp_wifi_connect() even returns — the
+         * late stamp then blocked the next WM_CONNECT_INFLIGHT_MS worth
+         * of cycles per attempt (bench 2026-08-22, ESPNetLink AP coming
+         * up ~10 s after the WiCAN's first attempt) */
+        s_connect_started_ms = now_ms();
+
+        if (esp_wifi_connect() != ESP_OK)
         {
-            s_connect_started_ms = now_ms();
+            s_connect_started_ms = 0;
         }
 
         return true;
@@ -393,9 +401,17 @@ static bool select_and_connect(void)
                  cfg->sta[pick].ssid);
         apply_sta_network(cfg, (size_t)pick);
 
-        if (esp_wifi_connect() == ESP_OK)
+        /* stamp BEFORE the call: a fast DISCONNECTED (e.g. NO_AP_FOUND
+         * from the driver's cached scan) can land in the event task and
+         * clear the guard before esp_wifi_connect() even returns — the
+         * late stamp then blocked the next WM_CONNECT_INFLIGHT_MS worth
+         * of cycles per attempt (bench 2026-08-22, ESPNetLink AP coming
+         * up ~10 s after the WiCAN's first attempt) */
+        s_connect_started_ms = now_ms();
+
+        if (esp_wifi_connect() != ESP_OK)
         {
-            s_connect_started_ms = now_ms();
+            s_connect_started_ms = 0;
         }
 
         return true;

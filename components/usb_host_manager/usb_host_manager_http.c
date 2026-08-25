@@ -38,18 +38,20 @@ static const char *TAG = "usb_host_manager";
 static esp_err_t usb_handler(httpd_req_t *req)
 {
     usb_host_manager_status_t st;
-    char body[224];
+    char body[288];
 
     (void)usb_host_manager_status(&st);
     snprintf(body, sizeof(body),
              "{\"enabled\":%s,\"device_present\":%s,\"host_active\":%s,"
              "\"eth_connected\":%s,\"driver\":\"%s\",\"ip\":\"%s\","
-             "\"attaches\":%lu}",
+             "\"attaches\":%lu,\"vid\":\"%04x\",\"pid\":\"%04x\","
+             "\"vbus\":%s}",
              st.enabled ? "true" : "false",
              st.device_present ? "true" : "false",
              st.host_active ? "true" : "false",
              st.eth_connected ? "true" : "false",
-             st.driver, st.ip, (unsigned long)st.attaches);
+             st.driver, st.ip, (unsigned long)st.attaches,
+             st.vid, st.pid, st.vbus_on ? "true" : "false");
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_send(req, body, HTTPD_RESP_USE_STRLEN);
 }

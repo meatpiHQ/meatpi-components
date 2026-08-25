@@ -59,10 +59,12 @@ static int cmd_usb(int argc, char **argv)
 
     if (argc >= 3 && strcmp(argv[1], "vbus") == 0)
     {
-        gpio_set_level(CONFIG_WICAN_SLEEP_USB_PWR_GPIO, atoi(argv[2]));
-        cmdline_printf("vbus io%d = %d\n",
-                       CONFIG_WICAN_SLEEP_USB_PWR_GPIO, atoi(argv[2]));
-        return 0;
+        esp_err_t err = usb_host_manager_set_vbus(atoi(argv[2]) != 0);
+
+        cmdline_printf("vbus io%d = %d (%s)\n",
+                       CONFIG_WICAN_SLEEP_USB_PWR_GPIO, atoi(argv[2]),
+                       esp_err_to_name(err));
+        return err == ESP_OK ? 0 : 1;
     }
 
     /* WiCAN DEBUG (temporary): DWC2 port suspend/resume — quiets the bus

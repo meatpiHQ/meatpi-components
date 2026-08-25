@@ -1966,41 +1966,91 @@ PAGES.vpn=async(view)=>{
   const t=setInterval(()=>{if(conn.state==="online")status();},5000);return()=>clearInterval(t);
 };
 
-/* ---- USB (ported from the legacy usbhost tab, on the v6 API) ---- */
+/* ---- USB + ESPNetLink (ported from the legacy usbhost tab, on the v6 API) ---- */
 PAGES.usb=async(view)=>{
   const badge=chip("…","");
-  const p=page(view,null,"USB","Connector role, USB-Ethernet uplink and the ESPNetLink LTE dongle.",[badge]);
+  const p=page(view,null,"USB & ESPNetLink","Connector role, the ESPNetLink LTE/GPS dongle (WiFi-modem or USB-Ethernet uplink) and USB-Ethernet adapters.",[badge]);
   const wrap=h("div",{style:"display:flex;flex-direction:column;gap:16px"});p.append(wrap);
   const stEl=h("div",{});
-  const consEl=h("div",{});const consOff=h("div",{class:"empty"},"No dongle console bound — plug an ESPNetLink into the USB connector (host mode) and enable the console below.");
-  const nlEl=h("div",{});const nlOff=h("div",{class:"empty"},"Live LTE / GPS status appears when an ESPNetLink console is bound.");
+  const consEl=h("div",{});const consOff=h("div",{class:"empty"},"No dongle console bound — the console needs USB data on (USB-Ethernet mode, or before the cut) and the console enabled below.");
+  const nlEl=h("div",{});const nlOff=h("div",{class:"empty"},"Live LTE / GPS status appears once the dongle is reachable (over its WiFi AP or the USB link).");
   const DRV={asix:"ASIX",rtl8152:"RTL8152",cdc_ecm:"CDC-ECM",cdc_ncm:"CDC-NCM",rndis:"RNDIS","ncm-dev":"CDC-NCM (device)"};
-  let acmOn=false;
+  const UPL={none:["No uplink",""],wifi:["Wi-Fi (other network)","ok"],espnetlink:["ESPNetLink — WiFi modem","ok"],espnetlink_usb:["ESPNetLink — USB Ethernet","ok"]};
+  const PST={idle:["No USB link (dongle cut or absent — normal when paired)",""],identify:["Identifying…","warn"],read_key:["Reading AP key…","warn"],cut:["Cutting USB data…","warn"],wait_drop:["Waiting for USB drop…","warn"],
+    done:["Paired — cable is power only","ok"],tether:["Dongle locked to USB (usb_mode=ncm)","warn"],foreign:["Not an ESPNetLink / gave up","warn"],ncm_share:["Configuring the dongle (USB class / LTE sharing)…","warn"],ncm_up:["USB-Ethernet uplink up","ok"]};
+  let acmOn=false,nl=null,haveNl=false;
   async function status(){
-    const[u,acm]=await Promise.all([tryGet("/api/usb"),tryGet("/api/usb/acm")]);
+    const[u,acm,e]=await Promise.all([tryGet("/api/usb"),tryGet("/api/usb/acm"),tryGet("/api/espnetlink")]);
     if(!u)return;
-    badge.className="chip "+(u.eth_connected?"ok":u.device_present?"warn":"");
+    nl=e;haveNl=!!e;
+    const onNl=!!(e&&e.on_link);
+    badge.className="chip "+(onNl||u.eth_connected?"ok":u.device_present?"warn":"");
     badge.replaceChildren(h("span",{class:"d"}),
-      u.eth_connected?"Uplink up":u.host_active?(u.device_present?"Device attached":"Host idle"):"Device mode");
+      onNl?(e.uplink==="espnetlink"?"Dongle via WiFi":"Dongle via USB"):u.eth_connected?"Uplink up":u.host_active?(u.device_present?"Device attached":"Host idle"):"Device mode");
     stEl.replaceChildren(kv([
       ["Connector role",u.host_active?"ESP host (OTG)":"Serial / device"],
       ["Device present",u.device_present?"yes":"no"],
+      ["USB device",u.vid&&u.vid!=="0000"?(u.vid+":"+u.pid+(u.vid==="303a"&&u.pid==="4007"?" (ESPNetLink)":"")):"—"],
       ["Ethernet uplink",u.eth_connected?"connected":"—"],
-      ["Driver",DRV[u.driver]||u.driver||"—"],
+      ["Driver",u.eth_connected?(DRV[u.driver]||u.driver||"—"):"—"],
       ["IP",u.ip||"—"],
+      ["VBUS",u.host_active?(u.vbus?"on":"off"):"—"],
       ["Enumerations",u.attaches],
       ["Dongle console",acm?(acm.connected?"connected":"not bound"):"—"]]));
     const on=!!(acm&&acm.connected);
     acmOn=on;
     consEl.style.display=on?"":"none";consOff.style.display=on?"none":"";
-    nlEl.style.display=on?"":"none";nlOff.style.display=on?"none":"";
+    const showNl=onNl||on;
+    nlEl.style.display=showNl?"":"none";nlOff.style.display=showNl?"none":"";
+    renderNl();
   }
-  await status();
+
+  /* ---- ESPNetLink: pairing + uplink state (espnetlink_link) ---- */
+  const nlKv=h("div",{});
+  function renderNl(){
+    if(!haveNl){nlKv.replaceChildren(h("div",{class:"help"},"ESPNetLink support is not in this build."));return;}
+    const e=nl,ps=PST[(e.usb||{}).pair_state]||[(e.usb||{}).pair_state||"—",""],up=UPL[e.uplink]||[e.uplink,""];
+    const d=e.dongle||{},g=e.gps||{};
+    nlKv.replaceChildren(kv([
+      ["Enabled",e.enabled?"yes":"no"],
+      ["Mode",e.mode==="usb_ncm"?"USB Ethernet (NCM)":e.mode==="usb_rndis"?"USB Ethernet (RNDIS)":"WiFi modem (USB = power only)"],
+      ["Uplink",chip(up[0],up[1])],
+      ["Pairing",chip(ps[0],ps[1])],
+      ["Dongle AP",e.ssid||"— (not paired)"],
+      ["Device ID",e.device_id||"—"],
+      ["Dongle address",e.host||"—"],
+      ["USB attached",(e.usb||{}).attached?"yes":"no"],
+      ["LTE",d.valid?(d.lte_connected?chip((d.operator||"connected")+(d.network_type?" · "+d.network_type:"")+(d.rssi_dbm?" · "+d.rssi_dbm+" dBm":""),"ok"):chip("not connected","warn")):"—"],
+      ["GPS (dongle)",d.valid?(d.gps_fix?chip("fix","ok"):chip("no fix","")):"—"],
+      ["GPS (cached fix)",g.valid?(g.satellites+" sats · "+(g.age_ms/1000).toFixed(1)+" s old"):"—"],
+      ["Counters","cuts "+((e.usb||{}).cuts??0)+" · VBUS cycles "+((e.usb||{}).vbus_cycles??0)+" · errors "+((e.usb||{}).errors??0)+" · polls "+(e.polls??0)+" / failed "+(e.failures??0)]]));
+  }
+  async function repair(){
+    if(!await confirmModal("Power-cycle the dongle's USB rail so it re-enumerates and the WiCAN reads its AP key again? The dongle reboots (GPS re-acquires).","Re-pair dongle"))return;
+    try{await api("/api/espnetlink/repair",{method:"POST",body:{}});toast("Re-pair requested","ok");}
+    catch(e){toast("Re-pair failed: "+e.message,"err");}
+  }
+  const pairSsid=h("input",{class:"mono",placeholder:"ESPNetLink_XXXXXX",maxlength:"32"});
+  const pairPass=h("input",{class:"mono",type:"password",placeholder:"AP password (dongle console: wifi_modem -k)",maxlength:"64"});
+  async function manualPair(){
+    if(!pairSsid.value){toast("SSID required","err");return;}
+    try{
+      const r=await api("/api/espnetlink/pair",{method:"POST",body:{ssid:pairSsid.value,password:pairPass.value}});
+      pairPass.value="";
+      if(await confirmModal("Paired (Wi-Fi slot "+r.slot+"). Restart WiCAN now to apply?","Pairing saved")){
+        try{await api("/api/settings/submit",{method:"POST"});}catch{}expectReboot("Applying pairing");}
+    }catch(e){toast("Pair failed: "+e.message,"err");}
+  }
+  const manual=h("details",{},h("summary",{class:"help",style:"cursor:pointer"},"Manual pairing (no USB cable)"),
+    h("div",{class:"frow",style:"margin-top:8px"},h("label",{},"Dongle SSID"),h("div",{class:"ctl"},pairSsid)),
+    h("div",{class:"frow"},h("label",{},"AP password"),h("div",{class:"ctl"},pairPass,
+      h("div",{class:"help"},"Stores the dongle as a trusted fallback Wi-Fi network and sets it as the ESPNetLink. Zero-touch pairing over USB does this automatically."))),
+    h("div",{class:"rowflex",style:"gap:8px;margin-top:6px"},h("button",{class:"btn sm",onclick:manualPair},ic("key"),"Pair")));
 
   /* ---- ESPNetLink structured status (legacy usb_host tab parity):
-     LTE + GPS panels fed by the dongle's own `lte -j` / `gps -p -j`
-     console commands over /api/usb/acm/cmd, legacy cadences (GPS 5 s,
-     LTE every 3rd tick = 15 s), full JSON behind <details>. ---- */
+     LTE + GPS panels. GPS always from the firmware cache (/api/gps —
+     console poll OR the HTTP poll over the dongle's AP/USB); LTE from
+     the dongle health poll, or the `lte -j` console when it is bound. ---- */
   const lteKv=h("div",{}),gpsKv=h("div",{});
   const jsonPre=t=>h("pre",{class:"mono",style:"font-size:11px;line-height:1.5;white-space:pre-wrap;word-break:break-all;max-height:240px;overflow:auto;margin:6px 0 0"},t);
   const lteJson=jsonPre("No LTE data available yet."),gpsJson=jsonPre("No GPS data available yet.");
@@ -2025,6 +2075,14 @@ PAGES.usb=async(view)=>{
       ["SIM",l.sim_status||"—"],
       ["Modem",l.modem_model?(l.modem_model+(l.modem_fw?" · "+l.modem_fw:"")):"—"]]));
   }
+  function renderLteHealth(d){
+    lteKv.replaceChildren(kv([
+      ["Stage",chip(d.lte_connected?"connected":"not connected",d.lte_connected?"ok":"warn")],
+      ["Operator",d.operator||"—"],
+      ["Signal",d.rssi_dbm?d.rssi_dbm+" dBm":"—"],
+      ["Network",d.network_type||"—"],
+      ["USB data",d.usb_data?"on":"off (power only)"]]));
+  }
   function renderGps(g){
     /* /api/gps: contract shape (speed m/s). Also flows to HA as autopid
        gps_* params — this card just mirrors the firmware GPS cache. */
@@ -2035,7 +2093,8 @@ PAGES.usb=async(view)=>{
       ["Speed",g.valid?(g.speed*3.6).toFixed(1)+" km/h":"—"],
       ["Heading",g.valid?(g.heading??0).toFixed(0)+"°":"—"],
       ["Altitude",g.valid?(g.altitude??0).toFixed(0)+" m":"—"],
-      ["Accuracy",g.valid&&g.accuracy?"±"+g.accuracy+" m":"—"]]));
+      ["Accuracy",g.valid&&g.accuracy?"±"+g.accuracy+" m":"—"],
+      ["Age",g.valid?(g.age_ms/1000).toFixed(1)+" s":"—"]]));
   }
   function nlExtract(txt){
     const a=txt.indexOf("{"),b=txt.lastIndexOf("}");
@@ -2048,15 +2107,17 @@ PAGES.usb=async(view)=>{
     return nlExtract(r.response||"");
   }
   async function nlPoll(force){
-    if(nlBusy||!acmOn||conn.state!=="online")return;
+    if(nlBusy||conn.state!=="online")return;
     nlBusy=true;
     try{
-      /* GPS: the firmware already polls the dongle every 5 s and caches
+      /* GPS: the firmware polls the dongle (console or HTTP) and caches
          it — read that (no ACM-lock contention, and it's what HA gets) */
       const g=await tryGet("/api/gps");
       if(g){renderGps(g);gpsJson.textContent=JSON.stringify(g,null,2);}
-      /* LTE: still the raw console (no /api/lte yet), every 3rd tick */
-      if(force||nlTick%3===0){
+      /* LTE: the dongle health poll when the link is up; the raw console
+         (no /api/lte yet) only when a console is bound, every 3rd tick */
+      if(nl&&nl.dongle&&nl.dongle.valid){renderLteHealth(nl.dongle);lteJson.textContent=JSON.stringify(nl.dongle,null,2);}
+      else if(acmOn&&(force||nlTick%3===0)){
         const l=await nlCmd("lte -j");
         if(l){renderLte(l);lteJson.textContent=JSON.stringify(l,null,2);}
       }
@@ -2065,7 +2126,20 @@ PAGES.usb=async(view)=>{
   }
   wrap.append(cardTools("Status","route",
     [h("button",{class:"btn sm gh",onclick:()=>status()},ic("refresh"))],stEl,
-    note("","The USB connector is shared: external serial console, OR ESP host mode (USB-Ethernet adapter / LTE dongle), OR device mode (network over the cable to a PC). Role changes apply after Submit + restart.")));
+    note("","The USB connector is shared: external serial console, OR ESP host mode (ESPNetLink dongle / USB-Ethernet adapter), OR device mode (network over the cable to a PC). Role changes apply after Submit + restart.")));
+  wrap.append(cardTools("ESPNetLink","signal",
+    [h("button",{class:"btn sm",onclick:repair,title:"VBUS cycle: the dongle re-enumerates and its AP key is read again"},ic("refresh"),"Re-pair")],
+    nlKv,
+    note("","WiFi modem (default): the dongle's USB cable carries power only — the WiCAN reads the dongle's AP key over USB once, cuts the data lines (the USB host desenses the dongle's GPS), then joins the dongle's Wi-Fi AP for internet (LTE) and GPS. USB Ethernet (NCM or RNDIS): the data lines stay on and the dongle is a USB-Ethernet uplink presenting the selected class (the WiCAN switches the dongle’s USB class and LTE sharing automatically — the dongle reboots once to apply)."),
+    manual));
+  try{
+    const nlRows=await settingsForm("espnetlink",null,{visible:st=>{
+      if(!st.enabled)return["enabled"];
+      const base=["enabled","mode","auto_pair","ssid","host","gps_poll_s","health_poll_s","cli"];
+      return st.mode==="wifi_modem"?[...base,"cut_retries"]:base;
+    }});
+    wrap.append(cardTools("ESPNetLink Settings","settings",[stagedBadge()],...nlRows));
+  }catch{/* espnetlink_link absent in this build */}
   try{
     const rows=await settingsForm("usb_host_manager",null,{visible:st=>{
       if(!st.enabled)return["enabled"];
@@ -2101,10 +2175,10 @@ PAGES.usb=async(view)=>{
       card("ESPNetLink Console","terminal",consEl,consOff,
         h("div",{style:"border-top:1px solid var(--border);margin:12px 0 4px"}),
         ...acmRows));
-    await status();
-    nlPoll(true);
-    nlTimer=setInterval(nlPoll,5000);
   }catch{/* usb_acm_cli absent in this build */}
+  await status();
+  nlPoll(true);
+  nlTimer=setInterval(nlPoll,5000);
   const t=setInterval(()=>{if(conn.state==="online")status();},4000);
   return()=>{clearInterval(t);if(nlTimer)clearInterval(nlTimer);};
 };
@@ -2686,7 +2760,7 @@ PAGES.allsettings=async(view)=>{
   return null;
 };
 /* ============================================================ BOOT */
-const NICE={wifi_manager:"Wi-Fi",ble_manager:"Bluetooth",mqtt_manager:"MQTT",autopid:"AutoPID",vpn_manager:"VPN",data_logger:"Logger",sleep_manager:"Power saving",event_manager:"Automation rules",can_manager:"CAN bus",j2534_server:"J2534",usb_host_manager:"USB",led_manager:"LED",socket_manager:"Socket servers",bridge_manager:"Bridges",websocket_manager:"WebSocket channels",script_engine:"Scripts",obd_chip:"OBD chip",battery_monitor:"Battery",imu_manager:"Motion (IMU)",rtc_manager:"Clock",mdns_manager:"mDNS",cert_manager:"Certificates",usb_acm_cli:"USB serial console",uds_manager:"UDS",interface_manager:"Radio arbitration",dev_status_manager:"Status flags",external_storage:"SD card",filesystem:"Filesystem",restart_tracker:"Restart tracking",log_manager:"Logging",cmdline_manager:"Console",ha_webhooks:"Home Assistant",mqtt_can:"CAN over MQTT"};
+const NICE={wifi_manager:"Wi-Fi",ble_manager:"Bluetooth",mqtt_manager:"MQTT",autopid:"AutoPID",vpn_manager:"VPN",data_logger:"Logger",sleep_manager:"Power saving",event_manager:"Automation rules",can_manager:"CAN bus",j2534_server:"J2534",usb_host_manager:"USB",led_manager:"LED",socket_manager:"Socket servers",bridge_manager:"Bridges",websocket_manager:"WebSocket channels",script_engine:"Scripts",obd_chip:"OBD chip",battery_monitor:"Battery",imu_manager:"Motion (IMU)",rtc_manager:"Clock",mdns_manager:"mDNS",cert_manager:"Certificates",usb_acm_cli:"USB serial console",espnetlink:"ESPNetLink",uds_manager:"UDS",interface_manager:"Radio arbitration",dev_status_manager:"Status flags",external_storage:"SD card",filesystem:"Filesystem",restart_tracker:"Restart tracking",log_manager:"Logging",cmdline_manager:"Console",ha_webhooks:"Home Assistant",mqtt_can:"CAN over MQTT"};
 const HIDE=new Set(["main_bench"]);
 function niceName(n){return NICE[n]||n.replace(/_manager$/,"").replaceAll("_"," ").replace(/\b\w/g,c=>c.toUpperCase());}
 async function boot(){

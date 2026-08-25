@@ -38,6 +38,7 @@ by the future button/input manager).
 | `wifi_manager_start()` | Radio up per boot-applied settings; `ESP_ERR_INVALID_STATE` if unconfigured; ESP_OK with radio down when mode is `off`. |
 | `wifi_manager_stop()` | Stop reconnect task + radio. |
 | `wifi_manager_is_enabled/is_sta_connected/is_ap_started()` | Status flags (event-bit backed). |
+| `wifi_manager_sta_reconnect()` | Drop a STA association the caller knows is dead (AP rebooted inside the beacon-loss window); the normal selection path re-joins. |
 | `wifi_manager_get_sta_ip(buf,len)` | Current STA IPv4 ("" if none) — caller buffer, no shared statics. |
 | `wifi_manager_get_ap_station_count()` | Associated AP clients. |
 | `wifi_manager_get_sta_dns(...)` | Main/backup DNS as strings ("N/A" fallback). |

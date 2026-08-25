@@ -218,6 +218,7 @@ const char *restart_tracker_source_to_str(restart_tracker_source_t source)
         case RESTART_TRACKER_SOURCE_CONFIG_SERVER: return "config_server";
         case RESTART_TRACKER_SOURCE_SLEEP_MODE:    return "sleep_mode";
         case RESTART_TRACKER_SOURCE_BUTTON:        return "button";
+        case RESTART_TRACKER_SOURCE_PAIRING:       return "pairing";
         default:                                   return "invalid";
     }
 }

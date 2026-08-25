@@ -24,6 +24,12 @@ host-tested parser: `usb_acm_gps_parse`). Two surfaces read the cache
 - `GET /api/gps` — the fix in device-contract field names (speed m/s).
 - `usb_acm_cli_gps_get()` — for C consumers; the web UI's ESPNetLink
   Status card reads `/api/gps` rather than polling the console itself.
+  When the console has no live fix it consults the **fallback provider**
+  (`usb_acm_cli_set_gps_fallback()`, main wires `espnetlink_link_gps_get`)
+  — the WiFi-modem topology (dongle USB data cut, reached over its AP)
+  has no console at all, so `/api/gps` keeps working from the HTTP poll.
+  The parser also accepts the dongle's HTTP `/api/gps` spelling
+  (`latitude`/`longitude`) next to the console's `lat`/`lon`.
 
 Each refresh also fires `usb_acm_cli_set_gps_sink()` — **main** wires it
 to `autopid_publish_external()`, so a fix becomes first-class autopid
@@ -35,6 +41,13 @@ fix is published; a cached AGNSS position is never reported as current.
 
 The console is the attached device's OWN CLI (e.g. the espnetlink dongle's
 `esp>` prompt: `ver`, `lte -s/-r/-o/-i`, `gps`, `speedtest`, …), not raw AT.
+
+**Never bound: `303A:1001`** — an ESP32-S3's ROM/bootloader USB-Serial-JTAG
+is on the pads for ~1.5 s after a power-on (the ESPNetLink's app detaches
+it before its real `303A:4007` composite device enumerates). CherryUSB's
+class match is class-only, so `usbh_cdc_acm_run` filters that VID/PID
+itself: the DTR/RTS line sequence it would otherwise send is exactly what
+resets the chip (2026-08-24).
 
 ## Testing
 

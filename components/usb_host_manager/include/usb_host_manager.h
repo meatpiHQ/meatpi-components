@@ -66,6 +66,9 @@ typedef struct
     char driver[12];       /**< active class ("rtl8152", ...)       */
     char ip[16];           /**< current address ("" when none)      */
     uint32_t attaches;     /**< attach edges since boot             */
+    uint16_t vid;          /**< idVendor of the enumerated device   */
+    uint16_t pid;          /**< idProduct (0 when none / unknown)   */
+    bool vbus_on;          /**< rail state as last driven by us     */
 } usb_host_manager_status_t;
 
 /** Register descriptors (settings/log/events). No hardware access. */
@@ -79,6 +82,16 @@ esp_err_t usb_host_manager_start(void);
 esp_err_t usb_host_manager_stop(void);
 
 esp_err_t usb_host_manager_status(usb_host_manager_status_t *out);
+
+/**
+ * Drive the connector's VBUS rail (USB_OTG_PWR_EN, active high) while
+ * host mode is active — the recovery lever for a dongle that must be
+ * re-enumerated (espnetlink_link's key re-read), also behind the
+ * `usb vbus <0|1>` dev command. The rail has a board pull-up, so the
+ * power-on default is ON; an off→on cycle reboots the attached device.
+ * @return ESP_ERR_INVALID_STATE when the host stack is not up.
+ */
+esp_err_t usb_host_manager_set_vbus(bool on);
 
 /** Optional /api/usb route (§9.1; main wires it). */
 esp_err_t usb_host_manager_register_http(void);

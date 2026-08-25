@@ -20,29 +20,25 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+/**
+ * @file espnetlink_link_migrate.h
+ * @brief "espnetlink" settings migration (pure cJSON; host-tested).
+ */
 #pragma once
 
-#include "usb_eth_host.h"
+#include <stdbool.h>
+#include <stdint.h>
+
+#include "esp_err.h"
+
+#include "cJSON.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-void usb_eth_host_notify_driver_started(usb_eth_host_driver_t driver, const char *ifkey);
-void usb_eth_host_notify_driver_stopped(usb_eth_host_driver_t driver);
-
-/* Called by each driver glue's run() with the enumerated device's
- * idVendor/idProduct (from the class instance's hubport) so policy
- * components can tell an ESPNetLink (303A:4007) from a generic
- * USB-Ethernet adapter without touching CherryUSB. Cleared on stop. */
-void usb_eth_host_note_device_ids(uint16_t vid, uint16_t pid);
-
-/* Called by the netif glue right before it destroys a netif so the cached
- * g_last_usb_eth_netif pointer never outlives the netif. Without this, a
- * WiFi STA got-ip event after a USB detach dereferences the destroyed
- * netif in usb_eth_host_on_sta_got_ip (LoadProhibited — bench-hit
- * 2026-07-30, ESPNetLink full-system GPS test). */
-void usb_eth_host_notify_netif_destroyed(esp_netif_t *netif);
+/** Mutate a stored object from @p from_version to the current schema. */
+esp_err_t espnl_settings_migrate(uint32_t from_version, cJSON *settings);
 
 #ifdef __cplusplus
 }

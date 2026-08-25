@@ -44,7 +44,7 @@
    the LAST registrants (ha_webhooks, data_logger) off the 32-slot
    table — register() ESP_ERR_NO_MEM → degraded every boot. The
    registry is PSRAM .bss, so headroom is effectively free. */
-#define SM_MAX_COMPONENTS 40
+#define SM_MAX_COMPONENTS 48
 #define SM_NAME_MAX       32
 /* SM_ERR_LEN + sm_entry_t live in settings_manager_private.h (shared with
    the boot pass and backup/restore files) */

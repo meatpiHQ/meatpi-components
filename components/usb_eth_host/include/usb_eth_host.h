@@ -110,6 +110,10 @@ const char *usb_eth_host_driver_to_str(usb_eth_host_driver_t driver);
 bool usb_eth_host_get_active_driver(usb_eth_host_driver_t *driver);
 bool usb_eth_host_get_active_ifkey(char *ifkey, size_t ifkey_len);
 
+// USB idVendor/idProduct of the device behind the active driver (e.g. the
+// ESPNetLink dongle is 0x303A:0x4007). False when no driver is active.
+bool usb_eth_host_get_active_device_ids(uint16_t *vid, uint16_t *pid);
+
 // Reports the RNDIS media/carrier state as last seen by the class driver.
 // Returns ESP_ERR_NOT_FOUND if no RNDIS device is attached.
 esp_err_t usb_eth_host_rndis_get_link(bool *connected);

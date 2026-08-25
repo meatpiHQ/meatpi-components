@@ -57,6 +57,14 @@ esp_err_t api_http_init(void);
 esp_err_t api_http_start(void);
 esp_err_t api_http_stop(void);
 
+/**
+ * A component that persisted settings OUTSIDE the PUT transport (e.g. a
+ * pairing action that writes two descriptors at once) tells the transport
+ * a reboot is owed, so the next POST /api/settings/submit restarts the
+ * device exactly like a PUT batch would (standard §4.2 reboot-to-apply).
+ */
+void api_http_note_settings_changed(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -76,6 +76,8 @@ static const char *TAG = "usb_acm_cli";
  * when connected → a parsed cache read by /api/gps, the web UI, and the
  * autopid GPS publisher (via the sink). A valid fix older than
  * GPS_MAX_AGE_MS is reported as no-fix (the poll went silent). */
+#define ACM_ESP32_VID      0x303A
+#define ACM_ESP32_JTAG_PID 0x1001
 #define ACM_GPS_POLL_MS   5000
 #define ACM_GPS_MAX_AGE_MS 20000
 #define ACM_GPS_STACK     4096
@@ -242,6 +244,19 @@ static void rx_task(void *arg)
 
 void usbh_cdc_acm_run(struct usbh_cdc_acm *cdc_acm_class)
 {
+    /* An ESP32-S3's ROM/bootloader USB-Serial-JTAG (303A:1001) is on the
+     * pads for ~1.5 s after a power-on — the ESPNetLink's app detaches
+     * it before its real composite device (303A:4007) enumerates. Never
+     * bind it: the DTR/RTS line sequence below is exactly what resets
+     * the chip (espnetlink-fw docs, 2026-08-23). */
+    if (cdc_acm_class->hport != NULL &&
+        cdc_acm_class->hport->device_desc.idVendor == ACM_ESP32_VID &&
+        cdc_acm_class->hport->device_desc.idProduct == ACM_ESP32_JTAG_PID)
+    {
+        ESP_LOGD(TAG, "ignoring ESP32 serial-JTAG (boot window)");
+        return;
+    }
+
     /* no xStreamBufferReset here: the RX task may be mid-send (it is the
      * buffer's one writer) — usb_acm_cli_command() drains stale bytes
      * reader-side before every request instead */
@@ -418,6 +433,8 @@ static esp_err_t ep_unsubscribe(QueueHandle_t q)
 
 /* ---- GPS poll + cache ------------------------------------------------------- */
 
+static usb_acm_gps_source_t s_gps_fallback;
+
 void usb_acm_cli_set_gps_sink(usb_acm_gps_sink_t sink)
 {
     s_gps_sink = sink;
@@ -445,7 +462,24 @@ esp_err_t usb_acm_cli_gps_get(usb_acm_gps_t *out)
         out->age_ms = out->valid ? age : 0;
     }
 
+    /* no live console fix: ask the other GPS source (espnetlink_link's
+     * HTTP poll — the WiFi-modem topology has no console at all) */
+    if (!out->valid && s_gps_fallback != NULL)
+    {
+        usb_acm_gps_t alt;
+
+        if (s_gps_fallback(&alt) == ESP_OK && alt.valid)
+        {
+            *out = alt;
+        }
+    }
+
     return ESP_OK;
+}
+
+void usb_acm_cli_set_gps_fallback(usb_acm_gps_source_t source)
+{
+    s_gps_fallback = source;
 }
 
 static void gps_task(void *arg)

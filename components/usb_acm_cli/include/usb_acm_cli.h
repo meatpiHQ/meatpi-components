@@ -76,6 +76,16 @@ typedef void (*usb_acm_gps_sink_t)(const usb_acm_gps_t *fix);
 void usb_acm_cli_set_gps_sink(usb_acm_gps_sink_t sink);
 
 /**
+ * Secondary fix provider consulted by usb_acm_cli_gps_get() (and so by
+ * `GET /api/gps`) whenever the console cache has no live fix — main
+ * wires espnetlink_link's HTTP-polled cache here so the WiFi-modem
+ * topology (USB data cut, no console) serves the same route. Same
+ * getter contract as usb_acm_cli_gps_get(). NULL unregisters.
+ */
+typedef esp_err_t (*usb_acm_gps_source_t)(usb_acm_gps_t *out);
+void usb_acm_cli_set_gps_fallback(usb_acm_gps_source_t source);
+
+/**
  * Send @p line (a trailing CR is appended if missing) to the ACM console
  * and collect the response until the dongle's `esp>` prompt, or 2 s of
  * quiet (prompt-less output), or @p timeout_ms elapses. Serialized.

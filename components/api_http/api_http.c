@@ -165,6 +165,11 @@ void api_settings_note_changed(void)
     s_batch_changed = true;
 }
 
+void api_http_note_settings_changed(void)
+{
+    api_settings_note_changed();
+}
+
 bool api_settings_take_changed(void)
 {
     bool was = s_batch_changed;

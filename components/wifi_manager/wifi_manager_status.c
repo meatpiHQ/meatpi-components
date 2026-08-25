@@ -53,6 +53,19 @@ bool wifi_manager_is_ap_started(void)
     return wm_status_flag(2);
 }
 
+esp_err_t wifi_manager_sta_reconnect(void)
+{
+    if (!wifi_manager_is_sta_connected())
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    /* a self-initiated disconnect (reason ASSOC_LEAVE) is not auth
+     * related: no ban, the reconnect task re-selects on its next lap */
+    ESP_LOGI("wifi_manager", "STA re-join requested by a consumer");
+    return esp_wifi_disconnect();
+}
+
 esp_err_t wifi_manager_get_sta_ip(char *buf, size_t buf_len)
 {
     if (buf == NULL || buf_len == 0)

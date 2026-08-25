@@ -85,6 +85,11 @@ void usbh_cdc_ecm_run(struct usbh_cdc_ecm *cdc_ecm_class)
                              usb_eth_host_get_netif_config(),
                              usb_eth_cdc_ecm_transmit);
 
+    if (cdc_ecm_class->hport != NULL)
+    {
+        usb_eth_host_note_device_ids(cdc_ecm_class->hport->device_desc.idVendor,
+                                     cdc_ecm_class->hport->device_desc.idProduct);
+    }
     usb_eth_host_notify_driver_started(USB_ETH_HOST_DRIVER_CDC_ECM, "u0");
 
     usb_osal_thread_create("usbh_cdc_ecm_rx", 2048, CONFIG_USBHOST_PSC_PRIO + 1, usbh_cdc_ecm_rx_thread, NULL);

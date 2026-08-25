@@ -82,6 +82,7 @@ typedef enum
     RESTART_TRACKER_SOURCE_CONFIG_SERVER,
     RESTART_TRACKER_SOURCE_SLEEP_MODE,
     RESTART_TRACKER_SOURCE_BUTTON,   /* config-mode timeout (2026-07-19) */
+    RESTART_TRACKER_SOURCE_PAIRING,  /* espnetlink_link zero-touch pairing */
 } restart_tracker_source_t;
 
 /** One boot in the history ring. */

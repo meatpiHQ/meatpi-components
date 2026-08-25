@@ -109,8 +109,12 @@ bool usb_acm_gps_parse(const char *json, usb_acm_gps_t *out)
 
     double d;
 
-    if (!find_num(obj, "\"lat\":", &out->latitude) ||
-        !find_num(obj, "\"lon\":", &out->longitude))
+    /* console `gps -p -j` says lat/lon; the dongle's HTTP `/api/gps`
+     * (espnetlink_link, WiFi-modem topology) spells latitude/longitude */
+    if ((!find_num(obj, "\"lat\":", &out->latitude) &&
+         !find_num(obj, "\"latitude\":", &out->latitude)) ||
+        (!find_num(obj, "\"lon\":", &out->longitude) &&
+         !find_num(obj, "\"longitude\":", &out->longitude)))
     {
         return false; /* a "valid" fix without coordinates is unusable */
     }

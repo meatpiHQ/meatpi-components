@@ -96,6 +96,11 @@ void usbh_rtl8152_run(struct usbh_rtl8152 *rtl8152_class)
                              usb_eth_host_get_netif_config(),
                              usb_eth_rtl8152_transmit);
 
+    if (rtl8152_class->hport != NULL)
+    {
+        usb_eth_host_note_device_ids(rtl8152_class->hport->device_desc.idVendor,
+                                     rtl8152_class->hport->device_desc.idProduct);
+    }
     usb_eth_host_notify_driver_started(USB_ETH_HOST_DRIVER_RTL8152, "u4");
 
     usb_osal_thread_create("usbh_rtl8152_rx", 2048, CONFIG_USBHOST_PSC_PRIO + 1, usbh_rtl8152_rx_thread, NULL);

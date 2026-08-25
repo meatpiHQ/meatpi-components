@@ -85,6 +85,11 @@ void usbh_rndis_run(struct usbh_rndis *rndis_class)
                              usb_eth_host_get_netif_config(),
                              usb_eth_rndis_transmit);
 
+    if (rndis_class->hport != NULL)
+    {
+        usb_eth_host_note_device_ids(rndis_class->hport->device_desc.idVendor,
+                                     rndis_class->hport->device_desc.idProduct);
+    }
     usb_eth_host_notify_driver_started(USB_ETH_HOST_DRIVER_RNDIS, "u2");
 
     usb_osal_thread_create("usbh_rndis_rx", 2048, CONFIG_USBHOST_PSC_PRIO + 1, usbh_rndis_rx_thread, NULL);

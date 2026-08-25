@@ -89,16 +89,24 @@ static void on_eth_ip_up(void)
                  IP2STR(&info.ip));
     }
 
+    if (!usb_eth_host_get_active_device_ids(&s_status.vid, &s_status.pid))
+    {
+        s_status.vid = 0;
+        s_status.pid = 0;
+    }
+
     dev_status_manager_set(DEV_STATUS_BIT_ETH_CONNECTED);
     uhm_events_eth(true, s_status.ip);
-    ESP_LOGI(TAG, "wired uplink up: %s via %s", s_status.ip,
-             s_status.driver);
+    ESP_LOGI(TAG, "wired uplink up: %s via %s (%04x:%04x)", s_status.ip,
+             s_status.driver, s_status.vid, s_status.pid);
 }
 
 static void on_eth_ip_lost(void)
 {
     s_status.eth_connected = false;
     s_status.ip[0] = '\0';
+    s_status.vid = 0;
+    s_status.pid = 0;
     dev_status_manager_clear(DEV_STATUS_BIT_ETH_CONNECTED);
     uhm_events_eth(false, "");
     ESP_LOGW(TAG, "wired uplink lost");
@@ -133,6 +141,7 @@ static void host_up(void)
     }
 
     s_status.host_active = true;
+    s_status.vbus_on = true; /* usb_eth_host_start() ensured the rail on */
     s_status.attaches++;
     uhm_events_device(true);
     ESP_LOGI(TAG, "device attached; host mode on");
@@ -154,6 +163,7 @@ static void host_down(void)
 
     gpio_set_level(UHM_MODE_GPIO, 0); /* connector -> CH342 */
     s_status.host_active = false;
+    s_status.vbus_on = false;
     s_status.driver[0] = '\0';
     uhm_events_device(false);
     ESP_LOGI(TAG, "device detached; mux back to CH342");
@@ -343,5 +353,21 @@ esp_err_t usb_host_manager_status(usb_host_manager_status_t *out)
     }
 
     *out = s_status;
+    return ESP_OK;
+}
+
+esp_err_t usb_host_manager_set_vbus(bool on)
+{
+    if (!s_status.host_active)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    /* same pin mode usb_eth_host configured it with (open-drain, board
+     * pull-up): 1 = released = rail ON, 0 = pulled low = rail OFF */
+    gpio_set_direction(UHM_VBUS_GPIO, GPIO_MODE_OUTPUT_OD);
+    gpio_set_level(UHM_VBUS_GPIO, on ? 1 : 0);
+    s_status.vbus_on = on;
+    ESP_LOGI(TAG, "vbus %s", on ? "on" : "off");
     return ESP_OK;
 }

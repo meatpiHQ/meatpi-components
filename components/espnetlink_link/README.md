@@ -79,6 +79,20 @@ than the driver's beacon-loss window, so the STA keeps a zombie
 association the dongle has forgotten (`wifi_manager_sta_reconnect()`,
 bench 2026-08-24) — polls are held 15 s meanwhile.
 
+## Fresh devices (out of the box)
+
+A fresh WiCAN boots with `wifi_manager.mode=ap` and no STA networks; the
+pairing store flips it to `apsta` and the one reboot after the cut
+applies it. The user is typically joined to the WiCAN's AP with a phone
+while this happens — since 2026-08-31 `wifi_manager` lets the first STA
+association of a boot through despite that client (it used to pause
+indefinitely while anyone sat on the AP, so a fresh device never joined
+the dongle — field-hit). A fresh dongle provisions its per-device AP
+password on first boot (one dongle reboot before USB starts), so the key
+the WiCAN reads is always the final one. Bench:
+`tools/testbench/wifi/espnetlink_fresh_bench.py` (erase + flash both,
+cold boot, Pi as the user's phone on the WiCAN AP).
+
 ## `mode=usb_ncm` / `mode=usb_rndis` (the data lines stay on)
 
 The dongle is a USB-Ethernet uplink exactly like before (`usb_host_manager`

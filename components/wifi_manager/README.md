@@ -138,3 +138,16 @@ so a PSRAM stack is compliant with §2.
 ## CLI
 
 `wifi_manager_register_cli()` (main, CLI builds) registers the `wifi [scan]` command with cmdline_manager (`wifi_manager_cli.c`).
+
+## AP-client pause policy (2026-08-31)
+
+While a client sits on the WiCAN's own AP, a STA (re)connect that hops
+the radio channel knocks that client off, so the reconnect loop defers.
+Two escapes exist (`wm_sta_pause_for_ap_clients`, host-tested): the
+**first association of a boot always goes ahead** — a user configuring
+a fresh device over its AP (the ESPNetLink zero-touch pairing story) was
+otherwise never getting an uplink, field-hit on a fresh WiCAN Pro — and
+the pause is **bounded** to `WM_AP_CLIENT_MAX_PAUSES` × 10 s (60 s), so
+an uplink outage never lasts as long as a phone stays parked on the AP.
+The client sees at most one channel hop.
+

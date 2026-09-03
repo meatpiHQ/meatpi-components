@@ -232,6 +232,20 @@ bool wm_select_is_banned(const wm_select_state_t *st, const char *ssid,
 #define WM_BACKOFF_MAX_SKIP_LOOPS 5 /* x 5 s = 30 s cadence cap */
 int wm_backoff_skip_loops(int32_t retry_count);
 
+/* AP-client pause policy (2026-08-31): while a client sits on our AP a
+ * STA (re)connect may hop the radio's channel and knock it off, so the
+ * reconnect loop defers. Two escapes, or the device never gets its
+ * uplink: the FIRST association of a boot always goes ahead (a user who
+ * is on our AP precisely to configure the device — the ESPNetLink
+ * pairing story — would otherwise wait forever: field-hit on a fresh
+ * WiCAN Pro), and the pause is BOUNDED (max_pauses x the pause period)
+ * so an outage cannot last as long as a client stays parked on the AP.
+ * @return true = defer this loop. */
+#define WM_AP_CLIENT_MAX_PAUSES 6 /* x 10 s = 60 s, then one attempt */
+bool wm_sta_pause_for_ap_clients(uint16_t ap_clients, bool ever_connected,
+                                 uint32_t pauses_so_far,
+                                 uint32_t max_pauses);
+
 /* ---- runtime interface suspension (wifi_manager_suspend.c) -----------------
  * EPHEMERAL per-interface suspension driven by interface_manager's policy
  * (BLE/WiFi arbitration). Settings untouched; a reboot resets. */

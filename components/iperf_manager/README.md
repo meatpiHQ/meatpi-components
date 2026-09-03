@@ -47,6 +47,7 @@ iperf -a        abort
 | DUT→PC TCP over **USB-NCM** (CDC-NCM, FS PHY) | TX **5.2** / RX **4.7 Mbit/s** (PC-side agrees) |
 | DUT↔Pi TCP over **USB-Ethernet** (ASIX, wired to Pi eth0) | TX **6.5** / RX **7.2 Mbit/s** (2026-07-13; rock-steady intervals, both sides agree) |
 | DUT→Pi UDP `-b 20` over USB-Ethernet | **6.8 Mbit/s** sent, **0% loss**, jitter 1.7 ms — the FS-USB saturation point |
+| Re-measured 2026-08-26 (AX88772B → cdc_ncm adapter on Pi `eth1`, 10.42.2.x, espnetlink build v4.51p_beta) | TCP TX **6.45** / RX **7.71 Mbit/s**, UDP `-b 20` **7.00 Mbit/s** sent, **0% loss**, jitter 1.68 ms — no drift from the 07-13 baseline |
 | DUT→Pi TCP over WiFi STA | **16.2 Mbit/s** avg (19 steady after ramp) |
 | Pi→DUT TCP over WiFi STA | **12.6 Mbit/s** avg (both sides agree; one mid-run RF dip to 4) |
 | DUT→Pi UDP `-b 20` over WiFi | **14.8 Mbit/s** sent; Pi reports loss/jitter per interval (the UDP protocol works against real iperf2) |

@@ -663,6 +663,18 @@ esp_err_t espnetlink_link_start(void)
         return ESP_ERR_NO_MEM;
     }
 
+    {
+        usb_host_manager_status_t us;
+
+        usb_host_manager_status(&us);
+        if (!us.enabled)
+        {
+            ESP_LOGW(TAG, "usb_host_manager is disabled: an ESPNetLink on "
+                     "the USB connector will never be detected or paired "
+                     "(enable it on the USB page)");
+        }
+    }
+
     ESP_LOGI(TAG, "started (%s, auto_pair=%d, ssid '%s', gps %d s, "
              "health %d s)",
              espnl_core_mode_str((espnl_core_mode_t)cfg->mode),

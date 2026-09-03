@@ -44,7 +44,7 @@ simply stopped/destroyed on an unplug or the ESPNetLink's data-line cut),
 
 ## Settings (`"usb_host_manager"`, version 1)
 
-`enabled` (false), `role` (`host`|`device`, host), `device_class`
+`enabled` (**true** since 2026-08-31 — zero-touch ESPNetLink; the mux only leaves the CH342 on an attached device), `role` (`host`|`device`, host), `device_class`
 (`ncm`|`rndis`|`cdc`, ncm), `ip_mode` (`dhcp`|`static`), `static_ip`,
 `static_netmask` (255.255.255.0), `static_gw`, `prefer_usb_route` (false),
 `cli` (true). Kconfig: `WICAN_USB_ID_GPIO` (39), `WICAN_USB_MODE_GPIO` (11),

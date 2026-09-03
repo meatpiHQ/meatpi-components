@@ -322,6 +322,22 @@ void test_netmask_valid(void)
     TEST_ASSERT_FALSE(wm_netmask_valid(0x00FFFF00u));  /* not MSB   */
 }
 
+void test_ap_client_pause_policy(void)
+{
+    /* no client on the AP: never pause */
+    TEST_ASSERT_FALSE(wm_sta_pause_for_ap_clients(0, true, 0, 6));
+    TEST_ASSERT_FALSE(wm_sta_pause_for_ap_clients(0, false, 99, 6));
+    /* a client but no association yet this boot (fresh device being
+     * configured over its own AP): connect right away */
+    TEST_ASSERT_FALSE(wm_sta_pause_for_ap_clients(1, false, 0, 6));
+    TEST_ASSERT_FALSE(wm_sta_pause_for_ap_clients(3, false, 0, 6));
+    /* reconnect with a client parked on the AP: defer, but bounded */
+    TEST_ASSERT_TRUE(wm_sta_pause_for_ap_clients(1, true, 0, 6));
+    TEST_ASSERT_TRUE(wm_sta_pause_for_ap_clients(1, true, 5, 6));
+    TEST_ASSERT_FALSE(wm_sta_pause_for_ap_clients(1, true, 6, 6));
+    TEST_ASSERT_FALSE(wm_sta_pause_for_ap_clients(2, true, 7, 6));
+}
+
 void test_backoff_curve(void)
 {
     /* first two attempts stay on the 5 s cadence (candidate walk) */

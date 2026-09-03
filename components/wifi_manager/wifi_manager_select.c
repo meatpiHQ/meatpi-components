@@ -347,6 +347,22 @@ int wm_select_better(wm_select_state_t *st, const wm_network_t *cand,
     return -1;
 }
 
+bool wm_sta_pause_for_ap_clients(uint16_t ap_clients, bool ever_connected,
+                                 uint32_t pauses_so_far,
+                                 uint32_t max_pauses)
+{
+    if (ap_clients == 0)
+    {
+        return false;               /* nobody to protect                */
+    }
+    if (!ever_connected)
+    {
+        return false;               /* first uplink of the boot: go     */
+    }
+
+    return pauses_so_far < max_pauses;
+}
+
 int wm_backoff_skip_loops(int32_t retry_count)
 {
     if (retry_count <= 2)

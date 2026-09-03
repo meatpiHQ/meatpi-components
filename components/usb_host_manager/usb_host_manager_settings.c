@@ -38,7 +38,13 @@
 
 static const settings_field_t FIELDS[] =
 {
-    SETTINGS_BOOL("enabled", false),
+    /* Default TRUE since 2026-08-31: a fresh WiCAN Pro must pair with an
+     * ESPNetLink with zero user input (integration contract §6), and with
+     * host mode off the dongle is never even enumerated — field-hit on an
+     * out-of-the-box unit. Safe as a default: in the host role the mux
+     * only leaves the CH342 when the OTG ID pin reports an attached
+     * DEVICE, so a plain PC cable (console/flash) is untouched. */
+    SETTINGS_BOOL("enabled", true),
     /* When enabled, which USB stack the connector's ESP-OTG runs.
      * `host`   = CherryUSB host (USB-Ethernet adapters, espnetlink — today).
      * `device` = CherryUSB DEVICE — WiCAN presents itself to the PC; the

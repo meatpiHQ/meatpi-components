@@ -441,6 +441,7 @@ static bool reason_is_auth_related(uint8_t reason)
 
 /* roam-to-preferred bookkeeping (reconnect task + got-ip handler) */
 static volatile int s_connected_idx = -1; /* config index we're on      */
+static volatile bool s_sta_ever_connected;  /* an association this boot   */
 static uint32_t     s_last_roam_ms;
 
 /* ---- network-trust admission gate (meatpi 2026-07-08) ---------------------
@@ -554,6 +555,7 @@ static void on_sta_got_ip(const ip_event_got_ip_t *event)
 
     s_status.sta_connected = true;
     s_status.sta_retry_count = 0;
+    s_sta_ever_connected = true;
     s_connect_started_ms = 0; /* attempt concluded */
 
     /* which candidate did we land on? (drives roam-to-preferred) */
@@ -833,6 +835,7 @@ static void reconnect_task(void *arg)
     const wm_config_t *cfg = wm_settings_config();
     int cooldown_loops = 0;
     int backoff_loops = 0;
+    uint32_t ap_pauses = 0;   /* consecutive AP-client deferrals        */
 
     (void)arg;
     ESP_LOGD(TAG, "reconnect task up");
@@ -917,16 +920,30 @@ static void reconnect_task(void *arg)
             continue;
         }
 
-        /* don't yank the radio's channel while someone is on our AP */
-        if (s_status.ap_station_count > 0)
+        /* don't yank the radio's channel while someone is on our AP —
+         * except for the first association of the boot, and never for
+         * longer than WM_AP_CLIENT_MAX_PAUSES (wm_sta_pause_for_ap_clients) */
+        if (wm_sta_pause_for_ap_clients(s_status.ap_station_count,
+                                        s_sta_ever_connected, ap_pauses,
+                                        WM_AP_CLIENT_MAX_PAUSES))
         {
-            ESP_LOGD(TAG, "AP has %u clients; pausing STA reconnect",
-                     s_status.ap_station_count);
+            ap_pauses++;
+            ESP_LOGD(TAG, "AP has %u clients; pausing STA reconnect (%lu)",
+                     s_status.ap_station_count, (unsigned long)ap_pauses);
             xEventGroupWaitBits(s_events, WM_BIT_STOP_REQ, pdFALSE, pdFALSE,
                                 pdMS_TO_TICKS(WM_AP_CLIENT_PAUSE_MS -
                                               WM_RECONNECT_PERIOD_MS));
             continue;
         }
+        if (s_status.ap_station_count > 0)
+        {
+            ESP_LOGI(TAG, "AP has %u clients but %s: connecting anyway "
+                     "(they may see one channel hop)",
+                     s_status.ap_station_count,
+                     s_sta_ever_connected ? "the pause budget is spent"
+                                          : "no STA session yet this boot");
+        }
+        ap_pauses = 0;
 
         if (cfg->sta_max_retry >= 0 &&
             s_status.sta_retry_count >= cfg->sta_max_retry)
@@ -1310,6 +1327,7 @@ esp_err_t wifi_manager_stop(void)
     s_status.ap_started = false;
     s_status.ap_station_count = 0;
     s_status.sta_retry_count = 0;
+    s_sta_ever_connected = false; /* a restart is a fresh session */
 
     xSemaphoreTake(s_lock, portMAX_DELAY);
     s_status.sta_ip[0] = '\0';

@@ -28,7 +28,7 @@
  * Model (ARCHITECTURE "the one pattern"): can_manager owns the ONE
  * physical CAN peripheral through a single shared `can_core` handle;
  * every consumer REGISTERS into it instead of touching the driver:
- *   - AT-engine clients (per-engine filter/mask — add-on packs),
+ *   - registered bus clients with their own filter/mask (add-on jacks),
  *   - task-owned RX queues (drop-oldest fan-out) via
  *     can_manager_subscribe_queue(),
  *   - plain TX via can_manager_send().

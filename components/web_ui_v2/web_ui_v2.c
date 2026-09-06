@@ -40,6 +40,9 @@ static const char *TAG = "web_ui_v2";
 
 extern const uint8_t index_gz_start[] asm("_binary_index_html_gz_start");
 extern const uint8_t index_gz_end[]   asm("_binary_index_html_gz_end");
+/* the Scripts page chunk (web/scripts.js), fetched on first use */
+extern const uint8_t scripts_gz_start[] asm("_binary_scripts_js_gz_start");
+extern const uint8_t scripts_gz_end[]   asm("_binary_scripts_js_gz_end");
 
 static const http_asset_t ASSETS[] =
 {
@@ -49,6 +52,20 @@ static const http_asset_t ASSETS[] =
     { .uri = "/index.html", .content_type = "text/html",
       .data_start = index_gz_start, .data_end = index_gz_end,
       .content_encoding = "gzip" },
+    /* On-demand page chunks (2026-09-07): heavier, rarely opened pages ship
+     * as their own gzipped blobs the app loads the first time they open,
+     * so the main page stays small. */
+    { .uri = "/ui/scripts.js", .content_type = "application/javascript",
+      .data_start = scripts_gz_start, .data_end = scripts_gz_end,
+      .content_encoding = "gzip" },
+    /* Optional UI extras the page installs on demand (2026-09-06): the
+     * dashboard's chart library (uPlot, ~50 KB) is uploaded through
+     * /api/fs/upload into <store>/cache/www/ and served from here with the
+     * catch-all's MIME inference + ETag caching. Internal flash first; the
+     * SD card is the fallback when flash is short. Nothing is embedded in
+     * the firmware for it, and anything under cache/ is re-creatable. */
+    { .uri = "/cache/*",   .fs_path = "/data/cache" },
+    { .uri = "/sdcache/*", .fs_path = "/sd/cache" },
     { 0 }
 };
 
@@ -58,8 +75,9 @@ esp_err_t web_ui_v2_register(void)
 
     if (err == ESP_OK)
     {
-        ESP_LOGI(TAG, "v2 web UI registered (%u bytes gzipped)",
-                 (unsigned)(index_gz_end - index_gz_start));
+        ESP_LOGI(TAG, "v2 web UI registered (%u bytes gzipped + %u chunk)",
+                 (unsigned)(index_gz_end - index_gz_start),
+                 (unsigned)(scripts_gz_end - scripts_gz_start));
     }
     return err;
 }

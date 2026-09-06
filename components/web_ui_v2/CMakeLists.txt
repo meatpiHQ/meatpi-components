@@ -6,8 +6,9 @@ set(srcs "web_ui_v2.c")
 set(embeds "")
 
 if(CONFIG_WICAN_WEBUI_V2)
-    # Pre-gzip index.html into the build dir, then embed the .gz. Portable:
-    # uses the IDF Python (no external gzip binary needed on Windows).
+    # Minify (rjsmin/rcssmin, vendored under tools/) and pre-gzip index.html
+    # into the build dir, then embed the .gz. Portable: uses the IDF Python
+    # (no node, no external gzip binary needed on Windows).
     idf_build_get_property(python PYTHON)
     set(src_html "${CMAKE_CURRENT_LIST_DIR}/web/index.html")
     set(gz_html  "${CMAKE_CURRENT_BINARY_DIR}/index.html.gz")
@@ -16,10 +17,25 @@ if(CONFIG_WICAN_WEBUI_V2)
         COMMAND "${python}" "${CMAKE_CURRENT_LIST_DIR}/gzip_asset.py"
                 "${src_html}" "${gz_html}"
         DEPENDS "${src_html}" "${CMAKE_CURRENT_LIST_DIR}/gzip_asset.py"
-        COMMENT "Gzipping web_ui_v2 index.html for embedding"
+                "${CMAKE_CURRENT_LIST_DIR}/tools/rjsmin.py"
+                "${CMAKE_CURRENT_LIST_DIR}/tools/rcssmin.py"
+        COMMENT "Minifying + gzipping web_ui_v2 index.html for embedding"
         VERBATIM)
-    add_custom_target(web_ui_v2_gz DEPENDS "${gz_html}")
-    set(embeds "${gz_html}")
+    # On-demand page chunks (2026-09-07): the Scripts page ships as its own
+    # minified + gzipped blob, fetched from /ui/scripts.js the first time
+    # the page opens, so the main page stays small.
+    set(src_js "${CMAKE_CURRENT_LIST_DIR}/web/scripts.js")
+    set(gz_js  "${CMAKE_CURRENT_BINARY_DIR}/scripts.js.gz")
+    add_custom_command(
+        OUTPUT "${gz_js}"
+        COMMAND "${python}" "${CMAKE_CURRENT_LIST_DIR}/gzip_asset.py"
+                "${src_js}" "${gz_js}"
+        DEPENDS "${src_js}" "${CMAKE_CURRENT_LIST_DIR}/gzip_asset.py"
+                "${CMAKE_CURRENT_LIST_DIR}/tools/rjsmin.py"
+        COMMENT "Minifying + gzipping web_ui_v2 scripts.js chunk for embedding"
+        VERBATIM)
+    add_custom_target(web_ui_v2_gz DEPENDS "${gz_html}" "${gz_js}")
+    set(embeds "${gz_html}" "${gz_js}")
 endif()
 
 idf_component_register(

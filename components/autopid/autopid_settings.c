@@ -46,23 +46,22 @@ static const settings_field_t FIELDS[] =
     SETTINGS_STR("std_init", AP_INIT_LEN - 1, ""),
     SETTINGS_STR("custom_init", AP_INIT_LEN - 1, ""),
     SETTINGS_STR("specific_init", AP_INIT_LEN - 1, ""),
-    SETTINGS_STR("std_protocol", 7, "6"),
+    /* ISO 15765-4 CAN only (the MIC is a CAN chip): 6 = 11-bit 500k,
+     * 7 = 29-bit 500k, 8 = 11-bit 250k, 9 = 29-bit 250k, 0 = chip auto.
+     * An enum (meatpi 2026-09-06) so every client offers a list. */
+    SETTINGS_STR_ENUM("std_protocol", "0,6,7,8,9", "6"),
     /* UI display label only: the name of the selected vehicle profile.
      * Persisted + returned by GET so the app can show which profile is
      * configured; intentionally NOT read in on_apply — the actual PID
      * tables come from /data/autopid/config.json (see autopid_config.c),
      * PUT via /api/autopid/config, not derived from this name. */
     SETTINGS_STR("vehicle", 63, ""),
-    SETTINGS_INT("pause_below_mv", 0, 30000, 0), /* 0 = never pause      */
+    SETTINGS_INT("pause_below_mv", 0, 14500, 0), /* 0 = never pause      */
     /* legacy disable_pid_requests parity: with pause_below_mv unset,
        pause requests below the SLEEP voltage (engine-off signal) so
        polling can never hold the ECU awake on a parked car */
     SETTINGS_BOOL("pause_follow_sleep", true),
     SETTINGS_STR_ENUM("pause_mode", "all,requests_only", "requests_only"),
-    /* meatpi 2026-07-07: OBD transport - the MIC chip or an alternate
-     * AT-engine backend on the shared native-CAN bus (registered by an
-     * add-on pack; falls back to obd_chip when absent) */
-    SETTINGS_STR_ENUM("backend", "obd_chip,elm327", "obd_chip"),
     SETTINGS_INT("min_event_interval_ms", 10, 600000, 1000),
     SETTINGS_BOOL("cli", true),
     /* DTC scan/report/clear (v3, TASK_dtc.md §6) — BOTH gates default
@@ -98,17 +97,11 @@ static uint32_t s_min_event_interval_ms = 1000;
 static int   s_pause_below_mv;
 static bool  s_pause_follow_sleep;
 static bool  s_pause_all;                 /* pause_mode == "all"        */
-static bool  s_backend_elm;
 static bool  s_configured;
 
 bool ap_settings_is_configured(void)
 {
     return s_configured;
-}
-
-bool ap_settings_backend_elm(void)
-{
-    return s_backend_elm;
 }
 
 int ap_settings_pause_below_mv(void)
@@ -200,10 +193,6 @@ static esp_err_t on_apply(const cJSON *settings)
     copy_setting(mode, sizeof(mode), settings, "pause_mode");
     s_pause_all = (strcmp(mode, "all") == 0);
 
-    v = cJSON_GetObjectItemCaseSensitive(settings, "backend");
-    s_backend_elm = (cJSON_IsString(v) && v->valuestring != NULL &&
-                     strcmp(v->valuestring, "elm327") == 0);
-
     ap_dtc_apply_settings(settings); /* dtc_* knobs (TASK_dtc.md §6) */
 
     /* CLI ownership: settings-gated self-registration (Standard §6b) */
@@ -223,10 +212,46 @@ static esp_err_t on_apply(const cJSON *settings)
 
 static esp_err_t ap_settings_migrate(uint32_t from_version, cJSON *settings)
 {
-    (void)from_version; /* v1->v2 +backend, v2->v3 +dtc_*,
-                           v3->v4 +dtc_protocol/uds addr/mask,
-                           v4->v5 +dtc_freeze; defaults fill in */
-    (void)settings;
+    /* v1->v2 +backend, v2->v3 +dtc_*, v3->v4 +dtc_protocol/uds addr/mask,
+       v4->v5 +dtc_freeze: defaults fill in. v5->v6 (2026-09-06): the
+       `backend` field is gone — drop a stored one so it stops riding
+       along in every read-modify-write */
+    if (from_version < 6 && settings != NULL)
+    {
+        cJSON_DeleteItemFromObjectCaseSensitive(settings, "backend");
+    }
+
+    /* v6->v7 (2026-09-06): std_protocol became an enum (0,6,7,8,9). The
+       old free text was read by its FIRST character (6..9, else auto) —
+       keep exactly that meaning for whatever a device has stored */
+    /* v7->v8 (2026-09-06): pause_below_mv capped at 14.5 V (a 12 V
+       battery) — 0 keeps meaning "no fixed threshold" */
+    if (from_version < 8 && settings != NULL)
+    {
+        cJSON *pv = cJSON_GetObjectItemCaseSensitive(settings, "pause_below_mv");
+
+        if (cJSON_IsNumber(pv) && pv->valueint > 14500)
+        {
+            cJSON_SetNumberValue(pv, 14500);
+        }
+    }
+
+    if (from_version < 7 && settings != NULL)
+    {
+        const cJSON *v = cJSON_GetObjectItemCaseSensitive(settings,
+                                                          "std_protocol");
+        char c = (cJSON_IsString(v) && v->valuestring != NULL)
+                     ? v->valuestring[0] : ' ';
+        const char *mapped = (c >= '6' && c <= '9') ? (char[]){c, ' '} : "0";
+
+        if (!cJSON_IsString(v) || v->valuestring == NULL ||
+            strcmp(v->valuestring, mapped) != 0)
+        {
+            cJSON_ReplaceItemInObjectCaseSensitive(settings, "std_protocol",
+                                                   cJSON_CreateString(mapped));
+        }
+    }
+
     return ESP_OK;
 }
 
@@ -235,7 +260,10 @@ esp_err_t ap_settings_register(void)
     static const settings_descriptor_t DESC =
     {
         .name        = "autopid",
-        .version     = 5, /* v5: +dtc_freeze (TASK_dtc §14);
+        .version     = 8, /* v8: pause_below_mv <= 14500 (2026-09-06);
+                             v7: std_protocol enum (2026-09-06);
+                             v6: -backend (2026-09-06);
+                             v5: +dtc_freeze (TASK_dtc §14);
                              v4: +dtc_protocol/dtc_uds_* (TASK_dtc §12);
                              v3: +dtc_* (fill-missing defaults, both
                              gates false); v2: +backend */

@@ -53,7 +53,6 @@
 
 #include "expression_parser.h"
 
-#include "autopid_backend.h"
 #include "autopid_private.h"
 
 static const char *TAG = "autopid";
@@ -378,24 +377,6 @@ esp_err_t autopid_start(void)
             ESP_LOGW(TAG, "voltage-pause watch unavailable");
             s_batt_watch = -1;
         }
-    }
-
-    bool backend_elm = ap_settings_backend_elm();
-
-    if (backend_elm && ap_backend_alt_start() == ESP_OK)
-    {
-        ap_backend_select(true);
-    }
-    else
-    {
-        if (backend_elm)
-        {
-            ESP_LOGE(TAG, "elm327 backend unavailable - falling back to "
-                          "obd_chip (backend not in this build, or "
-                          "can_manager disabled?)");
-        }
-
-        ap_backend_select(false);
     }
 
     /* DTC databases + DBC files: cache loads need flash reads — main

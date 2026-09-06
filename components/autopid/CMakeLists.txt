@@ -2,7 +2,7 @@ idf_component_register(
     SRCS "autopid.c"
          "autopid_settings.c"
          "autopid_runner.c"
-         "autopid_backend_obd.c"
+         "autopid_transport_obd.c"
          "autopid_filter.c"
          "autopid_config.c"
          "autopid_sched.c"
@@ -23,9 +23,7 @@ idf_component_register(
     # Feature: scheduled PID polling over obd_chip; expressions via the
     # pure expression_parser; tables on /data via filesystem; voltage
     # pause via battery_monitor. cmdline/http only by the surface files
-    # (own-routes + §6b self-registered CLI). The alternate "elm327"
-    # backend is registered by an add-on pack (ap_backend_provide) —
-    # no build-time dependency here.
+    # (own-routes + §6b self-registered CLI).
     REQUIRES espressif__cjson
     PRIV_REQUIRES sleep_manager obd_chip expression_parser settings_manager filesystem obd_gate
                   battery_monitor log_manager esp_timer cmdline_manager

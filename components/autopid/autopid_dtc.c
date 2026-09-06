@@ -28,7 +28,7 @@
  *
  * Gates (meatpi 2026-07-08, both default FALSE): `dtc_enabled` for any
  * bus activity, `dtc_allow_clear` additionally for mode 04. Bus access
- * goes through ap_be() (works on obd_chip AND the elm327 engine) and is
+ * goes through ap_be() and is
  * serialized against polling with ap_core_scan_pause() + against the
  * other one-shot jobs (std scan, test-a-PID) with ap_core_job_acquire().
  *
@@ -52,7 +52,7 @@
 #include "uds_manager.h"
 
 #include "autopid.h"
-#include "autopid_backend.h"
+#include "autopid_transport.h"
 #include "autopid_private.h"
 
 static const char *TAG = "autopid";

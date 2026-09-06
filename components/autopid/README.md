@@ -47,8 +47,8 @@ Decisions log there is authoritative; the big ones:
 
 `enabled` (default **false**), `std_enabled`/`custom_enabled`/
 `specific_enabled`, `std_init`/`custom_init`/`specific_init`
-(';'-separated AT prelude per type), `std_protocol`, `vehicle`,
-`pause_below_mv` (0 = never pause; resumes +0.3 V with 5 s hold),
+(';'-separated AT prelude per type), `std_protocol` (enum `0` chip-auto | `6` CAN 11-bit 500k | `7` CAN 29-bit 500k | `8` CAN 11-bit 250k | `9` CAN 29-bit 250k, default `6`; schema v7), `vehicle`,
+`pause_below_mv` (0 = no fixed threshold, else 1–14500 mV; resumes +0.3 V with 5 s hold),
 `pause_follow_sleep` (default **true** — legacy `disable_pid_requests`
 parity: requests pause below the sleep threshold via the battery
 watch; explicit `pause_below_mv` overrides), `pause_mode`
@@ -67,7 +67,7 @@ confirmed).
 DTC events/actions/pull-values + rule recipes (scheduled scan+report,
 alert-on-new-code, clear-when-detected, scheduled clear) and the Berry
 `dtc_scan()`/`dtc_clear()` bindings: [TASK_dtc.md](TASK_dtc.md) §7-9.
-DTC works with polling `enabled=false` (scans only need the backend).
+DTC works with polling `enabled=false` (scans only need the OBD chip).
 
 **EEPROM guard (ATSP → ATTP, ATM1 → ATM0)**: every user-supplied chip
 command — init strings (type inits, per-PID `init`, `dtc_init`) at
@@ -229,3 +229,51 @@ round-robin, backoff, stagger), response-parser vectors (single frame,
 SEARCHING noise, headers-on lowest responder, ISO-TP both header
 modes, error lines), config parse happy/invalid. Bench verification per
 TASK_autopid.md Phase 1.
+
+**Bench matrix (2026-09-06)** —
+`tools/testbench/obd/autopid_matrix_bench.py [dut[:port]] [--sim 192.168.8.1]
+[--sim-restore asis|on|off]` (PC or Pi, plain HTTP, no PCAN): standard
+PIDs via the support scan, custom expressions (hinted `010C1`, a
+multi-parameter PID, an unsupported `0162` kept isolated), vehicle-
+specific entries with per-PID init + rxheader (multi-frame UDS DIDs
+`22F190`/`22F187` on 7E0/7E8, a second ECU on 7E1/7E9), all three
+groups live at different periods (every value right at once, update
+rates, runtime group toggle, HTTP RTT), passive filters against the
+simulator's broadcast beside polling, the per-type gates across a
+reboot, and a verbatim restore. Bench ECU simulator facts (the "WiCAN
+ECU Simulator" box, `http://192.168.8.1`, settings component
+`ecu_sim`, 500k/11-bit): RPM 800, coolant 90 °C, speed 0, load ~25 %,
+`0162` → NRC, VIN `1WCAN0FW0P0000001` (multi-frame), ECU name
+`WCAN-ECU-SIM` (`22F187`), mode 01 on physical 7E0/7E8 AND 7E1/7E9;
+`broadcast_enabled` (reboot-to-apply) streams ONE id at a very high
+rate, and the set differs between the simulator's boots (seen: 0x0C0
+`0C 80 00 00 00 00 00 00` = raw RPM 800 at ~1.7 kHz; later 0x1A0 all
+zeros at ~2.6 kHz plus 0x100 at ~7 Hz) — the filter leg therefore
+calibrates on whatever dominant frame the chip's `ATMA` shows before it
+starts. The chip tags every monitored line `<DATA ERROR` (skipped, as
+documented above). Last full run (2026-09-06): 48 checks PASS + 1 WARN.
+Numbers: 4 std PIDs at 500 ms ≈ 7.4 polls/s; a period-0 hinted custom
+RPM ≈ 17 updates / 5 s; HTTP p50 ≈ 60 ms under load through an ssh
+tunnel; std / custom / specific = 13 / 31 / 8 updates per 10 s when all
+three groups run together; every value correct at once (no
+cross-attribution); group toggle and the per-type gates behave.
+
+**OPEN FINDING — filters on a flooded bus** (the WARN): with the
+simulator flooding one id, filter windows fail silently and often —
+about 1 window in 3 missed at 1.7 kHz (0x0C0), about 4 in 5 missed at
+2.6 kHz (0x1A0) — even though the window's own id IS the flood. Every
+failed window still holds the chip for `monitor_ms` plus the stop, so
+standard polling beside two 3 s filters drops to 0.4–0.6 updates/s from
+~1.4/s. No W/E line is logged (the stop always found the prompt; the
+"no frame" path only logs at debug, which this build compiles out).
+Once, a never-matching filter (0x123) captured a bogus frame (value 130
+= the coolant byte 0x82) — suspect a spliced monitor line matching via
+the two-byte split-id shape. The same 2.8 k lines/s stream reaches an
+`/ws/obd` client almost intact, so the suspect is the filter path's
+16-chunk queue (drop-oldest → spliced lines that never parse), not the
+chip. Real cars do not repeat one id at kHz rates, but a busy bus does
+reach that aggregate; worth an instrumented build (count dropped
+chunks + unparsed lines) before changing the window design. The bench
+PCAN-USB FD is currently NOT on the DUT/simulator bus (channel 2 sees no
+traffic), so the DBC / monitor-injection benches that need it cannot
+run until it is re-wired.

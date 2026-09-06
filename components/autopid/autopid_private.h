@@ -210,7 +210,6 @@ void ap_core_scan_pause(bool on);           /* std scan owns the chip    */
 /* settings (autopid_settings.c — standard §4.1) */
 esp_err_t ap_settings_register(void);       /* the "autopid" descriptor  */
 bool ap_settings_is_configured(void);       /* boot apply ran (§4.3)     */
-bool ap_settings_backend_elm(void);         /* backend == "elm327"       */
 int  ap_settings_pause_below_mv(void);      /* 0 = never pause           */
 bool ap_settings_pause_follow_sleep(void);  /* legacy parity: pause
                                                requests below sleep_mv   */

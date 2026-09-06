@@ -34,6 +34,13 @@ void test_xfer_negative_response_stops(void);
 void test_xfer_read_failure(void);
 void test_xfer_bad_args(void);
 
+/* test_doc.c — the reference + example gallery tables */
+void test_doc_bindings_table_is_consistent(void);
+void test_doc_reference_json_shape(void);
+void test_examples_are_valid_scripts(void);
+void test_examples_only_use_documented_bindings(void);
+void test_examples_json_lists_without_sources(void);
+
 void test_accepts_plain_names(void)
 {
     TEST_ASSERT_TRUE(se_script_name_ok("vin"));
@@ -127,6 +134,13 @@ void app_main(void)
     RUN_TEST(test_xfer_negative_response_stops);
     RUN_TEST(test_xfer_read_failure);
     RUN_TEST(test_xfer_bad_args);
+
+    /* the scripting reference + examples (test_doc.c) */
+    RUN_TEST(test_doc_bindings_table_is_consistent);
+    RUN_TEST(test_doc_reference_json_shape);
+    RUN_TEST(test_examples_are_valid_scripts);
+    RUN_TEST(test_examples_only_use_documented_bindings);
+    RUN_TEST(test_examples_json_lists_without_sources);
 
     UNITY_END();
 }

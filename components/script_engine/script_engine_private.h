@@ -36,6 +36,9 @@
 
 /* Register all device bindings (uds/can/event/value/log/sleep) into a VM. */
 void se_bindings_register(bvm *vm);
+/* Every binding documented in script_engine_doc.c and vice versa (logs
+ * the drift; called once at init). */
+bool se_bindings_selfcheck(void);
 /** Install the uds_manager-backed obd.* port (bind.c; call once at init). */
 void se_obd_port_install(void);
 

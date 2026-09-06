@@ -4,6 +4,8 @@ idf_component_register(
          "script_engine_obd.c"
          "script_engine_settings.c"
          "script_engine_bind.c"
+         "script_engine_doc.c"
+         "script_engine_examples.c"
          "script_engine_http.c"
          "script_engine_cli.c"
          "script_engine_events.c"

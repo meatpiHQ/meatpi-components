@@ -42,10 +42,12 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 
+#include "be_debug.h"          /* be_tracestack: the traceback into the run output */
 #include "berry.h"
 #include "filesystem.h"
 #include "log_manager.h"
 
+#include "script_engine_doc.h"
 #include "script_engine_private.h"
 
 static const char *TAG = "script_engine";
@@ -56,12 +58,12 @@ static const char *TAG = "script_engine";
  * and no v1 binding touches flash, so §2 corollary permits it). */
 #define SE_RUNNER_STACK (12 * 1024)
 #define SE_RUNNER_PRIO  4
-#define SE_SCRIPT_FILE_MAX (64 * 1024)
 
 static bool s_started;
 
 static volatile bool s_busy;
 static volatile bool s_kill;
+static volatile bool s_run_check;   /* compile only (POST /api/scripts/check) */
 static uint32_t s_run_start_ms;
 
 static SemaphoreHandle_t s_lock;
@@ -127,21 +129,40 @@ static void do_run(void)
 
         int r = be_loadstring(vm, src);
 
-        if (r == BE_OK)
+        if (r == BE_OK && !s_run_check)
         {
             r = be_pcall(vm, 0);
         }
 
         if (r != BE_OK)
         {
-            const char *msg = be_tostring(vm, -1);
+            /* the exception value ("syntax_error") sits under its message
+               ("string:3: unexpected symbol …"): both reach the caller, and
+               a runtime error adds Berry's stack traceback (string:<line>:
+               in function `main`). Written through the Berry writer so the
+               capture sink stays in step with what print()/log() wrote. */
+            const char *kind = (be_top(vm) >= 2) ? be_tostring(vm, -2) : "error";
+            const char *msg = (be_top(vm) >= 1) ? be_tostring(vm, -1) : "?";
 
-            ESP_LOGW(TAG, "script error: %s", msg ? msg : "?");
+            ESP_LOGW(TAG, "script error: %s: %s", kind ? kind : "?",
+                     msg ? msg : "?");
 
             if (out != NULL)
             {
-                size_t n = strlen(out);
-                snprintf(out + n, cap - n, "\nERROR: %s", msg ? msg : "?");
+                if (!s_run_check)
+                {
+                    be_writestring("\nERROR: ");
+                }
+
+                be_writestring(kind ? kind : "?");
+                be_writestring(": ");
+                be_writestring(msg ? msg : "?");
+                be_writestring("\n");
+
+                if (r == BE_EXCEPTION)
+                {
+                    be_tracestack(vm);
+                }
             }
 
             s_run_result = ESP_FAIL;
@@ -175,7 +196,7 @@ static void runner_task(void *arg)
 
 /* ---- run (caller side; hands off to the runner task) ----------------------- */
 
-esp_err_t script_engine_run(const char *src, char *out, size_t cap)
+static esp_err_t run_common(const char *src, char *out, size_t cap, bool check)
 {
     if (!s_started || !se_settings_enabled() || s_runner == NULL)
     {
@@ -194,6 +215,7 @@ esp_err_t script_engine_run(const char *src, char *out, size_t cap)
 
     s_busy = true;
     s_kill = false;
+    s_run_check = check;
     s_run_start_ms = esp_log_timestamp();
     s_run_src = src;
     s_run_out = out;
@@ -216,6 +238,16 @@ esp_err_t script_engine_run(const char *src, char *out, size_t cap)
     s_busy = false;
     xSemaphoreGive(s_lock);
     return result;
+}
+
+esp_err_t script_engine_run(const char *src, char *out, size_t cap)
+{
+    return run_common(src, out, cap, false);
+}
+
+esp_err_t script_engine_check(const char *src, char *out, size_t cap)
+{
+    return run_common(src, out, cap, true);
 }
 
 void script_engine_kill(void)
@@ -354,6 +386,7 @@ esp_err_t script_engine_init(void)
     log_manager_register(&LOG_DESC);
     se_events_register();       /* `script.run` rule action (static write) */
     se_obd_port_install();      /* obd.* bindings -> uds_manager */
+    (void)se_bindings_selfcheck(); /* bindings vs. reference drift -> log */
 
     if (s_lock == NULL)
     {

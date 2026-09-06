@@ -1,0 +1,4 @@
+## IDF v6 dropped the bundled `json` component; cJSON comes from the registry
+## (the reference/example JSON builders in script_engine_doc.c use it).
+dependencies:
+  espressif/cjson: "^1.7.18"

@@ -60,6 +60,13 @@ esp_err_t script_engine_stop(void);
 esp_err_t script_engine_run(const char *src, char *out, size_t cap);
 
 /**
+ * Compile @p src without running it (the editor's syntax check). Same
+ * serialization and enable rules as script_engine_run; ESP_FAIL with the
+ * "syntax_error: string:<line>: …" message in @p out.
+ */
+esp_err_t script_engine_check(const char *src, char *out, size_t cap);
+
+/**
  * Run a STORED script: /data/scripts/<name>.be (".be" appended if
  * missing; name restricted to [A-Za-z0-9_-]). Loads the source to a
  * PSRAM buffer and runs it like script_engine_run.

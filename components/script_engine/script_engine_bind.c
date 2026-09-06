@@ -59,6 +59,7 @@
 #include "uds_manager.h"
 #include "uds_proto.h"
 
+#include "script_engine_doc.h"
 #include "script_engine_obd.h"
 #include "script_engine_private.h"
 
@@ -103,7 +104,7 @@ static int b_sleep_ms(bvm *vm)
     {
         bint ms = be_toint(vm, 1);
 
-        if (ms > 0 && ms <= 60000)
+        if (ms > 0 && ms <= SE_SLEEP_MAX_MS)
         {
             vTaskDelay(pdMS_TO_TICKS(ms));
         }
@@ -817,6 +818,39 @@ static void trigger_globals_register(bvm *vm)
 
 /* ---- registration ---------------------------------------------------------- */
 
+/* The functions behind the reference: script_engine_doc.c documents each
+ * one (name, signature, group, doc, example) and se_bindings_selfcheck()
+ * reports any drift between the two tables at boot. Adding a binding =
+ * one line here + one line there. */
+static const struct
+{
+    const char *name;
+    bntvfunc    fn;
+} BINDINGS[] =
+{
+    { "log",               b_log },
+    { "sleep_ms",          b_sleep_ms },
+    { "millis",            b_millis },
+    { "uds",               b_uds },
+    { "uds_ext",           b_uds_ext },
+    { "can_tx",            b_can_tx },
+    { "emit",              b_emit },
+    { "dtc_scan",          b_dtc_scan },
+    { "dtc_clear",         b_dtc_clear },
+    { "dtc_desc",          b_dtc_desc },
+    { "obd_claim",         b_obd_claim },
+    { "obd_release",       b_obd_release },
+    { "obd_request",       b_obd_request },
+    { "obd_isotp_tx",      b_obd_isotp_tx },
+    { "obd_isotp_rx",      b_obd_isotp_rx },
+    { "obd_file_size",     b_obd_file_size },
+    { "obd_file_read",     b_obd_file_read },
+    { "obd_transfer_file", b_obd_transfer_file },
+    { "uds_nrc_str",       b_uds_nrc_str },
+};
+
+#define N_BINDINGS (sizeof(BINDINGS) / sizeof(BINDINGS[0]))
+
 static void reg(bvm *vm, const char *name, bntvfunc f)
 {
     be_pushntvfunction(vm, f);
@@ -824,29 +858,49 @@ static void reg(bvm *vm, const char *name, bntvfunc f)
     be_pop(vm, 1);
 }
 
+bool se_bindings_selfcheck(void)
+{
+    bool ok = true;
+
+    for (size_t i = 0; i < N_BINDINGS; i++)
+    {
+        if (se_bind_doc_find(BINDINGS[i].name) == NULL)
+        {
+            ESP_LOGE("script_engine", "binding '%s' has no reference entry",
+                     BINDINGS[i].name);
+            ok = false;
+        }
+    }
+
+    for (size_t i = 0; i < se_bind_doc_count(); i++)
+    {
+        const char *name = se_bind_doc(i)->name;
+        bool found = false;
+
+        for (size_t j = 0; j < N_BINDINGS && !found; j++)
+        {
+            found = strcmp(BINDINGS[j].name, name) == 0;
+        }
+
+        if (!found)
+        {
+            ESP_LOGE("script_engine", "reference entry '%s' has no binding",
+                     name);
+            ok = false;
+        }
+    }
+
+    return ok;
+}
+
 void se_bindings_register(bvm *vm)
 {
     trigger_globals_register(vm);
 
-    reg(vm, "log", b_log);
-    reg(vm, "sleep_ms", b_sleep_ms);
-    reg(vm, "millis", b_millis);
-    reg(vm, "uds", b_uds);
-    reg(vm, "uds_ext", b_uds_ext);
-    reg(vm, "can_tx", b_can_tx);
-    reg(vm, "emit", b_emit);
-    reg(vm, "dtc_scan", b_dtc_scan);
-    reg(vm, "dtc_clear", b_dtc_clear);
-    reg(vm, "dtc_desc", b_dtc_desc);
-    reg(vm, "obd_claim", b_obd_claim);
-    reg(vm, "obd_release", b_obd_release);
-    reg(vm, "obd_request", b_obd_request);
-    reg(vm, "obd_isotp_tx", b_obd_isotp_tx);
-    reg(vm, "obd_isotp_rx", b_obd_isotp_rx);
-    reg(vm, "obd_file_size", b_obd_file_size);
-    reg(vm, "obd_file_read", b_obd_file_read);
-    reg(vm, "obd_transfer_file", b_obd_transfer_file);
-    reg(vm, "uds_nrc_str", b_uds_nrc_str);
+    for (size_t i = 0; i < N_BINDINGS; i++)
+    {
+        reg(vm, BINDINGS[i].name, BINDINGS[i].fn);
+    }
 
     /* Pre-declare the uds() out-globals so scripts can read them (Berry
      * flags a bare identifier that was never assigned at compile time). */

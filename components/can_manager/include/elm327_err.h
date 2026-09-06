@@ -23,7 +23,7 @@
 /**
  * @file elm327_err.h
  * @brief Shared return codes of the CAN-core stack (can_core and the
- *        AT-engine/ISO-TP layers that build on it).
+ *        ISO-TP layer that builds on it).
  *
  * Lives in can_manager because that is the root of the stack's
  * dependency graph. The historical ELM327_* names are kept so the whole

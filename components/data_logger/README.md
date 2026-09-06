@@ -91,6 +91,9 @@ Actions:
 - `logger.enable` / `logger.disable` — rule-driven gating ("log only
   while driving"). Paused keeps filling the rings, so an enable rule
   also lands the newest pre-trigger records.
+  A gate change notifies the writer task (2026-09-06), so the files close
+  or reopen right away instead of after the `flush_ms` nap — the export
+  relies on that to read the active file.
 - `logger.write {source?, name, value}` — rule-selected values into
   the params stream, e.g. `match autopid.param -> logger.write
   {"source":"autopid","name":"${param}","value":"${value}"}`.
@@ -102,6 +105,19 @@ Actions:
   written/dropped/errors/rotations) + a `can{}` block (enabled, file,
   file_rows, files, queued, frames_written, frames_dropped,
   rotations).
+- `GET /api/logger/export?stream=params&since=<cursor>&limit=N[&name=<param>]`
+  — incremental pull of the params stream (jsonl and, since 2026-09-06, csv —
+  400 for the other engines, whose files the UI fetches whole through
+  `/api/fs/download`):
+  `{"ts":<epoch ms>,"param":"<source>.<name>","value":n}` lines, then a
+  `{"_cursor":"<epoch>:<offset>","more":bool}` meta line. `name` (2026-09-06)
+  filters to one parameter (the value after the last `.` or the full
+  `source.name`); the cursor walks every line either way, bounded per
+  request by 512 KB read / 64 KB emitted / `limit` lines. Every read
+  window re-seeks to the cursor (the old loop advanced the file position
+  by the whole window but the cursor by the kept part, so a second window
+  in one response started mid-record). The web dashboard's chart tiles
+  backfill from it.
 - `POST /api/logger/gate` `{"enabled":bool}` — runtime (non-persisted)
   gate for BOTH streams; the HTTP twin of the `logger.enable`/
   `logger.disable` event actions. Resets on reboot.

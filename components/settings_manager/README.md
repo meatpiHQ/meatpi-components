@@ -62,6 +62,14 @@ it. `main` calls `settings_manager_init()` first, then each component's `init`
 `littlefs`-subtype data partition labelled `settings` (the manager mounts it at
 `/settings`, files under `/settings/cfg/<name>.json`).
 
+**First boot:** a never-formatted partition (erased flash, 0xFF) is detected
+by probing the LittleFS superblock pair and formatted explicitly with
+`esp_littlefs_format()` *before* the mount (2026-09-05). Without that,
+`lfs_mount()` logs two "Corrupted dir pair" E lines before
+`format_if_mount_failed` runs, and `dev_status_manager` latched them as a
+`boot_errors` fault on every brand-new device. The same guard lives in
+`filesystem` for `/data`.
+
 ## Constraints & limitations (read before writing a descriptor)
 
 - **`on_apply` runs only at boot**, single-threaded in `settings_manager_start()`,

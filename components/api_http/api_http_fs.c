@@ -175,8 +175,12 @@ static esp_err_t fs_download_handler(httpd_req_t *req)
 
     if (f == NULL)
     {
-        return fs_error(req, filesystem_exists(path) ? ESP_ERR_INVALID_ARG
-                                                     : ESP_ERR_NOT_FOUND);
+        /* an existing file that will not open is held by a writer (FATFS
+           FS_LOCK: the data logger's active file) — say so; "invalid path"
+           sent clients chasing the wrong cause (2026-09-07) */
+        return filesystem_exists(path)
+                   ? api_send_error(req, "409 Conflict", "file in use")
+                   : fs_error(req, ESP_ERR_NOT_FOUND);
     }
 
     /* save-as filename = the basename */

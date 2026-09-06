@@ -144,7 +144,7 @@ void obd_gate_get_stats(obd_gate_stats_t *out)
     portEXIT_CRITICAL(&s_mux);
 }
 
-/* ---- software AT engine hooks (ctx = the engine instance pointer) ----------- */
+/* ---- ESP-side engine hooks (ctx = the engine instance pointer) -------------- */
 
 void obd_gate_engine_acquire(void *ctx)
 {

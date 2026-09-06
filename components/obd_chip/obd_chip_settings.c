@@ -32,6 +32,8 @@
 #include "esp_attr.h"
 #include "esp_log.h"
 
+#include <stdio.h>
+
 #include "settings_manager.h"
 
 #include "obd_chip_private.h"
@@ -48,9 +50,12 @@ static const settings_field_t OBD_FIELDS[] =
     /* chip sleep-config provisioning (defaults = the legacy fallbacks;
        the chip's autonomous controls stay OFF — the future sleep_manager
        arms them) */
-    SETTINGS_INT     ("wake_voltage_mv",  8000, 16000, 13500),
-    SETTINGS_INT     ("sleep_voltage_mv", 8000, 16000, 13200),
-    SETTINGS_INT     ("sleep_time_min",   1, 1440, 2),
+    /* user-facing ranges (meatpi 2026-09-06, 12 V battery): wake while
+       charging (12.0–15.0 V), sleep once the engine is off (12.0–14.0 V),
+       hold at most an hour — wake must sit above sleep (on_validate) */
+    SETTINGS_INT     ("wake_voltage_mv",  12000, 15000, 13500),
+    SETTINGS_INT     ("sleep_voltage_mv", 12000, 14000, 13200),
+    SETTINGS_INT     ("sleep_time_min",   1, 60, 2),
 };
 /* clang-format on */
 
@@ -95,15 +100,70 @@ static esp_err_t obd_on_apply(const cJSON *settings)
     return ESP_OK;
 }
 
+
+/* Clamp a stored integer into the current schema range (migration helper). */
+static void clamp_int(cJSON *settings, const char *key, int lo, int hi)
+{
+    cJSON *v = cJSON_GetObjectItemCaseSensitive(settings, key);
+
+    if (cJSON_IsNumber(v) && (v->valueint < lo || v->valueint > hi))
+    {
+        cJSON_SetNumberValue(v, (v->valueint < lo) ? lo : hi);
+    }
+}
+
+static esp_err_t obd_on_validate(const cJSON *settings, char *err,
+                                 size_t err_len)
+{
+    /* cross-field: the chip wakes when the rail climbs past the wake
+       threshold, so it must sit above the sleep threshold */
+    const cJSON *w = cJSON_GetObjectItemCaseSensitive(settings, "wake_voltage_mv");
+    const cJSON *sl = cJSON_GetObjectItemCaseSensitive(settings, "sleep_voltage_mv");
+
+    if (cJSON_IsNumber(w) && cJSON_IsNumber(sl) && w->valueint <= sl->valueint)
+    {
+        snprintf(err, err_len, "wake_voltage_mv must be above sleep_voltage_mv");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    return ESP_OK;
+}
+
+static esp_err_t obd_settings_migrate(uint32_t from_version, cJSON *settings)
+{
+    /* v1 -> v2 (2026-09-06): tighter user-facing ranges + wake > sleep —
+       clamp / lift what a device has stored instead of degrading it */
+    if (from_version < 2 && settings != NULL)
+    {
+        clamp_int(settings, "wake_voltage_mv", 12000, 15000);
+        clamp_int(settings, "sleep_voltage_mv", 12000, 14000);
+        clamp_int(settings, "sleep_time_min", 1, 60);
+
+        cJSON *w = cJSON_GetObjectItemCaseSensitive(settings, "wake_voltage_mv");
+        cJSON *sl = cJSON_GetObjectItemCaseSensitive(settings, "sleep_voltage_mv");
+
+        if (cJSON_IsNumber(w) && cJSON_IsNumber(sl) && w->valueint <= sl->valueint)
+        {
+            int lifted = sl->valueint + 300;
+
+            cJSON_SetNumberValue(w, (lifted > 15000) ? 15000 : lifted);
+        }
+    }
+
+    return ESP_OK;
+}
+
 esp_err_t obd_settings_register(void)
 {
     static const settings_descriptor_t desc =
     {
         .name        = "obd_chip",
-        .version     = 1,
+        .version     = 2, /* v2: sane ranges + wake > sleep (2026-09-06) */
         .fields      = OBD_FIELDS,
         .field_count = sizeof(OBD_FIELDS) / sizeof(OBD_FIELDS[0]),
         .on_apply    = obd_on_apply,
+        .on_validate = obd_on_validate,
+        .on_migrate  = obd_settings_migrate,
     };
 
     return settings_manager_register(&desc);

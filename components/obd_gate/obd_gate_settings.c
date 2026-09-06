@@ -26,11 +26,11 @@
  *        (source of truth for shape/defaults) and on_apply (fills the
  *        boot-applied enable flag).
  *
- * `enabled` default TRUE (meatpi 2026-07-11): the MIC chip and the
- * ESP-side ELM engines share one physical CAN bus, and overlapping
+ * `enabled` default TRUE (meatpi 2026-07-11): the MIC chip and any
+ * ESP-side requester share one physical CAN bus, and overlapping
  * request/response conversations mis-attribute responses (a BLE app
- * polling the chip + autopid on the elm327 backend = bad data). Disable
- * only for benches that WANT concurrent conversations.
+ * polling the chip + a second poller = bad data). Disable only for
+ * benches that WANT concurrent conversations.
  */
 #include "settings_manager.h"
 

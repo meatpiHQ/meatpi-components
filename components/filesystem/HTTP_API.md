@@ -56,7 +56,9 @@ Bytes. **Errors**: 400 invalid path; 503 backend unavailable.
 Download any file (logs, configs, captures) — streamed in 1 KB chunks with
 `Content-Type: application/octet-stream` and
 `Content-Disposition: attachment; filename="<basename>"` so the browser
-saves it. **Errors**: 400 invalid path / 404 not found.
+saves it. **Errors**: 400 invalid path / 404 not found / 409 `file in use`
+(an existing file another task holds open for writing — FATFS `FS_LOCK`;
+the data logger's active file until its gate is paused, 2026-09-07).
 
 ## POST /api/fs/upload?path={target-file}
 

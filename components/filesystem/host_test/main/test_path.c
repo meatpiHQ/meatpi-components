@@ -113,3 +113,25 @@ void test_parent_of_root_rejected(void)
     TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG,
                       fs_path_parent("/data", out, sizeof(out)));
 }
+
+/* first-boot detection: erased flash is all 0xFF; anything else (a
+ * formatted superblock, a single stray byte, nothing at all) is not blank */
+void test_region_blank_detection(void)
+{
+    uint8_t erased[64];
+    memset(erased, 0xFF, sizeof(erased));
+    TEST_ASSERT_TRUE(fs_region_is_blank(erased, sizeof(erased)));
+
+    uint8_t formatted[64];
+    memset(formatted, 0xFF, sizeof(formatted));
+    memcpy(formatted + 8, "littlefs", 8); /* lfs superblock magic */
+    TEST_ASSERT_FALSE(fs_region_is_blank(formatted, sizeof(formatted)));
+
+    uint8_t stray[64];
+    memset(stray, 0xFF, sizeof(stray));
+    stray[63] = 0x00;
+    TEST_ASSERT_FALSE(fs_region_is_blank(stray, sizeof(stray)));
+
+    TEST_ASSERT_FALSE(fs_region_is_blank(erased, 0));
+    TEST_ASSERT_FALSE(fs_region_is_blank(NULL, 16));
+}

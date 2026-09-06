@@ -114,6 +114,27 @@ A script can flash an ECU from a firmware file on the **SD card**:
   version bumped), gate-off blocks it, `verifyfail` → checkMemory fail
   caught, `progfail` → mid-transfer NRC caught.
 
+### 4c. The editor + the engine's self-description (DONE 2026-09-07)
+
+The web UI's Scripts page (Editor · Examples · Reference) is a real
+editor: scripts are created, opened, edited, saved (`/api/fs/upload` to
+`/data/scripts`), run, checked, downloaded and deleted in the browser;
+CodeMirror 5 (highlighting, line numbers, brackets, autocomplete of the
+bindings, Ctrl-S / Ctrl-Enter) is an on-demand library cached under
+`cache/www` like uPlot; a plain textarea works until it is installed. The
+firmware describes its own API — `GET /api/scripts/reference` (one entry
+per binding: signature, group, returns, doc, example; the readable
+globals; a Berry primer; hints keyed on error-message substrings; the
+limits) and ships the example gallery (`GET /api/scripts/examples`, `?id=` for a
+source: hello, obd_live, vin, uds_session, dtc_report, on_event,
+can_frame — each run on the bench against the ECU simulator). `POST
+/api/scripts/check` compiles without running. Run failures now carry the
+exception type and Berry's traceback (`string:<line>:` → the editor's
+jump-to-line links). The tables (`script_engine_doc.c`,
+`script_engine_examples.c`) are pure, host-tested, and cross-checked
+against the binding table at boot: adding a binding = one line in each.
+Details: `script_engine/README.md`.
+
 Everything in §1–§3 was built for other features and is already
 bench-proven — none of it is speculative. The §4 list is deliberately the
 WHOLE remaining scope: if a §4 item seems to need a change in §1–§3
@@ -143,5 +164,5 @@ surfaces, that's a design smell to raise first.
   emit script.done → sugar rule ran notify.be (evt_* correct) →
   uds.request 10 01 → 7F 10 11 decoded → log.note template rendered.
 - Still open from §4: item 2 (obd.* script bindings — claim/release,
-  isotp_tx/rx; today's uds() binding covers the isotp/obd/elm transports
+  isotp_tx/rx; today's uds() binding covers the isotp/obd transports
   via uds_manager) and item 5 (binding-layer host tests).

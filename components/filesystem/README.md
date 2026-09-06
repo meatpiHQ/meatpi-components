@@ -85,10 +85,27 @@ exists.
 | Heap (internal) | LittleFS mount (esp_littlefs caches) | ~4–8 KiB while mounted |
 | Task stacks | none (runs in caller context) | 0 |
 
+## First boot (blank partition)
+
+A never-formatted `storage` partition reads as erased flash (0xFF). Letting
+`esp_vfs_littlefs_register()` discover that makes `lfs_mount()` log
+"Corrupted dir pair" at **E** level before `format_if_mount_failed`
+formats it — two E lines that latched a `boot_errors` fault on every
+brand-new unit (fresh-unit bench 2026-08-31). Since 2026-09-05
+`filesystem_init()` probes the superblock pair (blocks 0 and 1) with
+`fs_region_is_blank()` and, when both are erased, calls
+`esp_littlefs_format()` first (one **I** line, no mount attempt), then
+mounts a clean filesystem. A non-blank partition that fails to mount still
+takes the loud path on purpose — that is real corruption. settings_manager
+does the same for its `settings` partition. Verified: erase-flash + first
+boot = 0 E lines, `WICAN FAULTS active=0`.
+
 ## Tests
 
 - **Host (Unity, `host_test/`):** pure path logic — prefix routing, traversal/`//`
-  rejection, length caps, temp-name and parent derivation. `idf.py --preview
+  rejection, length caps, temp-name and parent derivation — plus the
+  blank-flash predicate (`fs_region_is_blank`: erased, formatted magic,
+  single stray byte, empty/NULL). 11 tests. `idf.py --preview
   set-target linux && idf.py build` (Linux host required), run the ELF.
 - **On-target (`test_apps/`):** mounts the real `storage` partition and exercises
   write/read roundtrip, atomicity (no temp leftover), nested auto-create,

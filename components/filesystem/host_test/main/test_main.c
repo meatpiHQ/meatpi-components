@@ -14,6 +14,7 @@ void test_temp_name_appends_suffix(void);
 void test_temp_name_rejects_overflow(void);
 void test_parent_derivation(void);
 void test_parent_of_root_rejected(void);
+void test_region_blank_detection(void);
 
 void app_main(void)
 {
@@ -28,5 +29,6 @@ void app_main(void)
     RUN_TEST(test_temp_name_rejects_overflow);
     RUN_TEST(test_parent_derivation);
     RUN_TEST(test_parent_of_root_rejected);
+    RUN_TEST(test_region_blank_detection);
     UNITY_END();
 }

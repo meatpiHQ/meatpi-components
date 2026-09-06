@@ -147,9 +147,9 @@ version = new `EMBED_TXTFILES` path + `OBD_FW_BUILTIN_VERSION` in
 | `auto_sleep` | bool | `false` | reserved (the future sleep_manager arms the chip's controls) |
 | `auto_update` | bool | `true` | flash the packaged chip fw (V2.3.22) on version mismatch after bring-up — legacy parity |
 | `monitor_policy` | enum manual/auto_interrupt | `manual` | `auto_interrupt` reserved (§5 open question) |
-| `wake_voltage_mv` | int 8000–16000 | `13500` | chip VL wake threshold, provisioned at boot (`STSLVLW`) |
-| `sleep_voltage_mv` | int 8000–16000 | `13200` | chip VL sleep threshold, provisioned at boot (`STSLVLS`) |
-| `sleep_time_min` | int 1–1440 | `2` | chip VL sleep hold; programmed as `min*60+30` s (the ESP sleeps first — legacy guard) |
+| `wake_voltage_mv` | int 12000–15000 (must exceed `sleep_voltage_mv`) | `13500` | chip VL wake threshold, provisioned at boot (`STSLVLW`) |
+| `sleep_voltage_mv` | int 12000–14000 | `13200` | chip VL sleep threshold, provisioned at boot (`STSLVLS`) |
+| `sleep_time_min` | int 1–60 | `2` | chip VL sleep hold; programmed as `min*60+30` s (the ESP sleeps first — legacy guard) |
 
 ## Boot provisioning (task §11.5 — ANSWERED by meatpi 2026-07-04: "follow legacy init")
 

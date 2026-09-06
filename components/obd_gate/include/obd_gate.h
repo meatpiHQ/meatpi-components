@@ -25,10 +25,9 @@
  * @brief The vehicle-bus conversation gate (policy component).
  *
  * The WiCAN Pro has TWO OBD requesters on the SAME physical CAN bus: the
- * MIC3624 OBD chip (obd_chip, driven by apps over BLE/TCP/WS/USB) and the
- * ESP-side software AT engines (add-on pack: virtual ELM jacks, autopid's
- * `elm327` backend, uds_manager's elm transport) on the TWAI controller.
- * Both address the
+ * MIC3624 OBD chip (obd_chip, driven by apps over BLE/TCP/WS/USB) and any
+ * ESP-side requester on the TWAI controller (an add-on pack's virtual ELM
+ * jacks). Both address the
  * ECU functionally (0x7DF) and both hear every 0x7E8.. response — when two
  * request/response conversations OVERLAP, a requester can attribute the
  * other's response to its own request (bad data: the driving-app +
@@ -91,7 +90,7 @@ void obd_gate_release(const void *owner);
 
 void obd_gate_get_stats(obd_gate_stats_t *out);
 
-/* Ready-made hooks matching a software AT engine's gate callbacks: ctx
+/* Ready-made hooks for an ESP-side engine's gate callbacks: ctx
  * is the engine instance pointer (the per-engine owner identity). */
 void obd_gate_engine_acquire(void *ctx);
 void obd_gate_engine_release(void *ctx);

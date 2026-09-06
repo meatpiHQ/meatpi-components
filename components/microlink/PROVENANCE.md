@@ -94,7 +94,7 @@ DERP stack are validated through `vpn_manager` on the bench
     error-code semantics are identical at every call site.
 
 13. **`ML_TASK_WG_MGR_STACK` 8K → 7K** (2026-07-07 pm): with USB host +
-    CAN + the AT-engine stack active, internal free bottomed at ~24 KB with a
+    CAN + the full OBD stack active, internal free bottomed at ~24 KB with a
     ~15 KB largest block; vpn_state (6 KB, created first) + an 8 KB
     wg_mgr no longer fit one region and microlink_start failed
     ("Failed to create wg_mgr task"). Watermark measured under a live

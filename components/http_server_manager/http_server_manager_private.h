@@ -42,7 +42,7 @@ extern "C" {
    rejects surface as 404s on whatever registers LATER (ws channels,
    /api/logs). Watch the "route buffer full" boot error when adding
    routes. Each slot is one httpd_uri_t (~16 B) in PSRAM — cheap. */
-#define HSM_MAX_BUFFERED_URIS 96 /* 2026-07-08: 83 static routes + WS channels overflowed 80 (dtc+dbc routes; symptom = ws channel 404s) */
+#define HSM_MAX_BUFFERED_URIS 112 /* 2026-07-08: 83 static routes + WS channels overflowed 80 (dtc+dbc routes; symptom = ws channel 404s); 2026-09-07: the script_engine reference/examples/check routes overflowed 96 (symptom = the LAST route registered 404s with no other sign) */
 #define HSM_PATH_MAX 192
 
 /* ---- match (http_server_manager_match.c, pure / host-testable) ------------ */

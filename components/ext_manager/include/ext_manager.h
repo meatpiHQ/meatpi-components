@@ -28,10 +28,10 @@
  * mechanism (see the root CMakeLists: a later component dir overrides an
  * earlier component with the same name). A pack ships its own ext_manager
  * component which wires the pack's features into the firmware's
- * registries at these hook points — autopid backends
- * (ap_backend_provide), bridge jacks (bridge_manager_register_endpoint),
- * UDS transports (uds_transport_provide), the J2534 ISO-TP provider
- * (j2534_isotp_provide), settings components, CLI commands, …
+ * registries at these hook points — bridge jacks
+ * (bridge_manager_register_endpoint), the ISO-TP providers
+ * (can_isotp_provide, j2534_isotp_provide), settings components, CLI
+ * commands, …
  *
  * This stock ext_manager is the no-op default: without a pack the hooks
  * do nothing and the firmware runs with its built-in feature set.

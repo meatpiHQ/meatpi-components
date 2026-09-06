@@ -2,9 +2,9 @@
 
 The vehicle-bus conversation gate (policy component). The WiCAN Pro has
 TWO OBD requesters on the SAME physical CAN bus: the MIC3624 chip
-(`obd_chip`, driven by apps over BLE/TCP/WS/USB) and the ESP-side
-software AT engines (add-on pack: virtual ELM jacks, autopid's `elm327`
-backend, uds_manager's elm transport). Both address the ECU the same way and both hear every
+(`obd_chip`, driven by apps over BLE/TCP/WS/USB) and any ESP-side
+requester on the TWAI controller (an add-on pack's virtual ELM jacks).
+Both address the ECU the same way and both hear every
 response — when two request/response conversations OVERLAP, a requester
 attributes the other's response to its own request. Bench-measured with
 the gate off: 12 cross-attributed responses in 16 s of concurrent
@@ -35,11 +35,10 @@ an opaque owner pointer (the chip, or one engine instance).
   (a command submission); `obd_chip_request()` brackets its transaction.
   Released when the RX fan-out sees the `'>'` prompt at line start (or
   by hold expiry — monitor-class commands).
-- **software AT engines** (add-on pack): optional
+- **ESP-side engines** (add-on pack jacks): optional
   `gate_acquire/gate_release/gate_ctx` callbacks in the engine config —
   acquire just before an OBD request is transmitted on CAN, release when
-  the request's response window ends. Wired by the pack's ELM jacks,
-  autopid's elm backend, and uds_manager's elm transport
+  the request's response window ends
   (`obd_gate_engine_acquire/release`, ctx = the engine instance).
 - NOT yet gated: direct ISO-TP requesters (uds `isotp` transport,
   j2534 ISO15765 channels) — diagnostic tools, rarely concurrent with

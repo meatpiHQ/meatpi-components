@@ -34,7 +34,7 @@
 
 static const settings_field_t FIELDS[] =
 {
-    SETTINGS_STR_ENUM("backend", "auto,obd_chip,elm327,isotp", "auto"),
+    SETTINGS_STR_ENUM("backend", "auto,obd_chip,isotp", "auto"),
     SETTINGS_INT("p2_ms", 50, 5000, 250),
     SETTINGS_INT("p2star_ms", 500, 30000, 5000),
     SETTINGS_INT("tester_present_ms", 500, 10000, 2000),
@@ -67,7 +67,6 @@ static esp_err_t on_apply(const cJSON *settings)
                                                           : "auto";
 
     if (strcmp(b, "obd_chip") == 0)    s_cfg.backend = UDS_BACKEND_OBD_CHIP;
-    else if (strcmp(b, "elm327") == 0) s_cfg.backend = UDS_BACKEND_ELM327;
     else if (strcmp(b, "isotp") == 0)  s_cfg.backend = UDS_BACKEND_ISOTP;
     else                               s_cfg.backend = UDS_BACKEND_AUTO;
 
@@ -93,15 +92,35 @@ static esp_err_t on_apply(const cJSON *settings)
     return ESP_OK;
 }
 
+static esp_err_t uds_settings_migrate(uint32_t from_version, cJSON *settings)
+{
+    /* v1 -> v2 (2026-09-06): the "elm327" backend value no longer
+     * exists — map a stored one to auto so the config still validates */
+    if (from_version < 2)
+    {
+        const cJSON *v = cJSON_GetObjectItemCaseSensitive(settings, "backend");
+
+        if (cJSON_IsString(v) && v->valuestring != NULL &&
+            strcmp(v->valuestring, "elm327") == 0)
+        {
+            cJSON_ReplaceItemInObjectCaseSensitive(settings, "backend",
+                                                   cJSON_CreateString("auto"));
+        }
+    }
+
+    return ESP_OK;
+}
+
 esp_err_t uds_settings_register(void)
 {
     static const settings_descriptor_t DESC =
     {
         .name        = "uds_manager",
-        .version     = 1,
+        .version     = 2, /* v2: backend enum auto|obd_chip|isotp */
         .fields      = FIELDS,
         .field_count = sizeof(FIELDS) / sizeof(FIELDS[0]),
         .on_apply    = on_apply,
+        .on_migrate  = uds_settings_migrate,
     };
 
     return settings_manager_register(&DESC);

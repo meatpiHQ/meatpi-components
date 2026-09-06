@@ -60,32 +60,11 @@ static bool s_session;
 
 /* ---- backend resolution ---------------------------------------------------- */
 
-/* The pack-provided alternate AT transport ("elm327"). Registered at
- * ext init, strictly before uds_manager_start — no locking needed. */
-static const uds_transport_t *s_ext_transport;
-
-esp_err_t uds_transport_provide(const uds_transport_t *t)
-{
-    if (t == NULL || t->open == NULL || t->transceive == NULL)
-    {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    s_ext_transport = t;
-    return ESP_OK;
-}
-
-const uds_transport_t *uds_transport_ext(void)
-{
-    return s_ext_transport;
-}
-
 const char *uds_manager_backend_name(uds_backend_t b)
 {
     switch (b)
     {
     case UDS_BACKEND_OBD_CHIP: return "obd_chip";
-    case UDS_BACKEND_ELM327:   return "elm327";
     case UDS_BACKEND_ISOTP:    return "isotp";
     default:                   return "auto";
     }
@@ -100,15 +79,6 @@ static const uds_transport_t *resolve_transport(void)
     switch (uds_settings_config()->backend)
     {
     case UDS_BACKEND_OBD_CHIP:
-        return uds_transport_obd();
-
-    case UDS_BACKEND_ELM327:
-        if (can_up && uds_transport_ext() != NULL)
-        {
-            return uds_transport_ext();
-        }
-        ESP_LOGW(TAG, "elm327 backend forced but unavailable (CAN down "
-                      "or not in this build) -> obd_chip");
         return uds_transport_obd();
 
     case UDS_BACKEND_ISOTP:
@@ -129,7 +99,6 @@ uds_backend_t uds_manager_active_backend(void)
     const uds_transport_t *t = resolve_transport();
 
     if (t == uds_transport_isotp())                          return UDS_BACKEND_ISOTP;
-    if (t == uds_transport_ext() && uds_transport_ext() != NULL) return UDS_BACKEND_ELM327;
     return UDS_BACKEND_OBD_CHIP;
 }
 

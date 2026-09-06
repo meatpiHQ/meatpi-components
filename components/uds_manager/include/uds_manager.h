@@ -23,17 +23,17 @@
 /**
  * @file uds_manager.h
  * @brief UDS (ISO 14229) request/response over a SELECTABLE transport —
- *        the MIC3624 (obd_chip), an add-on AT engine (elm327), or
- *        firmware ISO-TP over native CAN (isotp / can_manager).
+ *        the MIC3624 (obd_chip) or firmware ISO-TP over native CAN
+ *        (isotp / can_manager).
  *
  * Model: uds_manager owns the UDS protocol (0x78 responsePending loop,
  * NRC decode, tester-present keepalive, one-transaction-at-a-time
- * claim); the transport is a thin vtable so all three backends get the
+ * claim); the transport is a thin vtable so both backends get the
  * protocol for free. Consumers: the UDS terminal (`uds` CLI +
  * POST /api/uds/request) and the Berry `script_engine`.
  *
  * Settings ("uds_manager", reboot-to-apply): backend
- * (auto|obd_chip|elm327|isotp, default auto = isotp when can_manager is
+ * (auto|obd_chip|isotp, default auto = isotp when can_manager is
  * running else obd_chip), p2_ms, p2star_ms, tester_present_ms, cli.
  */
 #pragma once
@@ -81,7 +81,6 @@ typedef enum
 {
     UDS_BACKEND_AUTO = 0,
     UDS_BACKEND_OBD_CHIP,
-    UDS_BACKEND_ELM327,
     UDS_BACKEND_ISOTP,
 } uds_backend_t;
 

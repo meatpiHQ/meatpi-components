@@ -46,7 +46,7 @@ static esp_err_t obd_transceive(const uds_addr_t *addr,
                                 size_t *resp_len, uint32_t p2_ms,
                                 uint32_t p2star_ms, uint8_t *pending_out)
 {
-    return uds_at_transceive(obd_req, false, addr, req, req_len, resp, resp_cap,
+    return uds_at_transceive(obd_req, addr, req, req_len, resp, resp_cap,
                              resp_len, p2_ms, p2star_ms, pending_out);
 }
 

@@ -22,15 +22,14 @@
 
 /**
  * @file uds_transport_at.c
- * @brief The AT-hex transaction shared by the obd_chip and elm327
- *        backends, plus the pure response parser (host-tested).
+ * @brief The AT-hex transaction behind the obd_chip transport, plus the
+ *        pure response parser (host-tested).
  *
  * Per target: set the protocol (ATSP6/7), tx header (ATSH / ATCP+ATSH
  * for 29-bit), rx filter (ATCRA), and headers-off + auto-formatting so
  * the chip does ISO-TP and hands us the pure UDS payload. The setup is
- * CACHED (see `cacheable`) for dedicated software engines so repeat
- * requests to the same ECU cost one AT command; the shared MIC always
- * re-sets it (autopid may change headers between our requests).
+ * re-sent on every request: the MIC is shared with autopid, which may
+ * change headers between our requests.
  */
 #include "uds_transport.h"
 
@@ -249,7 +248,7 @@ static void hex_no_space(const uint8_t *b, size_t len, char *out, size_t cap)
     out[o] = '\0';
 }
 
-esp_err_t uds_at_transceive(uds_at_request_fn req_fn, bool cacheable,
+esp_err_t uds_at_transceive(uds_at_request_fn req_fn,
                             const uds_addr_t *addr,
                             const uint8_t *req, size_t req_len,
                             uint8_t *resp, size_t resp_cap, size_t *resp_len,
@@ -264,7 +263,7 @@ esp_err_t uds_at_transceive(uds_at_request_fn req_fn, bool cacheable,
 
     if (pending_out != NULL)
     {
-        *pending_out = 0; /* the MIC/ELM consumes 0x78 internally */
+        *pending_out = 0; /* the MIC consumes 0x78 internally */
     }
 
     /* give the chip the extended window: it waits out responsePending
@@ -274,19 +273,9 @@ esp_err_t uds_at_transceive(uds_at_request_fn req_fn, bool cacheable,
     char at[48];
     char rbuf[512];
 
-    /* Setup caching: sending protocol/header/filter/mode on EVERY request
-     * is ~7 AT round-trips — fine for the fast MIC, too slow through a
-     * software AT engine. Re-send the setup only when the target
-     * (req_fn+addr) changes; steady-state = one AT command (the hex). */
-    static uds_at_request_fn s_last_fn;
-    static uint32_t s_last_tx, s_last_rx;
-    static bool s_last_ext, s_configured;
-
-    bool need_setup = !cacheable || !s_configured || s_last_fn != req_fn ||
-                      s_last_tx != addr->tx_id || s_last_rx != addr->rx_id ||
-                      s_last_ext != addr->ext_id;
-
-    if (need_setup)
+    /* Target setup on every request (~7 AT round-trips, fine for the
+     * MIC): protocol, tx header, rx filter, then headers-off +
+     * auto-formatting + spaces. */
     {
         /* CAN protocol: ISO 15765-4, 11-bit (SP6) or 29-bit (SP7), 500k */
         (void)req_fn(addr->ext_id ? "ATSP7" : "ATSP6", rbuf, sizeof(rbuf),
@@ -318,12 +307,6 @@ esp_err_t uds_at_transceive(uds_at_request_fn req_fn, bool cacheable,
         (void)req_fn("ATH0", rbuf, sizeof(rbuf), 800);
         (void)req_fn("ATCAF1", rbuf, sizeof(rbuf), 800);
         (void)req_fn("ATS1", rbuf, sizeof(rbuf), 800);
-
-        s_last_fn = req_fn;
-        s_last_tx = addr->tx_id;
-        s_last_rx = addr->rx_id;
-        s_last_ext = addr->ext_id;
-        s_configured = true;
     }
 
     /* the request */
@@ -335,7 +318,6 @@ esp_err_t uds_at_transceive(uds_at_request_fn req_fn, bool cacheable,
 
     if (err != ESP_OK)
     {
-        s_configured = false; /* re-setup after any failure */
         return err;
     }
 

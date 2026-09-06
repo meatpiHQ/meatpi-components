@@ -30,12 +30,8 @@
  *   uds_transport_obd   — obd_chip AT (MIC3624), always available.
  *   uds_transport_isotp — raw UDS PDU over the registered ISO-TP
  *                         provider (can_isotp.h) on can_manager.
- *   "elm327"            — an alternate AT-engine transport registered
- *                         by an add-on pack via uds_transport_provide().
  *
- * Public header so a pack can implement a transport out-of-tree; the
- * shared AT-hex helpers below keep pack transports byte-identical to
- * the obd_chip path.
+ * The shared AT-hex helpers below are pure and host-tested.
  */
 #pragma once
 
@@ -74,21 +70,12 @@ typedef struct uds_transport_s
 const uds_transport_t *uds_transport_obd(void);
 const uds_transport_t *uds_transport_isotp(void);
 
-/** Register the alternate transport behind the "elm327" backend value
- *  (an add-on pack calls this once at ext init). The table must live
- *  forever. */
-esp_err_t uds_transport_provide(const uds_transport_t *t);
-
-/** The pack-provided transport, or NULL when this build has none
- *  (backend "elm327" then falls back to obd_chip with a log line). */
-const uds_transport_t *uds_transport_ext(void);
-
-/* Shared AT-hex transaction (obd_chip + pack AT transports differ only
- * in the request fn). */
+/* The AT-hex transaction (the request fn is injected so the transaction
+ * stays testable). */
 typedef esp_err_t (*uds_at_request_fn)(const char *cmd, char *resp,
                                        size_t resp_len, uint32_t timeout_ms);
 
-esp_err_t uds_at_transceive(uds_at_request_fn req_fn, bool cacheable,
+esp_err_t uds_at_transceive(uds_at_request_fn req_fn,
                             const uds_addr_t *addr,
                             const uint8_t *req, size_t req_len,
                             uint8_t *resp, size_t resp_cap, size_t *resp_len,

@@ -12,8 +12,7 @@ idf_component_register(
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "."
     # Service: UDS protocol over a selectable transport (MIC via obd_chip,
-    # firmware ISO-TP on can_manager's provider slot, or an alternate AT
-    # transport registered by an add-on pack — uds_transport_provide).
+    # or firmware ISO-TP on can_manager's provider slot).
     PRIV_REQUIRES obd_chip can_manager event_manager obd_gate
                   settings_manager log_manager esp_timer
                   http_server_manager esp_http_server espressif__cjson

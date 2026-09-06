@@ -29,6 +29,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "esp_err.h"
 
@@ -77,10 +78,16 @@ esp_err_t fs_path_temp_name(const char *path, char *out, size_t out_len);
  */
 esp_err_t fs_path_parent(const char *path, char *out, size_t out_len);
 
+/**
+ * True when @p len bytes at @p buf are all erased flash (0xFF). Used to
+ * recognise a never-formatted partition (first boot after an erase) so it
+ * can be formatted explicitly instead of letting lfs_mount fail loudly.
+ * Pure — host-tested. NULL or empty buffers are NOT blank.
+ */
+bool fs_region_is_blank(const uint8_t *buf, size_t len);
+
 /* ---- filesystem.c internals shared with filesystem_stream.c (esp target
  * only — never referenced by the host-built path module) ------------------- */
-
-#include <stdint.h>
 
 esp_err_t fs_check_path(const char *path, fs_backend_t *out_backend);
 esp_err_t fs_mkdirs_in_lock(const char *dir_path); /* call under fs_lock */

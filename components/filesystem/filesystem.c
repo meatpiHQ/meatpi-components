@@ -40,6 +40,7 @@
 #include "esp_attr.h"
 #include "esp_littlefs.h"
 #include "esp_log.h"
+#include "esp_partition.h"
 #include "esp_vfs_fat.h" /* /sd capacity (backend mounted by external_storage) */
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -50,6 +51,45 @@
 #include "filesystem_private.h"
 
 static const char *TAG = "filesystem";
+
+/* LittleFS keeps its superblock in the dir pair {block 0, block 1}; on
+ * ESP flash a block is one 4 KiB sector. Erased flash reads 0xFF. */
+#define FS_LFS_BLOCK_SIZE 4096u
+#define FS_BLANK_PROBE    64u
+
+/**
+ * True when the named partition exists and both superblock blocks read as
+ * erased flash — i.e. it has never been formatted. Any read error or a
+ * missing partition counts as "not blank" so the normal mount path runs.
+ */
+static bool fs_partition_is_blank(const char *label)
+{
+    const esp_partition_t *part = esp_partition_find_first(
+        ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, label);
+
+    if (part == NULL)
+    {
+        return false;
+    }
+
+    uint8_t probe[FS_BLANK_PROBE];
+
+    for (uint32_t blk = 0; blk < 2; blk++)
+    {
+        if (esp_partition_read(part, blk * FS_LFS_BLOCK_SIZE, probe,
+                               sizeof(probe)) != ESP_OK)
+        {
+            return false;
+        }
+
+        if (!fs_region_is_blank(probe, sizeof(probe)))
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
 
 typedef struct
 {
@@ -173,6 +213,28 @@ esp_err_t filesystem_init(void)
     if (s_lock == NULL)
     {
         s_lock = xSemaphoreCreateRecursiveMutexStatic(&s_lock_buf);
+    }
+
+    /* First boot after an erase: the partition is all 0xFF, and letting
+     * esp_vfs_littlefs_register() discover that makes lfs_mount() log
+     * "Corrupted dir pair" at E level before format_if_mount_failed kicks
+     * in. Those E lines latched a boot_errors fault on every brand-new
+     * unit (fresh-unit bench 2026-08-31). Probe the superblock pair
+     * ({0,1}, one flash block each) and format a blank partition quietly
+     * before mounting. A non-blank partition that fails to mount still
+     * takes the loud path — that IS a fault worth seeing. */
+    if (fs_partition_is_blank(CONFIG_FILESYSTEM_PARTITION_LABEL))
+    {
+        ESP_LOGI(TAG, "'%s' is blank (first boot): formatting",
+                 CONFIG_FILESYSTEM_PARTITION_LABEL);
+
+        esp_err_t ferr = esp_littlefs_format(CONFIG_FILESYSTEM_PARTITION_LABEL);
+
+        if (ferr != ESP_OK)
+        {
+            ESP_LOGW(TAG, "pre-format failed: %s (mount will retry)",
+                     esp_err_to_name(ferr));
+        }
     }
 
     esp_vfs_littlefs_conf_t conf =

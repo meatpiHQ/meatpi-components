@@ -185,3 +185,21 @@ esp_err_t fs_path_parent(const char *path, char *out, size_t out_len)
     out[plen] = '\0';
     return ESP_OK;
 }
+
+bool fs_region_is_blank(const uint8_t *buf, size_t len)
+{
+    if (buf == NULL || len == 0)
+    {
+        return false;
+    }
+
+    for (size_t i = 0; i < len; i++)
+    {
+        if (buf[i] != 0xFF)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}

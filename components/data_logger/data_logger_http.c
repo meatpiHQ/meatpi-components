@@ -147,8 +147,12 @@ static esp_err_t gate_post_handler(httpd_req_t *req)
 }
 
 /* ---- GET /api/logger/export?stream=params&since=<cursor>&limit=<n> --------
- * Device-contract ask #8: incremental NDJSON export of the params stream
- * (jsonl engine only). Cursor = "<file-epoch>:<byte-offset>", opaque to
+ * Device-contract ask #8: incremental export of the params stream (the
+ * jsonl engine; the csv engine too since 2026-09-06 — same cursor, same
+ * budgets, the trailing meta line stays JSON). `name=<param>` (2026-09-06, the dashboard's
+ * history) returns only that parameter's records — the cursor still
+ * advances over every line read, bounded per request by
+ * DL_EXPORT_SCAN_CAP. Cursor = "<file-epoch>:<byte-offset>", opaque to
  * the client; the FINAL line of every response is a meta record
  * {"_cursor":"<next>","more":true|false} — resend it as `since` to
  * continue. Files are epoch-named (dl_<epoch>.jsonl) so the cursor
@@ -157,11 +161,74 @@ static esp_err_t gate_post_handler(httpd_req_t *req)
  * ACTIVE file's trailing partial line is never emitted. /sd reads are
  * httpd-task-safe (only internal flash has the cache corollary). */
 #define DL_EXPORT_MAX_FILES  64
-#define DL_EXPORT_BYTE_CAP   16384
+#define DL_EXPORT_BYTE_CAP   65536          /* emitted bytes per request  */
+#define DL_EXPORT_SCAN_CAP   (512 * 1024)   /* bytes read per request     */
 #define DL_EXPORT_LINE_CAP   2000
 #define DL_EXPORT_LINE_DEF   500
 
-static int export_list_epochs(int64_t *out, int cap)
+/* ?name=<param> filter (dashboard history, 2026-09-06): a record's
+ * "param":"<source>.<name>" matches on the full value or on the part
+ * after its last '.', so the UI can ask by parameter name without knowing
+ * the sink's source prefix. Plain substring scan — no JSON parse. */
+static bool export_line_matches(const char *line, size_t len,
+                                const char *name, bool csv)
+{
+    static const char KEY[] = "\"param\":\"";
+    const size_t klen = sizeof(KEY) - 1;
+    const char *p = NULL;
+    const char *q = NULL;
+
+    if (csv)
+    {
+        /* "ts_ms,source.name,value": the param is the second field (the
+         * header row "ts_ms,param,value" never matches a real name) */
+        p = memchr(line, ',', len);
+
+        if (p == NULL)
+        {
+            return false;
+        }
+
+        p++;
+        q = memchr(p, ',', len - (size_t)(p - line));
+    }
+    else
+    {
+        for (size_t i = 0; i + klen <= len; i++)
+        {
+            if (line[i] == '"' && memcmp(line + i, KEY, klen) == 0)
+            {
+                p = line + i + klen;
+                break;
+            }
+        }
+
+        if (p == NULL)
+        {
+            return false;
+        }
+
+        q = memchr(p, '"', len - (size_t)(p - line));
+    }
+
+    if (q == NULL)
+    {
+        return false;
+    }
+
+    size_t vlen = (size_t)(q - p);
+    size_t nlen = strlen(name);
+
+    if (vlen == nlen)
+    {
+        return memcmp(p, name, nlen) == 0;
+    }
+
+    return vlen > nlen && p[vlen - nlen - 1] == '.' &&
+           memcmp(p + vlen - nlen, name, nlen) == 0;
+}
+
+static int export_list_epochs(int64_t *out, int cap, const char *ext)
 {
     DIR *d = opendir(DL_DIR);
 
@@ -178,7 +245,7 @@ static int export_list_epochs(int64_t *out, int cap)
         int64_t epoch;
         const char *dot = strrchr(e->d_name, '.');
 
-        if (dot != NULL && strcmp(dot, ".jsonl") == 0 &&
+        if (dot != NULL && strcmp(dot, ext) == 0 &&
             strncmp(e->d_name, DL_PREFIX_PARAM,
                     strlen(DL_PREFIX_PARAM)) == 0 &&
             dl_files_parse(e->d_name, &epoch))
@@ -211,15 +278,32 @@ static esp_err_t export_get_handler(httpd_req_t *req)
 {
     const dl_cfg_t *cfg = dl_settings_config();
 
-    if (cfg == NULL || strcmp(cfg->format, "jsonl") != 0)
+    /* the two line-oriented engines stream through here (jsonl since the
+     * device contract, csv since 2026-09-06 for the dashboard history);
+     * binary and sqlite files are fetched whole via /api/fs/download */
+    const char *ext = NULL;
+    bool csv = false;
+
+    if (cfg != NULL && strcmp(cfg->format, "jsonl") == 0)
+    {
+        ext = ".jsonl";
+    }
+    else if (cfg != NULL && strcmp(cfg->format, "csv") == 0)
+    {
+        ext = ".csv";
+        csv = true;
+    }
+
+    if (ext == NULL)
     {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
-                            "params stream is not jsonl");
+                            "params stream is not jsonl or csv");
         return ESP_FAIL;
     }
 
-    char query[128] = "";
+    char query[160] = "";
     char val[48];
+    char name[48] = "";
     int64_t since_epoch = 0;
     long since_off = 0;
     int limit = DL_EXPORT_LINE_DEF;
@@ -250,10 +334,16 @@ static esp_err_t export_get_handler(httpd_req_t *req)
                 limit = DL_EXPORT_LINE_DEF;
             }
         }
+
+        if (httpd_query_key_value(query, "name", name, sizeof(name)) !=
+                ESP_OK)
+        {
+            name[0] = '\0';
+        }
     }
 
     int64_t epochs[DL_EXPORT_MAX_FILES];
-    int nfiles = export_list_epochs(epochs, DL_EXPORT_MAX_FILES);
+    int nfiles = export_list_epochs(epochs, DL_EXPORT_MAX_FILES, ext);
 
     /* first file at/after the cursor (a retired epoch resumes at the
        next newer file, offset 0) */
@@ -269,23 +359,24 @@ static esp_err_t export_get_handler(httpd_req_t *req)
         since_off = 0;
     }
 
-    httpd_resp_set_type(req, "application/x-ndjson");
+    httpd_resp_set_type(req, csv ? "text/plain" : "application/x-ndjson");
 
     long off = since_off;
     int lines_left = limit;
     int bytes_left = DL_EXPORT_BYTE_CAP;
+    int scan_left = DL_EXPORT_SCAN_CAP;
     bool more = false;
     bool gated_here = false;
     int64_t cur_epoch = (idx < nfiles) ? epochs[idx] : since_epoch;
 
-    while (idx < nfiles && lines_left > 0 && bytes_left > 0)
+    while (idx < nfiles && lines_left > 0 && bytes_left > 0 && scan_left > 0)
     {
         char fname[40];
         char path[64];
 
         cur_epoch = epochs[idx];
         dl_files_make(fname, sizeof(fname), DL_PREFIX_PARAM, cur_epoch,
-                      ".jsonl");
+                      ext);
         snprintf(path, sizeof(path), DL_DIR "/%s", fname);
 
         FILE *f = fopen(path, "rb");
@@ -303,7 +394,9 @@ static esp_err_t export_get_handler(httpd_req_t *req)
                 dl_runtime_gate(false);
                 gated_here = true;
 
-                for (int t = 0; t < 10 && f == NULL; t++)
+                /* the writer is notified and closes within its loop; the
+                   retry window still covers a writer busy in a batch */
+                for (int t = 0; t < 25 && f == NULL; t++)
                 {
                     vTaskDelay(pdMS_TO_TICKS(60));
                     f = fopen(path, "rb");
@@ -321,9 +414,8 @@ static esp_err_t export_get_handler(httpd_req_t *req)
         fseek(f, 0, SEEK_END);
         long fsize = ftell(f);
 
-        fseek(f, off, SEEK_SET);
-
-        while (lines_left > 0 && bytes_left > 0 && off < fsize)
+        while (lines_left > 0 && bytes_left > 0 && scan_left > 0 &&
+               off < fsize)
         {
             char buf[1024];
             size_t want = sizeof(buf);
@@ -333,10 +425,14 @@ static esp_err_t export_get_handler(httpd_req_t *req)
                 want = (size_t)(fsize - off);
             }
 
-            if ((int)want > bytes_left)
+            if ((int)want > scan_left)
             {
-                want = (size_t)bytes_left;
+                want = (size_t)scan_left;
             }
+
+            /* every window starts exactly at the cursor: the partial tail
+               of the previous window is re-read, never skipped */
+            fseek(f, off, SEEK_SET);
 
             size_t n = fread(buf, 1, want, f);
 
@@ -345,33 +441,58 @@ static esp_err_t export_get_handler(httpd_req_t *req)
                 break;
             }
 
-            /* cut on the last record boundary, and no more lines than
-               the budget allows */
-            size_t keep = 0;
-            int newlines = 0;
+            /* walk the complete lines: forward the matching ones, keep the
+               offsets exact, stop once a budget is spent */
+            size_t consumed = 0;
+            bool stop = false;
 
-            for (size_t i = 0; i < n; i++)
+            for (size_t i = 0; i < n && !stop; i++)
             {
-                if (buf[i] == '\n')
+                if (buf[i] != '\n')
                 {
-                    newlines++;
-                    keep = i + 1;
+                    continue;
+                }
 
-                    if (newlines == lines_left)
+                const char *line = buf + consumed;
+                size_t len = i + 1 - consumed;
+
+                if (name[0] == '\0' ||
+                    export_line_matches(line, len, name, csv))
+                {
+                    if ((int)len > bytes_left && lines_left < limit)
                     {
+                        stop = true;   /* does not fit: next request */
                         break;
                     }
+
+                    httpd_resp_send_chunk(req, line, len);
+                    bytes_left -= (int)len;
+                    lines_left--;
+                }
+
+                consumed = i + 1;
+
+                if (lines_left == 0 || bytes_left <= 0)
+                {
+                    stop = true;
                 }
             }
 
-            if (keep == 0)
+            if (consumed == 0)
             {
                 /* no boundary in this window: a >1 KB record mid-file is
-                   forwarded raw (offsets stay exact); a trailing partial
-                   line (active file mid-append) is left for next time */
+                   forwarded raw when unfiltered (offsets stay exact) or
+                   skipped when filtered; a trailing partial line (active
+                   file mid-append) is left for next time */
                 if (off + (long)n < fsize && n == sizeof(buf))
                 {
-                    keep = n;
+                    if (name[0] == '\0')
+                    {
+                        httpd_resp_send_chunk(req, buf, n);
+                        bytes_left -= (int)n;
+                    }
+
+                    consumed = n;
                 }
                 else
                 {
@@ -379,10 +500,13 @@ static esp_err_t export_get_handler(httpd_req_t *req)
                 }
             }
 
-            httpd_resp_send_chunk(req, buf, keep);
-            off += (long)keep;
-            bytes_left -= (int)keep;
-            lines_left -= newlines;
+            off += (long)consumed;
+            scan_left -= (int)consumed;
+
+            if (stop)
+            {
+                break;
+            }
         }
 
         bool file_done = (off >= fsize);

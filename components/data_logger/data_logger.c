@@ -479,7 +479,7 @@ static void writer_task(void *arg)
              * the newest records from before the trigger */
             close_all();
             s_stats.storage_ok = false;
-            vTaskDelay(pdMS_TO_TICKS(200));
+            ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(200)); /* resume promptly too */
             continue;
         }
 
@@ -538,7 +538,12 @@ static void writer_task(void *arg)
             continue;
         }
 
-        vTaskDelay(pdMS_TO_TICKS(cfg->flush_ms));
+        /* the nap ends early when the gate flips (dl_runtime_gate notifies):
+           a pause — a rule, /api/logger/gate or the export reading the
+           active file — closes the files right away instead of up to
+           flush_ms later (2026-09-06; the export used to find the newest
+           file still locked and return nothing) */
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(cfg->flush_ms));
 
         if (!s_run || !s_gate)
         {
@@ -780,4 +785,9 @@ void dl_runtime_gate(bool on)
     }
 
     s_gate = on;
+
+    if (s_task != NULL)
+    {
+        xTaskNotifyGive(s_task);   /* wake the writer out of its nap */
+    }
 }

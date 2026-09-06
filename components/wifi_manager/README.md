@@ -4,12 +4,17 @@
 
 Feature component owning the WiFi radio. Rewrite of the legacy WiCAN WiFi manager
 against Coding Standard rev 2.1: same field-proven connection logic — STA with up
-to 5 prioritized fallback networks, scan-based candidate selection, a per-SSID
-auth-failure ban list (3 fails → 10 min; a ban means "prefer anything else",
-never "stop trying" — when the banned network is the only option it is still
-retried once per minute: the same SSID name can carry a different password at
-another location and the device must reconnect promptly back home, meatpi
-2026-07-08), blind sequential fallback when nothing visible matches (hidden
+to 5 prioritized fallback networks, scan-based candidate selection, a per-entry
+attempt-failure memory (2026-09-06, replaces the timed ban list: an entry whose
+last 3 connection attempts failed — any reason but "not found" — is only
+DEPRIORITISED — every other visible network
+on the list is tried first, and when it is the only one around it keeps being
+tried at the normal reconnect cadence, because it is our best chance; nothing
+is ever blocked for a period. Memory is per config entry so two entries can
+carry the same SSID with different passwords — home vs elsewhere, meatpi — and
+it fades after 2 min so the entry regains its place in the order; a failed
+roam-to-preferred trial deprioritises with one strike and the device goes
+straight back), blind sequential fallback when nothing visible matches (hidden
 SSIDs + dense-airspace scan truncation), roam-to-preferred (while connected to
 a fallback, periodically re-scan and migrate to a higher-priority network —
 "home beats the car hotspot"), strongest-BSSID association when one SSID has
@@ -126,9 +131,10 @@ so a PSRAM stack is compliant with §2.
 
 ## Tests
 
-- **Host (`host_test/`):** the pure selection/ban module — priority order,
-  fallback pick, ban after threshold, ban expiry, success clears, all-banned
-  override, sequential rotation.
+- **Host (`host_test/`):** the pure selection/failure-memory module —
+  priority order, fallback pick, deprioritise after threshold, memory fade,
+  success clears, all-failed keeps trying (round-robin), duplicate-SSID
+  entries independent, roam never to the same SSID, sequential rotation.
 - **On-target (`test_apps/`):** composition boot (settings apply → start), AP
   comes up with derived SSID, scan returns JSON, invalid settings rejected via
   `settings_manager_set`, no-apply-at-runtime. Builds against the main partition

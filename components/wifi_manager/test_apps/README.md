@@ -56,7 +56,7 @@ against the field-table-generated schema).
 |---|---|
 | DUT | WiCAN Pro, ESP32-S3 rev v0.2, COM7, test app on ESP-IDF v6.0.2 |
 | AP machine | rpi001 — Pi 5 rev 1.1, Raspberry Pi OS bookworm, kernel 6.12.34 |
-| AP radio | USB Realtek `0bda:c812` (RTL8822CU), in-kernel `rtw_8822cu`, AP mode verified |
+| AP radio | a USB stick — RTL8822CU `rtw_8822cu` when verified (2026-07-02), MT7612U `mt76x2u` on `wtest0` since 2026-07-31. **Never the Pi's built-in brcmfmac radio: in AP mode it goes deaf a minute after a client joins (2026-09-06)** |
 | AP software | NetworkManager hotspot (WPA2-PSK, NM shared-mode DHCP, 10.42.0.1/24); hostapd installed for deauth-style scenarios |
 
 ## Wiring

@@ -107,6 +107,19 @@ esp_err_t wifi_manager_get_sta_ip(char *buf, size_t buf_len);
 /** Number of stations currently associated to our AP. */
 uint16_t wifi_manager_get_ap_station_count(void);
 
+/** The station's last connect attempt, for the status API / UI (2026-09-06):
+ *  which entry, why it dropped, and whether it is now tried only after
+ *  the other networks on the list. */
+typedef struct
+{
+    char    ssid[33];      /**< network of the last attempt ("" = none yet) */
+    uint8_t last_reason;   /**< WIFI_REASON_* of the last disconnect, 0 = none */
+    uint8_t fail_count;    /**< recent consecutive authentication failures  */
+    bool    deprioritised; /**< true = other networks are tried first        */
+} wifi_manager_sta_attempt_t;
+
+void wifi_manager_get_sta_attempt(wifi_manager_sta_attempt_t *out);
+
 /** Copy the AP's current gateway IP (dotted quad) into @p buf.
  *  ESP_ERR_INVALID_STATE when the AP interface has no address. */
 esp_err_t wifi_manager_get_ap_ip(char *buf, size_t buf_len);

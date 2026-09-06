@@ -44,15 +44,23 @@ extern "C" {
 #define WM_MAX_FALLBACKS  5
 #define WM_MAX_CANDIDATES (1 + WM_MAX_FALLBACKS)
 
-/* Ban list: SSIDs that repeatedly fail auth get skipped for a while.
- * A ban means "prefer anything else", NOT "stop trying": when a banned
- * network is the only candidate available it is still retried once per
- * WM_BANNED_RETRY_MS (meatpi 2026-07-08 — the same SSID name can carry
- * a different password at another location; the device must reconnect
- * promptly once back in range of the right one). */
+/* Failure memory (meatpi 2026-09-06, replaces the timed ban list): an
+ * entry whose last WM_AUTH_FAIL_THRESHOLD connection attempts failed —
+ * for ANY reason except "network not found" (a wrong password, an AP
+ * that never finishes the handshake, a full AP, a refused association)
+ * — is only DEPRIORITISED: every other visible network on the list is
+ * tried first, and when it is the only network around it keeps being
+ * tried at the normal reconnect cadence, because it is our best chance.
+ * Nothing is ever blocked for a period (the old 10-minute ban parked a
+ * device for minutes after three AP hiccups). The memory is per config
+ * ENTRY, not per SSID name: two entries may carry the same SSID with
+ * different passwords (home vs elsewhere) and a failure with one
+ * password must not stop the other from being tried. It fades after
+ * WM_FAIL_MEMORY_MS without a new failure, so an entry regains its
+ * place in the priority order (roam-to-preferred may try it again, and
+ * a failed roam trial costs one strike, not three). */
 #define WM_AUTH_FAIL_THRESHOLD 3
-#define WM_BAN_DURATION_MS     600000u /* 10 minutes */
-#define WM_BANNED_RETRY_MS     60000u  /* banned-only trickle cadence */
+#define WM_FAIL_MEMORY_MS      (2u * 60u * 1000u) /* 2 minutes */
 
 typedef enum
 {
@@ -158,34 +166,33 @@ bool wm_parse_ap_ipv4(const char *s, uint32_t *out);
 /** True when @p mask (host order) is a contiguous netmask (/1../31). */
 bool wm_netmask_valid(uint32_t mask);
 
-/* ---- pure candidate selection + ban list (wifi_manager_select.c) --------- */
+/* ---- pure candidate selection + failure memory (wifi_manager_select.c) --- */
 
 typedef struct
 {
-    char     ssid[WM_SSID_LEN];
-    uint8_t  fail_count;
-    uint32_t banned_until_ms; /* 0 => not banned */
-} wm_ban_entry_t;
+    uint8_t  fail_count;   /* consecutive failed connection attempts     */
+    uint32_t last_fail_ms; /* tick of the newest one (memory fade)       */
+} wm_fail_entry_t;
 
 typedef struct
 {
-    wm_ban_entry_t bans[WM_MAX_CANDIDATES * 2];
-    int            seq_cursor;         /* rotation state, no-scan path  */
-    uint32_t       last_banned_try_ms; /* banned-only retry throttle;
-                                          0 = none yet                  */
+    wm_fail_entry_t fails[WM_MAX_CANDIDATES]; /* per candidate INDEX     */
+    int             seq_cursor; /* rotation state, no-scan path          */
+    int             dep_cursor; /* rotation among all-failed picks       */
 } wm_select_state_t;
 
 /** Reset selection state; makes the first sequential pick the primary. */
 void wm_select_init(wm_select_state_t *st);
 
 /**
- * Pick a candidate given scan results: the primary if present and not
- * banned, else the first present un-banned fallback (priority order).
- * When everything visible is banned, a banned candidate is returned at
- * most once per WM_BANNED_RETRY_MS (else -1) — banned means "prefer
- * anything else", never "stop trying". @p present is an array of SSIDs
- * seen in the scan. Returns candidate index or -1 (nothing eligible
- * this cycle).
+ * Pick a candidate given scan results: the highest-priority VISIBLE entry
+ * with a clean record (fewer than WM_AUTH_FAIL_THRESHOLD recent failed
+ * attempts). When every visible entry has failed, one of them is still
+ * returned — round-robin, so two entries sharing an SSID (different
+ * passwords) alternate — because an entry that fails authentication is
+ * still our best chance when nothing else is there. @p present is an
+ * array of SSIDs seen in the scan. Returns -1 only when nothing
+ * configured is visible.
  */
 int wm_select_from_scan(wm_select_state_t *st, const wm_network_t *cand,
                         size_t cand_count,
@@ -195,8 +202,8 @@ int wm_select_from_scan(wm_select_state_t *st, const wm_network_t *cand,
 /**
  * No-scan/blind path (single network, scan failed, or nothing visible
  * matched — hidden SSIDs and scan-truncation land here): rotate through
- * the candidates, skipping banned ones; all-banned falls back to the
- * same WM_BANNED_RETRY_MS throttle. Returns index or -1.
+ * the candidates, skipping ones that failed lately; when all have, rotate
+ * through all of them. Returns -1 only for an empty list.
  */
 int wm_select_sequential(wm_select_state_t *st, const wm_network_t *cand,
                          size_t cand_count, uint32_t now_ms);
@@ -204,24 +211,36 @@ int wm_select_sequential(wm_select_state_t *st, const wm_network_t *cand,
 /**
  * Roam-to-preferred check (call while CONNECTED to candidate
  * @p current_idx > 0): returns the highest-priority candidate index
- * < current_idx that is visible in @p present and not banned, or -1
- * (stay). The "home > car hotspot" migration decision.
+ * < current_idx that is visible in @p present, has a clean record and
+ * carries a DIFFERENT SSID from the working connection (the same name
+ * is the same AP with another password on file — nothing to gain), or
+ * -1 (stay). The "home > car hotspot" migration decision.
  */
 int wm_select_better(wm_select_state_t *st, const wm_network_t *cand,
                      size_t cand_count, int current_idx,
                      const char (*present)[WM_SSID_LEN],
                      size_t present_count, uint32_t now_ms);
 
-/** Record an auth-related failure; bans after WM_AUTH_FAIL_THRESHOLD. */
-void wm_select_on_auth_fail(wm_select_state_t *st, const char *ssid,
+/** Record a failed connection attempt on candidate @p idx (a faded
+ *  memory starts counting again from one). */
+void wm_select_on_attempt_fail(wm_select_state_t *st, int idx,
+                               uint32_t now_ms);
+
+/** Deprioritise @p idx at once (a failed roam trial: we LEFT a working
+ *  network to try it, one strike is proof enough). */
+void wm_select_deprioritise(wm_select_state_t *st, int idx,
                             uint32_t now_ms);
 
-/** Successful connect: clear failure count / ban for @p ssid. */
-void wm_select_on_success(wm_select_state_t *st, const char *ssid);
+/** Successful connect on @p idx: forget its failures. */
+void wm_select_on_success(wm_select_state_t *st, int idx);
 
-/** True while @p ssid is inside its ban window. */
-bool wm_select_is_banned(const wm_select_state_t *st, const char *ssid,
-                         uint32_t now_ms);
+/** Recent consecutive failed attempts on @p idx (0 once the memory faded). */
+uint8_t wm_select_fail_count(const wm_select_state_t *st, int idx,
+                             uint32_t now_ms);
+
+/** True while @p idx is tried only after every other visible network. */
+bool wm_select_is_deprioritised(const wm_select_state_t *st, int idx,
+                                uint32_t now_ms);
 
 /* Escalating reconnect backoff (2026-07-10): how many 5 s reconnect
  * loops to SKIP after real attempt number @p retry_count failed.

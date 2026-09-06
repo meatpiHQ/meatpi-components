@@ -93,6 +93,18 @@ static esp_err_t wifi_status_handler(httpd_req_t *req)
 
     cJSON_AddItemToArray(dns, cJSON_CreateString(dns_main));
     cJSON_AddItemToArray(dns, cJSON_CreateString(dns_backup));
+
+    /* the last station attempt: lets the UI say WHY it is not connected */
+    wifi_manager_sta_attempt_t at;
+
+    wifi_manager_get_sta_attempt(&at);
+
+    cJSON *o = cJSON_AddObjectToObject(resp, "sta_attempt");
+
+    cJSON_AddStringToObject(o, "ssid", at.ssid);
+    cJSON_AddNumberToObject(o, "reason", at.last_reason);
+    cJSON_AddNumberToObject(o, "fail_count", at.fail_count);
+    cJSON_AddBoolToObject(o, "deprioritised", at.deprioritised);
     return send_json(req, resp);
 }
 

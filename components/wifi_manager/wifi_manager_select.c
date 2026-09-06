@@ -22,7 +22,8 @@
 
 /**
  * @file wifi_manager_select.c
- * @brief Pure STA candidate selection + auth-failure ban list.
+ * @brief Pure STA candidate selection + per-entry attempt-failure memory
+ *        (an ordering hint, never a block — meatpi 2026-09-06).
  *        No IDF dependencies — compiled as-is by the host unit tests.
  *        Time comes in as a millisecond tick from the caller.
  */
@@ -116,114 +117,94 @@ void wm_select_init(wm_select_state_t *st)
     /* -1 = "nothing returned yet" so the first sequential pick is the
      * PRIMARY (a zeroed cursor made the first rotation start at [1]) */
     st->seq_cursor = -1;
+    st->dep_cursor = -1;
 }
 
-static wm_ban_entry_t *find_entry(wm_select_state_t *st, const char *ssid)
-{
-    for (size_t i = 0; i < sizeof(st->bans) / sizeof(st->bans[0]); i++)
-    {
-        if (st->bans[i].ssid[0] != '\0' &&
-            strcmp(st->bans[i].ssid, ssid) == 0)
-        {
-            return &st->bans[i];
-        }
-    }
+/* ---- failure memory ------------------------------------------------------ */
 
-    return NULL;
+static wm_fail_entry_t *entry(wm_select_state_t *st, int idx)
+{
+    return (idx >= 0 && idx < WM_MAX_CANDIDATES) ? &st->fails[idx] : NULL;
 }
 
-static wm_ban_entry_t *find_or_create(wm_select_state_t *st, const char *ssid)
+/* tick-wrap-safe: live while less than WM_FAIL_MEMORY_MS passed since the
+   newest failure */
+static bool memory_live(const wm_fail_entry_t *e, uint32_t now_ms)
 {
-    wm_ban_entry_t *e = find_entry(st, ssid);
-
-    if (e != NULL)
-    {
-        return e;
-    }
-
-    for (size_t i = 0; i < sizeof(st->bans) / sizeof(st->bans[0]); i++)
-    {
-        if (st->bans[i].ssid[0] == '\0')
-        {
-            e = &st->bans[i];
-            strncpy(e->ssid, ssid, WM_SSID_LEN - 1);
-            e->ssid[WM_SSID_LEN - 1] = '\0';
-            e->fail_count = 0;
-            e->banned_until_ms = 0;
-            return e;
-        }
-    }
-
-    return NULL; /* table full: worst case we never ban this SSID */
+    return e->fail_count > 0 &&
+           (uint32_t)(now_ms - e->last_fail_ms) < WM_FAIL_MEMORY_MS;
 }
 
-bool wm_select_is_banned(const wm_select_state_t *st, const char *ssid,
-                         uint32_t now_ms)
+uint8_t wm_select_fail_count(const wm_select_state_t *st, int idx,
+                             uint32_t now_ms)
 {
-    if (ssid == NULL || ssid[0] == '\0')
+    if (idx < 0 || idx >= WM_MAX_CANDIDATES)
     {
-        return false;
+        return 0;
     }
 
-    for (size_t i = 0; i < sizeof(st->bans) / sizeof(st->bans[0]); i++)
-    {
-        const wm_ban_entry_t *e = &st->bans[i];
-
-        if (e->ssid[0] != '\0' && strcmp(e->ssid, ssid) == 0)
-        {
-            /* tick-wrap-safe: banned while (banned_until - now) > 0 */
-            return e->banned_until_ms != 0 &&
-                   (int32_t)(e->banned_until_ms - now_ms) > 0;
-        }
-    }
-
-    return false;
+    return memory_live(&st->fails[idx], now_ms) ? st->fails[idx].fail_count
+                                               : 0;
 }
 
-void wm_select_on_auth_fail(wm_select_state_t *st, const char *ssid,
-                            uint32_t now_ms)
+bool wm_select_is_deprioritised(const wm_select_state_t *st, int idx,
+                                uint32_t now_ms)
 {
-    if (ssid == NULL || ssid[0] == '\0')
+    return wm_select_fail_count(st, idx, now_ms) >= WM_AUTH_FAIL_THRESHOLD;
+}
+
+void wm_select_on_attempt_fail(wm_select_state_t *st, int idx,
+                               uint32_t now_ms)
+{
+    wm_fail_entry_t *e = entry(st, idx);
+
+    if (e == NULL)
     {
         return;
     }
 
-    wm_ban_entry_t *e = find_or_create(st, ssid);
-
-    if (e == NULL || wm_select_is_banned(st, ssid, now_ms))
+    if (!memory_live(e, now_ms))
     {
-        return; /* already banned: don't extend the window */
+        e->fail_count = 0; /* faded: an old streak does not count */
     }
 
-    e->fail_count++;
-
-    if (e->fail_count >= WM_AUTH_FAIL_THRESHOLD)
+    if (e->fail_count < 255)
     {
-        e->fail_count = 0;
-        e->banned_until_ms = now_ms + WM_BAN_DURATION_MS;
-
-        if (e->banned_until_ms == 0) /* avoid the "not banned" sentinel */
-        {
-            e->banned_until_ms = 1;
-        }
+        e->fail_count++;
     }
+
+    e->last_fail_ms = now_ms;
 }
 
-void wm_select_on_success(wm_select_state_t *st, const char *ssid)
+void wm_select_deprioritise(wm_select_state_t *st, int idx, uint32_t now_ms)
 {
-    if (ssid == NULL || ssid[0] == '\0')
+    wm_fail_entry_t *e = entry(st, idx);
+
+    if (e == NULL)
     {
         return;
     }
 
-    wm_ban_entry_t *e = find_entry(st, ssid);
+    if (!memory_live(e, now_ms) || e->fail_count < WM_AUTH_FAIL_THRESHOLD)
+    {
+        e->fail_count = WM_AUTH_FAIL_THRESHOLD;
+    }
+
+    e->last_fail_ms = now_ms;
+}
+
+void wm_select_on_success(wm_select_state_t *st, int idx)
+{
+    wm_fail_entry_t *e = entry(st, idx);
 
     if (e != NULL)
     {
         e->fail_count = 0;
-        e->banned_until_ms = 0;
+        e->last_fail_ms = 0;
     }
 }
+
+/* ---- selection ----------------------------------------------------------- */
 
 static bool ssid_present(const char (*present)[WM_SSID_LEN],
                          size_t present_count, const char *ssid)
@@ -244,55 +225,36 @@ static bool ssid_present(const char (*present)[WM_SSID_LEN],
     return false;
 }
 
-/** Banned-only fallback throttle (2026-07-08, meatpi): a banned network
- *  must still be RETRIED when it's all we have — the same SSID name can
- *  carry a different password at another location ("coffee shop" case:
- *  auth fails away from home, must reconnect promptly back home). But
- *  never at the full reconnect cadence (the old code hammered it every
- *  cycle). One banned attempt per WM_BANNED_RETRY_MS is the compromise. */
-static bool banned_retry_due(wm_select_state_t *st, uint32_t now_ms)
-{
-    return st->last_banned_try_ms == 0 ||
-           (int32_t)(now_ms - st->last_banned_try_ms) >=
-               (int32_t)WM_BANNED_RETRY_MS;
-}
-
-static void note_banned_try(wm_select_state_t *st, uint32_t now_ms)
-{
-    st->last_banned_try_ms = (now_ms != 0) ? now_ms : 1;
-}
-
 int wm_select_from_scan(wm_select_state_t *st, const wm_network_t *cand,
                         size_t cand_count,
                         const char (*present)[WM_SSID_LEN],
                         size_t present_count, uint32_t now_ms)
 {
-    /* first pass: priority order, un-banned + visible */
+    /* 1. priority order among the visible entries with a clean record */
     for (size_t i = 0; i < cand_count; i++)
     {
         if (ssid_present(present, present_count, cand[i].ssid) &&
-            !wm_select_is_banned(st, cand[i].ssid, now_ms))
+            !wm_select_is_deprioritised(st, (int)i, now_ms))
         {
             return (int)i;
         }
     }
 
-    /* everything visible is banned: throttled retry (see above) */
-    for (size_t i = 0; i < cand_count; i++)
+    /* 2. every visible entry failed lately: keep trying them anyway —
+     *    round-robin, so two entries sharing an SSID (different
+     *    passwords) alternate instead of the first one hogging every
+     *    attempt (meatpi 2026-09-06: our best chance is still a chance) */
+    for (size_t n = 0; n < cand_count; n++)
     {
-        if (ssid_present(present, present_count, cand[i].ssid))
-        {
-            if (!banned_retry_due(st, now_ms))
-            {
-                return -1;
-            }
+        st->dep_cursor = (st->dep_cursor + 1) % (int)cand_count;
 
-            note_banned_try(st, now_ms);
-            return (int)i;
+        if (ssid_present(present, present_count, cand[st->dep_cursor].ssid))
+        {
+            return st->dep_cursor;
         }
     }
 
-    return -1;
+    return -1; /* nothing configured is visible */
 }
 
 int wm_select_sequential(wm_select_state_t *st, const wm_network_t *cand,
@@ -303,24 +265,18 @@ int wm_select_sequential(wm_select_state_t *st, const wm_network_t *cand,
         return -1;
     }
 
-    /* rotate, skipping banned candidates */
+    /* rotate, skipping entries that failed lately */
     for (size_t i = 0; i < cand_count; i++)
     {
         st->seq_cursor = (st->seq_cursor + 1) % (int)cand_count;
 
-        if (!wm_select_is_banned(st, cand[st->seq_cursor].ssid, now_ms))
+        if (!wm_select_is_deprioritised(st, st->seq_cursor, now_ms))
         {
             return st->seq_cursor;
         }
     }
 
-    /* all banned: throttled retry (same policy as the scan path) */
-    if (!banned_retry_due(st, now_ms))
-    {
-        return -1;
-    }
-
-    note_banned_try(st, now_ms);
+    /* all of them did: rotate through all of them regardless */
     st->seq_cursor = (st->seq_cursor + 1) % (int)cand_count;
     return st->seq_cursor;
 }
@@ -330,18 +286,27 @@ int wm_select_better(wm_select_state_t *st, const wm_network_t *cand,
                      const char (*present)[WM_SSID_LEN],
                      size_t present_count, uint32_t now_ms)
 {
-    if (current_idx <= 0 || (size_t)current_idx > cand_count)
+    if (current_idx <= 0 || (size_t)current_idx >= cand_count)
     {
         return -1;              /* already on the primary (or invalid)   */
     }
 
     for (int i = 0; i < current_idx; i++)
     {
-        if (ssid_present(present, present_count, cand[i].ssid) &&
-            !wm_select_is_banned(st, cand[i].ssid, now_ms))
+        if (!ssid_present(present, present_count, cand[i].ssid) ||
+            wm_select_is_deprioritised(st, i, now_ms))
         {
-            return i;
+            continue;
         }
+
+        /* the same SSID as the working connection is the same AP with
+           another password on file: leaving it gains nothing */
+        if (strcmp(cand[i].ssid, cand[current_idx].ssid) == 0)
+        {
+            continue;
+        }
+
+        return i;
     }
 
     return -1;

@@ -1,6 +1,6 @@
 /**
  * @file test_select.c
- * @brief Unit tests for the pure STA candidate selection + ban list.
+ * @brief Unit tests for the pure STA candidate selection + failure memory.
  */
 #include <string.h>
 
@@ -20,11 +20,11 @@ static void reset(void)
     strcpy(s_cand[2].ssid, "fb2");
 }
 
-static void ban(const char *ssid, uint32_t now)
+static void strike(int idx, uint32_t now)
 {
     for (int i = 0; i < WM_AUTH_FAIL_THRESHOLD; i++)
     {
-        wm_select_on_auth_fail(&s_st, ssid, now);
+        wm_select_on_attempt_fail(&s_st, idx, now);
     }
 }
 
@@ -47,55 +47,55 @@ void test_scan_falls_back_in_priority_order(void)
                                                  present, 2, 0));
 }
 
-void test_scan_skips_banned_candidate(void)
+void test_scan_skips_failed_candidate(void)
 {
     char present[2][WM_SSID_LEN] = { "primary", "fb1" };
 
     reset();
-    ban("primary", 1000);
+    strike(0, 1000);
+    /* three rejections on the primary: the visible fallback goes first */
     TEST_ASSERT_EQUAL_INT(1, wm_select_from_scan(&s_st, s_cand, 3,
                                                  present, 2, 1000));
 }
 
-void test_scan_all_banned_throttled_retry(void)
+void test_scan_all_failed_keeps_trying_round_robin(void)
 {
     char present[2][WM_SSID_LEN] = { "primary", "fb1" };
 
     reset();
-    ban("primary", 1000);
-    ban("fb1", 1000);
+    strike(0, 1000);
+    strike(1, 1000);
 
-    /* first banned-only attempt: allowed (highest priority wins) */
-    TEST_ASSERT_EQUAL_INT(0, wm_select_from_scan(&s_st, s_cand, 3,
-                                                 present, 2, 1000));
-    /* within the throttle window: deferred — no 5 s hammering */
-    TEST_ASSERT_EQUAL_INT(-1, wm_select_from_scan(&s_st, s_cand, 3,
-                                                  present, 2, 2000));
-    TEST_ASSERT_EQUAL_INT(-1, wm_select_from_scan(
-                                  &s_st, s_cand, 3, present, 2,
-                                  1000 + WM_BANNED_RETRY_MS - 1));
-    /* throttle elapsed: retried again (meatpi: same SSID may carry a
-     * different password elsewhere — never stop trying entirely) */
-    TEST_ASSERT_EQUAL_INT(0, wm_select_from_scan(
-                                 &s_st, s_cand, 3, present, 2,
-                                 1000 + WM_BANNED_RETRY_MS));
+    /* everything visible has failed: never defer, alternate between
+     * them every cycle (no throttle, no ban window) */
+    int a = wm_select_from_scan(&s_st, s_cand, 3, present, 2, 2000);
+    int b = wm_select_from_scan(&s_st, s_cand, 3, present, 2, 7000);
+    int c = wm_select_from_scan(&s_st, s_cand, 3, present, 2, 12000);
+
+    TEST_ASSERT_TRUE(a == 0 || a == 1);
+    TEST_ASSERT_TRUE(b == 0 || b == 1);
+    TEST_ASSERT_NOT_EQUAL(a, b);
+    TEST_ASSERT_EQUAL_INT(a, c);
 }
 
-void test_scan_unbanned_alternative_beats_throttle(void)
+void test_scan_clean_alternative_always_first(void)
 {
     char both[2][WM_SSID_LEN] = { "primary", "fb1" };
 
     reset();
-    ban("primary", 1000);
+    strike(0, 1000);
 
-    /* an un-banned alternative is ALWAYS preferred over a banned one,
-     * and the throttle never delays it */
-    for (uint32_t t = 1000; t < 1000 + 3 * WM_BANNED_RETRY_MS;
-         t += 5000)
+    /* a clean alternative is preferred over a failed one, every cycle,
+     * for as long as the failure memory lasts... */
+    for (uint32_t t = 1000; t < 1000 + WM_FAIL_MEMORY_MS - 5000; t += 5000)
     {
         TEST_ASSERT_EQUAL_INT(1, wm_select_from_scan(&s_st, s_cand, 3,
                                                      both, 2, t));
     }
+
+    /* ...and once it faded the primary is back in front */
+    TEST_ASSERT_EQUAL_INT(0, wm_select_from_scan(&s_st, s_cand, 3, both, 2,
+                                                 1000 + WM_FAIL_MEMORY_MS + 1));
 }
 
 void test_scan_nothing_present_returns_none(void)
@@ -107,41 +107,60 @@ void test_scan_nothing_present_returns_none(void)
                                                   present, 1, 0));
 }
 
-void test_ban_after_threshold_and_expiry(void)
+void test_deprioritised_after_threshold_and_fade(void)
 {
     reset();
 
-    wm_select_on_auth_fail(&s_st, "primary", 0);
-    wm_select_on_auth_fail(&s_st, "primary", 0);
-    TEST_ASSERT_FALSE(wm_select_is_banned(&s_st, "primary", 0));
+    wm_select_on_attempt_fail(&s_st, 0, 0);
+    wm_select_on_attempt_fail(&s_st, 0, 0);
+    TEST_ASSERT_FALSE(wm_select_is_deprioritised(&s_st, 0, 0));
+    TEST_ASSERT_EQUAL_UINT8(2, wm_select_fail_count(&s_st, 0, 0));
 
-    wm_select_on_auth_fail(&s_st, "primary", 0); /* third strike */
-    TEST_ASSERT_TRUE(wm_select_is_banned(&s_st, "primary", 0));
-    TEST_ASSERT_TRUE(wm_select_is_banned(&s_st, "primary",
-                                         WM_BAN_DURATION_MS - 1));
-    TEST_ASSERT_FALSE(wm_select_is_banned(&s_st, "primary",
-                                          WM_BAN_DURATION_MS + 1));
+    wm_select_on_attempt_fail(&s_st, 0, 0); /* third strike */
+    TEST_ASSERT_TRUE(wm_select_is_deprioritised(&s_st, 0, 0));
+    TEST_ASSERT_TRUE(wm_select_is_deprioritised(&s_st, 0,
+                                                WM_FAIL_MEMORY_MS - 1));
+    /* the memory fades: the entry regains its place in the order */
+    TEST_ASSERT_FALSE(wm_select_is_deprioritised(&s_st, 0,
+                                                 WM_FAIL_MEMORY_MS + 1));
+    TEST_ASSERT_EQUAL_UINT8(0, wm_select_fail_count(&s_st, 0,
+                                                    WM_FAIL_MEMORY_MS + 1));
+}
+
+void test_faded_streak_starts_over(void)
+{
+    reset();
+    wm_select_on_attempt_fail(&s_st, 0, 0);
+    wm_select_on_attempt_fail(&s_st, 0, 0);
+    /* two old strikes, then one after the memory faded: count is 1 */
+    wm_select_on_attempt_fail(&s_st, 0, WM_FAIL_MEMORY_MS + 5);
+    TEST_ASSERT_EQUAL_UINT8(1, wm_select_fail_count(&s_st, 0,
+                                                    WM_FAIL_MEMORY_MS + 5));
+    TEST_ASSERT_FALSE(wm_select_is_deprioritised(&s_st, 0,
+                                                 WM_FAIL_MEMORY_MS + 5));
 }
 
 void test_success_clears_failures(void)
 {
     reset();
-    ban("primary", 0);
-    TEST_ASSERT_TRUE(wm_select_is_banned(&s_st, "primary", 0));
+    strike(0, 0);
+    TEST_ASSERT_TRUE(wm_select_is_deprioritised(&s_st, 0, 0));
 
-    wm_select_on_success(&s_st, "primary");
-    TEST_ASSERT_FALSE(wm_select_is_banned(&s_st, "primary", 0));
+    wm_select_on_success(&s_st, 0);
+    TEST_ASSERT_FALSE(wm_select_is_deprioritised(&s_st, 0, 0));
+    TEST_ASSERT_EQUAL_UINT8(0, wm_select_fail_count(&s_st, 0, 0));
 }
 
-void test_already_banned_does_not_extend(void)
+void test_deprioritise_at_once(void)
 {
     reset();
-    ban("primary", 0);
-
-    /* failures during the ban must not push banned_until further out */
-    wm_select_on_auth_fail(&s_st, "primary", WM_BAN_DURATION_MS / 2);
-    TEST_ASSERT_FALSE(wm_select_is_banned(&s_st, "primary",
-                                          WM_BAN_DURATION_MS + 1));
+    /* a failed roam trial: one strike is proof enough */
+    wm_select_deprioritise(&s_st, 0, 500);
+    TEST_ASSERT_TRUE(wm_select_is_deprioritised(&s_st, 0, 500));
+    /* ...and later strikes keep counting on top */
+    wm_select_on_attempt_fail(&s_st, 0, 600);
+    TEST_ASSERT_EQUAL_UINT8(WM_AUTH_FAIL_THRESHOLD + 1,
+                            wm_select_fail_count(&s_st, 0, 600));
 }
 
 void test_sequential_rotates_and_wraps(void)
@@ -153,32 +172,31 @@ void test_sequential_rotates_and_wraps(void)
     TEST_ASSERT_EQUAL_INT(0, wm_select_sequential(&s_st, s_cand, 3, 0));
 }
 
-void test_sequential_skips_banned(void)
+void test_sequential_skips_failed(void)
 {
     reset();
-    ban("fb1", 0); /* index 1 */
+    strike(1, 0); /* index 1 */
     TEST_ASSERT_EQUAL_INT(0, wm_select_sequential(&s_st, s_cand, 3, 0));
     TEST_ASSERT_EQUAL_INT(2, wm_select_sequential(&s_st, s_cand, 3, 0));
 }
 
-void test_sequential_all_banned_throttled(void)
+void test_sequential_all_failed_rotates_anyway(void)
 {
     reset();
-    ban("primary", 1000);
-    ban("fb1", 1000);
-    ban("fb2", 1000);
+    strike(0, 1000);
+    strike(1, 1000);
+    strike(2, 1000);
 
-    /* first banned-only attempt allowed... */
-    int pick = wm_select_sequential(&s_st, s_cand, 3, 1000);
+    /* nothing is ever deferred: 0, 1, 2, 0 ... at the normal cadence */
+    int a = wm_select_sequential(&s_st, s_cand, 3, 1000);
+    int b = wm_select_sequential(&s_st, s_cand, 3, 6000);
+    int c = wm_select_sequential(&s_st, s_cand, 3, 11000);
+    int d = wm_select_sequential(&s_st, s_cand, 3, 16000);
 
-    TEST_ASSERT_TRUE(pick >= 0 && pick <= 2);
-    /* ...then throttled... */
-    TEST_ASSERT_EQUAL_INT(-1, wm_select_sequential(&s_st, s_cand, 3,
-                                                   6000));
-    /* ...and allowed again after WM_BANNED_RETRY_MS */
-    pick = wm_select_sequential(&s_st, s_cand, 3,
-                                1000 + WM_BANNED_RETRY_MS);
-    TEST_ASSERT_TRUE(pick >= 0 && pick <= 2);
+    TEST_ASSERT_EQUAL_INT(0, a);
+    TEST_ASSERT_EQUAL_INT(1, b);
+    TEST_ASSERT_EQUAL_INT(2, c);
+    TEST_ASSERT_EQUAL_INT(0, d);
 }
 
 void test_sequential_first_pick_is_primary(void)
@@ -188,25 +206,19 @@ void test_sequential_first_pick_is_primary(void)
     TEST_ASSERT_EQUAL_INT(0, wm_select_sequential(&s_st, s_cand, 3, 0));
 }
 
-void test_single_network_banned_trickle(void)
+void test_single_network_keeps_trying(void)
 {
-    /* THE drive-home case (meatpi 2026-07-08): one configured SSID,
-     * wrong password at the current location -> banned; it must keep
-     * being retried at the trickle cadence, not go silent for the
-     * whole ban window */
+    /* THE drive-home case: one configured SSID, wrong password at the
+     * current location -> it is still our best chance: every cycle
+     * returns it, no trickle, no ban window (meatpi 2026-09-06) */
     reset();
-    ban("primary", 1000);
+    strike(0, 1000);
 
-    TEST_ASSERT_EQUAL_INT(0, wm_select_sequential(&s_st, s_cand, 1,
-                                                  1000));
-    TEST_ASSERT_EQUAL_INT(-1, wm_select_sequential(&s_st, s_cand, 1,
-                                                   6000));
-    TEST_ASSERT_EQUAL_INT(0, wm_select_sequential(
-                                 &s_st, s_cand, 1,
-                                 1000 + WM_BANNED_RETRY_MS));
-    TEST_ASSERT_EQUAL_INT(-1, wm_select_sequential(
-                                  &s_st, s_cand, 1,
-                                  1000 + WM_BANNED_RETRY_MS + 5000));
+    for (uint32_t t = 1000; t < 1000 + 15u * 60u * 1000u; t += 5000)
+    {
+        TEST_ASSERT_EQUAL_INT(0, wm_select_sequential(&s_st, s_cand, 1,
+                                                      t));
+    }
 }
 
 void test_roam_better_available(void)
@@ -225,21 +237,21 @@ void test_roam_better_available(void)
     /* already on the primary -> never roam */
     TEST_ASSERT_EQUAL_INT(-1, wm_select_better(&s_st, s_cand, 3, 0,
                                                home_visible, 2, 0));
-    /* the better network is banned -> stay on the working fallback */
-    ban("primary", 0);
+    /* the better network rejected us lately -> stay on the working one */
+    strike(0, 0);
     TEST_ASSERT_EQUAL_INT(-1, wm_select_better(&s_st, s_cand, 3, 2,
                                                home_visible, 2, 0));
-    /* ban expired -> migrate again */
+    /* memory faded -> migrate again */
     TEST_ASSERT_EQUAL_INT(0, wm_select_better(&s_st, s_cand, 3, 2,
                                               home_visible, 2,
-                                              WM_BAN_DURATION_MS + 1));
+                                              WM_FAIL_MEMORY_MS + 1));
 }
 
-void test_duplicate_ssid_ban_covers_both(void)
+void test_duplicate_ssid_entries_are_independent(void)
 {
-    /* KNOWN behavior: bans are keyed by SSID string — two candidates
-     * sharing a name (same SSID, different passwords) ban together.
-     * Pinned here so a future per-candidate ban is a conscious change. */
+    /* the reason the memory is per ENTRY: two entries share a name with
+     * different passwords (home vs the office); rejections with one
+     * password must not stop the other from being tried */
     char present[1][WM_SSID_LEN] = { "twin" };
     wm_network_t twins[2];
 
@@ -250,12 +262,36 @@ void test_duplicate_ssid_ban_covers_both(void)
     strcpy(twins[1].password, "pw-office");
 
     reset();
-    ban("twin", 1000);
-    /* both entries banned -> only the throttled retry path returns one */
-    TEST_ASSERT_EQUAL_INT(0, wm_select_from_scan(&s_st, twins, 2,
+    strike(0, 1000);
+    /* entry 0 rejected three times -> entry 1 (other password) next */
+    TEST_ASSERT_EQUAL_INT(1, wm_select_from_scan(&s_st, twins, 2,
                                                  present, 1, 1000));
-    TEST_ASSERT_EQUAL_INT(-1, wm_select_from_scan(&s_st, twins, 2,
-                                                  present, 1, 2000));
+    /* both rejected -> alternate, never defer */
+    strike(1, 1000);
+    int a = wm_select_from_scan(&s_st, twins, 2, present, 1, 2000);
+    int b = wm_select_from_scan(&s_st, twins, 2, present, 1, 7000);
+
+    TEST_ASSERT_NOT_EQUAL(a, b);
+    /* success on entry 1 clears only entry 1 */
+    wm_select_on_success(&s_st, 1);
+    TEST_ASSERT_FALSE(wm_select_is_deprioritised(&s_st, 1, 8000));
+    TEST_ASSERT_TRUE(wm_select_is_deprioritised(&s_st, 0, 8000));
+}
+
+void test_roam_never_to_same_ssid(void)
+{
+    /* connected on the office entry of a shared name: the home entry is
+     * the same AP with another password — no reason to leave */
+    char present[1][WM_SSID_LEN] = { "twin" };
+    wm_network_t twins[2];
+
+    memset(twins, 0, sizeof(twins));
+    strcpy(twins[0].ssid, "twin");
+    strcpy(twins[1].ssid, "twin");
+
+    reset();
+    TEST_ASSERT_EQUAL_INT(-1, wm_select_better(&s_st, twins, 2, 1,
+                                               present, 1, 0));
 }
 
 void test_parse_ap_ipv4(void)

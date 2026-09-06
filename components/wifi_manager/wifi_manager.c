@@ -69,6 +69,8 @@ typedef struct
     bool     ap_started;
     char     sta_ip[16];
     char     last_attempted_ssid[WM_SSID_LEN];
+    int      last_attempted_idx;   /* config entry of the last attempt   */
+    uint8_t  last_reason;          /* WIFI_REASON_* of the last disconnect */
     int32_t  sta_retry_count;
     uint16_t ap_station_count;
 } wm_status_t;
@@ -215,6 +217,7 @@ static esp_err_t apply_sta_network(const wm_config_t *wcfg, size_t idx)
         apply_sta_addressing(wcfg, idx);
         strncpy(s_status.last_attempted_ssid, net->ssid, WM_SSID_LEN - 1);
         s_status.last_attempted_ssid[WM_SSID_LEN - 1] = '\0';
+        s_status.last_attempted_idx = (int)idx;
     }
 
     return err;
@@ -303,6 +306,40 @@ static void leave_scan_mode(bool switched)
 
 static int64_t s_connect_started_ms;
 
+/* One INFO line per transition when the pick is an entry that has been
+ * rejecting us and nothing better is visible ("keep trying: best
+ * chance") — never per cycle (§10 hot path). */
+static bool s_last_resort;
+
+static void note_last_resort(int idx)
+{
+    const wm_config_t *cfg = wm_settings_config();
+    bool now_last = wm_select_is_deprioritised(&s_select, idx, now_ms());
+
+    if (now_last && !s_last_resort)
+    {
+        ESP_LOGI(TAG, "no other network available: keeping on with '%s' "
+                      "(%u failed attempts lately)",
+                 cfg->sta[idx].ssid,
+                 (unsigned)wm_select_fail_count(&s_select, idx, now_ms()));
+    }
+
+    s_last_resort = now_last;
+}
+
+/* roam-to-preferred trial: we LEAVE a working network to try a better
+ * one; if that attempt is rejected, one strike deprioritises it and we
+ * go straight back — no three-strike dance every roam interval */
+typedef enum
+{
+    WM_ROAM_IDLE = 0,
+    WM_ROAM_LEAVING, /* our own disconnect is on its way              */
+    WM_ROAM_TRYING,  /* the attempt on the preferred entry is running */
+} wm_roam_state_t;
+
+static volatile wm_roam_state_t s_roam = WM_ROAM_IDLE;
+static volatile int             s_roam_target = -1;
+
 /** Pick the best visible candidate (or rotate blindly) and connect. */
 /** @return true when a connect attempt was actually issued (the retry
  *  counter must only advance on real attempts, not deferred cycles). */
@@ -324,20 +361,12 @@ static bool select_and_connect(void)
 
     if (cfg->sta_count == 1)
     {
-        /* single network: no scan; the sequential path applies the same
-         * ban policy incl. the banned-only WM_BANNED_RETRY_MS trickle
-         * (a wrong password here may be right back home — same-SSID-
-         * different-location, meatpi 2026-07-08) */
-        int only = wm_select_sequential(&s_select, cfg->sta,
-                                        cfg->sta_count, now_ms());
-
-        if (only < 0)
-        {
-            ESP_LOGD(TAG, "'%s' banned; deferring connect",
-                     cfg->sta[0].ssid);
-            return false;
-        }
-
+        /* single network: no scan, and no deferral either — a network
+         * that keeps rejecting us is still our best chance (a wrong
+         * password here may be right back home; meatpi 2026-09-06) */
+        (void)wm_select_sequential(&s_select, cfg->sta, cfg->sta_count,
+                                   now_ms());
+        note_last_resort(0);
         apply_sta_network(cfg, 0);
 
         /* stamp BEFORE the call: a fast DISCONNECTED (e.g. NO_AP_FOUND
@@ -399,6 +428,7 @@ static bool select_and_connect(void)
         /* DEBUG: repeats every retry cycle during an outage (§10 hot path) */
         ESP_LOGD(TAG, "connecting to candidate %d: %s", pick,
                  cfg->sta[pick].ssid);
+        note_last_resort(pick);
         apply_sta_network(cfg, (size_t)pick);
 
         /* stamp BEFORE the call: a fast DISCONNECTED (e.g. NO_AP_FOUND
@@ -423,20 +453,17 @@ static bool select_and_connect(void)
 
 /* ---- event handling --------------------------------------------------------- */
 
-static bool reason_is_auth_related(uint8_t reason)
+/* A disconnect that ends an ATTEMPT (we never got an IP) counts as a
+ * failed attempt whatever the reason — wrong password, an AP that never
+ * finishes the handshake, a full AP, a refused association — except
+ * "not found" (visibility, not a failure) and our own leave (2026-09-06,
+ * meatpi: "three failed attempts in a row: try the others first"). The
+ * memory only reorders candidates, so a strike costs nothing when the
+ * entry is the only network around. */
+static bool attempt_failed_reason(uint8_t reason)
 {
-    switch (reason)
-    {
-        case WIFI_REASON_AUTH_EXPIRE:
-        case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
-        case WIFI_REASON_INVALID_PMKID:
-        case WIFI_REASON_MIC_FAILURE:
-        case WIFI_REASON_AUTH_FAIL:
-        case WIFI_REASON_HANDSHAKE_TIMEOUT: /* wrong PSK reports this (204) */
-            return true;
-        default:
-            return false;
-    }
+    return reason != WIFI_REASON_NO_AP_FOUND &&
+           reason != WIFI_REASON_ASSOC_LEAVE;
 }
 
 /* roam-to-preferred bookkeeping (reconnect task + got-ip handler) */
@@ -558,18 +585,31 @@ static void on_sta_got_ip(const ip_event_got_ip_t *event)
     s_sta_ever_connected = true;
     s_connect_started_ms = 0; /* attempt concluded */
 
-    /* which candidate did we land on? (drives roam-to-preferred) */
+    /* which candidate did we land on? (drives roam-to-preferred) — the
+     * attempt's entry index; the name walk stays as the fallback */
     s_connected_idx = -1;
 
-    for (size_t i = 0; i < cfg->sta_count; i++)
+    if (s_status.last_attempted_idx >= 0 &&
+        (size_t)s_status.last_attempted_idx < cfg->sta_count &&
+        strcmp(cfg->sta[s_status.last_attempted_idx].ssid,
+               s_status.last_attempted_ssid) == 0)
     {
-        if (strcmp(cfg->sta[i].ssid, s_status.last_attempted_ssid) == 0)
+        s_connected_idx = s_status.last_attempted_idx;
+    }
+    else
+    {
+        for (size_t i = 0; i < cfg->sta_count; i++)
         {
-            s_connected_idx = (int)i;
-            break;
+            if (strcmp(cfg->sta[i].ssid, s_status.last_attempted_ssid) == 0)
+            {
+                s_connected_idx = (int)i;
+                break;
+            }
         }
     }
 
+    s_roam = WM_ROAM_IDLE;
+    s_last_resort = false;
     s_last_roam_ms = now_ms();
 
     xSemaphoreTake(s_lock, portMAX_DELAY);
@@ -579,7 +619,7 @@ static void on_sta_got_ip(const ip_event_got_ip_t *event)
 
     ESP_LOGI(TAG, "STA got IP " IPSTR, IP2STR(&event->ip_info.ip));
 
-    wm_select_on_success(&s_select, s_status.last_attempted_ssid);
+    wm_select_on_success(&s_select, s_connected_idx);
 
     xEventGroupSetBits(s_events, WIFI_MANAGER_BIT_STA_CONNECTED);
     xEventGroupClearBits(s_events, WIFI_MANAGER_BIT_STA_DISCONNECTED);
@@ -677,6 +717,7 @@ static void on_sta_got_ip(const ip_event_got_ip_t *event)
 static void on_sta_disconnected(const wifi_event_sta_disconnected_t *event)
 {
     const wm_config_t *cfg = wm_settings_config();
+    bool was_connected = s_status.sta_connected; /* an attempt, or a drop? */
 
     s_status.sta_connected = false;
     s_connected_idx = -1;
@@ -694,13 +735,47 @@ static void on_sta_disconnected(const wifi_event_sta_disconnected_t *event)
 
     if (event != NULL)
     {
+        int idx = s_status.last_attempted_idx;
+
+        s_status.last_reason = event->reason;
         ESP_LOGD(TAG, "STA disconnected, reason %d (ssid '%s')",
                  event->reason, s_status.last_attempted_ssid);
 
-        if (reason_is_auth_related(event->reason))
+        if (s_roam == WM_ROAM_LEAVING)
         {
-            wm_select_on_auth_fail(&s_select, s_status.last_attempted_ssid,
-                                   now_ms());
+            s_roam = WM_ROAM_TRYING; /* our own leave; the trial follows */
+        }
+        else if (!was_connected && attempt_failed_reason(event->reason) &&
+                 idx >= 0)
+        {
+            bool was = wm_select_is_deprioritised(&s_select, idx, now_ms());
+
+            if (s_roam == WM_ROAM_TRYING && idx == s_roam_target)
+            {
+                wm_select_deprioritise(&s_select, idx, now_ms());
+            }
+            else
+            {
+                wm_select_on_attempt_fail(&s_select, idx, now_ms());
+            }
+
+            if (!was && wm_select_is_deprioritised(&s_select, idx, now_ms()))
+            {
+                ESP_LOGI(TAG, "'%s' failed %u attempts in a row (last "
+                              "reason %d): other networks on the list are "
+                              "tried first; it is retried whenever it is "
+                              "all there is",
+                         s_status.last_attempted_ssid,
+                         (unsigned)wm_select_fail_count(&s_select, idx,
+                                                        now_ms()),
+                         event->reason);
+            }
+
+            s_roam = WM_ROAM_IDLE;
+        }
+        else if (s_roam == WM_ROAM_TRYING)
+        {
+            s_roam = WM_ROAM_IDLE; /* the trial ended some other way */
         }
     }
 
@@ -899,6 +974,8 @@ static void reconnect_task(void *arg)
                     ESP_LOGI(TAG, "preferred network '%s' visible; "
                                   "leaving '%s' to roam to it",
                              cfg->sta[better].ssid, cfg->sta[cur].ssid);
+                    s_roam_target = better;
+                    s_roam = WM_ROAM_LEAVING;
                     esp_wifi_disconnect();
                     /* the disconnect event + this loop reconnect via the
                      * normal selection path, which prefers `better` */
@@ -973,6 +1050,25 @@ static void reconnect_task(void *arg)
     xEventGroupSetBits(s_events, WM_BIT_TASK_EXITED);
     s_reconnect_task = NULL;
     vTaskDelete(NULL);
+}
+
+void wifi_manager_get_sta_attempt(wifi_manager_sta_attempt_t *out)
+{
+    if (out == NULL)
+    {
+        return;
+    }
+
+    memset(out, 0, sizeof(*out));
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    strncpy(out->ssid, s_status.last_attempted_ssid, sizeof(out->ssid) - 1);
+    xSemaphoreGive(s_lock);
+    out->last_reason = s_status.last_reason;
+    out->fail_count = wm_select_fail_count(&s_select,
+                                           s_status.last_attempted_idx,
+                                           now_ms());
+    out->deprioritised = wm_select_is_deprioritised(
+        &s_select, s_status.last_attempted_idx, now_ms());
 }
 
 /* ---- lifecycle -------------------------------------------------------------------- */
@@ -1327,6 +1423,10 @@ esp_err_t wifi_manager_stop(void)
     s_status.ap_started = false;
     s_status.ap_station_count = 0;
     s_status.sta_retry_count = 0;
+    s_status.last_attempted_idx = -1;
+    s_status.last_reason = 0;
+    s_last_resort = false;
+    s_roam = WM_ROAM_IDLE;
     s_sta_ever_connected = false; /* a restart is a fresh session */
 
     xSemaphoreTake(s_lock, portMAX_DELAY);

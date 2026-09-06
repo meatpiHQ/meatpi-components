@@ -39,10 +39,15 @@ static const settings_field_t FIELDS[] =
     /* shipping default ON, 5 min delay (meatpi 2026-07-18): a parked
        device must not drain the car battery out of the box */
     SETTINGS_BOOL("enabled", true),
-    SETTINGS_INT("sleep_mv", 8000, 15000, 13100),
-    SETTINGS_INT("sleep_delay_min", 1, 720, 5),
+    /* user-facing ranges (meatpi 2026-09-06): a 12 V vehicle battery —
+       below 12 V it is flat (meatpi: 12.0 V floor), above ~14 V the engine
+       is charging; a
+       sleep delay beyond 30 min only drains the battery; a periodic
+       check-in faster than 5 min is a wake-up storm */
+    SETTINGS_INT("sleep_mv", 12000, 14000, 13100),
+    SETTINGS_INT("sleep_delay_min", 1, 30, 5),
     SETTINGS_BOOL("periodic_wakeup", false),
-    SETTINGS_INT("wakeup_interval_min", 1, 1440, 30),
+    SETTINGS_INT("wakeup_interval_min", 5, 1440, 30),
     SETTINGS_BOOL("cli", true),
 };
 
@@ -99,15 +104,42 @@ static esp_err_t on_apply(const cJSON *settings)
     return ESP_OK;
 }
 
+
+/* Clamp a stored integer into the current schema range (migration helper). */
+static void clamp_int(cJSON *settings, const char *key, int lo, int hi)
+{
+    cJSON *v = cJSON_GetObjectItemCaseSensitive(settings, key);
+
+    if (cJSON_IsNumber(v) && (v->valueint < lo || v->valueint > hi))
+    {
+        cJSON_SetNumberValue(v, (v->valueint < lo) ? lo : hi);
+    }
+}
+
+static esp_err_t sleep_settings_migrate(uint32_t from_version, cJSON *settings)
+{
+    /* v1 -> v2 (2026-09-06): tighter user-facing ranges — clamp what a
+       device has stored instead of degrading it */
+    if (from_version < 2 && settings != NULL)
+    {
+        clamp_int(settings, "sleep_mv", 12000, 14000);
+        clamp_int(settings, "sleep_delay_min", 1, 30);
+        clamp_int(settings, "wakeup_interval_min", 5, 1440);
+    }
+
+    return ESP_OK;
+}
+
 esp_err_t sleep_settings_register(void)
 {
     static const settings_descriptor_t DESC =
     {
         .name = "sleep_manager",
-        .version = 1,
+        .version = 2, /* v2: sane ranges (2026-09-06) */
         .fields = FIELDS,
         .field_count = sizeof(FIELDS) / sizeof(FIELDS[0]),
         .on_apply = on_apply,
+        .on_migrate = sleep_settings_migrate,
     };
 
     return settings_manager_register(&DESC);

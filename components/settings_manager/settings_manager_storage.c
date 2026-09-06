@@ -38,6 +38,7 @@
 #include "esp_heap_caps.h"
 #include "esp_littlefs.h"
 #include "esp_log.h"
+#include "esp_partition.h"
 
 #include "settings_manager_private.h"
 
@@ -46,8 +47,51 @@
 #define SM_DIR             SM_BASE_PATH "/cfg"
 #define SM_PATH_MAX        128
 
+/* LittleFS superblock pair = blocks {0,1}, one 4 KiB flash sector each */
+#define SM_LFS_BLOCK_SIZE 4096u
+#define SM_BLANK_PROBE    64u
+
 static const char *TAG = "settings_manager";
 static bool s_mounted;
+
+/**
+ * True when the settings partition has never been formatted (both
+ * superblock blocks read as erased flash, 0xFF). First boot after an
+ * erase: formatting it explicitly avoids lfs_mount()'s "Corrupted dir
+ * pair" E lines, which latched a boot_errors fault on every new unit.
+ * Read errors / a missing partition count as "not blank".
+ */
+static bool partition_is_blank(void)
+{
+    const esp_partition_t *part = esp_partition_find_first(
+        ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, SM_PARTITION_LABEL);
+
+    if (part == NULL)
+    {
+        return false;
+    }
+
+    uint8_t probe[SM_BLANK_PROBE];
+
+    for (uint32_t blk = 0; blk < 2; blk++)
+    {
+        if (esp_partition_read(part, blk * SM_LFS_BLOCK_SIZE, probe,
+                               sizeof(probe)) != ESP_OK)
+        {
+            return false;
+        }
+
+        for (size_t i = 0; i < sizeof(probe); i++)
+        {
+            if (probe[i] != 0xFF)
+            {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
 
 static void build_path(char *buf, size_t buf_len, const char *name, const char *ext)
 {
@@ -59,6 +103,19 @@ esp_err_t sm_storage_mount(void)
     if (s_mounted)
     {
         return ESP_OK;
+    }
+
+    if (partition_is_blank())
+    {
+        ESP_LOGI(TAG, "'%s' is blank (first boot): formatting", SM_PARTITION_LABEL);
+
+        esp_err_t ferr = esp_littlefs_format(SM_PARTITION_LABEL);
+
+        if (ferr != ESP_OK)
+        {
+            ESP_LOGW(TAG, "pre-format failed: %s (mount will retry)",
+                     esp_err_to_name(ferr));
+        }
     }
 
     esp_vfs_littlefs_conf_t conf =

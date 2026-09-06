@@ -42,8 +42,8 @@ power rail held low (GPIO10, open-drain + hold). Pins via Kconfig
 
 `enabled` (**true** — shipping default ON since 2026-07-18, 5 min delay:
 a parked device must not drain the car battery out of the box),
-`sleep_mv` (8000–15000, 13100), `sleep_delay_min`
-(1–720, 3), `periodic_wakeup` (false), `wakeup_interval_min` (1–1440,
+`sleep_mv` (12000–14000, 13100), `sleep_delay_min`
+(1–30, 5), `periodic_wakeup` (false), `wakeup_interval_min` (5–1440,
 30), `cli` (true). Wake threshold is derived: sleep + 0.1 V (legacy
 decision).
 

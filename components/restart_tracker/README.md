@@ -26,7 +26,9 @@ This is the PSRAM-survival pattern `log_manager`'s crash ring reuses.
 | `*_to_str(...)` | Human-readable reset/planned-reason/source names. |
 
 Reasons: none / user_request / config_apply / config_recovery / ota_apply /
-factory_reset / safe_mode / power_wake / internal_recovery. Sources: web_ui /
+factory_reset / safe_mode / power_wake / internal_recovery / periodic_wake
+(sleep_manager's check-in, 2026-09-07 — before that it was filed as
+power_wake). Sources: web_ui /
 cmdline / console / mqtt / ota / safe_mode / config_server / sleep_mode.
 
 ## Dependencies

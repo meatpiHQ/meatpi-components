@@ -200,6 +200,7 @@ const char *restart_tracker_planned_reason_to_str(restart_tracker_planned_reason
         case RESTART_TRACKER_PLANNED_REASON_SAFE_MODE:         return "safe_mode";
         case RESTART_TRACKER_PLANNED_REASON_POWER_WAKE:        return "power_wake";
         case RESTART_TRACKER_PLANNED_REASON_INTERNAL_RECOVERY: return "internal_recovery";
+        case RESTART_TRACKER_PLANNED_REASON_PERIODIC_WAKE:     return "periodic_wake";
         default:                                               return "invalid";
     }
 }

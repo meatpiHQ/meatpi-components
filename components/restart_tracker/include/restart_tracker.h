@@ -68,6 +68,9 @@ typedef enum
     RESTART_TRACKER_PLANNED_REASON_SAFE_MODE,
     RESTART_TRACKER_PLANNED_REASON_POWER_WAKE,
     RESTART_TRACKER_PLANNED_REASON_INTERNAL_RECOVERY,
+    /* sleep_manager's periodic check-in wake (2026-09-07; it shared
+       POWER_WAKE before). Appended: records store the numeric value. */
+    RESTART_TRACKER_PLANNED_REASON_PERIODIC_WAKE,
 } restart_tracker_planned_reason_t;
 
 typedef enum

@@ -34,8 +34,30 @@ if(CONFIG_WICAN_WEBUI_V2)
                 "${CMAKE_CURRENT_LIST_DIR}/tools/rjsmin.py"
         COMMENT "Minifying + gzipping web_ui_v2 scripts.js chunk for embedding"
         VERBATIM)
-    add_custom_target(web_ui_v2_gz DEPENDS "${gz_html}" "${gz_js}")
-    set(embeds "${gz_html}" "${gz_js}")
+    # second chunk (2026-09-07): the File Manager page
+    set(src_files_js "${CMAKE_CURRENT_LIST_DIR}/web/files.js")
+    set(gz_files_js  "${CMAKE_CURRENT_BINARY_DIR}/files.js.gz")
+    add_custom_command(
+        OUTPUT "${gz_files_js}"
+        COMMAND "${python}" "${CMAKE_CURRENT_LIST_DIR}/gzip_asset.py"
+                "${src_files_js}" "${gz_files_js}"
+        DEPENDS "${src_files_js}" "${CMAKE_CURRENT_LIST_DIR}/gzip_asset.py"
+                "${CMAKE_CURRENT_LIST_DIR}/tools/rjsmin.py"
+        COMMENT "Minifying + gzipping web_ui_v2 files.js chunk for embedding"
+        VERBATIM)
+    # third chunk (2026-09-07): the CAN Monitor page
+    set(src_monitor_js "${CMAKE_CURRENT_LIST_DIR}/web/monitor.js")
+    set(gz_monitor_js  "${CMAKE_CURRENT_BINARY_DIR}/monitor.js.gz")
+    add_custom_command(
+        OUTPUT "${gz_monitor_js}"
+        COMMAND "${python}" "${CMAKE_CURRENT_LIST_DIR}/gzip_asset.py"
+                "${src_monitor_js}" "${gz_monitor_js}"
+        DEPENDS "${src_monitor_js}" "${CMAKE_CURRENT_LIST_DIR}/gzip_asset.py"
+                "${CMAKE_CURRENT_LIST_DIR}/tools/rjsmin.py"
+        COMMENT "Minifying + gzipping web_ui_v2 monitor.js chunk for embedding"
+        VERBATIM)
+    add_custom_target(web_ui_v2_gz DEPENDS "${gz_html}" "${gz_js}" "${gz_files_js}" "${gz_monitor_js}")
+    set(embeds "${gz_html}" "${gz_js}" "${gz_files_js}" "${gz_monitor_js}")
 endif()
 
 idf_component_register(

@@ -43,6 +43,12 @@ extern const uint8_t index_gz_end[]   asm("_binary_index_html_gz_end");
 /* the Scripts page chunk (web/scripts.js), fetched on first use */
 extern const uint8_t scripts_gz_start[] asm("_binary_scripts_js_gz_start");
 extern const uint8_t scripts_gz_end[]   asm("_binary_scripts_js_gz_end");
+/* the File Manager chunk (web/files.js), same pattern (2026-09-07) */
+extern const uint8_t files_gz_start[] asm("_binary_files_js_gz_start");
+extern const uint8_t files_gz_end[]   asm("_binary_files_js_gz_end");
+
+extern const uint8_t monitor_gz_start[] asm("_binary_monitor_js_gz_start");
+extern const uint8_t monitor_gz_end[]   asm("_binary_monitor_js_gz_end");
 
 static const http_asset_t ASSETS[] =
 {
@@ -57,6 +63,12 @@ static const http_asset_t ASSETS[] =
      * so the main page stays small. */
     { .uri = "/ui/scripts.js", .content_type = "application/javascript",
       .data_start = scripts_gz_start, .data_end = scripts_gz_end,
+      .content_encoding = "gzip" },
+    { .uri = "/ui/files.js", .content_type = "application/javascript",
+      .data_start = files_gz_start, .data_end = files_gz_end,
+      .content_encoding = "gzip" },
+    { .uri = "/ui/monitor.js", .content_type = "application/javascript",
+      .data_start = monitor_gz_start, .data_end = monitor_gz_end,
       .content_encoding = "gzip" },
     /* Optional UI extras the page installs on demand (2026-09-06): the
      * dashboard's chart library (uPlot, ~50 KB) is uploaded through
@@ -75,9 +87,11 @@ esp_err_t web_ui_v2_register(void)
 
     if (err == ESP_OK)
     {
-        ESP_LOGI(TAG, "v2 web UI registered (%u bytes gzipped + %u chunk)",
+        ESP_LOGI(TAG, "v2 web UI registered (%u bytes gzipped + %u + %u + %u chunks)",
                  (unsigned)(index_gz_end - index_gz_start),
-                 (unsigned)(scripts_gz_end - scripts_gz_start));
+                 (unsigned)(scripts_gz_end - scripts_gz_start),
+                 (unsigned)(files_gz_end - files_gz_start),
+                 (unsigned)(monitor_gz_end - monitor_gz_start));
     }
     return err;
 }

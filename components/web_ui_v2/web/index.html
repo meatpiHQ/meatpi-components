@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <!-- Fixed layout viewport: phones render the SAME desktop layout (sidebar +
-     cards) zoomed to fit, exactly like Chrome's "Desktop site" — no need to
+     cards) zoomed to fit, exactly like Chrome's "Desktop site": no need to
      tick it (meatpi 2026-09-05). Pinch-zoom stays available. -->
 <meta name="viewport" content="width=1024, viewport-fit=cover">
 <meta name="theme-color" content="#24478f">
@@ -392,34 +392,7 @@ input[type="range"]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 4px var
   font-family:var(--mono);font-size:13px;height:auto;padding:0;box-shadow:none!important}
 .term-in .btn{background:rgba(255,255,255,.1);border-color:transparent;color:var(--term-text)}
 
-/* CAN monitor */
-.mon-tools{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:12px 14px;background:var(--surface);
-  border:1px solid var(--border);border-radius:12px 12px 0 0;border-bottom:none}
-.mon-stats{display:flex;gap:20px;padding:9px 14px;background:var(--surface-2);
-  border-left:1px solid var(--border);border-right:1px solid var(--border);font-size:12px;color:var(--text-2)}
-.mon-stats b{color:var(--text);font-family:var(--mono);margin-left:4px;font-weight:600}
-.mon-body{background:var(--surface);border:1px solid var(--border);border-radius:0 0 12px 12px;overflow:hidden}
-.mon-hd,.mon-row{display:grid;grid-template-columns:96px 50px 40px minmax(236px,1fr) 78px 68px;gap:0;padding:8px 16px;align-items:center}
-.mon-hd{padding:10px 16px;background:var(--surface-3);border-bottom:1px solid var(--border);
-  font-size:11px;font-weight:800;letter-spacing:.05em;color:var(--text-3);text-transform:uppercase}
-.mon-row{border-bottom:1px solid var(--border)}
-.mon-row .mid{font-family:var(--mono);font-size:13.5px;font-weight:700;color:var(--primary)}
-.mon-row .mtype{justify-self:start;font-size:10.5px;font-weight:700;letter-spacing:.03em;padding:2px 7px;border-radius:5px;background:var(--surface-3);color:var(--text-2)}
-.mon-row .mtype.ext{background:var(--warning-tint);color:var(--warning)}
-.mon-row .mnum{font-family:var(--mono);font-size:13px;color:var(--text-2)}
-.mon-row .mcount{font-family:var(--mono);font-size:13px;color:var(--text);text-align:right;font-weight:600}
-.byte{font-family:var(--mono);font-size:12.5px;font-variant-numeric:tabular-nums;padding:2px 4px;border-radius:4px;
-  min-width:21px;text-align:center;font-weight:500;transition:background-color .35s ease,color .35s ease}
-.byte.hot{background:var(--mono-hot);color:var(--mono-hot-text);font-weight:700}
-.trace-wrap{background:var(--term-bg);border:1px solid var(--border);border-radius:0 0 12px 12px;overflow:hidden}
-.trace-hd,.trace-row{display:grid;grid-template-columns:104px 48px 108px 52px 1fr;gap:0;padding:3px 16px;font-family:var(--mono);font-size:12.5px;line-height:1.5}
-.trace-hd{padding:9px 16px;background:rgba(255,255,255,.04);border-bottom:1px solid rgba(255,255,255,.07);
-  font-size:11px;font-weight:700;letter-spacing:.04em;color:var(--term-dim);text-transform:uppercase}
-.trace-row{border-bottom:1px solid rgba(255,255,255,.03)}
-.trace-row .ts{color:var(--term-dim)}.trace-row .rx{font-weight:700;color:#37d98a}.trace-row .tx{font-weight:700;color:#e0a955}
-.trace-row .tid{color:#5b8fe0;font-weight:600}.trace-row .tdlc{color:var(--term-dim)}
-.trace-row .tdata{color:var(--term-text);letter-spacing:.06em}
-.mon-scroll{overflow-x:auto}
+/* CAN monitor: its styles live in web/monitor.js (chunk, 2026-09-07) */
 
 /* subtabs (long pages) — the strip only shows on narrow windows; on the
    sidebar layout the nav accordion (.nav-sub) is the tab control */
@@ -428,6 +401,14 @@ input[type="range"]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 4px var
 .pane{display:flex;flex-direction:column;gap:16px}
 .subtab:hover{color:var(--text);text-decoration:none}
 .subtab.on{background:var(--surface);color:var(--primary);box-shadow:var(--shadow)}
+
+/* WiFi mode tiles (Settings, 2026-09-07) */
+.wm-modes{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.wm-mode{text-align:left;border:1.5px solid var(--border);border-radius:12px;background:var(--surface-2);padding:12px 14px;cursor:pointer;color:var(--text);font:inherit;transition:border-color .15s,box-shadow .15s}
+.wm-mode:hover{border-color:var(--primary)}.wm-mode.on{border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-tint);background:var(--surface)}
+.wm-mode .wt{display:flex;align-items:center;gap:8px;font-weight:700;margin-bottom:4px;flex-wrap:wrap}.wm-mode .wt svg{width:16px;height:16px;color:var(--primary)}
+.wm-mode .wd{font-size:12.5px;color:var(--text-2);line-height:1.45}
+.wm-live{margin-left:auto}
 
 /* upload dropzone */
 .drop{border:1.5px dashed var(--border-strong);border-radius:10px;padding:20px;text-align:center;background:var(--surface-2)}
@@ -477,8 +458,6 @@ input[type="range"]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 4px var
   .tiles{grid-template-columns:repeat(2,1fr)}
   .frow{grid-template-columns:1fr;gap:5px 0}
   .frow>label{margin-top:10px}
-  .mon-stats{flex-wrap:wrap;gap:8px 16px}
-  .mon-scroll>div{min-width:660px}
 }
 @media(max-width:480px){
   .tiles{grid-template-columns:1fr}
@@ -502,10 +481,11 @@ input[type="range"]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 4px var
       <span class="cbar"></span>
       <span class="cip" id="cp-ip">—</span>
       <span class="ctag" id="cp-tag">…</span>
-      <span class="chip crit" id="cp-faults" style="display:none;cursor:pointer" title="Latched device fault codes — click for details"></span>
+      <span class="chip crit" id="cp-faults" style="display:none;cursor:pointer" title="Latched device fault codes: click for details"></span>
     </div>
     <div class="hspacer"></div>
-    <a class="hdr-warn" id="sleepwarn" href="#/power" hidden title="Sleep mode is off — open Power Saving"></a>
+    <a class="hdr-warn" id="sleepwarn" href="#/power" hidden title="Sleep mode is off: open Power Saving"></a>
+    <a class="hdr-warn" id="apwarn" href="#/settings/wifi" hidden title="The access point still has the factory password: open WiFi settings"></a>
     <button class="hbtn" id="themebtn" title="Toggle theme" aria-label="Theme"></button>
     <button id="submitbtn" disabled>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><path d="M17 21v-8H7v8M7 3v5h8"></path></svg>
@@ -525,7 +505,7 @@ input[type="range"]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 4px var
 const $=(s,r=document)=>r.querySelector(s);
 const API=new URLSearchParams(location.search).get("api")||"";
 /* DOM append/replaceChildren coerce null/false to the TEXT "null"/"false"
-   — every conditional child (`cond?el:null`) used to leak that word into
+  : every conditional child (`cond?el:null`) used to leak that word into
    the page. Filter them once, globally (UI audit 2026-09-05). */
 (function(){const P=Element.prototype;const _rc=P.replaceChildren,_ap=P.append,_pp=P.prepend;
   const ok=k=>k.flat(9).filter(c=>c!=null&&c!==false);
@@ -661,10 +641,17 @@ function sleepWillBeEnabled(){
   const p=store.pending.get("sleep_manager");
   return(p&&typeof p.enabled==="boolean")?p.enabled:conn.sleepEnabled;
 }
+/* the factory access point password is public (meatpi 2026-09-07): warn in
+   the header while it is in place; the firmware refuses a WiFi save that
+   keeps it, and store.apply() explains that before trying */
+function apDefaultPassword(){return !!(conn.wifi&&conn.wifi.ap_default_password);}
+function paintApWarn(){const el=$("#apwarn");if(!el)return;const on=apDefaultPassword();
+  if(on&&!el.childElementCount)el.append(ic("lock"),h("span",{},"Factory AP password: change it"));
+  el.hidden=!on;}
 function paintSleepWarn(){
   const el=$("#sleepwarn");if(!el)return;
   const off=sleepWillBeEnabled()===false;
-  if(off&&!el.childElementCount)el.append(ic("alert"),h("span",{},"Sleep mode off — the vehicle battery can drain"));
+  if(off&&!el.childElementCount)el.append(ic("alert"),h("span",{},"Sleep mode off: the vehicle battery can drain"));
   el.hidden=!off;
 }
 async function refreshSleep(){
@@ -678,7 +665,7 @@ function sleepAckModal(){return new Promise(res=>{
     h("p",{},"Applying these changes restarts WiCAN (~15 s) to take effect."),
     banner("warn","alert","Sleep mode is OFF: the WiCAN stays awake and can drain the vehicle battery when the engine is off."),
     h("label",{style:"display:flex;gap:9px;align-items:flex-start;margin-top:12px;cursor:pointer;font-size:13px;line-height:1.4"},cb,
-      h("span",{},"I understand — the WiCAN will not sleep and the vehicle battery may be drained.")));
+      h("span",{},"I understand that the WiCAN will not sleep and the vehicle battery may be drained.")));
   modal({title:"Submit changes",body,actions:[{label:"Cancel",fn:()=>res(false)},{label:"Submit anyway",kind:"pri",fn:()=>res(true)}]});
   const ok=$("#modal-root .acts button.pri");
   if(ok){ok.disabled=true;cb.onchange=()=>{ok.disabled=!cb.checked;};}
@@ -691,6 +678,14 @@ const store={
   revert(){this.pending.clear();this.dirty.clear();renderSubmit();route();},
   async apply(){
     if(!this.count())return;
+    const wf=this.pending.get("wifi_manager");
+    if(wf&&(wf.ap_password==="@meatpi#"||(apDefaultPassword()&&!wf.ap_password))){
+      modal({title:"Set a new access point password",body:h("div",{},
+        banner("warn","lock",h("b",{},"The access point still has the factory password (@meatpi#)."),
+          " Anyone who knows WiCAN can join it, so the WiCAN will not save WiFi settings that keep it. Type a new one (8 to 63 characters) under Settings → WiFi, then submit again."),
+        h("p",{class:"help",style:"margin-top:8px"},"After the restart, reconnect to the WiCAN access point with the new password.")),
+        actions:[{label:"Later"},{label:"Open WiFi settings",kind:"pri",fn:()=>{location.hash="#/settings/wifi";}}]});
+      return;}
     const need=(sleepWillBeEnabled()===false)?await sleepAckModal()
       :await confirmModal("Applying these changes restarts WiCAN (~15 s) to take effect. Continue?","Submit changes");
     if(!need)return;
@@ -698,7 +693,7 @@ const store={
       for(const[c,v]of this.pending)await api("/api/settings/"+c,{method:"PUT",body:v});
       const r=await api("/api/settings/submit",{method:"POST"});
       this.pending.clear();this.dirty.clear();renderSubmit();
-      if(r&&r.reboot)expectReboot("Applying settings");else{toast("Saved — no restart needed","ok");refreshSleep();}
+      if(r&&r.reboot)expectReboot("Applying settings");else{toast("Saved, no restart needed","ok");refreshSleep();}
     }catch(e){toast("Apply failed: "+e.message,"err");}
   },
 };
@@ -729,15 +724,16 @@ function setConn(s,txt){
   const prev=conn.state;conn.state=s;
   const off=$("#offline");
   if(s==="online"||s==="connecting")off.style.display="none";
-  else{off.style.display="flex";off.dataset.k=s==="reboot"?"reboot":"offline";$("#offtx").textContent=txt||"Device offline — reconnecting…";}
+  else{off.style.display="flex";off.dataset.k=s==="reboot"?"reboot":"offline";$("#offtx").textContent=txt||"Device offline, reconnecting…";}
   paintPill();
   if(prev==="reboot"&&s==="online"){toast("Device back online","ok");refreshSleep();route();}
   else if(prev==="offline"&&s==="online"){refreshSleep();route();}
 }
-function expectReboot(reason="Rebooting"){conn.rebootUntil=Date.now()+95000;setConn("reboot",reason+" — waiting for the device…");}
+function expectReboot(reason="Rebooting"){conn.rebootUntil=Date.now()+95000;setConn("reboot",reason+", waiting for the device…");}
 async function ping(){
   try{const st=await api("/api/status");conn.status=st;
     conn.wifi=await tryGet("/api/wifi/status");
+    paintApWarn();
     setConn("online");
   }catch{if(conn.state==="reboot"&&Date.now()<conn.rebootUntil){/*hold*/}else{setConn("offline");}}
 }
@@ -834,10 +830,8 @@ const LABELS={
   /* ble_manager */
   passkey:"Pairing passkey",tx_power_dbm:"TX power (dBm)",pairing_at_boot:"Allow pairing at boot",bonding:"Remember paired devices",
   sc_only:"Secure connections only",conn_profile:"Connection profile",
-  /* can_manager / obd_chip */
+  /* can_manager (the obd_chip group has no UI at all — meatpi 2026-09-07) */
   "can_manager.baud":"Bit rate (kbit/s)",silent:"Listen-only (silent) mode",
-  "obd_chip.baud":"Chip UART speed",auto_sleep:"Auto sleep",auto_update:"Auto-update chip firmware",monitor_policy:"Monitor policy",
-  wake_voltage_mv:"Wake voltage (V)",sleep_voltage_mv:"Sleep voltage (V)",sleep_time_min:"Sleep after (min)",
   /* mqtt_manager */
   "mqtt_manager.url":"Broker URL",username:"Username",broker_password:"Password",client_id:"Client ID",topic_prefix:"Topic prefix",
   ca_file:"CA file",cert_set:"Certificate set",keepalive_s:"Keep-alive (s)",
@@ -897,29 +891,29 @@ const HELP={
   "script_engine.enabled":"Lets scripts run: from the Scripts page, from rules (script.run) and the console. Restart to apply.",
   "script_engine.max_runtime_ms":"A run is stopped when it takes longer than this. Sleeps count.",
   "script_engine.allow_reflash":"Lets scripts use the UDS reprogramming services (0x34–0x37, obd_transfer_file). Keep off unless you flash ECUs.",
-  "wifi_manager.mode":"Station joins your WiFi. Access point lets a phone connect directly to the WiCAN. Access point + Station does both (recommended).",
+  "wifi_manager.mode":"Station joins your WiFi. Access point lets a phone connect directly to the WiCAN. Access point + Station does both.",
   ap_ssid:()=>"Leave blank for the default WiCAN_"+((conn.info&&conn.info.device_id)||"<device id>")+".",
-  ap_password:"Leave blank to keep the current password (factory default @meatpi#). 8–63 characters.",
+  ap_password:"8 to 63 characters. Blank keeps the current password, unless it is still the factory one (@meatpi#), which must be replaced before WiFi settings can be saved.",
   ap_auto_disable:"Turn the access point off once the station has joined a network.",
-  sta_ssid:"The WiFi network the WiCAN should join — use Scan to pick one.",
+  sta_ssid:"The WiFi network the WiCAN should join: use Scan to pick one.",
   sta_password:"Leave blank to keep the stored password.",
   sta_trusted:"On an untrusted network the web UI and API are blocked over the station link; MQTT and the USB link stay up.",
   hostname:()=>"Leave blank for wican_"+((conn.info&&conn.info.device_id)||"<device id>")+".",
   sta_roam_interval_s:"How often to look for a higher-priority network while connected to a backup one (0 = never).",
   sta_max_retry:"-1 = keep retrying forever.",
-  ap_channel:"Only used while no station is connected — in Access point + Station the AP follows the station's channel.",
-  wifi_ram_profile:"Lean frees ~14 KB of internal RAM at no measured throughput cost — recommended when WiFi and Bluetooth run together.",
+  ap_channel:"Only used while no station is connected: in Access point + Station the AP follows the station's channel.",
+  wifi_ram_profile:"Lean frees ~14 KB of internal RAM at no measured throughput cost: recommended when WiFi and Bluetooth run together.",
   passkey:"The 6-digit code a phone must enter when pairing.",
   sleep_mv:"The device sleeps once the battery stays below this voltage for the sleep delay.",
   sleep_delay_min:"How long the voltage must stay below the threshold before the device sleeps.",
   periodic_wakeup:"Wake briefly at a fixed interval while sleeping (for example to report position).",
   pause_below_mv:"Polling stops below this battery voltage and resumes 0.3 V above it. 0 = no fixed threshold.",
   pause_follow_sleep:"With no fixed threshold, pause PID requests whenever the battery is below the Power Saving sleep voltage.",
-  std_init:"AT command chain sent once before standard-PID polling starts — optional, ';'-separated.",
-  custom_init:"AT command chain sent once before custom-PID polling starts — optional, ';'-separated.",
-  specific_init:"AT command chain sent once before vehicle-specific polling starts, ahead of the per-PID inits — optional, ';'-separated.",
+  std_init:"AT command chain sent once before standard-PID polling starts: optional, ';'-separated.",
+  custom_init:"AT command chain sent once before custom-PID polling starts: optional, ';'-separated.",
+  specific_init:"AT command chain sent once before vehicle-specific polling starts, ahead of the per-PID inits: optional, ';'-separated.",
   std_protocol:"Used for standard PIDs and the PID scan. Most cars since 2008 use CAN 11-bit 500 kbit/s; 29-bit filters need a 29-bit protocol.",
-  vehicle:"Name of the loaded vehicle profile — set when you pick a profile below, editable.",
+  vehicle:"Name of the loaded vehicle profile: set when you pick a profile below, editable.",
   min_event_interval_ms:"Rate limit for parameter-change events fed to rules.",
   "espnetlink.mode":"WiFi modem keeps the dongle's USB as power only (best GPS reception). USB Ethernet keeps the data lines on and uses the cable as the uplink.",
   auto_pair:"Read the dongle's AP key over USB automatically the first time it is plugged in.",
@@ -930,18 +924,20 @@ const HELP={
   default_route:"Send all internet traffic through the tunnel, not only the allowed IPs.",
   allow_reflash:"Lets a connected tool write ECU firmware. Keep off unless you are flashing.",
   allow_lan:"Reachable from any network the WiCAN is on, not only its own AP / USB link.",
-  silent:"Receive only — the WiCAN never acknowledges frames on the bus.",
+  silent:"Receive only: the WiCAN never acknowledges frames on the bus.",
   can_filter:"Hex CAN ID to record (blank = all frames).",
   can_mask:"Hex mask: a frame is recorded when (ID AND mask) equals (filter AND mask).",
-  can_log:"Copies frames from the CAN bus as they arrive — the bus must be on (Settings → CAN bus).",
+  can_log:"Copies frames from the CAN bus as they arrive: the bus must be on (Settings → CAN bus).",
   autopid_log:"Off records nothing from polling; When a value changes keeps files small; Every poll keeps every sample.",
-  batch_rows:"Rows written to the card in one go — bigger batches mean fewer writes but more lost if power is cut.",
-  flush_ms:"Longest time a row waits in memory before it is written to the card.",
-  ring_len:"Frames held in memory while the card is busy — larger absorbs longer stalls (PSRAM).",
+  batch_rows:"Rows written to the card in one go: bigger batches mean fewer writes but more lost if power is cut.",
+  flush_ms:"Longest time a row waits in memory before it is written to the card. Longer = fewer card writes; a power cut loses at most this much, a crash or restart loses nothing.",
+  ring_len:"Frames held in memory while the card is busy: larger absorbs longer stalls (PSRAM).",
   data_mode:"Changed values only keeps pushes small; All values sends the full set every time.",
-  gzip:"Compresses pushes — needs a Home Assistant integration from 2026-07 or newer.",
+  gzip:"Compresses pushes: needs a Home Assistant integration from 2026-07 or newer.",
+  smd:"Sustained movement marks the WiCAN as moving (imu.motion rule event, Motion status flag); quiet for the stationary time marks it parked.",
+  wom:"A knock, door slam or vibration publishes an imu.bump rule event (the default rules forward it to MQTT). It does not wake the WiCAN from power saving. Off by default.",
   smd_sensitivity:"0 = most sensitive (more detections, more false alarms) … 4 = least sensitive.",
-  wom_threshold:"Higher = a harder knock is needed to wake the device (1 step ≈ 4 mg; 8 ≈ 31 mg).",
+  wom_threshold:"Higher = a harder knock is needed before a bump event fires (1 step ≈ 4 mg; 32 ≈ 125 mg).",
   stationary_s:"Seconds without motion before the device counts as parked.",
   sta_ble_handover:"Frees radio time for Bluetooth by pausing the WiFi station while a phone is connected.",
   auth_enabled:"Ask for a password before the web UI and API can be used.",
@@ -955,24 +951,24 @@ const HELP={
 };
 const ENUMS={
   "wifi_manager.mode":{off:"Off",sta:"Station only (join a network)",ap:"Access point only",apsta:"Access point + Station"},
-  ap_auth:{auto:"Automatic",open:"Open (no password)",wpa2:"WPA2",wpa2wpa3:"WPA2 / WPA3",wpa3:"WPA3"},
+  ap_auth:{auto:"Automatic (WPA2)",wpa2:"WPA2",wpa2wpa3:"WPA2 / WPA3",wpa3:"WPA3"},
   ap_bandwidth:{ht20:"20 MHz",ht40:"40 MHz"},power_save:{none:"Off (best latency)",min:"Minimum",max:"Maximum"},
   wifi_ram_profile:{full:"Full",lean:"Lean (recommended with Bluetooth)",custom:"Custom"},
   ip_mode:{dhcp:"Automatic (DHCP)",static:"Static IP"},sta_ip_mode:{dhcp:"Automatic (DHCP)",static:"Static IP"},
   "espnetlink.mode":{wifi_modem:"WiFi modem (USB power only)",usb_ncm:"USB Ethernet (NCM)",usb_rndis:"USB Ethernet (RNDIS)"},
-  role:{host:"Host — adapter or dongle plugs in",device:"Device — network over the cable to a PC"},
+  role:{host:"Host: adapter or dongle plugs in",device:"Device: network over the cable to a PC"},
   device_class:{ncm:"CDC-NCM (Linux / macOS / Windows 11)",rndis:"RNDIS (older Windows)",cdc:"CDC serial"},
   conn_profile:{ios:"iOS",android_fast:"Android (fast)"},pause_mode:{all:"Pause everything",requests_only:"Pause requests only"},
   "uds_manager.backend":{auto:"Automatic",obd_chip:"OBD chip",isotp:"ISO-TP"},
   data_mode:{changed:"Changed values only",full:"All values"},autopid_log:{off:"Off",changed:"When a value changes",all:"Every poll"},
   "data_logger.format":{sqlite:"SQLite (.db)",csv:"CSV (.csv)",binary:"Binary (.wdl)",jsonl:"JSON lines (.jsonl)"},
-  can_format:{binary:"Binary (.wdl) — fastest",csv:"CSV (.csv)",sqlite:"SQLite (.db) — slow",mf4:"MDF4 (.mf4)",blf:"Vector BLF (.blf)",candump:"candump (.log)",asc:"Vector ASC (.asc)",jsonl:"JSON lines (.jsonl)"},
-  monitor_policy:{manual:"Manual",auto_interrupt:"Automatic (interrupt)"},idle_mode:{off:"Off",solid:"Solid",blink_slow:"Slow blink"},
+  can_format:{binary:"Binary (.wdl), fastest",csv:"CSV (.csv)",sqlite:"SQLite (.db), slow",mf4:"MDF4 (.mf4)",blf:"Vector BLF (.blf)",candump:"candump (.log)",asc:"Vector ASC (.asc)",jsonl:"JSON lines (.jsonl)"},
+  idle_mode:{off:"Off",solid:"Solid",blink_slow:"Slow blink"},
   level:{none:"None",error:"Errors only",warn:"Warnings",info:"Info",debug:"Debug",verbose:"Verbose"},
   "vpn_manager.type":{wireguard:"WireGuard",tailscale:"Tailscale"},
   dtc_protocol:{obd:"OBD (modes 03 / 07 / 0A)",uds:"UDS (service 0x19)",auto:"Automatic"},
   "autopid.std_protocol":{"0":"Automatic (chip detects)","6":"CAN 11-bit 500 kbit/s (ISO 15765-4, protocol 6)","7":"CAN 29-bit 500 kbit/s (ISO 15765-4, protocol 7)","8":"CAN 11-bit 250 kbit/s (ISO 15765-4, protocol 8)","9":"CAN 29-bit 250 kbit/s (ISO 15765-4, protocol 9)"},
-  "can_manager.baud":v=>v+" kbit/s","obd_chip.baud":v=>Number(v).toLocaleString()+" baud",
+  "can_manager.baud":v=>v+" kbit/s",
 };
 const PLACEHOLDER={
   ap_ssid:()=>"WiCAN_"+((conn.info&&conn.info.device_id)||"<device id>")+" (default)",
@@ -1033,7 +1029,7 @@ function wantsSlider(key,spec){
 function formRow(key,spec,state,onDirty,comp){
   const set=v=>{state[key]=v;onDirty();};const cur=state[key];let ctl;
   /* firmware stores voltages in MILLIVOLTS (any *_mv / *_voltage_mv
-     field) — users think in VOLTS: render/edit as V, store mV */
+     field): users think in VOLTS: render/edit as V, store mV */
   const mvKey=/_mv$/.test(key)&&(spec.type==="integer"||spec.type==="number");
   if(spec.type==="boolean"){
     ctl=switchCtl(!!cur,v=>set(v),{yes:"Enabled",no:"Disabled"});
@@ -1054,7 +1050,7 @@ function formRow(key,spec,state,onDirty,comp){
     const secret=SECRET.test(key);
     const inp=h("input",{type:secret?"password":"text",value:cur??"",maxlength:spec.maxLength,autocomplete:secret?"new-password":"off",
       /* secrets come back redacted ("") — say so instead of looking empty */
-      placeholder:secret?"•••••• (unchanged — type to replace)":(fieldPlaceholder(key,comp)||undefined),
+      placeholder:secret?"•••••• (unchanged, type to replace)":(fieldPlaceholder(key,comp)||undefined),
       onchange:e=>set(e.target.value)});
     ctl=secret?h("div",{class:"rowflex"},h("div",{class:"grow"},inp),h("button",{class:"btn sm gh",type:"button",title:"Show / hide",onclick:()=>inp.type=inp.type==="password"?"text":"password"},"show")):inp;
   }
@@ -1144,7 +1140,7 @@ async function certSetPicker(rows,component,values){
   let sets=[];
   try{const r=await api("/api/certs");sets=(r.sets||[]).map(s=>s.name);}catch{return rows;}
   const cur=values.cert_set||"";
-  if(cur&&!sets.includes(cur))sets.push(cur); /* referenced but deleted — keep visible */
+  if(cur&&!sets.includes(cur))sets.push(cur); /* referenced but deleted: keep visible */
   row.querySelector(".ctl").replaceChildren(
     h("select",{onchange:e=>{values.cert_set=e.target.value;store.stage(component,values);}},
       h("option",{value:"",selected:cur===""},"Built-in CA bundle"),
@@ -1202,7 +1198,7 @@ const NAV=[
   {r:"power",t:"Power Saving",i:"battery"},
   {r:"logger",t:"Logger",i:"harddrive"},
   {r:"dashboard",t:"Dashboard",i:"gauge"},
-  {r:"monitor",t:"CAN Monitor",i:"monitor"},
+  {r:"monitor",t:"CAN Monitor",i:"monitor",sub:[{id:"monitor",t:"Monitor"},{id:"trace",t:"Trace"},{id:"settings",t:"Settings"}]},
   {r:"terminal",t:"Terminal",i:"terminal"},
   {r:"advanced",t:"Advanced",i:"sliders"},
   {r:"system",t:"System",i:"cpu",sub:[{id:"maintenance",t:"Maintenance"},{id:"certificates",t:"Certificates"},{id:"firmware",t:"Firmware update"}]},
@@ -1213,21 +1209,21 @@ const NAV=[
   {r:"dtc",t:"Trouble Codes",i:"alert",sub:[{id:"codes",t:"Codes"},{id:"databases",t:"Code databases"},{id:"settings",t:"Settings"}]},
   {r:"dbc",t:"DBC Signals",i:"route"},
   {r:"events",t:"Rules & Events",i:"pulse",sub:[{id:"rules",t:"Rules"},{id:"live",t:"Live events"},{id:"reference",t:"Triggers & actions"}]},
-  {r:"scripts",t:"Scripts",i:"code",sub:[{id:"editor",t:"Editor"},{id:"examples",t:"Examples"},{id:"reference",t:"Reference"}]},
+  {r:"scripts",t:"Scripts",i:"code",sub:[{id:"editor",t:"Editor"},{id:"examples",t:"Examples"},{id:"reference",t:"Reference"},{id:"settings",t:"Settings"}]},
   {r:"uds",t:"UDS Tool",i:"bug"},
   {r:"j2534",t:"J2534",i:"lock"},
-  {r:"files",t:"Files",i:"folder"},
+  {r:"files",t:"File Manager",i:"folder"},
   {r:"logs",t:"Logs",i:"logs"},
   {r:"sysmon",t:"System Monitor",i:"activity"},
   {r:"allsettings",t:"All Settings",i:"cog"},
 ];
 let monLive=false; /* CAN monitor sets this for the nav badge */
 /* Sidebar accordion (meatpi 2026-09-06): a section that has sub-tabs
-   (NAV[].sub — the ONE list of tab ids + labels; tabbedPage() reads it
+   (NAV[].sub: the ONE list of tab ids + labels; tabbedPage() reads it
    too) drops its sub-tab list under its own button while it is the
    active section. Every other section stays collapsed. Clicking a
    sub-tab of the page that is already open switches the pane in place
-   (staged edits and live pollers survive — no re-route). */
+   (staged edits and live pollers survive: no re-route). */
 let navOpen=null;  /* section whose sub-list is expanded right now */
 let subNav=null;   /* {base,show} registered by the current tabbedPage() */
 function navSubGo(base,id){
@@ -1267,12 +1263,12 @@ function buildMenu(active,sub){
   if(degraded.length)
     el.append(h("div",{class:"nav-warn crit"},
       h("div",{class:"nw-h"},ic("alert"),h("span",{},"Settings problem")),
-      h("div",{class:"nw-b"},degraded.map(niceName).join(", ")+" fell back to defaults — check ",
+      h("div",{class:"nw-b"},degraded.map(niceName).join(", ")+" fell back to defaults: check ",
         h("a",{href:"#/allsettings"},"All Settings"),".")));
   else if(pending.length)
     el.append(h("div",{class:"nav-warn"},
       h("div",{class:"nw-h"},ic("alert"),h("span",{},"Restart pending")),
-      h("div",{class:"nw-b"},niceList(pending)+" changed — ",
+      h("div",{class:"nw-b"},niceList(pending)+" changed: ",
         h("a",{href:"#",onclick:async e=>{e.preventDefault();if(await confirmModal("Restart WiCAN now?","Reboot")){try{await api("/api/restart",{method:"POST"});}catch{}expectReboot("Restarting");}}},"reboot to apply"),".")));
 }
 function niceList(names){return names.slice(0,3).map(niceName).join(", ")+(names.length>3?" +"+(names.length-3):"");}
@@ -1302,11 +1298,33 @@ function page(view,crumb,title,desc,tools){const p=h("div",{class:"page"});view.
 /* ============================================================ PAGES */
 const PAGES={};
 /* ---- Status ---- */
+/* This boot's cause in plain words (meatpi 2026-09-07: "what was the latest wake-up
+   source: periodic wake, voltage, motion…"). A planned restart carries the reason the
+   previous run announced (sleep_manager: power_wake = the battery recovered,
+   periodic_wake = the check-in timer); anything else is the chip's own reset cause. */
+const WAKE_PLANNED={power_wake:"Battery voltage recovered, woke from sleep",periodic_wake:"Periodic check-in, woke from sleep",
+  user_request:"Restart requested",config_apply:"Settings applied",config_recovery:"Settings recovery",ota_apply:"Firmware update",
+  factory_reset:"Factory reset",safe_mode:"Safe mode",internal_recovery:"Internal recovery restart"};
+const WAKE_SOURCE={web_ui:"web UI",cmdline:"command line",console:"console",mqtt:"MQTT",ota:"OTA",safe_mode:"safe mode",
+  sleep_mode:"power saving",button:"button",pairing:"pairing"};
+const WAKE_RESET={poweron:"Power-on",external:"External reset",software:"Software restart",panic:"Crash (panic)",deepsleep:"Woke from deep sleep",
+  brownout:"Brown-out (supply dipped)",interrupt_wdt:"Interrupt watchdog",task_wdt:"Task watchdog",wdt:"Watchdog",sdio:"SDIO reset"};
+function wakeSource(r){
+  if(!r)return "—";
+  if(r.planned){const t=WAKE_PLANNED[r.planned_reason]||("Planned restart ("+(r.planned_reason||"?")+")");
+    const s=WAKE_SOURCE[r.source];return s&&!/_wake$/.test(r.planned_reason||"")?t+" · "+s:t;}
+  const t=WAKE_RESET[r.reason]||("Reset ("+(r.reason||"unknown")+")");
+  return /^(poweron|external|deepsleep)$/.test(r.reason||"")?t:t+", unexpected";
+}
 PAGES.status=async(view)=>{
   const p=page(view,null,"Status","Live overview of the device and CAN interface.");
   const cardsEl=h("div",{class:"tiles"});
   const colsEl=h("div",{class:"cols2"});
   p.append(cardsEl,colsEl);
+  /* this boot's cause is fixed for the whole boot — fetched once, not every refresh */
+  const hist=await tryGet("/api/restart/history");
+  const recs=(hist&&hist.records)||[];
+  const wake=wakeSource(recs.find(r=>hist&&r.seq===hist.boot_count)||recs[0]);
   async function refresh(){
     const st=conn.status||await tryGet("/api/status");if(!st)return;
     const b=st.bits||{};
@@ -1331,8 +1349,9 @@ PAGES.status=async(view)=>{
       card("System","cpu",kv([
         ["Firmware",st.version||"—"],
         ["Partition",st.partition||"—"],
-        ["Clock",rtc?(rtc.valid?rtc.time:"not set — waiting for an internet time sync"):"—"],
+        ["Clock",rtc?(rtc.valid?rtc.time:"not set, waiting for an internet time sync"):"—"],
         ["Boot count",st.boot_count??"—"],
+        ["Last wake-up",wake],
         ["Unexpected resets",st.unexpected_resets??"—"],
         ["OBD chip",b.awake===false?"Asleep":"Ready"],
         ["Motion (IMU)",imu?(imu.activity+(imu.temp!=null?" · "+imu.temp+" °C":"")):"—"],
@@ -1347,7 +1366,7 @@ PAGES.status=async(view)=>{
 /* ---- Connections: the bridge builder (patch panel) ----
    Row model: [interface ▾] ⇄ [connection ▾] + contextual fields.
    Compiles into bridge_manager.bridges AND maintains the backing
-   socket_manager servers / websocket_manager channels — the user
+   socket_manager servers / websocket_manager channels: the user
    thinks in interfaces, not jack names. */
 const BR_IFACES=[["obd","OBD chip"],["can","CAN bus"],["cli","Console (CLI)"]];
 const BR_CONNS=[["tcp","TCP server"],["udp","UDP server"],["ws","WebSocket"],["ble","Bluetooth (BLE)"],["usb","USB serial"]];
@@ -1378,7 +1397,7 @@ async function bridgesCard(){
     const srv=servers.map(s=>({...s})),chn=channels.map(c=>({...c}));
     const bridges=passthru.map(b=>({...b})),errs=[],used=new Map();
     const claim=(jack,label,en)=>{if(!en)return;
-      if(used.has(jack))errs.push(label+": "+jack+" is already used by "+used.get(jack)+" — one connection per interface (disable one).");
+      if(used.has(jack))errs.push(label+": "+jack+" is already used by "+used.get(jack)+": one connection per interface (disable one).");
       else used.set(jack,label);};
     for(const b of bridges){claim(b.a,b.name,b.enabled!==false);claim(b.b,b.name,b.enabled!==false);}
     let canUsed=false;
@@ -1393,7 +1412,7 @@ async function bridgesCard(){
           const name=(r.conn+String(port)).slice(0,15);
           if(srv.length<4)srv.push(s={name,proto:r.conn,port,enabled:true});
           else{s=srv.find(x=>x.enabled===false&&!srv.some(y=>y!==x&&y.name===name));
-            if(!s){errs.push(label+": no free server slot (max 4) — remove one under All Settings → Socket servers.");return;}
+            if(!s){errs.push(label+": no free server slot (max 4): remove one under All Settings → Socket servers.");return;}
             s.name=name;s.proto=r.conn;s.port=port;}
         }
         s.enabled=s.enabled||r.enabled;jack=s.name;
@@ -1405,7 +1424,7 @@ async function bridgesCard(){
           const name=("ws_"+path.slice(4).replace(/\W/g,"")).slice(0,15)||("wsbr"+(i+1));
           if(chn.length<4)chn.push(c={name,path,mode:"binary",enabled:true});
           else{c=chn.find(x=>x.enabled===false);
-            if(!c){errs.push(label+": no free WebSocket channel (max 4) — remove one under All Settings → WebSocket channels.");return;}
+            if(!c){errs.push(label+": no free WebSocket channel (max 4): remove one under All Settings → WebSocket channels.");return;}
             c.name=name;c.path=path;c.mode="binary";}
         }
         c.enabled=c.enabled||r.enabled;jack=c.name;
@@ -1424,7 +1443,7 @@ async function bridgesCard(){
     const c=compile();
     warnEl.replaceChildren(
       ...c.errs.map(e=>banner("warn","alert",e)),
-      c.canUsed&&canInfo&&canInfo.enabled===false?banner("info","activity","A connection uses the CAN bus but the CAN interface is disabled — enable it in the CAN Interface card above."):null);
+      c.canUsed&&canInfo&&canInfo.enabled===false?banner("info","activity","A connection uses the CAN bus but the CAN interface is disabled: enable it in the CAN Interface card above."):null);
     if(c.errs.length)return;
     if(JSON.stringify(c.bridges)!==JSON.stringify(bm.bridges||[]))store.stage("bridge_manager",{bridges:c.bridges});
     if(JSON.stringify(c.srv)!==JSON.stringify(servers))store.stage("socket_manager",{servers:c.srv});
@@ -1458,7 +1477,7 @@ async function bridgesCard(){
   function refresh(){
     listEl.replaceChildren(
       ...passthru.map(b=>h("div",{class:"help",style:"padding:4px 2px"},
-        "custom bridge ",h("code",{},b.name),": ",h("code",{},b.a)," ⇄ ",h("code",{},b.b)," — edit under All Settings → Bridges.")),
+        "custom bridge ",h("code",{},b.name),": ",h("code",{},b.a)," ⇄ ",h("code",{},b.b),": edit under All Settings → Bridges.")),
       ...rows.map((r,i)=>rowBox(r,i)));
     stage();
   }
@@ -1467,7 +1486,7 @@ async function bridgesCard(){
     if(rows.length+passthru.length>=4)return toast("Max 4 connections","err");
     rows.push({iface:"obd",conn:"tcp",port:35000,translator:"raw",enabled:true});refresh();},},ic("plus"),"Add connection");
   return card("Connections","route",listEl,warnEl,h("div",{style:"margin-top:8px"},add),
-    note("","Each row wires a vehicle interface to a connection — TCP/UDP ports and WebSocket paths are created automatically. An interface can carry ONE enabled connection at a time; changes apply from the Submit button (device restarts)."));
+    note("","Each row wires a vehicle interface to a connection. TCP/UDP ports and WebSocket paths are created automatically. An interface can carry ONE enabled connection at a time; changes apply from the Submit button (device restarts)."));
 }
 
 /* Backup (fallback) STA networks: only populated slots render; Add
@@ -1527,9 +1546,11 @@ function fallbackNetworks(vals,stage){
 }
 
 PAGES.settings=async(view,sub)=>{
-  const p=page(view,null,"Settings","WiFi, Bluetooth, CAN interface, connections and MQTT — changes apply from the Submit button in the header.");
+  const p=page(view,null,"Settings","WiFi, Bluetooth, CAN interface, connections and MQTT. Changes apply from the Submit button in the header.");
   const wrap=h("div",{class:"pane"});p.append(wrap);
-  const AP_KEYS=["mode","ap_ssid","ap_password","ap_auth","ap_ip","ap_channel","ap_bandwidth","ap_hidden","ap_max_connections","ap_auto_disable","power_save","wifi_ram_profile","wifi_static_rx","wifi_static_tx","wifi_cache_tx"];
+  /* the WiFi mode is not an access-point setting (meatpi 2026-09-07): it gets
+     its own tile selector above both cards; each card folds when unused */
+  const AP_KEYS=["ap_ssid","ap_password","ap_auth","ap_ip","ap_channel","ap_bandwidth","ap_hidden","ap_max_connections","ap_auto_disable","power_save","wifi_ram_profile","wifi_static_rx","wifi_static_tx","wifi_cache_tx"];
   /* Scan → pick: clicking a network fills the station SSID (the field
      re-paints through rows.load and the change is staged like a typed one) */
   let pickSsid=null;
@@ -1538,11 +1559,11 @@ PAGES.settings=async(view,sub)=>{
     const close=modal({title:"Nearby networks",body:h("div",{},h("p",{class:"help",style:"margin:0 0 10px"},"Click a network to use it as the station network."),body),actions:[{label:"Close"}]});
     try{const r=await api("/api/wifi/scan");const nets=(r.networks||r||[]).sort((a,b)=>(b.rssi||-999)-(a.rssi||-999));
       const tbl=dataTable([
-        {label:"Network",get:n=>h("a",{href:"#",style:"font-weight:600",onclick:e=>{e.preventDefault();if(n.ssid&&pickSsid){pickSsid(n.ssid);close();toast("Station network set to "+n.ssid+" — enter the password, then Submit","ok");}}},n.ssid||"(hidden)")},
+        {label:"Network",get:n=>h("a",{href:"#",style:"font-weight:600",onclick:e=>{e.preventDefault();if(n.ssid&&pickSsid){pickSsid(n.ssid);close();toast("Station network set to "+n.ssid+": enter the password, then Submit","ok");}}},n.ssid||"(hidden)")},
         {label:"Signal",get:n=>{const bars=n.rssi>-55?4:n.rssi>-67?3:n.rssi>-78?2:1;return h("span",{class:"mono",style:"color:var(--primary)"},"▂▄▆█".slice(0,bars).padEnd(4,"·"));}},
         {label:"Security",get:n=>n.auth&&n.auth!=="OPEN"?chip(n.auth,""):chip("open","warn")},
         {label:"RSSI",align:"right",mono:true,get:n=>(n.rssi||"?")+" dBm"},
-      ],nets,{empty:"No networks found — try again in a few seconds (the radio may be busy)"});
+      ],nets,{empty:"No networks found: try again in a few seconds (the radio may be busy)"});
       body.replaceChildren(tbl);
     }catch(e){body.replaceChildren(banner("crit","alert",e.message));}}},ic("refresh"),"Scan");
   try{
@@ -1551,15 +1572,44 @@ PAGES.settings=async(view,sub)=>{
     delete wifiVals.degraded;delete wifiVals.pending_reboot;
     const props=Object.keys((wifiSchema&&wifiSchema.properties)||{});
     const FB=/^fallback\d+_/;
-    const staKeys=props.filter(k=>!AP_KEYS.includes(k)&&!FB.test(k));
+    const staKeys=props.filter(k=>k!=="mode"&&!AP_KEYS.includes(k)&&!FB.test(k));
+    /* no open access point (meatpi 2026-09-07): the firmware enum lost it in v7;
+       an older build still offers it in the schema, so drop it here too */
+    const authSpec=wifiSchema&&wifiSchema.properties&&wifiSchema.properties.ap_auth;
+    if(authSpec&&Array.isArray(authSpec.enum))authSpec.enum=authSpec.enum.filter(v=>v!=="open");
     /* ONE shared values object for both wifi cards (separate copies
        would clobber each other's staged edits) */
     const shared={values:wifiVals,schema:wifiSchema};
     const staBits=h("div",{});
-    const staOff=h("div",{class:"empty",style:"display:none"},"Station mode is off — set WiFi mode to “Station only” or “Access point + Station” above to join a network.");
+    const staOff=h("div",{class:"empty",style:"display:none"},"The station is off in this mode. Pick Station only or Access point + Station above to join a network.");
+    const apBits=h("div",{});
+    const apOff=h("div",{class:"empty",style:"display:none"},"The access point is off in this mode. Pick Access point only or Access point + Station above to let phones connect directly.");
+    /* live state per card: what the radio is doing right now */
+    const apChip=chip("…",""),staChip=chip("…","");
+    const paintLive=()=>{const w=conn.wifi,b=(conn.status&&conn.status.bits)||{};
+      const mode=String(wifiVals.mode||"");
+      const reChip=(el,txt,kind)=>{el.className="chip "+(kind||"");el.replaceChildren(h("span",{class:"d"}),txt);};
+      if(!w||conn.state!=="online"){reChip(apChip,"…","");reChip(staChip,"…","");return;}
+      if(w.ap_started)reChip(apChip,(w.clients||0)+" client"+(w.clients===1?"":"s")+" · "+(w.ap_ip||""),"ok");
+      else reChip(apChip,"Off","");
+      if(b.sta_connected)reChip(staChip,"Connected · "+(w.ip||""),"ok");
+      else reChip(staChip,mode.includes("sta")?"Not connected":"Off",mode.includes("sta")?"warn":"");};
+    /* the mode selector */
+    const MODES=[
+      {v:"apsta",t:"Access point + Station",i:"route",d:"Phones connect directly and the WiCAN also joins your WiFi."},
+      {v:"sta",t:"Station only",i:"signal",d:"The WiCAN joins your WiFi. Phones reach it through that network, not directly."},
+      {v:"ap",t:"Access point only",i:"wifi",d:"Phones and laptops connect directly to the WiCAN. It gets no internet."},
+      {v:"off",t:"WiFi off",i:"power",d:"The radio stays down. Reach the WiCAN over USB or Bluetooth only."}];
+    const modeEl=h("div",{class:"wm-modes"});
+    const offWarn=note("warn","With WiFi off, this page is only reachable over USB or Bluetooth after the restart.");
+    function paintModes(){const cur=String(wifiVals.mode||"ap");
+      modeEl.replaceChildren(...MODES.map(m=>h("button",{type:"button",class:"wm-mode"+(m.v===cur?" on":""),"data-mode":m.v,
+        onclick:()=>{if(wifiVals.mode===m.v)return;wifiVals.mode=m.v;store.stage("wifi_manager",wifiVals);paintModes();wifiDirty();}},
+        h("div",{class:"wt"},ic(m.i),m.t),h("div",{class:"wd"},m.d))));
+      offWarn.style.display=cur==="off"?"":"none";}
     /* why the station is not connected (2026-09-06): the firmware keeps the
        last attempt's entry + disconnect reason + failed-attempt streak;
-       there is no time-based ban any more — a rejected entry is tried
+       there is no time-based ban any more: a rejected entry is tried
        after the other networks, and alone it keeps being tried */
     const REASON_TXT={2:"the network dropped the session",15:"the handshake timed out",200:"the network's beacons were lost",201:"the network was not found",202:"authentication failed",203:"association failed",204:"the handshake timed out",205:"the connection failed"};
     const staWhy=h("div",{class:"note warn",style:"display:none"},ic("alert"),h("span",{}));
@@ -1570,9 +1620,13 @@ PAGES.settings=async(view,sub)=>{
       staWhy.lastChild.textContent=at.fail_count>0
         ?"Joining “"+at.ssid+"” failed ("+why+"), "+at.fail_count+" attempt"+(at.fail_count===1?"":"s")+" in a row."+(at.deprioritised?" Other networks on the list are tried first; when it is the only one around it keeps being tried.":"")+" If the password is wrong, correct it here and Submit."
         :"Not connected to “"+at.ssid+"”: "+why+". The WiCAN keeps retrying.";};
-    paintWhy();const whyT=setInterval(paintWhy,3000);
-    const syncSta=()=>{const on=String(wifiVals.mode||"").includes("sta");
-      staBits.style.display=on?"":"none";staOff.style.display=on?"none":"";};
+    /* the factory-password note sits right under the field (meatpi 2026-09-07) */
+    const pwWarn=note("warn","This is still the factory password (@meatpi#). Anyone who knows WiCAN can join the access point. Set a new one: WiFi settings cannot be saved until you do.");
+    const syncPw=()=>{pwWarn.style.display=apDefaultPassword()?"":"none";};
+    paintWhy();syncPw();const whyT=setInterval(()=>{paintWhy();paintLive();syncPw();},3000);
+    const syncSta=()=>{const m=String(wifiVals.mode||"");const on=m.includes("sta"),ap=m.includes("ap");
+      staBits.style.display=on?"":"none";staOff.style.display=on?"none":"";
+      apBits.style.display=ap?"":"none";apOff.style.display=ap?"none":"";paintLive();};
     let syncNudge=()=>{};
     const wifiDirty=()=>{syncSta();syncNudge();};
     const[apRows,staRows,bleRows,canRows,mqttRows]=await Promise.all([
@@ -1581,10 +1635,8 @@ PAGES.settings=async(view,sub)=>{
           "ap_max_connections","ap_auto_disable","power_save",
           "wifi_ram_profile","wifi_static_rx","wifi_static_tx",
           "wifi_cache_tx"],
-        visible:st=>{
-          if(!String(st.mode||"").includes("ap"))return["mode"];
-          return st.wifi_ram_profile==="custom"?null
-            :AP_KEYS.filter(k=>!k.startsWith("wifi_static_")&&k!=="wifi_cache_tx");}}),
+        visible:st=>st.wifi_ram_profile==="custom"?null
+            :AP_KEYS.filter(k=>!k.startsWith("wifi_static_")&&k!=="wifi_cache_tx")}),
       settingsForm("wifi_manager",staKeys,{...shared,
         advanced:["sta_trusted","sta_auto_reconnect","sta_max_retry",
           "sta_roam_interval_s","hostname","sta_dns","sta_ip_mode",
@@ -1605,22 +1657,26 @@ PAGES.settings=async(view,sub)=>{
     const ramNudge=h("div",{class:"empty"},
       "Tip: Bluetooth is enabled while the WiFi RAM profile is 'full'. "+
       "The 'lean' profile frees ~14 KB of internal RAM at no measured "+
-      "throughput cost — recommended when WiFi and BLE run together.");
+      "throughput cost: recommended when WiFi and BLE run together.");
     syncNudge=()=>{ramNudge.style.display=
       (bleOn&&String(wifiVals.wifi_ram_profile||"full")==="full")?"":"none";};
     syncNudge();
     pickSsid=ssid=>{wifiVals.sta_ssid=ssid;staRows.load();store.stage("wifi_manager",wifiVals);syncSta();};
     staBits.append(staWhy,...staRows,
       fallbackNetworks(wifiVals,()=>store.stage("wifi_manager",wifiVals)));
-    syncSta();
+    const apBody=[];
+    for(const r of apRows){apBody.push(r);if(r&&r.dataset&&r.dataset.key==="ap_password")apBody.push(pwWarn);}
+    apBits.append(...apBody,ramNudge,
+      note("","The access point is the WiCAN's own WiFi network: phones and laptops connect to it directly to reach this page."));
+    paintModes();syncSta();
     tabbedPage(wrap,"settings",[
       {id:"wifi",el:h("div",{class:"pane"},
-        card("WiFi Access Point","wifi",...apRows,ramNudge,
-          note("","The access point is the WiCAN's own WiFi network — phones and laptops connect to it directly to reach this page.")),
-        cardTools("WiFi Network (Station)","signal",[scanBtn],staBits,staOff))},
+        card("WiFi mode","sliders",modeEl,offWarn),
+        cardTools("WiFi Access Point","wifi",[apChip],apBits,apOff),
+        cardTools("WiFi Network (Station)","signal",[staChip,scanBtn],staBits,staOff))},
       {id:"bluetooth",el:h("div",{class:"pane"},card("Bluetooth","bt",...bleRows))},
       {id:"can",el:h("div",{class:"pane"},card("CAN Interface","activity",...canRows,
-        note("","Classic CAN 2.0 — 11-bit (standard) and 29-bit (extended) identifiers supported. Listen-only mode never acknowledges frames on the bus.")))},
+        note("","Classic CAN 2.0: 11-bit (standard) and 29-bit (extended) identifiers supported. Listen-only mode never acknowledges frames on the bus.")))},
       {id:"connections",el:h("div",{class:"pane"},await bridgesCard())},
       {id:"mqtt",el:h("div",{class:"pane"},card("MQTT","send",...mqttRows))},
     ],sub);
@@ -1631,13 +1687,13 @@ PAGES.settings=async(view,sub)=>{
 
 /* ---- Automate ---- */
 /* Save model: settings cards stage into the ONE header Submit button
-   (reboot-to-apply) — the per-card "Submit to apply" badge was dropped
+   (reboot-to-apply): the per-card "Submit to apply" badge was dropped
    2026-09-05; only live-apply cards are marked with liveBadge. */
 /* Sub-tabs for long pages: every pane is built once (staged edits and
    live pollers survive tab switches); a tab only toggles visibility and
    rewrites the hash with replaceState so #/<page>/<tab> deep-links work
    without re-running the page. The sidebar accordion (buildMenu) is the
-   primary tab control — tab ids + labels come from NAV[].sub; the
+   primary tab control: tab ids + labels come from NAV[].sub; the
    in-page strip is only shown on narrow windows, where the sidebar
    collapses to a chip row that cannot nest. */
 function tabbedPage(container,base,tabs,sub){
@@ -1657,7 +1713,7 @@ function tabbedPage(container,base,tabs,sub){
   subNav={base,show};
   container.append(strip,panes);show(active);
 }
-const liveBadge=()=>h("span",{class:"chip ok",title:"Changes apply immediately on the device — no restart"},h("span",{class:"d"}),"Applies live");
+const liveBadge=()=>h("span",{class:"chip ok",title:"Changes apply immediately on the device: no restart"},h("span",{class:"d"}),"Applies live");
 PAGES.automate=async(view,sub)=>{
   const p=page(view,null,"Automate","What to poll from the vehicle, and where the data goes.");
   const wrap=h("div",{class:"pane"});p.append(wrap);
@@ -1723,12 +1779,12 @@ PAGES.automate=async(view,sub)=>{
         chip("OK: "+fmt.num(wh.success_count||0),"ok"),
         chip("Fail: "+fmt.num(wh.fail_count||0),(wh.fail_count||0)>0?"crit":""),
         chip("Status: "+(wh.status||"—"),bad?"crit":(wh.status==="ok"?"ok":"")),
-        ...(wh.status==="rejected"?[h("span",{class:"help",style:"color:var(--crit)"},"Home Assistant rejected this device's identity — pushes are paused until it re-registers.")]:[]),
-        wh.url?h("span",{class:"help",style:"overflow-wrap:anywhere"},"URL: ",h("b",{class:"mono",style:"color:var(--text)"},wh.url)):h("span",{class:"help"},"Not registered — the HA integration registers itself when it discovers the device"));};
+        ...(wh.status==="rejected"?[h("span",{class:"help",style:"color:var(--crit)"},"Home Assistant rejected this device's identity: pushes are paused until it re-registers.")]:[]),
+        wh.url?h("span",{class:"help",style:"overflow-wrap:anywhere"},"URL: ",h("b",{class:"mono",style:"color:var(--text)"},wh.url)):h("span",{class:"help"},"Not registered: the HA integration registers itself when it discovers the device"));};
     await paint();
     paneHa.append(card("Home Assistant","home",...haRows,
       h("div",{class:"frow"},h("label",{},"Webhook stats"),h("div",{class:"ctl"},statsEl)),
-      note("","The WebHook URL, failover URL and interval are managed by the Home Assistant integration while enabled — it registers itself via POST /api/webhook. Gzip compresses pushes (needs an integration from 2026-07 or newer).")));
+      note("","The WebHook URL, failover URL and interval are managed by the Home Assistant integration while enabled: it registers itself via POST /api/webhook. Gzip compresses pushes (needs an integration from 2026-07 or newer).")));
   }catch(e){paneHa.append(banner("crit","alert","Home Assistant: "+e.message));}
   /* 4. destinations = event_manager timer rules created by this page */
   try{
@@ -1763,7 +1819,7 @@ PAGES.automate=async(view,sub)=>{
               h("button",{class:"btn sm gh danger",title:"Remove destination",onclick:()=>{
                 ev.rules=ev.rules.filter(r=>r.name!==d.name);ev.timers=ev.timers.filter(t=>t.name!==d.name);stageIt();rebuild();}},ic("trash")));
           }),
-          rows.length?null:h("div",{class:"empty"},"No destinations — cyclic pushes of the live parameter set to MQTT or HTTP"))));
+          rows.length?null:h("div",{class:"empty"},"No destinations: cyclic pushes of the live parameter set to MQTT or HTTP"))));
     };
     rebuild();
     const addBtn=h("button",{class:"btn pri sm",onclick:()=>{
@@ -1790,7 +1846,7 @@ PAGES.automate=async(view,sub)=>{
     const seg=h("div",{class:"seg",style:"margin-bottom:16px"},segStd,segVeh,segCust,segCus);
     const paneEl=h("div",{});
     /* each group's own settings (switch, init chain, protocol / vehicle
-       name) head its pane — built once, moved between pane rebuilds */
+       name) head its pane: built once, moved between pane rebuilds */
     const groupRows={};
     if(av&&sch)for(const g of Object.keys(GROUP_KEYS))groupRows[g]=await settingsForm("autopid",GROUP_KEYS[g],{values:av,schema:sch,visible:false});
     const groupHead=g=>groupRows[g]?h("div",{style:"margin-bottom:14px"},...groupRows[g]):null;
@@ -1811,7 +1867,7 @@ PAGES.automate=async(view,sub)=>{
         const cb=h("input",{type:"checkbox",checked:!dup});
         const prm=(row.parameters&&row.parameters[0])||{};
         return{row,cb,el:h("label",{style:"display:grid;grid-template-columns:24px 130px 1fr 90px;gap:8px;align-items:center;padding:5px 4px;border-top:1px solid var(--border);cursor:pointer;opacity:"+(dup?".55":"1")},
-          cb,h("span",{class:"mono"},row.cmd),h("span",{},row.name+(dup?" — already configured":"")),
+          cb,h("span",{class:"mono"},row.cmd),h("span",{},row.name+(dup?", already configured":"")),
           h("span",{class:"mono",style:"color:var(--text-3)"},prm.unit||""))};
       });
       const body=h("div",{},
@@ -1832,7 +1888,7 @@ PAGES.automate=async(view,sub)=>{
             cfg.pids.push({name:b.row.name,cmd:b.row.cmd,group:"default",period_ms:1000,type:"std",
               parameters:(b.row.parameters||[]).map(p=>({...p}))});n++;}
           paneEl.replaceChildren(pidsPane());
-          toast(n?n+" PIDs added — press Apply Configuration to activate":"Nothing new to add",n?"ok":"");}},
+          toast(n?n+" PIDs added: press Apply Configuration to activate":"Nothing new to add",n?"ok":"");}},
       ]});
     }
     /* one editable table per PID type (std / custom / specific).
@@ -1842,7 +1898,7 @@ PAGES.automate=async(view,sub)=>{
        render as parameter rows GROUPED under their PID. */
     const pidType=pd=>pd.type==="std"?"std":pd.type==="specific"?"specific":"custom";
     /* one-shot test through the REAL runner path (init chain, rxheader,
-       expression) — POST /api/autopid/test, one call per parameter */
+       expression). POST /api/autopid/test, one call per parameter */
     async function testPid(pd,btn){
       const params=(pd.parameters||[]).filter(pr=>pr&&pr.expression);
       btn.disabled=true;const was=btn.textContent;btn.textContent="Testing…";
@@ -1893,7 +1949,7 @@ PAGES.automate=async(view,sub)=>{
               onclick:()=>{isOpen?open.delete(pd):open.add(pd);rebuild();}},
               isOpen?"▾":"▸ "+pd.parameters.length);
             const testBtn=h("button",{class:"btn sm",style:"width:100%;justify-content:center;padding:3px 0;font-size:11px;background:var(--accent);border-color:var(--accent);color:#fff",
-              title:"Send this PID once through the real polling path (init, expressions) and show the reply — vehicle must be on"},"Test");
+              title:"Send this PID once through the real polling path (init, expressions) and show the reply: vehicle must be on"},"Test");
             testBtn.onclick=()=>testPid(pd,testBtn);
             const pidRow=h("div",{style:"display:grid;"+grid+";gap:10px;padding:8px 6px 4px;align-items:center;border-top:2px solid var(--border)"},
               caret,
@@ -1923,7 +1979,7 @@ PAGES.automate=async(view,sub)=>{
       return tbl;
     }
     function pidsPane(){
-      const tbl=pidTable("std","No standard PIDs — run Scan PIDs with the vehicle on");
+      const tbl=pidTable("std","No standard PIDs: run Scan PIDs with the vehicle on");
       const rebuild=tbl.rebuild;
       let scanTimer=null;
       const scanBtn=h("button",{class:"btn pri sm",onclick:async()=>{
@@ -1931,7 +1987,7 @@ PAGES.automate=async(view,sub)=>{
           const st0=await tryGet("/api/autopid/std_scan");
           if(st0&&st0.status==="running")return toast("A scan is already running","");
           await api("/api/autopid/std_scan",{method:"POST",body:{}});
-          toast("Standard-PID scan started — vehicle must be on","ok");
+          toast("Standard-PID scan started: vehicle must be on","ok");
           scanBtn.disabled=true;scanBtn.textContent="Scanning…";
           let ticks=0;
           scanTimer=setInterval(async()=>{
@@ -1947,7 +2003,7 @@ PAGES.automate=async(view,sub)=>{
         }catch(e){toast(e.message,"err");}}},"Scan PIDs");
       const lastBtn=h("button",{class:"btn sm gh",title:"Review the PIDs found by the last scan",onclick:async()=>{
         const r=await tryGet("/api/autopid/std_scan/result");
-        if(r&&r.supported)offerScanResults(r);else toast("No stored scan result — run Scan PIDs first","");}},"Last Scan Results");
+        if(r&&r.supported)offerScanResults(r);else toast("No stored scan result: run Scan PIDs first","");}},"Last Scan Results");
       const applyBtn=h("button",{class:"btn pri sm",onclick:saveCfg},"Apply Configuration");
       return h("div",{},groupHead("std"),tbl,
         h("div",{class:"rowflex",style:"gap:8px;margin-top:12px;flex-wrap:wrap"},
@@ -1955,7 +2011,7 @@ PAGES.automate=async(view,sub)=>{
         note("","SAE-standard PIDs the vehicle reports as supported. Scan discovers them and fills in the decode automatically; hand-written requests belong on the Custom PIDs tab."));
     }
     function custPane(){
-      const tbl=pidTable("custom","No custom PIDs — Add PID to poll any request with your own decode expression");
+      const tbl=pidTable("custom","No custom PIDs. Add PID to poll any request with your own decode expression");
       const applyBtn=h("button",{class:"btn pri sm",onclick:saveCfg},"Apply Configuration");
       return h("div",{},groupHead("custom"),tbl,
         h("div",{class:"rowflex",style:"gap:8px;margin-top:12px;flex-wrap:wrap"},
@@ -1969,7 +2025,7 @@ PAGES.automate=async(view,sub)=>{
     const shiftExpr=x=>String(x||"").replace(/([BS])(\d+)/g,(m,l,n)=>l+Math.max(0,Number(n)-1));
     const PROFILES_URL="https://raw.githubusercontent.com/meatpiHQ/wican-fw/main/vehicle_profiles.json";
     /* the published profiles carry a latin-1 degree sign that decodes to
-       U+FFFD ("�C") — normalise units on import (meatpi 2026-09-06) */
+       U+FFFD ("�C"): normalise units on import (meatpi 2026-09-06) */
     const fixUnit=u=>typeof u==="string"?u.replace(/\uFFFD/g,"°"):u;
     function importProfile(car){
       /* replace the vehicle-specific PID set; std/custom stay */
@@ -1981,7 +2037,7 @@ PAGES.automate=async(view,sub)=>{
       }
     }
     function vehPane(){
-      const tbl=pidTable("specific","No vehicle profile loaded — pick your car above");
+      const tbl=pidTable("specific","No vehicle profile loaded: pick your car above");
       const state={cars:null,car:null,busy:false};
       const selWrap=h("div",{class:"frow"});  /* aligned with the group rows above */
       /* the car-level name + init chain are autopid settings — the shared
@@ -1993,7 +2049,7 @@ PAGES.automate=async(view,sub)=>{
       const info=h("span",{class:"help"});
       /* selecting a profile IS the load (meatpi 2026-09-06): the vehicle-
          specific PID set is replaced live and the car's name + init are
-         staged for Submit — no separate Load button. Fetch latest
+         staged for Submit: no separate Load button. Fetch latest
          re-reads the published list, bypassing caches. */
       const loadCar=async car=>{
         if(!car||state.busy)return;
@@ -2004,7 +2060,7 @@ PAGES.automate=async(view,sub)=>{
         stageCar(car);
         tbl.rebuild();
         info.textContent=(car.pids||[]).length+" PIDs loaded";
-        toast(car.car_model+" loaded — "+(car.pids||[]).length+" PIDs (name + init staged: Submit Changes)","ok");
+        toast(car.car_model+" loaded: "+(car.pids||[]).length+" PIDs (name + init staged: Submit Changes)","ok");
         state.busy=false;sel.disabled=false;};
       const sel=h("select",{style:"flex:1 1 260px;width:auto;min-width:260px",onchange:e=>{
         state.car=(state.cars||[]).find(c=>c.car_model===e.target.value)||null;
@@ -2020,7 +2076,7 @@ PAGES.automate=async(view,sub)=>{
           const j=await res.json();
           state.cars=(j&&j.cars)||[];
           if(!state.cars.length)throw new Error("no cars in profile file");
-          sel.replaceChildren(h("option",{value:""},"— select your vehicle —"),
+          sel.replaceChildren(h("option",{value:""},"Select your vehicle"),
             ...state.cars.map(c=>h("option",{value:c.car_model},c.car_model)));
           /* first load: show the car this device is already set up for;
              after Fetch latest leave it unselected so picking the same
@@ -2030,7 +2086,7 @@ PAGES.automate=async(view,sub)=>{
           info.textContent=state.cars.length+" profiles"+(fresh?" · fetched "+new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):"");
         }catch(e){
           sel.replaceChildren(h("option",{value:""},"profile list unavailable"));
-          info.textContent="Could not fetch vehicle_profiles.json ("+e.message+") — use the file upload below.";
+          info.textContent="Could not fetch vehicle_profiles.json ("+e.message+"): use the file upload below.";
         }
         fetchBtn.disabled=false;};
       selWrap.append(h("label",{},"Your car"),h("div",{class:"ctl"},h("div",{class:"rowflex",style:"gap:8px;flex-wrap:wrap"},sel,fetchBtn,info)),
@@ -2042,9 +2098,9 @@ PAGES.automate=async(view,sub)=>{
           const j=JSON.parse(await f.text());
           if(j&&j.cars){ /* the whole published file */
             state.cars=j.cars;
-            sel.replaceChildren(h("option",{value:""},"— select your vehicle —"),
+            sel.replaceChildren(h("option",{value:""},"Select your vehicle"),
               ...state.cars.map(c=>h("option",{value:c.car_model},c.car_model)));
-            toast("Profile list loaded — pick your car","ok");
+            toast("Profile list loaded: pick your car","ok");
           }else if(j&&j.car_model){ /* a single car profile */
             state.car=j;importProfile(j);
             await api("/api/autopid/config",{method:"PUT",body:cfg});
@@ -2062,7 +2118,7 @@ PAGES.automate=async(view,sub)=>{
         ondrop:e=>{e.preventDefault();dropZone.style.borderColor="";
           applyFile(e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0]);}},
         h("div",{style:"font-size:13.5px;color:var(--text-2);margin-bottom:10px"},
-          "Load a profile ",h("b",{class:"mono"},".json")," — the published file, a single car, or a config export. Drag & drop here, or"),
+          "Load a profile ",h("b",{class:"mono"},".json"),": the published file, a single car, or a config export. Drag & drop here, or"),
         h("div",{style:"display:flex;gap:10px;justify-content:center"},
           h("label",{class:"btn sm"},"Choose File",fileInput),
           h("a",{class:"btn sm gh",href:"https://github.com/meatpiHQ/wican-fw",target:"_blank"},"Profile repository")));
@@ -2072,7 +2128,7 @@ PAGES.automate=async(view,sub)=>{
           h("span",{class:"grow"}),
           h("button",{class:"btn pri sm",onclick:saveCfg},"Apply Configuration")),
         dropZone,
-        note("","Profiles carry the PIDs, decode expressions and init strings for a specific vehicle. Selecting a profile replaces the vehicle-specific PIDs (standard and custom PIDs are kept) and stages the car's name and init commands above — Submit Changes to apply them. Fetch latest re-reads the published list."));
+        note("","Profiles carry the PIDs, decode expressions and init strings for a specific vehicle. Selecting a profile replaces the vehicle-specific PIDs (standard and custom PIDs are kept) and stages the car's name and init commands above. Submit Changes to apply them. Fetch latest re-reads the published list."));
     }
     function cusPane(){
       const ta=h("textarea",{style:"min-height:280px"},JSON.stringify(cfg,null,2));
@@ -2105,6 +2161,14 @@ PAGES.power=async(view)=>{
           the wake-up interval only once periodic wake-up is on */
        visible:st=>!st.enabled?["enabled"]:(st.periodic_wakeup?null:["enabled","sleep_mv","sleep_delay_min","periodic_wakeup","cli"])});
     const st=await tryGet("/api/sleep");
+    /* meatpi 2026-09-07: anything motion/wake related must be visible here. "Wake on
+       motion" (the IMU's bump detector) ships off; when it is on, say so: and say what
+       it really does: bump events for rules, no wake from sleep. */
+    const imu=await tryGet("/api/settings/imu_manager");
+    if(imu&&imu.enabled&&imu.wom)
+      wrap.append(banner("warn","activity",h("b",{},"Wake on motion is on"),
+        " (Advanced → Motion (IMU)). It publishes a bump event on a knock or door slam for rules and MQTT; it does not wake the WiCAN from sleep. ",
+        h("a",{href:"#/advanced"},"Open Advanced")));
     wrap.append(cardTools("Sleep Mode","battery",[],
       st?h("div",{class:"rowflex",style:"gap:8px;margin-bottom:10px;flex-wrap:wrap"},
         chip(st.state||"normal",st.state==="normal"?"ok":"warn"),
@@ -2127,18 +2191,18 @@ PAGES.power=async(view)=>{
    values object backs every data_logger form so the staged PUT carries
    all edits together. */
 const LOG_FMT_HELP={
-  params:{sqlite:"One .db file per rotation (params + records tables) — opens in any SQLite tool.",
-    csv:"ts_ms, source.name, value per line — spreadsheets and pandas.",
-    binary:"Compact .wdl records — convert on a PC with tools/wdl_dump.py.",
-    jsonl:"One JSON object per line — jq, pandas, anything."},
-  can:{binary:"Compact .wdl — the fastest option for a busy bus; convert on a PC with tools/wdl_dump.py (csv, candump, PEAK trc).",
-    csv:"ts_ms, id, ext, rtr, dlc, data per line — fine for a filtered or quiet bus.",
-    sqlite:"Slow (about 700 frames/s) — only for a filtered or quiet bus; a busy bus overflows the frame buffer.",
-    mf4:"ASAM MDF 4.10 — asammdf, CANoe, MATLAB, INCA. Starts a fresh file every boot.",
-    blf:"Vector BLF — CANoe / CANalyzer, python-can. Starts a fresh file every boot.",
-    candump:"SocketCAN text (.log) — can-utils replay, SavvyCAN import.",
-    asc:"Vector ASC text — CANalyzer / CANoe. Starts a fresh file every boot.",
-    jsonl:"One JSON object per line — jq, pandas, anything."}};
+  params:{sqlite:"One .db file per rotation (params + records tables): opens in any SQLite tool.",
+    csv:"ts_ms, source.name, value per line: spreadsheets and pandas.",
+    binary:"Compact .wdl records: convert on a PC with tools/wdl_dump.py.",
+    jsonl:"One JSON object per line: jq, pandas, anything."},
+  can:{binary:"Compact .wdl: the fastest option for a busy bus; convert on a PC with tools/wdl_dump.py (csv, candump, PEAK trc).",
+    csv:"ts_ms, id, ext, rtr, dlc, data per line: fine for a filtered or quiet bus.",
+    sqlite:"Slow (about 700 frames/s): only for a filtered or quiet bus; a busy bus overflows the frame buffer.",
+    mf4:"ASAM MDF 4.10: asammdf, CANoe, MATLAB, INCA. Starts a fresh file every boot.",
+    blf:"Vector BLF. CANoe / CANalyzer, python-can. Starts a fresh file every boot.",
+    candump:"SocketCAN text (.log): can-utils replay, SavvyCAN import.",
+    asc:"Vector ASC text. CANalyzer / CANoe. Starts a fresh file every boot.",
+    jsonl:"One JSON object per line: jq, pandas, anything."}};
 const LOG_EXT_NAME={db:"SQLite",csv:"CSV",wdl:"Binary",jsonl:"JSON lines",mf4:"MDF4",blf:"BLF",log:"candump",asc:"ASC"};
 PAGES.logger=async(view)=>{
   const p=page(view,null,"Logger","Record vehicle parameters and raw CAN frames to the SD card.");
@@ -2175,14 +2239,14 @@ PAGES.logger=async(view)=>{
     const paints=[];
     /* 1. the logger itself */
     const mainRows=await form(["enabled","batch_rows","flush_ms","cli"],{advancedExcept:["enabled"]});
-    const nothing=banner("warn","alert","Nothing is selected to record yet — pick a parameter mode or turn on CAN frames below.");
+    const nothing=banner("warn","alert","Nothing is selected to record yet: pick a parameter mode or turn on CAN frames below.");
     const cardMain=card("Logger settings","settings",...mainRows,nothing);
     /* 2. vehicle parameters */
     const parRows=await form(["autopid_log","format","max_file_mb","max_files"],{});
     paints.push(liveHelp(parRows,"autopid_log",()=>({text:
-      vals.autopid_log==="off"?"Polled values are not recorded — automation rules can still add rows with logger.write.":
-      vals.autopid_log==="changed"?"A row whenever a polled value changes — compact, still a complete history.":
-      "A row for every poll"+(nPids!=null?" ("+nPids+" parameters at their poll rates)":"")+" — an evenly spaced series, the largest files."})));
+      vals.autopid_log==="off"?"Polled values are not recorded: automation rules can still add rows with logger.write.":
+      vals.autopid_log==="changed"?"A row whenever a polled value changes: compact, still a complete history.":
+      "A row for every poll"+(nPids!=null?" ("+nPids+" parameters at their poll rates)":"")+": an evenly spaced series, the largest files."})));
     paints.push(liveHelp(parRows,"format",()=>({text:LOG_FMT_HELP.params[vals.format]||""})));
     const parRet=retRow();parRows.splice(parRows.findIndex(r=>r.dataset.key==="max_files")+1,0,parRet);
     const cardPar=card("Vehicle parameters","gauge",...parRows,
@@ -2223,11 +2287,11 @@ PAGES.logger=async(view)=>{
       idRow=mk("x_id","CAN ID (hex)",idIn),maskRow=mk("x_mask","Mask (hex)",maskIn,matchHelp);
     canRows.splice(canRows.findIndex(r=>r.dataset.key==="can_format")+1,0,modeRow,extRow,idRow,maskRow);
     const canRet=retRow();canRows.splice(canRows.findIndex(r=>r.dataset.key==="can_max_files")+1,0,canRet);
-    const canOff=banner("warn","alert","The CAN bus is off, so no frames will arrive — turn it on under ",h("a",{href:"#/settings/can"},"Settings → CAN bus"),".");
+    const canOff=banner("warn","alert","The CAN bus is off, so no frames will arrive: turn it on under ",h("a",{href:"#/settings/can"},"Settings → CAN bus"),".");
     const cardCan=card("CAN frames","activity",...canRows,canOff,
       note("","Frames are copied passively from the bus as they arrive. Listen-only mode (Settings → CAN bus) is the safe choice when you only record."));
     function matchDesc(){
-      if(!vals.can_filter)return"Blank ID — every frame is recorded.";
+      if(!vals.can_filter)return"Blank ID: every frame is recorded.";
       const f=parseInt(vals.can_filter,16),m=parseInt(vals.can_mask||maskDef(),16);
       if(Number.isNaN(f)||Number.isNaN(m))return"";
       const W=isExt()?0x1FFFFFFF:0x7FF;
@@ -2257,7 +2321,7 @@ PAGES.logger=async(view)=>{
   }catch(e){formEl.replaceChildren(banner("crit","alert",e.message));}
 
   /* ---- status: one glance, then the figures per stream ---- */
-  const modeName=()=>dev?({off:"Off — rules only",changed:"When a value changes",all:"Every poll"}[dev.autopid_log]||dev.autopid_log):"—";
+  const modeName=()=>dev?({off:"Off (rules only)",changed:"When a value changes",all:"Every poll"}[dev.autopid_log]||dev.autopid_log):"—";
   const streamBlock=(t,i,rows)=>h("div",{class:"lg-stream"},h("h4",{},ic(i),t),kv(rows));
   const drop=n=>n?chip(fmt.num(n),"crit"):"0";
   async function status(){
@@ -2267,14 +2331,19 @@ PAGES.logger=async(view)=>{
     const storage=sd?chip(sdInfo&&sdInfo.total?"SD card · "+fmt.bytes(sdInfo.used)+" of "+fmt.bytes(sdInfo.total)+" used":"SD card mounted","ok"):chip("No SD card","crit");
     const chips=h("div",{class:"lg-chips"},state,storage);
     if(l.errors)chips.append(chip(fmt.num(l.errors)+" write errors","crit"));
+    if(l.salvaged)chips.append(chip(fmt.num(l.salvaged)+" records recovered after the last reset","info"));
     const gate=l.enabled?[h("button",{class:"btn sm",type:"button",
-      title:l.paused?"Resume writing to the card":"Pause writing until you resume or the device restarts — settings stay as they are",
+      title:l.paused?"Resume writing to the card":"Pause writing until you resume or the device restarts: settings stay as they are",
       onclick:async()=>{try{await api("/api/logger/gate",{method:"POST",body:{enabled:!!l.paused}});toast(l.paused?"Logging resumed":"Logging paused","ok");
         /* the writer closes / reopens its files within one ~200 ms loop; read the state after that */
         await new Promise(r=>setTimeout(r,700));await status();}catch(e){toast(e.message,"err");}}},
       ic(l.paused?"play":"pause"),l.paused?"Resume":"Pause")]:[];
     const body=[chips];
-    if(!l.enabled)body.push(h("div",{class:"empty",style:"padding:12px 0 2px"},"Logging is off — turn it on below and choose what to record."));
+    /* a set-aside file (ROBUSTNESS.md case 5): say what happened and what to do */
+    if(l.corrupt)body.push(banner("warn","alert",h("b",{},fmt.num(l.corrupt)+" log file"+(l.corrupt>1?"s were":" was")+" found corrupt"),
+      " and set aside as *.corrupt in /sd/logs. Logging went on in a fresh file and what could still be read was salvaged. For a deeper recovery download the .corrupt file and run tools/db_recover.py on a PC, then delete it in the ",
+      h("a",{href:"#/files/sd/logs"},"File Manager"),"."));
+    if(!l.enabled)body.push(h("div",{class:"empty",style:"padding:12px 0 2px"},"Logging is off: turn it on below and choose what to record."));
     else body.push(h("div",{class:"cols2"},
       streamBlock("Vehicle parameters","gauge",[["Mode",modeName()],["File",l.file||"—"],["Rows written",fmt.num(l.written)],["Dropped",drop(l.dropped)],["Files on card",fmt.num(l.files)],["Rotations",fmt.num(l.rotations)]]),
       streamBlock("CAN frames","activity",can.enabled?[["Bus",canBusOn()===false?chip("CAN bus off","warn"):canBusOn()?chip("On","ok"):"—"],["File",can.file||"—"],["Frames written",fmt.num(can.frames_written)],["Dropped",drop(can.frames_dropped)],["Files on card",fmt.num(can.files)],["Rotations",fmt.num(can.rotations)]]
@@ -2289,9 +2358,9 @@ PAGES.logger=async(view)=>{
   /* ---- the newest files; the active ones are write-locked until paused ---- */
   const filesWrap=h("div",{});
   async function loadFiles(){
-    if(!isMounted()){filesWrap.replaceChildren(h("div",{class:"empty"},"No SD card — insert one to record logs."));return;}
+    if(!isMounted()){filesWrap.replaceChildren(h("div",{class:"empty"},"No SD card: insert one to record logs."));return;}
     const r=await tryGet("/api/fs/list?path="+enc(LOG_DIR));
-    if(!r){filesWrap.replaceChildren(h("div",{class:"empty"},"No log folder yet — it is created when the logger first runs."));return;}
+    if(!r){filesWrap.replaceChildren(h("div",{class:"empty"},"No log folder yet: it is created when the logger first runs."));return;}
     const ents=(r.entries||[]).filter(e=>!e.dir).map(e=>{const m=e.name.match(/^(dl|can)_(\d+)\.(\w+)$/);
       return{name:e.name,size:e.size,stream:m?(m[1]==="dl"?"Parameters":"CAN frames"):"—",epoch:m?Number(m[2]):0,ext:m?m[3]:(e.name.split(".").pop()||"")};})
       .sort((a,b)=>b.epoch-a.epoch||b.name.localeCompare(a.name));
@@ -2302,10 +2371,10 @@ PAGES.logger=async(view)=>{
       {label:"Format",get:e=>LOG_EXT_NAME[e.ext]||e.ext.toUpperCase()},
       {label:"Started",get:e=>e.epoch>1e9?new Date(e.epoch*1000).toLocaleString():"—"},
       {label:"Size",align:"right",get:e=>fmt.bytes(e.size)},
-      {label:"",get:e=>active.has(e.name)?h("span",{class:"help",title:"The file being written is locked — pause logging to download it"},"in use"):
+      {label:"",get:e=>active.has(e.name)?h("span",{class:"help",title:"The file being written is locked: pause logging to download it"},"in use"):
         h("a",{class:"btn sm gh",title:"Download",href:API+"/api/fs/download?path="+enc(LOG_DIR+"/"+e.name),download:e.name},ic("download"))}],
       show,{empty:"No log files yet."});
-    filesWrap.replaceChildren(tbl,ents.length>MAXN?h("div",{class:"help",style:"margin-top:8px"},"Newest "+MAXN+" of "+ents.length+" files — open the folder for the rest."):null);
+    filesWrap.replaceChildren(tbl,ents.length>MAXN?h("div",{class:"help",style:"margin-top:8px"},"Newest "+MAXN+" of "+ents.length+" files: open the folder for the rest."):null);
   }
   filesEl.append(cardTools("Log files","folder",[h("button",{class:"btn sm gh",type:"button",title:"Refresh the list",onclick:()=>loadFiles()},ic("refresh")),folderBtn()],filesWrap));
 
@@ -2321,8 +2390,8 @@ PAGES.logger=async(view)=>{
    (meatpi): real state chips, group switches + poll stats, class icons,
    the parameter's own min/max as the gauge range, the PID / filter / GPS
    source and the value's age (stale values fade). Customisable since the
-   same day: Customise puts a gear on every tile — widget (number, bar,
-   dial, trend, chart), range, warnings, decimals, width, hide — and the
+   same day: Customise puts a gear on every tile: widget (number, bar,
+   dial, trend, chart), range, warnings, decimals, width, hide: and the
    tiles drag to reorder; the layout is ONE small file on the device
    (/data/dashboard.json through the fs API) so every browser sees the
    same dashboard. Charts use uPlot, which is NOT embedded in the
@@ -2330,21 +2399,21 @@ PAGES.logger=async(view)=>{
    FNV-1a, stores it on internal flash (or the SD card when flash is
    short) under cache/www through /api/fs/upload and loads it from
    /cache/www/ (/sdcache/www/), the catch-all prefixes web_ui_v2.c
-   registers — anything under cache/ is re-creatable. Metadata (class, min/max,
+   registers: anything under cache/ is re-creatable. Metadata (class, min/max,
    PID, group) comes from /api/autopid/config, re-read when the parameter
    set changes. Tiles are persistent DOM nodes updated in place (charts
    and drags need that). */
 const DASH_CLASS_ICON={temperature:"thermo",battery:"battery",battery_charging:"battery",voltage:"zap",current:"zap",power:"zap",energy:"zap",
   pressure:"gauge",atmospheric_pressure:"gauge",speed:"gauge",distance:"route",frequency:"activity",duration:"clock",plug:"plug",
   gas:"cloud",carbon_dioxide:"cloud",humidity:"droplet",volume_storage:"droplet",volume_flow_rate:"droplet",percentage:"pulse",power_factor:"pulse"};
-const DASH_WIDGETS={auto:"Automatic — value, trend and bar",number:"Number only",bar:"Bar",dial:"Dial",trend:"Trend line",chart:"Chart with a time axis"};
+const DASH_WIDGETS={auto:"Automatic: value, trend and bar",number:"Number only",bar:"Bar",dial:"Dial",trend:"Trend line",chart:"Chart with a time axis"};
 const DASH_LAYOUT_PATH="/data/dashboard.json";
 const UI_STORES=[{id:"data",label:"internal flash",dir:"/data/cache/www",uri:"/cache/www/",info:"/api/fs/info?path=/data"},
   {id:"sd",label:"SD card",dir:"/sd/cache/www",uri:"/sdcache/www/",info:"/api/fs/info?path=/sd"}];
 /* Optional libraries the page installs on demand (2026-09-06): pinned
    builds, verified by size + FNV-1a before they are stored (crypto.subtle
    is unavailable over plain http), kept under <store>/cache/www —
-   internal flash first, the SD card when flash is short — and loaded
+   internal flash first, the SD card when flash is short: and loaded
    from /cache/www/ or /sdcache/www/. uPlot draws the chart tiles;
    sql.js (WebAssembly) reads SQLite parameter logs for the history. */
 const UI_RES={
@@ -2380,7 +2449,7 @@ async function ensureResource(res){
 async function installResource(res){
   const opts=[];
   for(const st of UI_STORES){const fi=await tryGet(st.info);if(fi&&fi.total>0&&(fi.total-fi.used)>res.need)opts.push(st);}
-  const blurb="The "+res.title+" — "+res.label+" — is downloaded by this browser from cdn.jsdelivr.net and stored on the WiCAN, so it loads locally from then on.";
+  const blurb="The "+res.title+" ("+res.label+") is downloaded by this browser from cdn.jsdelivr.net and stored on the WiCAN, so it loads locally from then on.";
   if(!opts.length){
     await new Promise(r=>modal({title:"Install the "+res.title,body:h("div",{},banner("warn","alert","No room for the "+res.title+" ("+res.sizeTxt+"): internal flash is full and no SD card is mounted. Insert an SD card (or free space under Files → /data) and try again.")),actions:[{label:"OK",fn:r}]}));
     return false;}
@@ -2412,7 +2481,7 @@ const DASH_WINDOWS={900:"15 min",3600:"1 hour",10800:"3 hours",21600:"6 hours"};
    data_logger writes. JSON lines and CSV stream through
    /api/logger/export (?name=<param>, cursor "<file-epoch>:<offset>");
    binary (.wdl) and SQLite (.db) files are fetched whole through
-   /api/fs/download and decoded here — the .wdl reader below mirrors
+   /api/fs/download and decoded here: the .wdl reader below mirrors
    tools/wdl_dump.py, SQLite needs the sql.js reader (installed on demand
    like the chart library). The file being written is locked: the
    logger's gate is paused for the download and resumed after. Record
@@ -2591,7 +2660,7 @@ PAGES.dashboard=async(view)=>{
   const cardsEl=h("div",{class:"tiles"});
   const emptyEl=h("div",{class:"section",style:"display:none"},h("div",{class:"empty"}));
   p.append(stripEl,editBar,cardsEl,emptyEl,
-    note("","Each gauge spans the parameter's min / max from Automate → Parameters unless you set a custom range; without either the bar follows the values seen this session. Group switches are temporary — the configured state returns after a restart. Customise keeps the layout on the WiCAN, so every phone and PC sees the same dashboard."));
+    note("","Each gauge spans the parameter's min / max from Automate → Parameters unless you set a custom range; without either the bar follows the values seen this session. Group switches are temporary: the configured state returns after a restart. Customise keeps the layout on the WiCAN, so every phone and PC sees the same dashboard."));
   const hist=DASH_HIST,range=new Map(),tiles=new Map();
   let meta=new Map(),metaNames="",groups=[],groupsSig="",prev=null,rateTxt=null,editing=false,dragName=null,saveT=null;
   let layout=await dashLoadLayout();
@@ -2612,7 +2681,7 @@ PAGES.dashboard=async(view)=>{
   const scheduleSave=()=>{clearTimeout(saveT);saveT=setTimeout(saveLayout,700);};
   async function saveLayout(){try{await fsPut(DASH_LAYOUT_PATH,new TextEncoder().encode(JSON.stringify(layout)).buffer);toast("Layout saved on the WiCAN","ok");}
     catch(e){toast("Layout not saved: "+e.message,"err");}}
-  async function resetLayout(){if(!await confirmModal("Forget the saved dashboard layout — widgets, ranges, warnings, order and hidden tiles?","Reset layout"))return;
+  async function resetLayout(){if(!await confirmModal("Forget the saved dashboard layout: widgets, ranges, warnings, order and hidden tiles?","Reset layout"))return;
     layout={version:1,order:[],tiles:{}};try{await api("/api/fs/file?path="+encP(DASH_LAYOUT_PATH),{method:"DELETE"});}catch(e){}
     for(const t of tiles.values())t.destroy();tiles.clear();toast("Layout reset","ok");refresh();}
   const commitOrder=()=>{layout.order=[...cardsEl.children].map(x=>x.dataset.name);scheduleSave();};
@@ -2640,7 +2709,7 @@ PAGES.dashboard=async(view)=>{
     const row=(l,ctl,help)=>h("div",{class:"frow"},h("label",{},l),h("div",{class:"ctl"},ctl),help?(help.nodeType?help:h("div",{class:"help"},help)):null);
     const wSel=h("select",{},...Object.entries(DASH_WIDGETS).map(([k,v])=>h("option",{value:k,selected:(c.w||"auto")===k},v)));
     const wHelp=h("div",{class:"help"});
-    const paintW=()=>{wHelp.textContent=wSel.value==="chart"?(UI_RES.uplot.state==="ready"?"A time-axis chart of the values seen since the page opened (uPlot, stored on the WiCAN).":"Needs the uPlot chart library (52 KB) — the tile offers to install it on the WiCAN."):
+    const paintW=()=>{wHelp.textContent=wSel.value==="chart"?(UI_RES.uplot.state==="ready"?"A time-axis chart of the values seen since the page opened (uPlot, stored on the WiCAN).":"Needs the uPlot chart library (52 KB): the tile offers to install it on the WiCAN."):
       wSel.value==="dial"?"A 270° gauge over the range below; warnings colour the arc.":wSel.value==="bar"?"A bar over the range below.":"";};
     wSel.onchange=()=>{paintW();syncWin();if(wSel.value==="chart"&&spanSel.value==="1")spanSel.value="2";};paintW();  /* a chart wants room */
     const custom=c.min!=null&&c.max!=null;
@@ -2648,13 +2717,13 @@ PAGES.dashboard=async(view)=>{
     const minRow=row("Range min",minIn),maxRow=row("Range max",maxIn);
     const showC=on=>{minRow.style.display=maxRow.style.display=on?"":"none";};showC(custom);
     const rSel=h("select",{onchange:()=>showC(rSel.value==="custom")},
-      h("option",{value:"auto",selected:!custom},m.min!=null&&m.max!=null?"From Automate ("+m.min+" to "+m.max+")":"Automatic — the values seen this session"),
+      h("option",{value:"auto",selected:!custom},m.min!=null&&m.max!=null?"From Automate ("+m.min+" to "+m.max+")":"Automatic: the values seen this session"),
       h("option",{value:"custom",selected:custom},"Custom"));
     const loIn=h("input",{type:"number",step:"any",placeholder:"none",value:c.warnLo??""}),hiIn=h("input",{type:"number",step:"any",placeholder:"none",value:c.warnHi??""});
     const decSel=h("select",{},...[["","Automatic"],["0","0"],["1","1"],["2","2"]].map(([v,l])=>h("option",{value:v,selected:String(c.dec??"")===v},l)));
     const spanSel=h("select",{},h("option",{value:"1",selected:c.span!==2},"1 column"),h("option",{value:"2",selected:c.span===2},"2 columns"));
     const winSel=h("select",{},...Object.entries(DASH_WINDOWS).map(([v,l])=>h("option",{value:v,selected:String(c.win||3600)===v},l)));
-    const winRow=row("History",winSel,"Charts backfill from the logger's parameter files in any format (Logger → Vehicle parameters), then continue live. JSON lines and CSV stream from the WiCAN; binary and SQLite files are read in the browser — SQLite needs the sql.js reader, installed on the WiCAN like the chart library.");
+    const winRow=row("History",winSel,"Charts backfill from the logger's parameter files in any format (Logger → Vehicle parameters), then continue live. JSON lines and CSV stream from the WiCAN; binary and SQLite files are read in the browser. SQLite needs the sql.js reader, installed on the WiCAN like the chart library.");
     const syncWin=()=>{winRow.style.display=wSel.value==="chart"?"":"none";};syncWin();
     const hideSw=switchCtl(!!c.hide,()=>{},{yes:"Hidden",no:"Shown"});
     const body=h("div",{},row("Widget",wSel,wHelp),row("Range",rSel),minRow,maxRow,
@@ -2692,11 +2761,11 @@ PAGES.dashboard=async(view)=>{
     let chart=null,ro=null;
     if(chartEl){noteEl.textContent="Loading history from the logger…";
       const backfill=()=>loadHistory(name,win).then(r=>{
-        if(!r.ok){noteEl.replaceChildren("No history: "+r.reason+" — ",
+        if(!r.ok){noteEl.replaceChildren("No history: "+r.reason+": ",
           r.install?h("button",{class:"btn sm pri",type:"button",onclick:async()=>{noteEl.textContent="Loading history from the logger…";if(await installResource(r.install))backfill();else backfill();}},ic("download"),"Install ("+r.install.sizeTxt+")")
                    :h("a",{href:"#/logger"},"Logger settings"),r.install?"":".");return;}
         mergeHistory(name,r.points);
-        noteEl.textContent=(r.points.length?"History from the logger ("+r.detail+"): "+fmt.num(r.points.length)+" points over "+DASH_WINDOWS[win]:"No logged points in the last "+DASH_WINDOWS[win]+" yet ("+r.detail+")")+(r.clockOk?"":" — device clock not set, times are approximate");
+        noteEl.textContent=(r.points.length?"History from the logger ("+r.detail+"): "+fmt.num(r.points.length)+" points over "+DASH_WINDOWS[win]:"No logged points in the last "+DASH_WINDOWS[win]+" yet ("+r.detail+")")+(r.clockOk?"":": device clock not set, times are approximate");
         if(chart)chart.setData(series(hist.get(name)||[]));});
       backfill();}
     const series=hh=>{const cut=Date.now()/1000-win;const rows=hh.filter(x=>x.w>=cut);return[rows.map(x=>x.w),rows.map(x=>x.v)];};
@@ -2759,7 +2828,7 @@ PAGES.dashboard=async(view)=>{
     const sig=JSON.stringify(groups);if(sig===groupsSig)return;groupsSig=sig;
     groupsEl.replaceChildren(...groups.map(g=>{
       const sw=switchCtl(g.enabled,async v=>{try{await api("/api/autopid/group",{method:"POST",body:{name:g.name,enabled:v}});toast("Group "+g.name+(v?" polling":" paused")+" until the next restart","ok");groupsSig="";refresh();}
-        catch(e){toast(e.message,"err");sw.load(g.enabled);}},{sm:true,noText:true,title:(g.enabled?"Pause":"Resume")+" the "+g.name+" group (runtime only — the configured state returns after a restart)"});
+        catch(e){toast(e.message,"err");sw.load(g.enabled);}},{sm:true,noText:true,title:(g.enabled?"Pause":"Resume")+" the "+g.name+" group (runtime only: the configured state returns after a restart)"});
       return h("span",{class:"gpill"},sw,h("b",{},g.name),h("span",{class:"dim"},"every "+periodTxt(g.period_ms)));}));
   }
   function paintStats(st){
@@ -2770,7 +2839,7 @@ PAGES.dashboard=async(view)=>{
     const items=[chip((st.pids||0)+" PID"+(st.pids===1?"":"s")+" · "+(st.filters||0)+" filter"+(st.filters===1?"":"s"),"")];
     if(rateTxt&&st.running)items.push(chip(rateTxt,""));
     if(st.polls_failed)items.push(chip(fmt.num(st.polls_failed)+" failed",prev.dFail>0?"warn":""));
-    if(st.sub_floor_pids)items.push(h("span",{class:"chip warn",title:"Poll periods under the chip's ~50 ms floor are accepted but cannot be honoured — the entries round-robin at the chip's pace"},h("span",{class:"d"}),st.sub_floor_pids+" below the 50 ms floor"));
+    if(st.sub_floor_pids)items.push(h("span",{class:"chip warn",title:"Poll periods under the chip's ~50 ms floor are accepted but cannot be honoured: the entries round-robin at the chip's pace"},h("span",{class:"d"}),st.sub_floor_pids+" below the 50 ms floor"));
     statsEl.replaceChildren(...items);
   }
   async function refresh(){
@@ -2778,14 +2847,14 @@ PAGES.dashboard=async(view)=>{
     if(!a){stateEl.replaceChildren(chip("Unavailable","crit"));stripEl.style.display="none";showEmpty("Automate is not answering.");return;}
     const st=a.stats||{},bits=(conn.status&&conn.status.bits)||{};
     const off=bits.autopid_enabled===false;
-    stateEl.replaceChildren(off?chip("Automate off",""):st.paused_voltage?chip("Paused — battery below the threshold","warn"):st.running?chip("Polling","ok"):chip("Not polling",""));
-    if(off){stripEl.style.display="none";showEmpty(h("span",{},"Automate is off — turn polling on under ",h("a",{href:"#/automate/settings"},"Automate → Settings"),"."));return;}
-    if(!(a.params||[]).length){stripEl.style.display="none";showEmpty(h("span",{},"Nothing to show yet — add parameters under ",h("a",{href:"#/automate/parameters"},"Automate → Parameters"),"."));return;}
+    stateEl.replaceChildren(off?chip("Automate off",""):st.paused_voltage?chip("Paused: battery below the threshold","warn"):st.running?chip("Polling","ok"):chip("Not polling",""));
+    if(off){stripEl.style.display="none";showEmpty(h("span",{},"Automate is off: turn polling on under ",h("a",{href:"#/automate/settings"},"Automate → Settings"),"."));return;}
+    if(!(a.params||[]).length){stripEl.style.display="none";showEmpty(h("span",{},"Nothing to show yet: add parameters under ",h("a",{href:"#/automate/parameters"},"Automate → Parameters"),"."));return;}
     stripEl.style.display="";paintGroups(a);paintStats(st);
     await loadMeta(a);
     const ps=(a.params||[]).filter(x=>x.value!=null);
-    if(!ps.length){showEmpty(st.running?"Waiting for the first answers from the vehicle — is the ignition on?"+(st.polls_failed?" ("+fmt.num(st.polls_failed)+" polls failed so far)":"")
-      :"Not polling — switch a group on above, or check Automate → Settings.");return;}
+    if(!ps.length){showEmpty(st.running?"Waiting for the first answers from the vehicle. Is the ignition on?"+(st.polls_failed?" ("+fmt.num(st.polls_failed)+" polls failed so far)":"")
+      :"Not polling: switch a group on above, or check Automate → Settings.");return;}
     emptyEl.style.display="none";cardsEl.style.display="";
     const byName=new Map(ps.map(x=>[x.name,x]));
     const ordered=[...layout.order.filter(n=>byName.has(n)),...ps.map(x=>x.name).filter(n=>!layout.order.includes(n))];
@@ -2800,175 +2869,22 @@ PAGES.dashboard=async(view)=>{
   await refresh();const t=setInterval(()=>{if(conn.state==="online")refresh();},1500);
   return()=>{clearInterval(t);clearTimeout(saveT);for(const x of tiles.values())x.destroy();};
 };
-/* ---- CAN Monitor (slcan over /ws/can) ---- */
-PAGES.monitor=async(view)=>{
-  const p=page(view,null,"CAN Monitor","Live bus traffic — grouped by ID, trace log and transmit.");
-  p.classList.add("wide");
-  const wsUrl=(API?API.replace(/^http/,"ws"):location.origin.replace(/^http/,"ws"))+"/ws/can";
-  const S={running:true,view:"grouped",frames:new Map(),trace:[],total:0,rateWin:[],ws:null,alive:true,
-    tx:[{id:"0x100",ext:false,dlc:8,data:"00 11 22 33 44 55 66 77",cycle:100,periodic:false,_t:null},
-        {id:"0x7DF",ext:false,dlc:8,data:"02 01 0C 00 00 00 00 00",cycle:0,periodic:false,_t:null}],
-    filter:0,mask:0,useFilter:false};
-  /* toolbar */
-  const runBtn=h("button",{class:"btn sm"});
-  const paintRun=()=>{runBtn.className="btn sm "+(S.running?"danger":"pri");
-    runBtn.replaceChildren(ic(S.running?"pause":"play"),S.running?"Stop":"Start");};
-  runBtn.onclick=()=>{S.running=!S.running;monLive=S.running;buildMenu("monitor");paintRun();paintStats();};
-  paintRun();
-  const clearBtn=h("button",{class:"btn sm gh",onclick:()=>{S.frames.clear();S.trace=[];S.total=0;render();paintStats();}},ic("trash"),"Clear");
-  const fIn=h("input",{class:"mono",style:"width:104px",value:"",placeholder:"id filter"});
-  const mIn=h("input",{class:"mono",style:"width:104px",value:"",placeholder:"mask"});
-  const applyF=()=>{S.useFilter=!!fIn.value;S.filter=parseInt(fIn.value||"0",16)||0;S.mask=parseInt(mIn.value||"7FF",16)||0x7FF;};
-  fIn.onchange=applyF;mIn.onchange=applyF;
-  const segG=h("button",{class:"on"},"Grouped"),segT=h("button",{},"Trace"),segX=h("button",{},"Transmit");
-  const seg=h("div",{class:"seg"},segG,segT,segX);
-  const setView=v=>{S.view=v;[segG,segT,segX].forEach(b=>b.classList.remove("on"));
-    ({grouped:segG,trace:segT,tx:segX})[v].classList.add("on");render();};
-  segG.onclick=()=>setView("grouped");segT.onclick=()=>setView("trace");segX.onclick=()=>setView("tx");
-  const wsChip=chip("connecting…","");
-  const tools=h("div",{class:"mon-tools"},runBtn,clearBtn,
-    h("span",{style:"width:1px;height:22px;background:var(--border)"}),
-    h("span",{style:"font-size:12px;color:var(--text-3);font-weight:600"},"Filter"),fIn,
-    h("span",{style:"font-size:12px;color:var(--text-3);font-weight:600"},"Mask"),mIn,
-    wsChip,h("span",{class:"grow"}),seg);
-  /* stats bar */
-  const stMsgs=h("b",{},"0"),stIds=h("b",{},"0"),stRate=h("b",{},"0/s"),stLoad=h("b",{style:"color:var(--success)"},"0%");
-  const liveDot=h("span",{style:"width:8px;height:8px;border-radius:50%;background:var(--success);animation:pulse 1.4s ease-in-out infinite"});
-  const liveLbl=h("span",{},"Receiving");
-  const stats=h("div",{class:"mon-stats"},
-    h("div",{},"Messages",stMsgs),h("div",{},"Unique IDs",stIds),h("div",{},"Rate",stRate),h("div",{},"Bus load",stLoad),
-    h("div",{class:"grow"}),h("div",{class:"rowflex",style:"gap:7px"},liveDot,liveLbl));
-  function paintStats(){stMsgs.textContent=S.total.toLocaleString();stIds.textContent=S.frames.size;
-    const rate=S.rateWin.length;stRate.textContent=rate+"/s";
-    stLoad.textContent=Math.min(98,Math.round(rate*111/5000))+"%";
-    liveDot.style.background=S.running?"var(--success)":"var(--text-3)";
-    liveDot.style.animation=S.running?"pulse 1.4s ease-in-out infinite":"none";
-    liveLbl.textContent=S.running?"Receiving":"Stopped";}
-  const body=h("div",{});
-  p.append(h("div",{},tools,stats,body),
-    note("","Frames arrive over the /ws/can channel — add a CAN bus ⇄ WebSocket connection with the slcan protocol (Settings → Connections). Transmit sends slcan frames back through the same bridge."));
-  /* slcan parse */
-  function feed(line){
-    if(!line||!S.running)return;
-    const c=line[0];let ext=false,rtr=false,body2=line.slice(1);
-    if(c==="T")ext=true;else if(c==="r")rtr=true;else if(c==="R"){ext=true;rtr=true;}
-    else if(c!=="t")return;
-    const idLen=ext?8:3;
-    if(body2.length<idLen+1)return;
-    const id=parseInt(body2.slice(0,idLen),16);if(Number.isNaN(id))return;
-    const dlc=parseInt(body2[idLen],16);if(Number.isNaN(dlc))return;
-    const hex=body2.slice(idLen+1,idLen+1+dlc*2);
-    if(S.useFilter&&((id&S.mask)!==(S.filter&S.mask)))return;
-    const now=performance.now();
-    const key=(ext?"x":"s")+id;
-    let f=S.frames.get(key);
-    if(!f){f={id,ext,rtr,dlc,count:0,last:0,cycle:0,bytes:[]};S.frames.set(key,f);}
-    f.dlc=dlc;f.cycle=f.last?now-f.last:0;f.last=now;f.count++;
-    for(let i=0;i<dlc;i++){const bv=hex.slice(i*2,i*2+2).toUpperCase()||"00";
-      if(!f.bytes[i])f.bytes[i]={v:bv,hot:0};
-      else if(f.bytes[i].v!==bv){f.bytes[i].v=bv;f.bytes[i].hot=now+650;}}
-    f.bytes.length=dlc;
-    S.total++;S.rateWin.push(now);
-    S.trace.unshift({ts:(now/1000).toFixed(3),dir:rtr?"Rr":"Rx",id,ext,dlc,
-      data:(hex.match(/../g)||[]).join(" ").toUpperCase()});
-    if(S.trace.length>160)S.trace.length=160;
-  }
-  /* ws */
-  let buf="";
-  const dec=new TextDecoder();
-  function connect(){
-    try{S.ws=new WebSocket(wsUrl);}catch{wsChip.replaceChildren(h("span",{class:"d"}),"no channel");return;}
-    S.ws.binaryType="arraybuffer";
-    S.ws.onopen=()=>{wsChip.className="chip ok";wsChip.replaceChildren(h("span",{class:"d"}),"ws/can");};
-    S.ws.onclose=()=>{wsChip.className="chip";wsChip.replaceChildren(h("span",{class:"d"}),"disconnected");
-      if(S.alive)setTimeout(connect,2000);};
-    S.ws.onmessage=e=>{buf+=typeof e.data==="string"?e.data:dec.decode(e.data);
-      let i;while((i=buf.search(/[\r\n]/))>=0){feed(buf.slice(0,i));buf=buf.slice(i+1);}
-      if(buf.length>4096)buf="";};
-  }
-  connect();
-  function fmtId(f){return"0x"+f.id.toString(16).toUpperCase().padStart(f.ext?8:3,"0");}
-  function slcanOf(tx){
-    const id=parseInt(tx.id,16);if(Number.isNaN(id))return null;
-    const bytes=(tx.data.match(/[0-9a-fA-F]{2}/g)||[]).slice(0,8);
-    const dlc=Math.min(8,Number(tx.dlc)||bytes.length);
-    return(tx.ext?"T":"t")+id.toString(16).toUpperCase().padStart(tx.ext?8:3,"0")+dlc+bytes.slice(0,dlc).join("").toUpperCase()+"\r";
-  }
-  function sendTx(tx){
-    const line=slcanOf(tx);if(!line)return toast("Bad frame","err");
-    if(!S.ws||S.ws.readyState!==1)return toast("ws/can not connected","err");
-    S.ws.send(line);
-    S.trace.unshift({ts:(performance.now()/1000).toFixed(3),dir:"Tx",id:parseInt(tx.id,16),ext:tx.ext,
-      dlc:Number(tx.dlc)||0,data:(tx.data.match(/[0-9a-fA-F]{2}/g)||[]).join(" ").toUpperCase()});
-    if(S.trace.length>160)S.trace.length=160;S.total++;
-  }
-  /* views */
-  function render(){
-    if(S.view==="grouped"){
-      const now=performance.now();
-      const rows=[...S.frames.values()].sort((a,b)=>a.id-b.id);
-      body.replaceChildren(h("div",{class:"mon-scroll mon-body"},h("div",{style:"min-width:660px"},
-        h("div",{class:"mon-hd"},h("span",{},"CAN ID"),h("span",{},"Type"),h("span",{},"DLC"),h("span",{},"Data"),h("span",{style:"text-align:right"},"Cycle ms"),h("span",{style:"text-align:right"},"Count")),
-        rows.length?rows.map(f=>h("div",{class:"mon-row"},
-          h("span",{class:"mid"},fmtId(f)),
-          h("span",{class:"mtype"+(f.ext?" ext":"")},f.ext?"Ext":"Std"),
-          h("span",{class:"mnum"},f.dlc),
-          h("div",{style:"display:flex;gap:4px;overflow:hidden"},...f.bytes.map(b=>h("span",{class:"byte"+(now<b.hot?" hot":"")},b.v))),
-          h("span",{class:"mnum",style:"text-align:right"},f.cycle?f.cycle.toFixed(0):"—"),
-          h("span",{class:"mcount"},f.count.toLocaleString()),
-        )):h("div",{class:"empty"},"No frames yet — is /ws/can bridged to the CAN endpoint?"))));
-    }else if(S.view==="trace"){
-      body.replaceChildren(h("div",{class:"trace-wrap mon-scroll"},h("div",{style:"min-width:660px"},
-        h("div",{class:"trace-hd"},h("span",{},"Time"),h("span",{},"Dir"),h("span",{},"ID"),h("span",{},"DLC"),h("span",{},"Data")),
-        h("div",{style:"max-height:470px;overflow-y:auto"},
-          ...S.trace.slice(0,120).map(t=>h("div",{class:"trace-row"},
-            h("span",{class:"ts"},t.ts),
-            h("span",{class:t.dir==="Tx"?"tx":"rx"},t.dir),
-            h("span",{class:"tid"},"0x"+t.id.toString(16).toUpperCase().padStart(t.ext?8:3,"0")),
-            h("span",{class:"tdlc"},t.dlc),
-            h("span",{class:"tdata"},t.data)))))));
-    }else{
-      const rowsEl=h("div",{});
-      const rebuild=()=>{rowsEl.replaceChildren(...S.tx.map((tx,i)=>{
-        const perBtn=h("button",{class:"btn sm "+(tx.periodic?"danger":""),onclick:()=>{
-          tx.periodic=!tx.periodic;
-          if(tx.periodic){const c=Math.max(20,Number(tx.cycle)||100);tx._t=setInterval(()=>sendTx(tx),c);}
-          else{clearInterval(tx._t);tx._t=null;}
-          rebuild();}},tx.periodic?"Stop":"Cyclic");
-        return h("div",{style:"display:grid;grid-template-columns:130px 74px 56px 1fr 96px 150px;gap:10px;padding:6px;align-items:center;border-top:1px solid var(--border)"},
-          h("input",{class:"mono",value:tx.id,onchange:e=>tx.id=e.target.value}),
-          h("select",{onchange:e=>tx.ext=e.target.value==="Ext"},h("option",{selected:!tx.ext},"Std"),h("option",{selected:tx.ext},"Ext")),
-          h("input",{class:"mono",value:tx.dlc,onchange:e=>tx.dlc=e.target.value}),
-          h("input",{class:"mono",style:"letter-spacing:.05em",value:tx.data,onchange:e=>tx.data=e.target.value}),
-          h("input",{class:"mono",value:tx.cycle,onchange:e=>tx.cycle=e.target.value}),
-          h("div",{class:"rowflex",style:"gap:7px"},
-            h("button",{class:"btn pri sm",onclick:()=>sendTx(tx)},"Send"),perBtn));}));};
-      rebuild();
-      body.replaceChildren(h("div",{class:"mon-body mon-scroll",style:"padding:16px"},h("div",{style:"min-width:660px"},
-        h("div",{style:"display:grid;grid-template-columns:130px 74px 56px 1fr 96px 150px;gap:10px;padding:0 6px 8px;font-size:11px;font-weight:800;letter-spacing:.05em;color:var(--text-3);text-transform:uppercase"},
-          h("span",{},"CAN ID (hex)"),h("span",{},"Type"),h("span",{},"DLC"),h("span",{},"Data (hex)"),h("span",{},"Cycle ms"),h("span",{})),
-        rowsEl,
-        h("button",{class:"btn sm",style:"margin-top:12px",onclick:()=>{S.tx.push({id:"0x000",ext:false,dlc:8,data:"00 00 00 00 00 00 00 00",cycle:0,periodic:false,_t:null});render();}},ic("plus"),"Add message"))));
-    }
-  }
-  render();
-  monLive=true;buildMenu("monitor");
-  const paintT=setInterval(()=>{const cut=performance.now()-1000;S.rateWin=S.rateWin.filter(t=>t>=cut);
-    paintStats();if(S.view!=="tx")render();},500);
-  return()=>{S.alive=false;monLive=false;clearInterval(paintT);
-    S.tx.forEach(tx=>tx._t&&clearInterval(tx._t));
-    if(S.ws)S.ws.close();};
+/* ---- CAN Monitor: on-demand chunk (2026-09-07), see web/monitor.js ---- */
+PAGES.monitor=async(view,sub)=>{
+  if(!PAGES.__monitor)await loadScript("/ui/monitor.js");
+  if(!PAGES.__monitor){const p=page(view,null,"CAN Monitor","Live traffic on the CAN bus");p.append(banner("crit","alert","The CAN Monitor could not be loaded (/ui/monitor.js). Reload the page, or update the firmware."));return null;}
+  return PAGES.__monitor(view,sub);
 };
 
 /* ---- Terminal ---- */
 PAGES.terminal=async(view)=>{
-  const p=page(view,null,"Terminal","Interactive command line — WiCAN console or an ELM327 terminal on the OBD interface.");
+  const p=page(view,null,"Terminal","Interactive command line: the WiCAN console or an ELM327 terminal on the OBD interface.");
   const typeSel=h("select",{style:"width:230px"},
     h("option",{value:"console"},"WiCAN Command Line"),
     h("option",{value:"elm327"},"ELM327"));
   const connBtn=h("button",{class:"btn pri"},"Connect");
   const badge=chip("Disconnected","crit");
-  const title=h("span",{class:"tt"},"wican-console — /ws/cli");
+  const title=h("span",{class:"tt"},"wican-console: /ws/cli");
   const out=h("pre",{class:"term-body"},"");
   const cursor=h("span",{style:"animation:blink 1.1s step-start infinite"},"▋");
   const prompt=h("span",{class:"pr"},"wican>");
@@ -3011,7 +2927,7 @@ PAGES.terminal=async(view)=>{
     const w={channels:(wm.channels||[]).map(c=>({...c}))},b={bridges:(bm.bridges||[]).map(x=>({...x}))};
     let ch=w.channels.find(c=>c.path===t.path);
     if(!ch){
-      if(w.channels.length>=6)return toast("No free WebSocket channel — remove one under All Settings → WebSocket channels","err");
+      if(w.channels.length>=6)return toast("No free WebSocket channel: remove one under All Settings → WebSocket channels","err");
       ch={name:"ws_"+t.iface,path:t.path,mode:t.mode,enabled:true};w.channels.push(ch);
     }else ch.enabled=true;
     let br=b.bridges.find(x=>(x.a===t.iface&&x.b===ch.name)||(x.b===t.iface&&x.a===ch.name));
@@ -3020,12 +2936,12 @@ PAGES.terminal=async(view)=>{
       /* single-consumer rule: an interface carries ONE enabled bridge */
       const other=b.bridges.find(x=>x.enabled!==false&&(x.a===t.iface||x.b===t.iface));
       if(other){other.enabled=false;parked=other.name;}
-      if(b.bridges.length>=6)return toast("No free connection slot — remove one under Settings → Connections","err");
+      if(b.bridges.length>=6)return toast("No free connection slot: remove one under Settings → Connections","err");
       b.bridges.push({name:t.bridge,a:t.iface,b:ch.name,translator:"raw",enabled:true});
     }else br.enabled=true;
     store.stage("websocket_manager",w);store.stage("bridge_manager",b);
     wm=w;bm=b;stagedHere=true;paintReady();
-    toast(t.label+" staged"+(parked?" (connection "+parked+" paused — one per interface)":"")+" — press Submit Changes to apply","ok");
+    toast(t.label+" staged"+(parked?" (connection "+parked+" paused: one per interface)":"")+": press Submit Changes to apply","ok");
   }
   function paintReady(){
     const t=TERM[typeSel.value];const st=bridgeState(t);
@@ -3034,7 +2950,7 @@ PAGES.terminal=async(view)=>{
     if(stagedHere||(st.ready&&!ws&&connBtn.dataset.refused===t.path)){
       connBtn.disabled=true;
       readyEl.append(banner("info","alert",h("b",{},t.label+" is configured but not active yet. "),
-        "Press ",h("b",{},"Submit Changes")," in the header (or ",h("b",{},"reboot to apply")," in the side menu if it says Restart pending) — the device restarts — then come back and Connect."));
+        "Press ",h("b",{},"Submit Changes")," in the header (or ",h("b",{},"reboot to apply")," in the side menu if it says Restart pending). The device restarts; then come back and Connect."));
       return;
     }
     if(st.ready){connBtn.disabled=false;return;}
@@ -3045,7 +2961,7 @@ PAGES.terminal=async(view)=>{
       h("span",{class:"help"},"or set it up under Settings → Connections; it applies with Submit (device restarts).")));
   }
   await loadBridges();
-  typeSel.onchange=()=>{title.textContent=(typeSel.value==="elm327"?"elm327 — ":"wican-console — ")+TERM[typeSel.value].path;paintReady();};
+  typeSel.onchange=()=>{title.textContent=(typeSel.value==="elm327"?"elm327: ":"wican-console: ")+TERM[typeSel.value].path;paintReady();};
   paintReady();
   function setConnState(on){
     badge.className="chip "+(on?"ok":"crit");badge.replaceChildren(h("span",{class:"d"}),on?"Connected":"Disconnected");
@@ -3057,7 +2973,7 @@ PAGES.terminal=async(view)=>{
   function connect(){
     const elm=typeSel.value==="elm327";
     const path=elm?"/ws/obd":"/ws/cli";
-    title.textContent=(elm?"elm327 — ":"wican-console — ")+path;
+    title.textContent=(elm?"elm327: ":"wican-console: ")+path;
     prompt.textContent=elm?">":"wican>";
     const url=(API?API.replace(/^http/,"ws"):location.origin.replace(/^http/,"ws"))+path;
     try{ws=new WebSocket(url);}catch{put("cannot open "+url+"\n");return;}
@@ -3067,7 +2983,7 @@ PAGES.terminal=async(view)=>{
     ws.onclose=()=>{if(ws){
       if(opened)put("\n[disconnected]\n");
       else{ /* refused = no bridge on this path (or a staged one not applied yet) */
-        put("\n[could not connect to "+path+" — "+(elm?"no OBD chip ⇄ WebSocket connection on /ws/obd":"the console is not bridged to /ws/cli")+". Set it up under Settings → Connections (or use the button above) and Submit; a change that is still pending needs the restart first.]\n");
+        put("\n[could not connect to "+path+": "+(elm?"no OBD chip ⇄ WebSocket connection on /ws/obd":"the console is not bridged to /ws/cli")+". Set it up under Settings → Connections (or use the button above) and Submit; a change that is still pending needs the restart first.]\n");
         connBtn.dataset.refused=path;loadBridges().then(paintReady);}
       setConnState(false);ws=null;}};
     ws.onmessage=e=>put((typeof e.data==="string"?e.data:dec.decode(e.data)).replace(/\r/g,"\n").replace(/\n+/g,"\n"));
@@ -3090,22 +3006,25 @@ PAGES.terminal=async(view)=>{
 };
 /* ---- Advanced ---- */
 PAGES.advanced=async(view)=>{
-  const p=page(view,null,"Advanced","Motion detection, OBD chip and radio arbitration.");
+  const p=page(view,null,"Advanced","Motion detection and radio arbitration.");
   const wrap=h("div",{style:"display:flex;flex-direction:column;gap:16px"});p.append(wrap);
-  const blocks=[["Motion (IMU)","activity","imu_manager"],["OBD Chip","cpu","obd_chip"],
+  /* no OBD chip card (meatpi 2026-09-07): its fields only confused users, and the
+     chip UART baud is fixed in firmware: nothing on this page may put the chip at risk */
+  const blocks=[["Motion (IMU)","activity","imu_manager"],
     ["Radio Arbitration","wifi","interface_manager"]];
   /* per-card disclosure beyond the default enabled-gate */
   const OPTS={
-    obd_chip:{visible:st=>st.auto_sleep?null:["baud","auto_sleep","monitor_policy","cli"],
-      advanced:["baud","wake_voltage_mv","sleep_voltage_mv","sleep_time_min"]},
-    imu_manager:{advanced:["smd_sensitivity","wom_threshold","stationary_s"]},
+    /* each detector's knobs only while that detector is on */
+    imu_manager:{visible:st=>{if(!st.enabled)return["enabled"];const k=["enabled","smd","wom","cli"];
+        if(st.smd)k.push("smd_sensitivity","stationary_s");if(st.wom)k.push("wom_threshold");return k;},
+      advanced:["smd_sensitivity","wom_threshold","stationary_s"]},
   };
   for(const[title,icon,comp]of blocks){
     try{const rows=await settingsForm(comp,null,OPTS[comp]||{});
       if(rows.length)wrap.append(cardTools(title,icon,[],...rows));}
     catch{/* component absent in this build */}
   }
-  wrap.append(note("warn","These settings affect wake-up sensitivity, the OBD transport and radio coexistence. Change them only if you know the effect; every field applies after Submit + reboot."));
+  wrap.append(note("warn","These settings affect wake-up sensitivity and radio coexistence. Change them only if you know the effect; every field applies after Submit + reboot."));
   return null;
 };
 
@@ -3134,7 +3053,7 @@ PAGES.vpn=async(view)=>{
       h("button",{class:"btn sm",type:"button",onclick:async e=>{
         if(!await confirmModal("Generate a new WireGuard key pair on the device? The old key stops working after restart."))return;
         e.target.disabled=true;
-        try{const r=await api("/api/vpn/keygen",{method:"POST"});keyOut.textContent="Public key: "+r.public_key;keyOut.style.display="block";toast("Key stored — applies after restart","ok");}
+        try{const r=await api("/api/vpn/keygen",{method:"POST"});keyOut.textContent="Public key: "+r.public_key;keyOut.style.display="block";toast("Key stored: applies after restart","ok");}
         catch(err){toast(err.message,"err");}
         e.target.disabled=false;}},ic("key"),"Generate Keys"),
       h("div",{class:"help"},"The private key never leaves the device."),keyOut));
@@ -3146,10 +3065,10 @@ PAGES.vpn=async(view)=>{
             vals.enabled=true;vals.type="wireguard";
             store.stage("vpn_manager",vals);
             rows.load();rows.sync();syncKey();
-            toast("Imported "+n+" fields — review, then Submit Changes","ok");}
+            toast("Imported "+n+" fields: review, then Submit Changes","ok");}
           catch(err){toast("Import failed: "+err.message,"err");}
           e.target.value="";}})),
-      h("div",{class:"help"},"Standard wg-quick file — [Interface]/[Peer] keys map onto the fields below. Tailscale needs no file: just the auth key.")));
+      h("div",{class:"help"},"Standard wg-quick file: [Interface]/[Peer] keys map onto the fields below. Tailscale needs no file: just the auth key.")));
     const syncKey=()=>{const wg=vals.enabled&&vals.type!=="tailscale";
       keyRow.style.display=wg?"":"none";impRow.style.display=wg?"":"none";};
     /* ONE mode dropdown: Disabled / WireGuard / Tailscale — only the
@@ -3183,12 +3102,12 @@ PAGES.usb=async(view,sub)=>{
   const wrap=h("div",{class:"pane"});p.append(wrap);
   const paneStatus=h("div",{class:"pane"}),paneSettings=h("div",{class:"pane"}),paneConsole=h("div",{class:"pane"});
   const stEl=h("div",{});
-  const consEl=h("div",{});const consOff=h("div",{class:"empty"},"No dongle console bound — the console needs USB data on (USB-Ethernet mode, or before the cut) and the console enabled below.");
+  const consEl=h("div",{});const consOff=h("div",{class:"empty"},"No dongle console bound: the console needs USB data on (USB-Ethernet mode, or before the cut) and the console enabled below.");
   const nlEl=h("div",{});const nlOff=h("div",{class:"empty"},"Live LTE / GPS status appears once the dongle is reachable (over its WiFi AP or the USB link).");
   const DRV={asix:"ASIX",rtl8152:"RTL8152",cdc_ecm:"CDC-ECM",cdc_ncm:"CDC-NCM",rndis:"RNDIS","ncm-dev":"CDC-NCM (device)"};
-  const UPL={none:["No uplink",""],wifi:["Wi-Fi (other network)","ok"],espnetlink:["ESPNetLink — WiFi modem","ok"],espnetlink_usb:["ESPNetLink — USB Ethernet","ok"]};
-  const PST={idle:["No USB link (dongle cut or absent — normal when paired)",""],identify:["Identifying…","warn"],read_key:["Reading AP key…","warn"],cut:["Cutting USB data…","warn"],wait_drop:["Waiting for USB drop…","warn"],
-    done:["Paired — cable is power only","ok"],tether:["Dongle locked to USB (usb_mode=ncm)","warn"],foreign:["Not an ESPNetLink / gave up","warn"],ncm_share:["Configuring the dongle (USB class / LTE sharing)…","warn"],ncm_up:["USB-Ethernet uplink up","ok"]};
+  const UPL={none:["No uplink",""],wifi:["Wi-Fi (other network)","ok"],espnetlink:["ESPNetLink (WiFi modem)","ok"],espnetlink_usb:["ESPNetLink (USB Ethernet)","ok"]};
+  const PST={idle:["No USB link (dongle cut or absent, normal when paired)",""],identify:["Identifying…","warn"],read_key:["Reading AP key…","warn"],cut:["Cutting USB data…","warn"],wait_drop:["Waiting for USB drop…","warn"],
+    done:["Paired: cable is power only","ok"],tether:["Dongle locked to USB (usb_mode=ncm)","warn"],foreign:["Not an ESPNetLink / gave up","warn"],ncm_share:["Configuring the dongle (USB class / LTE sharing)…","warn"],ncm_up:["USB-Ethernet uplink up","ok"]};
   let acmOn=false,nl=null,haveNl=false;
   async function status(){
     const[u,acm,e]=await Promise.all([tryGet("/api/usb"),tryGet("/api/usb/acm"),tryGet("/api/espnetlink")]);
@@ -3227,7 +3146,7 @@ PAGES.usb=async(view,sub)=>{
       ["Mode",e.mode==="usb_ncm"?"USB Ethernet (NCM)":e.mode==="usb_rndis"?"USB Ethernet (RNDIS)":"WiFi modem (USB = power only)"],
       ["Uplink",chip(up[0],up[1])],
       ["Pairing",chip(ps[0],ps[1])],
-      ["Dongle AP",e.ssid||"— (not paired)"],
+      ["Dongle AP",e.ssid||"not paired"],
       ["Device ID",e.device_id||"—"],
       ["Dongle address",e.host||"—"],
       ["USB attached",(e.usb||{}).attached?"yes":"no"],
@@ -3296,7 +3215,7 @@ PAGES.usb=async(view,sub)=>{
   }
   function renderGps(g){
     /* /api/gps: contract shape (speed m/s). Also flows to HA as autopid
-       gps_* params — this card just mirrors the firmware GPS cache. */
+       gps_* params: this card just mirrors the firmware GPS cache. */
     gpsKv.replaceChildren(kv([
       ["Fix",chip(g.valid?"Fix":"No fix",g.valid?"ok":"")],
       ["Satellites",g.valid?(g.satellites??"—"):"—"],
@@ -3322,7 +3241,7 @@ PAGES.usb=async(view,sub)=>{
     nlBusy=true;
     try{
       /* GPS: the firmware polls the dongle (console or HTTP) and caches
-         it — read that (no ACM-lock contention, and it's what HA gets) */
+         it: read that (no ACM-lock contention, and it's what HA gets) */
       const g=await tryGet("/api/gps");
       if(g){renderGps(g);gpsJson.textContent=JSON.stringify(g,null,2);}
       /* LTE: the dongle health poll when the link is up; the raw console
@@ -3332,7 +3251,7 @@ PAGES.usb=async(view,sub)=>{
         const l=await nlCmd("lte -j");
         if(l){renderLte(l);lteJson.textContent=JSON.stringify(l,null,2);}
       }
-    }catch{/* console busy / dongle detached — next tick retries */}
+    }catch{/* console busy / dongle detached: next tick retries */}
     finally{nlBusy=false;nlTick++;}
   }
   /* card order: what is happening (status cards) first, then what the
@@ -3343,7 +3262,7 @@ PAGES.usb=async(view,sub)=>{
   paneStatus.append(cardTools("ESPNetLink","signal",
     [h("button",{class:"btn sm",onclick:repair,title:"VBUS cycle: the dongle re-enumerates and its AP key is read again"},ic("refresh"),"Re-pair")],
     nlKv,
-    note("","WiFi modem (default): the dongle's USB cable carries power only — the WiCAN reads the dongle's AP key over USB once, cuts the data lines (the USB host desenses the dongle's GPS), then joins the dongle's Wi-Fi AP for internet (LTE) and GPS. USB Ethernet (NCM or RNDIS): the data lines stay on and the dongle is a USB-Ethernet uplink presenting the selected class (the WiCAN switches the dongle’s USB class and LTE sharing automatically — the dongle reboots once to apply)."),
+    note("","WiFi modem (default): the dongle's USB cable carries power only: the WiCAN reads the dongle's AP key over USB once, cuts the data lines (the USB host desenses the dongle's GPS), then joins the dongle's Wi-Fi AP for internet (LTE) and GPS. USB Ethernet (NCM or RNDIS): the data lines stay on and the dongle is a USB-Ethernet uplink presenting the selected class (the WiCAN switches the dongle’s USB class and LTE sharing automatically: the dongle reboots once to apply)."),
     manual));
   const nlStatusCard=card("LTE & GPS","signal",nlEl,nlOff);
   paneStatus.append(nlStatusCard);
@@ -3384,7 +3303,7 @@ PAGES.usb=async(view,sub)=>{
         q("Signal","lte -s"),q("Operator","lte -o"),q("LTE IP","lte -i"),q("GPS","gps"),q("Version","ver")),
       out,
       h("div",{class:"frow"},h("label",{},"Command"),h("div",{class:"ctl"},inp,
-        h("div",{class:"help"},"Talks to the dongle's own console (esp> prompt) — not raw AT."))));
+        h("div",{class:"help"},"Talks to the dongle's own console (esp> prompt), not raw AT."))));
     paneConsole.append(
       card("ESPNetLink Console","terminal",consEl,consOff,
         h("div",{class:"subhead"},"Console settings"),
@@ -3416,7 +3335,7 @@ async function certsCard(){
           if(!await confirmModal("Delete certificate set \""+s.name+"\"? Consumers referencing it fall back to the built-in CA bundle at the next connection.","Delete set"))return;
           try{await api("/api/certs?set="+encodeURIComponent(s.name),{method:"DELETE"});toast("Deleted","ok");refresh();}
           catch(e){toast(e.message,"err");}}},ic("trash"))}
-      ],r.sets||[],{empty:"No certificate sets yet — upload one below."}));
+      ],r.sets||[],{empty:"No certificate sets yet: upload one below."}));
     }catch(e){listEl.replaceChildren(banner("crit","alert",e.message));}
   };
   await refresh();
@@ -3436,7 +3355,7 @@ async function certsCard(){
     if(!parts.length)return toast("Choose at least one PEM file","err");
     upBtn.disabled=true;
     try{
-      for(const t of parts){ /* raw body — bypasses the api() JSON wrapper */
+      for(const t of parts){ /* raw body: bypasses the api() JSON wrapper */
         const res=await fetch(API+"/api/certs/upload?set="+encodeURIComponent(n)+"&type="+t,
           {method:"POST",body:await files[t].text()});
         if(!res.ok){let m="HTTP "+res.status;try{m=(await res.json()).error||m;}catch{}
@@ -3444,7 +3363,7 @@ async function certsCard(){
       }
       toast("Uploaded "+parts.length+" part"+(parts.length>1?"s":"")+" to \""+n+"\"","ok");
       name.value="";resets.forEach(f=>f());refresh();
-    }catch(e){toast("Upload failed — "+e.message,"err");}
+    }catch(e){toast("Upload failed: "+e.message,"err");}
     upBtn.disabled=false;}},ic("upload"),"Upload");
   return card("Certificates","shield",listEl,
     h("div",{style:"border-top:1px solid var(--border);margin:14px 0 12px"}),
@@ -3481,11 +3400,11 @@ PAGES.system=async(view,sub)=>{
           catch(err){toast("Restore failed: "+err.message,"err");}e.target.value="";}})),
       histBtn,
       h("button",{class:"btn sm danger",onclick:async()=>{
-        const c=await promptModal('Type "factory-reset" to confirm — wipes ALL settings to defaults (files and SD kept)');
+        const c=await promptModal('Type "factory-reset" to confirm: wipes ALL settings to defaults (files and SD kept)');
         if(c!=="factory-reset")return;
         try{await api("/api/settings/factory_reset",{method:"POST",body:{confirm:"factory-reset"}});expectReboot("Factory reset");}
         catch(e2){toast(e2.message,"err");}}},"Factory Reset")),histEl,
-    note("","Download Config saves every setting (including passwords) as one JSON file — keep it private. Upload Config restores such a file and restarts the device.")));
+    note("","Download Config saves every setting (including passwords) as one JSON file: keep it private. Upload Config restores such a file and restarts the device.")));
   try{paneCerts.append(await certsCard());}
   catch(e){paneCerts.append(banner("crit","alert","Certificates: "+e.message));}
   /* firmware / OTA */
@@ -3509,7 +3428,7 @@ PAGES.system=async(view,sub)=>{
       x.upload.onprogress=e=>{if(e.lengthComputable){const pc=(e.loaded/e.total*100);bar.style.width=pc.toFixed(0)+"%";msg.textContent="Flashing... "+pc.toFixed(0)+"%";}};
       x.onload=()=>x.status<400?res():rej(new Error("HTTP "+x.status));x.onerror=()=>rej(new Error("network error"));
       x.setRequestHeader("Content-Type","application/octet-stream");x.send(picked);});
-      bar.style.width="100%";bar.style.background="var(--success)";msg.textContent="Complete — verifying & rebooting";
+      bar.style.width="100%";bar.style.background="var(--success)";msg.textContent="Complete, verifying and rebooting";
       expectReboot("Installing firmware");}
     catch(e){msg.textContent="Failed: "+e.message;msg.style.color="var(--danger)";flashBtn.disabled=false;}};
   paneFw.append(card("Firmware Update","upload",
@@ -3557,7 +3476,7 @@ PAGES.dtc=async(view,sub)=>{
     {id:"codes",el:h("div",{class:"pane"},repEl,clearEl)},
     {id:"databases",el:h("div",{class:"pane"},dbEl)},
     {id:"settings",el:h("div",{class:"pane"},setEl)}],sub);
-  const codesInp=h("input",{class:"mono",placeholder:"P0420,P0171 — or click a code below"});
+  const codesInp=h("input",{class:"mono",placeholder:"P0420,P0171, or click a code below"});
   const MODE_LABEL={if_only:"Only if every listed code is present (if_only)",if_any:"If any listed code is present (if_any)",always:"Always (no condition)"};
   const modeSel=h("select",{},...["if_only","if_any","always"].map(m=>h("option",{value:m},MODE_LABEL[m])));
   const addCode=c=>{const cur=codesInp.value.split(",").map(s=>s.trim()).filter(Boolean);
@@ -3580,25 +3499,25 @@ PAGES.dtc=async(view,sub)=>{
         r.valid?chip(r.mil?"MIL ON · "+r.mil_count+" code(s)":"MIL off",r.mil?"crit":"ok"):chip("no scan yet",""),
         d.scanning?chip("scanning…","info"):null,
         d.allow_clear?chip("clearing allowed","warn"):chip("clearing locked","ok")),
-      !d.enabled?banner("info","alert","DTC scanning is disabled — turn on ",h("b",{},"DTC scanning")," on the Settings tab, then Submit (reboot to apply)."):null,
+      !d.enabled?banner("info","alert","DTC scanning is disabled: turn on ",h("b",{},"DTC scanning")," on the Settings tab, then Submit (reboot to apply)."):null,
       r.error?banner("warn","alert",r.error):null,
       r.valid?dataTable([
         {label:"Code",get:x=>h("a",{href:"#",class:"mono",onclick:e=>{e.preventDefault();addCode(x.code);}},x.code)},
         {label:"Status",get:x=>chip(x.status,x.status==="stored"?"crit":x.status==="pending"?"warn":"")},
-        {label:"Description",get:x=>x.desc||h("span",{class:"dim"},"— no database entry —")},
-      ],rows,{empty:"No trouble codes — all clear"}):null,
+        {label:"Description",get:x=>x.desc||h("span",{class:"dim"},"no database entry")},
+      ],rows,{empty:"No trouble codes, all clear"}):null,
       r.valid&&r.ts?h("p",{class:"help"},"Last scan: "+new Date(r.ts*1000).toLocaleString()):null));
-    clearEl.replaceChildren(section("Clear codes","mode 04 — conditions gate the wipe",
-      banner("warn","alert",h("b",{},"Mode 04 clears ALL codes"),", freeze frame, readiness monitors, and the MIL — it cannot clear one code alone. ",
+    clearEl.replaceChildren(section("Clear codes","mode 04: conditions gate the wipe",
+      banner("warn","alert",h("b",{},"Mode 04 clears ALL codes"),", freeze frame, readiness monitors, and the MIL; it cannot clear one code alone. ",
         h("b",{},"if_only")," refuses when a code NOT in your list is present (protects evidence); ",h("b",{},"if_any")," clears when at least one listed code is present."),
       h("div",{class:"frow"},h("label",{},"Codes"),h("div",{class:"ctl"},codesInp)),
       h("div",{class:"frow"},h("label",{},"Mode"),h("div",{class:"ctl rowflex"},h("div",{style:"max-width:160px"},modeSel),h("span",{class:"grow"}),
         h("button",{class:"btn danger",disabled:!d.allow_clear,onclick:async()=>{
           if(!await confirmModal("Send mode 04? With mode \""+modeSel.value+"\""+(codesInp.value?" for "+codesInp.value:"")+". Readiness monitors reset.","Clear DTCs"))return;
           try{const r2=await api("/api/autopid/dtc/clear",{method:"POST",body:{confirm:true,codes:codesInp.value||undefined,mode:modeSel.value}});
-            toast(r2.cleared?`Cleared (${r2.before} → ${r2.after})`:"Condition not met — nothing cleared",r2.cleared?"ok":"err");refresh();}
+            toast(r2.cleared?`Cleared (${r2.before} → ${r2.after})`:"Condition not met, nothing cleared",r2.cleared?"ok":"err");refresh();}
           catch(e){toast(e.message,"err");}}},ic("trash"),"Clear"))),
-      d.allow_clear?null:h("p",{class:"help"},"Clearing is locked — enable ",h("b",{},"Allow clearing codes")," on the Settings tab, then Submit (reboot to apply).")));
+      d.allow_clear?null:h("p",{class:"help"},"Clearing is locked: enable ",h("b",{},"Allow clearing codes")," on the Settings tab, then Submit (reboot to apply).")));
   }
   async function dbRefresh(){
     const l=await tryGet("/api/autopid/dtc/db");const dbs=(l&&l.dbs)||[];
@@ -3623,7 +3542,7 @@ PAGES.dtc=async(view,sub)=>{
         {label:"Code",get:x=>h("a",{href:"#",class:"mono",onclick:e=>{e.preventDefault();addCode(x.code);}},x.code)},
         {label:"Description",key:"desc"},{label:"Database",get:x=>h("code",{},x.db)},
       ],r.items):h("div",{class:"empty"},"no matches"),
-        r&&r.total>20?h("p",{class:"help"},r.total+" matches — narrow the search"):null);},300);};
+        r&&r.total>20?h("p",{class:"help"},r.total+" matches, narrow the search"):null);},300);};
     dbEl.replaceChildren(sectionTools("DTC databases",[upBtn],
       dbs.length?dataTable([
         {label:"Name",get:d=>h("code",{},d.name)},
@@ -3632,7 +3551,7 @@ PAGES.dtc=async(view,sub)=>{
         {label:"",get:d=>h("div",{class:"rowflex",style:"justify-content:flex-end"},
           h("button",{class:"btn sm gh danger",onclick:async()=>{if(!await confirmModal("Delete database \""+d.name+"\"?"))return;
             try{await api("/api/autopid/dtc/db?name="+encodeURIComponent(d.name),{method:"DELETE"});toast("Deleted","ok");dbRefresh();refresh();}catch(e){toast(e.message,"err");}}},ic("trash")))},
-      ],dbs):h("div",{class:"empty"},"No databases — upload a code→description file (CSV, TSV, JSON, or plain text; up to "+(l?l.max:8)+" files). Lower names win lookups (name an override \"0_mycar\")."),
+      ],dbs):h("div",{class:"empty"},"No databases: upload a code→description file (CSV, TSV, JSON, or plain text; up to "+(l?l.max:8)+" files). Lower names win lookups (name an override \"0_mycar\")."),
       h("div",{style:"margin-top:12px"},q),results));
   }
   await refresh();await dbRefresh();
@@ -3660,11 +3579,11 @@ PAGES.dbc=async(view)=>{
     let added=0;const skipped=[];
     for(const[db,signals]of byDb){
       try{const r=await api("/api/autopid/dbc/add",{method:"POST",body:{db,signals,group:groupInp.value||"default",monitor_ms:Number(monInp.value)||1000}});
-        added+=r.added||0;(r.skipped||[]).forEach(s=>skipped.push(s.name+" — "+s.reason));}
+        added+=r.added||0;(r.skipped||[]).forEach(s=>skipped.push(s.name+": "+s.reason));}
       catch(e){skipped.push(db+": "+e.message);}}
     picked.clear();syncBtn();search();
     if(skipped.length)modal({title:added+" added, "+skipped.length+" skipped",body:h("div",{},...skipped.map(s=>h("div",{class:"help"},s))),actions:[{label:"OK",kind:"pri"}]});
-    else toast(added+" parameter(s) added to filters — see Dashboard","ok");
+    else toast(added+" parameter(s) added to filters, see Dashboard","ok");
   };
   async function files(){
     const l=await tryGet("/api/autopid/dbc");const dbcs=(l&&l.dbcs)||[];
@@ -3688,7 +3607,7 @@ PAGES.dbc=async(view)=>{
         {label:"",get:d=>h("div",{class:"rowflex",style:"justify-content:flex-end"},
           h("button",{class:"btn sm gh danger",onclick:async()=>{if(!await confirmModal("Delete DBC \""+d.name+"\"?"))return;
             try{await api("/api/autopid/dbc?name="+encodeURIComponent(d.name),{method:"DELETE"});toast("Deleted","ok");files();search();}catch(e){toast(e.message,"err");}}},ic("trash")))},
-      ],dbcs):h("div",{class:"empty"},"No DBC files — upload one (up to "+(l?l.max:4)+"). Signals become filter parameters decoded from broadcast frames.")));
+      ],dbcs):h("div",{class:"empty"},"No DBC files: upload one (up to "+(l?l.max:4)+"). Signals become filter parameters decoded from broadcast frames.")));
   }
   const q=h("input",{placeholder:"search signal or message name…"});
   const results=h("div",{},h("div",{class:"empty"},"type to search signals"));
@@ -3703,7 +3622,7 @@ PAGES.dbc=async(view)=>{
       {label:"Unit",key:"unit"},
       {label:"Decode",get:x=>x.supported?h("code",{style:"font-size:11px"},x.expression):h("span",{class:"help"},x.reason)},
     ],r.items):h("div",{class:"empty"},"no matches"),
-      r.total>40?h("p",{class:"help"},r.total+" matches — narrow the search"):null);
+      r.total>40?h("p",{class:"help"},r.total+" matches, narrow the search"):null);
   }
   q.oninput=()=>{clearTimeout(qt);qt=setTimeout(search,300);};
   sigEl.append(section("Signals","pick signals, then add them as filter parameters",
@@ -3764,7 +3683,7 @@ PAGES.events=async(view,sub)=>{
           r.with=withObj;
           if(isNew)ev.rules.push(r);
           stageIt();rebuildRules();
-          toast("Rule staged — press Submit Changes to apply","ok");}},
+          toast("Rule staged: press Submit Changes to apply","ok");}},
       ]});
     };
     const rebuildRules=()=>{
@@ -3778,7 +3697,7 @@ PAGES.events=async(view,sub)=>{
             h("button",{class:"btn sm gh",title:"Edit",onclick:()=>editRule(r,false)},ic("settings")),
             h("button",{class:"btn sm gh danger",title:"Delete rule",onclick:()=>{
               ev.rules=ev.rules.filter(x=>x!==r);ev.timers=ev.timers.filter(t=>t.name!==r.name);stageIt();rebuildRules();}},ic("trash")))}
-        ],ev.rules):h("div",{class:"empty"},"No rules — Add Rule connects a trigger to an action"),
+        ],ev.rules):h("div",{class:"empty"},"No rules. Add Rule connects a trigger to an action"),
         h("div",{class:"help",style:"margin-top:8px"},"Rules marked ·auto were created by Automate → Data Destinations."));
     };
     rebuildRules();
@@ -3855,39 +3774,11 @@ PAGES.j2534=async(view)=>{
 };
 
 /* ---- Files ---- */
-PAGES.files=async(view)=>{
-  const p=page(view,null,"Files","On-device filesystem");
-  /* deep link: #/files/sd/logs opens that folder (the Logger page's "Open folder") */
-  let path=(location.hash.match(/^#\/files(\/[^?]+)$/)||[])[1]||"/data";
-  /* the firmware validates the path literally — percent-encoded slashes
-     (encodeURIComponent) came back "invalid path"; keep "/" as-is */
-  const enc=s=>encodeURIComponent(s).replace(/%2F/gi,"/");
-  const MOUNTS=[{name:"data",dir:true,desc:"internal flash — certificates, scripts, web assets"},{name:"sd",dir:true,desc:"SD card — logs, firmware, data files"}];
-  const crumbEl=h("div",{class:"rowflex",style:"gap:5px;flex-wrap:wrap"});const listWrap=h("div",{});
-  const mk=h("button",{class:"btn sm",title:"Create a folder here",onclick:async()=>{if(path==="/")return toast("Pick a storage area first","err");const n=await promptModal("New folder name");if(!n)return;try{await api("/api/fs/mkdir",{method:"POST",body:{path:path+"/"+n}});toast("Created","ok");load();}catch(e){toast(e.message,"err");}}},ic("plus"),"New folder");
-  const up=h("label",{class:"btn sm",title:"Upload a file into this folder"},ic("up"),"Upload",h("input",{type:"file",style:"display:none",onchange:e=>doUpload(e.target.files[0])}));
-  p.append(h("div",{class:"rowflex",style:"gap:10px;flex-wrap:wrap"},crumbEl,h("span",{class:"grow"}),mk,up,h("button",{class:"btn sm gh",title:"Refresh",onclick:()=>load()},ic("refresh"))),section(null,null,listWrap));
-  function setCrumb(){const parts=path.split("/").filter(Boolean);const els=[h("a",{href:"#",onclick:e=>{e.preventDefault();path="/";load();}},"Storage")];let acc="";parts.forEach(x=>{acc+="/"+x;const cur=acc;els.push(h("span",{class:"dim"},"/"),h("a",{href:"#",onclick:e=>{e.preventDefault();path=cur;load();}},x));});crumbEl.replaceChildren(...els);
-    mk.disabled=up.querySelector("input").disabled=(path==="/");up.classList.toggle("gh",path==="/");}
-  async function doUpload(f){if(!f)return;if(path==="/")return toast("Open /data or /sd first","err");const fd=new FormData();fd.append("file",f,f.name);
-    try{await api("/api/fs/upload?path="+enc(path+"/"+f.name),{method:"POST",body:fd});toast("Uploaded "+f.name,"ok");load();}
-    catch(e){try{await api("/api/fs/upload?path="+enc(path+"/"+f.name),{method:"POST",body:await f.arrayBuffer(),headers:{"Content-Type":"application/octet-stream"}});toast("Uploaded","ok");load();}catch(e2){toast("Upload failed: "+e2.message,"err");}}}
-  async function load(){setCrumb();listWrap.replaceChildren(loading());
-    try{
-      let ents;
-      if(path==="/")ents=MOUNTS; /* no listable root on the device: offer the mounts */
-      else{const r=await api("/api/fs/list?path="+enc(path));ents=(r.entries||[]).sort((a,b)=>(b.dir?1:0)-(a.dir?1:0)||a.name.localeCompare(b.name));}
-      const rows=[];if(path!=="/"&&path!=="")rows.push({up:true});rows.push(...ents);
-      listWrap.replaceChildren(dataTable([
-        {label:"Name",get:e=>e.up?h("a",{href:"#",onclick:ev=>{ev.preventDefault();path=path.split("/").slice(0,-1).join("/")||"/";load();}},"⬑ up a level"):
-          e.dir?h("a",{href:"#",onclick:ev=>{ev.preventDefault();path=path.replace(/\/$/,"")+"/"+e.name;load();}},ic("folder"),h("span",{style:"margin-left:6px"},e.name),e.desc?h("span",{class:"help",style:"margin-left:10px"},e.desc):null):h("span",{},h("span",{class:"dim"},"·"),h("span",{style:"margin-left:8px"},e.name))},
-        {label:"Size",align:"right",get:e=>e.up||e.desc?"":e.dir?"—":fmt.bytes(e.size)},
-        {label:"",get:e=>e.up||e.dir?"":h("div",{class:"rowflex",style:"justify-content:flex-end;gap:6px"},
-          h("a",{class:"btn sm gh",title:"Download",href:API+"/api/fs/download?path="+enc(path.replace(/\/$/,"")+"/"+e.name),download:e.name},ic("down")),
-          h("button",{class:"btn sm gh danger",title:"Delete",onclick:async()=>{if(!await confirmModal("Delete "+e.name+"?"))return;try{await api("/api/fs/file?path="+enc(path.replace(/\/$/,"")+"/"+e.name),{method:"DELETE"});toast("Deleted","ok");load();}catch(err){toast(err.message,"err");}}},ic("trash")))}
-      ],rows,{empty:"Empty folder"}));
-    }catch(e){listWrap.replaceChildren(banner("crit","alert",e.message));}}
-  await load();return null;
+/* ---- File Manager: an on-demand chunk (web/files.js, 2026-09-07) ---- */
+PAGES.files=async(view,sub)=>{
+  if(!PAGES.__files)await loadScript("/ui/files.js");
+  if(!PAGES.__files){const p=page(view,null,"File Manager","Internal flash and SD card");p.append(banner("crit","alert","The File Manager could not be loaded (/ui/files.js). Reload the page, or update the firmware."));return null;}
+  return PAGES.__files(view,sub);
 };
 
 /* ---- Logs ---- */
@@ -3930,13 +3821,13 @@ PAGES.sysmon=async(view)=>{
     const[st,tk,fl]=await Promise.all([tryGet("/api/status"),tryGet("/api/status/tasks"),tryGet("/api/faults")]);
     if(!st||!tk||!tk.tasks)return;
     /* device fault codes (the automotive-DTC idea for the firmware):
-       latched in NVS until MANUALLY cleared — a fault that fired once in
+       latched in NVS until MANUALLY cleared: a fault that fired once in
        the field stays visible here */
     const faults=(fl&&fl.faults)||[];
     const ftime=t=>t>0?new Date(t*1000).toLocaleString():"—";
     faultsEl.replaceChildren(section("Fault codes",
-      "structural problems latch here and survive reboots until cleared — like DTCs in a car",
-      ...(faults.length===0?[h("div",{class:"help"},"No fault codes — device healthy.")]:[
+      "structural problems latch here and survive reboots until cleared, like DTCs in a car",
+      ...(faults.length===0?[h("div",{class:"help"},"No fault codes, device healthy.")]:[
         dataTable([
           {label:"Code",get:r=>chip(r.code,"crit"),mono:true},
           {label:"Detail",key:"detail"},
@@ -3945,7 +3836,7 @@ PAGES.sysmon=async(view)=>{
           {label:"Last seen",get:r=>ftime(r.last_time),mono:true},
         ],faults),
         h("div",{style:"margin-top:10px"},h("button",{class:"btn",onclick:async()=>{
-          if(!await confirmModal(faults.length+" latched fault code(s) will be erased from NVS. Investigate before clearing — this is the only record.","Clear faults"))return;
+          if(!await confirmModal(faults.length+" latched fault code(s) will be erased from NVS. Investigate before clearing: this is the only record.","Clear faults"))return;
           try{await api("/api/faults/clear",{method:"POST"});toast("Fault codes cleared","ok");refresh();}
           catch(e){toast("Clear failed","err");}
         }},"Clear fault codes"))])));
@@ -3971,7 +3862,7 @@ PAGES.sysmon=async(view)=>{
       tile("Die temp",st.temp_c!=null?st.temp_c.toFixed(1):"—","°C",{kind:st.temp_c>75?"crit":st.temp_c>60?"warn":""}),
       tile("Log errors",st.health?String(st.health.log_errors):"—",null,{cap:st.health?st.health.log_warnings+" warnings":null,kind:st.health&&st.health.log_errors>0?"crit":""}),
       tile("Flash erases",st.health&&st.health.flash?String(st.health.flash.erases):"—",null,{cap:"since boot",kind:""}));
-    if(m)heapEl.replaceChildren(...[["Internal RAM","the scarce heap — radio stacks live here",m.internal],["PSRAM","bulk heap",m.psram]].map(([label,desc,hp])=>
+    if(m)heapEl.replaceChildren(...[["Internal RAM","the scarce heap: radio stacks live here",m.internal],["PSRAM","bulk heap",m.psram]].map(([label,desc,hp])=>
       section(label,desc,
         meter(hp.total-hp.free,hp.total),
         kv([["In use",fmt.bytes(hp.total-hp.free)+" of "+fmt.bytes(hp.total)],["Free now",fmt.bytes(hp.free)],["Lowest ever",fmt.bytes(hp.min_free)],["Largest free block",fmt.bytes(hp.largest_block)]]))));
@@ -3991,7 +3882,7 @@ PAGES.sysmon=async(view)=>{
 
 /* ---- All Settings ---- */
 PAGES.allsettings=async(view)=>{
-  const p=page(view,null,"All Settings","Every component — forms generated from the device schema");
+  const p=page(view,null,"All Settings","Every component: forms generated from the device schema");
   p.classList.add("wide");
   let comps=[];try{const r=await api("/api/settings");comps=(r.components||r).filter(c=>!HIDE.has(c.name));}catch(e){p.append(banner("crit","alert","Cannot list settings: "+e.message));return null;}
   comps.sort((a,b)=>niceName(a.name).localeCompare(niceName(b.name)));
@@ -4012,7 +3903,7 @@ function niceName(n){return NICE[n]||n.replace(/_manager$/,"").replaceAll("_"," 
 async function boot(){
   const[list,info]=await Promise.all([tryGet("/api/settings"),tryGet("/api/info")]);
   conn.settings=(list&&list.components)||[];
-  conn.info=info||{}; /* device_id / model / fw — /api/status has no id */
+  conn.info=info||{}; /* device_id / model / fw: /api/status has no id */
   renderSubmit();
   await ping();refreshSleep();route();
 }

@@ -255,6 +255,106 @@ green afterwards). What changed, and what to keep doing:
   --min` builds the preview through the same function so the smoke test
   and probes (`probe_dash_custom.mjs` for the customisation) test what
   ships.
+- No OBD chip card (meatpi 2026-09-07): the Advanced page lost the
+  `obd_chip` settings card. Its fields (auto sleep, monitor policy, the
+  chip's sleep thresholds) only confused users, and the chip UART baud is
+  now a firmware constant (`OBD_CHIP_BAUD`; obd_chip settings v3 drops a
+  stored value) — a user changing it would break the chip and claim
+  warranty. The group stays reachable through the settings API / CLI /
+  backup; the UI keeps no labels, enums or formatters for it.
+- Motion defaults + Power Saving flag (meatpi 2026-09-07): the IMU stays
+  on by default, but "Wake on motion" (the sensor's bump detector) ships
+  off with a 125 mg threshold. When it is on, the Power Saving page shows
+  a warning banner naming it, linking to Advanced, and stating what it
+  really does: bump events for rules/MQTT, no wake from sleep. The
+  Motion card hides the threshold while it is off and the SMD knobs while
+  SMD is off; the help text no longer claims a knock wakes the device.
+  Probe: `probe_power_flag.mjs`.
+- Last wake-up on Status (meatpi 2026-09-07): the System card names this
+  boot's cause in plain words from `/api/restart/history` — "Battery
+  voltage recovered — woke from sleep", "Periodic check-in — woke from
+  sleep" (new restart_tracker reason `periodic_wake`; sleep_manager used
+  to file check-ins as power_wake), "Restart requested · web UI",
+  "Settings applied", "Firmware update", or the chip's own reset cause
+  ("Power-on", "Crash (panic) — unexpected", watchdogs, brown-out).
+  Motion slots in once wake-on-motion exists. Probe:
+  `probe_wake_source.mjs` (the mock's last record is
+  `__mockState.lastRestart`).
+- File Manager (meatpi 2026-09-07: "improve the UI and UX of the Files
+  tab, rename it File Manager"): the page ships as the second on-demand
+  chunk (`web/files.js` → `/ui/files.js`, `PAGES.files` stub). Landing =
+  storage cards (internal flash / SD card with usage meters, "not mounted"
+  when the card is absent); inside a mount: breadcrumb that also drives
+  the URL (`#/files/sd/logs` deep links keep working), Up, a usage line,
+  filter + sort, multi-select with Delete selected, New folder, multi-file
+  Upload with a progress bar (XHR) and drag-and-drop onto the list,
+  per-row Preview (text files ≤ 64 KB, JSON pretty-printed), Download,
+  Copy path and Delete; the folders users meet carry a one-line
+  description; the logger's active file (`/api/logger` dir/file while
+  running) is marked "in use" with Delete disabled and a hint to pause
+  logging; non-empty folders and in-use files get plain-language errors.
+  Bug found on the way: the old page's New folder never worked — it
+  posted the path as a JSON body while `/api/fs/mkdir` reads `?path=`
+  like every other fs route (bench-verified 2026-09-07).
+  Probe: `probe_files.mjs` (the mock lists `__mockState.files` / `dirs`
+  dynamically, honours `sdMounted` / `loggerRunning`, and shims
+  XMLHttpRequest).
+- WiFi settings (meatpi 2026-09-07: "the WiFi mode should not be in the
+  AP settings; no open security"): the mode is a tile selector (Access
+  point + Station · Station only · Access point only · WiFi off, with a
+  warning for off; no tile is labelled recommended, meatpi) above the two cards; each card carries a live chip
+  (AP: clients + address; station: connected + IP / not connected / off)
+  and folds to a one-line note when the mode does not use it; "Open (no
+  password)" is gone from AP security (firmware enum v7 with an
+  open → auto migration; the page also filters it out of an older
+  schema). Probe: `probe_wifi_mode.mjs`.
+- Factory AP password (meatpi 2026-09-07: "we should not allow submitting
+  the password if it is still the default"): while `/api/wifi/status`
+  reports `ap_default_password`, the header shows "Factory AP password:
+  change it" (links to Settings → WiFi), a warning sits under the AP
+  password field, and Submit stops with an explanation whenever the
+  staged WiFi settings would keep it (blank = keep, or `@meatpi#` typed).
+  The firmware refuses such a write after boot anyway (wifi_manager
+  `on_validate`). Probe: `probe_ap_password.mjs` (mock flag
+  `__mockState.apDefaultPassword`, PUT counter `__mockState.puts`).
+- CAN Monitor (meatpi 2026-09-07: "the monitor tab seems broken: the start
+  button is already pressed but nothing shows; bring it as close as possible
+  to our mockup"): a fresh WiCAN Pro has the native CAN bus, the `/ws/can`
+  channel and the slcan connection all off, so the old page sat "receiving"
+  over an empty table. The page is now an on-demand chunk (`web/monitor.js`)
+  laid out like the PCAN-style mockup: Connection (bus + WebSocket chips, a
+  wiring check that names what is missing and an "Enable CAN monitor"
+  button staging `can_manager.enabled` + the `ws_can` channel + a `br_can`
+  slcan bridge, Pause/Resume, Reconnect, bit rate and listen-only staged
+  into can_manager), Message filter (ID range + data/remote/standard/
+  extended switches), Send message (ID, data, extended, remote, cycle,
+  Send / Cyclic / Add to list, a persisted transmit list), Trace tools
+  (buffer 200/1000/5000, auto-scroll, Clear, Save CSV); the table shows
+  Time · Dir · ID · Type · DLC · Data · ASCII (Grouped: bytes with a hot
+  highlight, ASCII, cycle, count); the status bar shows RX · TX · Errors
+  (from `/api/can` bus_errors, TEC/REC etc. in the tooltip) · Rate · Bus
+  load · Connected/Paused · Buffer · Auto-scroll. SUPERSEDED the same day
+  by the design below.
+- CAN Monitor, second pass (Ali, 2026-09-07: "i found the design i wanted,
+  implement this", the Claude Design export "WiCAN PRO Monitor"): the page
+  became the design's three-tab PCAN-View style analyzer (see the Pages
+  list): receive list with decode panel, transmit list with context menu and
+  keyboard shortcuts, edit dialog with byte boxes, trace, settings cards,
+  status bar, connect dialog; its own light/dark palette from the design
+  (`.pmv` tokens, prefixed `--p*` so the app's tokens stay untouched);
+  shipped transmit rows are manual (nothing goes on a vehicle bus by
+  itself); the page OPENS PAUSED (Ali: "it should be paused by default";
+  the socket connects, Resume starts counting and listing); CAN FD
+  controls render disabled (the TWAI controller has no FD);
+  prefs in localStorage `wican.canmon.v1`. Probe: `probe_monitor.mjs` (mock
+  `__mockState.canEnabled`, `wsCanPeriod`, `wsSent`, `wsCanRefuse`,
+  `dbcs`, `dbcSignals`).
+- Logger robustness surfaces (2026-09-07, data_logger/ROBUSTNESS.md): the
+  Logger status shows a warning banner while `*.corrupt` files are set
+  aside (what happened, `tools/db_recover.py`, link to the File Manager)
+  and a chip "N records recovered after the last reset"; the File Manager
+  labels `.corrupt` files; the flush-interval help explains the trade-off.
+  Mock: `__mockState.loggerCorrupt` / `loggerSalvaged`.
 
 ## On-demand page chunks (2026-09-07)
 
@@ -276,7 +376,8 @@ chunk after the app script so the jsdom probes run it (the stub sees
 chunk: a `web/<name>.js` that sets `PAGES.__<name>`, a stub in
 `index.html`, one more custom command + embed in `CMakeLists.txt`, one
 more asset row in `web_ui_v2.c`, and its name in `make_preview.py`'s
-chunk list.
+chunk list. Chunks today: `scripts.js` (Scripts), `files.js` (File
+Manager) and `monitor.js` (CAN Monitor, 2026-09-07).
 
 ## Pages
 
@@ -290,10 +391,24 @@ tiles over the parameter's own min/max, with the PID and the value's age ·
 Customise: per-tile widget / range / warnings / width / hide, drag order,
 layout file on the device, uPlot charts cached under cache/www, chart history
 backfilled from the logger's JSON-lines stream) ·
-**CAN Monitor** (grouped IDs w/ hot-byte highlight · trace · transmit
-incl. cyclic — speaks **slcan over `/ws/can`**; bridge `ws_can ↔ can`
-with the slcan translator to feed it) · Terminal (console `/ws/cli` or
-ELM327 `/ws/obd`) · Advanced (IMU · OBD chip · USB · radio arbitration)
+**CAN Monitor** (2026-09-07, built after Ali's Claude Design "WiCAN PRO
+Monitor": sub-tabs Monitor · Trace · Settings; Monitor = ID filter, Pause,
+Clear, a RECEIVE list grouped by CAN-ID (type chips STD/EXT/RTR, DLC, bytes
+with the changed ones lit, ASCII, cycle, count; sortable, drag-resizable
+columns; click a row for the decode panel: DBC signals from the device's
+loaded .dbc files decoded with the firmware's bit rules, else the raw
+frame) and a TRANSMIT list (on/off, ID, type, DLC, data, cycle, count,
+trigger on an RX ID, comment; Send/edit/delete; context menu with
+cut/copy/paste/clear + CAN ID and data byte formats; Space/Insert/Enter/
+Delete/Ctrl+X/C/V/Shift+Esc); Trace = newest-first buffer with record/
+stop, size, CSV, bus errors as error rows; Settings = DEVICE, CAN
+INTERFACE (bit rate, mode, the wiring check + one-click enable; CAN FD
+shown as unavailable), DECODING (DBC files, upload), SETTINGS FILE
+(save/load JSON); status bar connected · bus · load · rx/s · frames · err ·
+TEC/REC; page-header connection chip + Connect/Disconnect. Speaks **slcan
+over `/ws/can`**; chunk `web/monitor.js`) · Terminal (console `/ws/cli` or
+ELM327 `/ws/obd`) · Advanced (IMU · radio arbitration — no OBD chip card
+since 2026-09-07)
 · System (reboot · backup/restore · restart history · factory reset ·
 **Certificates** (cert_manager sets: list w/ part flags, per-part PEM
 upload via raw `/api/certs/upload?set&type` — NOT the api() JSON
@@ -309,9 +424,13 @@ back to the cached AGNSS position when there's no live fix · ESPNetLink
 Console for manual commands, serialized against the poll via a shared
 `nlBusy` latch so they never 409 each other) · About.
 TOOLS: Trouble Codes (scan/describe/clear + databases) · DBC Signals ·
-Rules & Events · **Scripts** (2026-09-07: Editor · Examples · Reference —
-scripts are files under `/data/scripts` created, opened, saved, renamed,
-run, checked, downloaded and deleted in the browser; Run sends the
+Rules & Events · **Scripts** (2026-09-07: Editor · Examples · Reference ·
+Settings — the Editor tab is a full-width "Stored scripts" table (name,
+size, Open · Run · Download · Delete per row, the open one highlighted;
+meatpi: a stacked side list was not intuitive) above an editor card whose
+header names the open file and carries the Saved / Unsaved / Running
+chip; scripts are files under `/data/scripts` created, opened, saved,
+renamed, run, checked, downloaded and deleted in the browser; Run sends the
 editor's text inline (saves and runs by name past the 8 KB inline cap),
 Check compiles only; output lines that name `string:<line>:` are
 jump-to-line links and a matching hint from the firmware's `errors` table
@@ -323,10 +442,15 @@ and sql.js — nine files under `cache/www`, a plain textarea until it is
 installed; the Examples gallery and the whole Reference (bindings with
 Insert, globals, a Berry primer, the rule recipe, error hints, limits)
 are rendered from `GET /api/scripts/reference` + `/examples`, so the page
-never drifts from the bindings; the scripting settings (enable switch,
-runtime budget, ECU-flashing gate) sit at the bottom of the Editor tab
-and go through the header Submit like every setting) · UDS Tool · J2534 ·
-Files · Logs · System Monitor (tasks/CPU/heap/temp) · All Settings
+never drifts from the bindings; CodeMirror runs with its own `wican`
+theme so the tokens take the page's colour variables in both light and
+dark mode (its stock palette is light-only); the scripting settings
+(enable switch, runtime budget, ECU-flashing gate) have their own tab and
+go through the header Submit like every setting) · UDS Tool · J2534 ·
+**File Manager** (2026-09-07: storage cards, breadcrumb + deep links,
+filter/sort, multi-select delete, drag-and-drop upload with progress, text
+preview, in-use marking; chunk `web/files.js`) · Logs · System Monitor
+(tasks/CPU/heap/temp) · All Settings
 (every component).
 
 ## Connections card (Settings page — the bridge builder)

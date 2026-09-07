@@ -7,14 +7,15 @@
    preview (tools/webui_preview/make_preview.py) inlines it after the app
    script so the jsdom probes run it. */
 (()=>{
-const CSS=`/* Scripts page (2026-09-07): list | editor + output; CodeMirror themed with the page variables */
-.scr-grid{display:grid;grid-template-columns:190px minmax(0,1fr);gap:16px;align-items:start}
-.scr-list{display:flex;flex-direction:column;gap:2px}
-.scr-item{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;border:1px solid transparent;background:transparent;color:var(--text);font:inherit;font-size:13px;text-align:left;cursor:pointer;width:100%;font-family:var(--mono)}
-.scr-item:hover{background:var(--surface-2)}.scr-item.on{background:var(--primary-tint);color:var(--primary);font-weight:700}
-.scr-item .sz{margin-left:auto;font-size:11px;color:var(--text-3);font-weight:400;font-family:var(--ui)}
-.scr-bar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px}
-.scr-bar input.nm{width:170px;font-family:var(--mono)}.scr-bar .st{font-size:12px;color:var(--text-3);margin-left:auto}
+const CSS=`/* Scripts page (2026-09-07): a scripts table with row actions above the editor card; CodeMirror themed "wican" with the page variables */
+.tbl tr.scr-row td{cursor:default}.tbl tr.scr-row.on td{background:var(--primary-tint)}
+.scr-fn{font-family:var(--mono);font-weight:700}.tbl tr.on .scr-fn{color:var(--primary)}
+.scr-acts{display:flex;gap:4px;justify-content:flex-end;flex-wrap:wrap}
+.scr-bar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px}
+.scr-name{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-2);margin-right:4px}
+.scr-name input{width:160px;font-family:var(--mono)}
+.scr-bar select{width:auto;max-width:300px;flex:0 0 auto}
+.scr-bar .sep{width:1px;height:22px;background:var(--border);margin:0 4px}
 .scr-ed{border:1px solid var(--border);border-radius:9px;overflow:hidden;background:var(--surface)}
 .scr-ed textarea{display:block;width:100%;min-height:400px;padding:12px 14px;border:0;resize:vertical;background:transparent;color:var(--text);font-family:var(--mono);font-size:13px;line-height:1.5;tab-size:2;outline:none;box-sizing:border-box}
 .scr-ed .CodeMirror{height:440px;font-family:var(--mono);font-size:13px;line-height:1.5;background:transparent;color:var(--text)}
@@ -22,14 +23,16 @@ const CSS=`/* Scripts page (2026-09-07): list | editor + output; CodeMirror them
 .scr-ed .CodeMirror-cursor{border-left:1.5px solid var(--text)}.scr-ed .CodeMirror-selected,.scr-ed .CodeMirror-focused .CodeMirror-selected{background:var(--primary-tint)}
 .scr-ed .CodeMirror-activeline-background{background:color-mix(in srgb,var(--primary) 6%,transparent)}
 .scr-ed .cm-line-err{background:var(--danger-tint)}
-.scr-ed .cm-keyword{color:var(--primary);font-weight:700}.scr-ed .cm-string{color:var(--success)}.scr-ed .cm-comment{color:var(--text-3);font-style:italic}
-.scr-ed .cm-number,.scr-ed .cm-atom{color:var(--warning)}.scr-ed .cm-builtin{color:var(--accent)}.scr-ed .cm-variable-2{color:var(--text);font-weight:600}.scr-ed .cm-def{color:var(--accent);font-weight:700}
-.scr-ed .CodeMirror-matchingbracket{outline:1px solid var(--primary);color:inherit!important}
+.cm-s-wican .cm-keyword{color:var(--primary);font-weight:700}.cm-s-wican .cm-string{color:var(--success)}.cm-s-wican .cm-comment{color:var(--text-3);font-style:italic}
+.cm-s-wican .cm-number,.cm-s-wican .cm-atom{color:var(--warning)}.cm-s-wican .cm-builtin{color:var(--accent)}.cm-s-wican .cm-variable-2{color:var(--text);font-weight:600}
+.cm-s-wican .cm-def{color:var(--accent);font-weight:700}.cm-s-wican .cm-operator{color:var(--text-2)}.cm-s-wican .cm-variable{color:var(--text)}
+.cm-s-wican .CodeMirror-matchingbracket{outline:1px solid var(--primary);color:inherit!important}
 .CodeMirror-hints{font-family:var(--mono);font-size:12.5px;background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow-lg);border-radius:8px;color:var(--text)}
 .CodeMirror-hint{color:var(--text)}li.CodeMirror-hint-active{background:var(--primary);color:var(--on-primary)}
 .scr-out{margin-top:10px;background:var(--term-bg);color:var(--term-text);border:1px solid var(--border);border-radius:9px;padding:10px 14px;font-family:var(--mono);font-size:12.5px;line-height:1.5;white-space:pre-wrap;word-break:break-word;min-height:54px;max-height:280px;overflow-y:auto}
 .scr-out .er{color:var(--danger)}.scr-out a{color:var(--primary);cursor:pointer;text-decoration:underline}.scr-out .dim{color:var(--term-dim)}
 .scr-hint{margin-top:6px;font-size:12.5px;color:var(--text-2)}
+.scr-keys{margin-top:8px;font-size:11.5px;color:var(--text-3)}.scr-keys kbd{font-family:var(--mono);font-size:11px;padding:1px 5px;border:1px solid var(--border);border-radius:4px;background:var(--surface-2);color:var(--text-2)}
 .ref-item{padding:9px 0;border-bottom:1px solid var(--border)}.ref-item:last-child{border-bottom:0}
 .ref-sig{font-family:var(--mono);font-size:12.5px;color:var(--primary);font-weight:700}
 .ref-doc{font-size:12.5px;color:var(--text-2);margin:3px 0}.ref-ex{font-family:var(--mono);font-size:12px;color:var(--text-3)}
@@ -57,7 +60,10 @@ UI_RES.cm={id:"cm",title:"code editor",label:"CodeMirror 5.65.18 (210 KB, MIT)",
    through /api/fs/upload); Run sends the editor's text inline (or saves and
    runs by name past the inline cap); Check compiles without running.
    CodeMirror (highlighting, line numbers, autocomplete) is an on-demand
-   library like the chart library: installed once into cache/www. */
+   library like the chart library: installed once into cache/www.
+   Layout (meatpi 2026-09-07, "stored scripts on top of each other is not
+   intuitive"): a full-width scripts table with per-row actions above the
+   editor card, the scripting settings on their own tab. */
 const BERRY_KW="if elif else while for def end class break continue return true false nil var do import as try except raise static".split(" ");
 const BERRY_BUILTIN="print str int real size format type classname list map range bytes assert string json math global".split(" ");
 let berryModeReady=false;
@@ -94,7 +100,7 @@ function berryHint(cm,ref){
 }
 /* one editor API over a plain textarea and, once installed, CodeMirror */
 function makeEditor(host,opts){
-  const ta=h("textarea",{spellcheck:"false",oninput:()=>opts.onChange&&opts.onChange()});
+  const ta=h("textarea",{spellcheck:"false",placeholder:"Open a stored script, start from an example, or type Berry here.",oninput:()=>opts.onChange&&opts.onChange()});
   host.replaceChildren(ta);
   const ed={cm:null,ta,errLine:null,
     get(){return ed.cm?ed.cm.getValue():ta.value;},
@@ -111,7 +117,9 @@ function makeEditor(host,opts){
       if(ed.cm||!window.CodeMirror)return;
       berryMode();
       const hint=cm=>berryHint(cm,ref);
-      ed.cm=CodeMirror.fromTextArea(ta,{mode:"berry",lineNumbers:true,matchBrackets:true,autoCloseBrackets:true,styleActiveLine:true,indentUnit:2,tabSize:2,indentWithTabs:false,lineWrapping:true,
+      /* theme "wican": CodeMirror's stock palette (cm-s-default) is for a
+         light page; the page variables colour the tokens in both themes */
+      ed.cm=CodeMirror.fromTextArea(ta,{mode:"berry",theme:"wican",lineNumbers:true,matchBrackets:true,autoCloseBrackets:true,styleActiveLine:true,indentUnit:2,tabSize:2,indentWithTabs:false,lineWrapping:true,
         extraKeys:{"Ctrl-S":()=>opts.onSave&&opts.onSave(),"Cmd-S":()=>opts.onSave&&opts.onSave(),"Ctrl-Enter":()=>opts.onRun&&opts.onRun(),"Cmd-Enter":()=>opts.onRun&&opts.onRun(),
           "Ctrl-Space":"autocomplete","Ctrl-/":"toggleComment","Cmd-/":"toggleComment",Tab:cm=>{if(cm.somethingSelected())cm.indentSelection("add");else cm.replaceSelection("  ");},"Shift-Tab":"indentLess"},
         hintOptions:{hint,completeSingle:false}});
@@ -131,8 +139,10 @@ const SCR_LEVEL={1:"First steps",2:"Everyday",3:"Advanced"};
 PAGES.__scripts=async(view,sub)=>{
   const p=page(view,null,"Scripts","Berry scripts on the WiCAN: write them here, run them by hand, or let a rule run them.");
   const wrap=h("div",{class:"pane"});p.append(wrap);
-  const paneEd=h("div",{class:"pane"}),paneEx=h("div",{class:"pane"}),paneRef=h("div",{class:"pane"});
-  tabbedPage(wrap,"scripts",[{id:"editor",el:paneEd},{id:"examples",el:paneEx},{id:"reference",el:paneRef}],sub);
+  const paneEd=h("div",{class:"pane"}),paneEx=h("div",{class:"pane"}),paneRef=h("div",{class:"pane"}),paneSet=h("div",{class:"pane"});
+  tabbedPage(wrap,"scripts",[{id:"editor",el:paneEd},{id:"examples",el:paneEx},{id:"reference",el:paneRef},{id:"settings",el:paneSet}],sub);
+  const goTab=id=>{if(subNav)subNav.show(id);};
+  const tabLink=(id,label)=>h("a",{href:"#/scripts/"+id,onclick:e=>{e.preventDefault();goTab(id);}},label);
   /* one request at a time with one retry: right after a restart the device
      answers slowly and a dropped request must not read as "scripting off" */
   const get2=async p=>(await tryGet(p))||(await new Promise(r=>setTimeout(r,900)),await tryGet(p));
@@ -144,45 +154,56 @@ PAGES.__scripts=async(view,sub)=>{
   const exampleSrc=async id=>{const r=await fetch(API+"/api/scripts/examples?id="+encodeURIComponent(id),{cache:"no-store"});if(!r.ok)throw new Error("example "+r.status);return await r.text();};
   /* ---- editor state ---- */
   let cur=null,dirty=false,running=false,scripts=[];
-  const listEl=h("div",{class:"scr-list"});
-  const nameIn=h("input",{class:"nm",placeholder:"script_name",maxlength:36,oninput:()=>{dirty=true;paintStatus();}});
-  const statusEl=h("span",{class:"st"});
+  const listEl=h("div",{});
+  const nameIn=h("input",{placeholder:"script_name",maxlength:36,oninput:()=>{dirty=true;paintStatus();}});
+  const fileEl=h("span",{class:"ldesc"}),statusEl=h("span",{class:"chip scr-status"},h("span",{class:"d"}),"");
   const edHost=h("div",{class:"scr-ed"});
   const outEl=h("div",{class:"scr-out"},h("span",{class:"dim"},"Output of Run and Check shows here."));
   const hintEl=h("div",{class:"scr-hint"});
   const ed=makeEditor(edHost,{onChange:()=>{if(!dirty){dirty=true;paintStatus();}},onSave:()=>save(),onRun:()=>run()});
   const btn=(label,icon,fn,cls,title)=>h("button",{class:"btn sm "+(cls||""),type:"button",title,onclick:fn},ic(icon),label);
   const runBtn=btn("Run","play",()=>run(),"pri","Run what is in the editor (Ctrl+Enter)"),stopBtn=btn("Stop","stop",()=>stop(),"","Stop the running script"),
-    checkBtn=btn("Check","check",()=>check(),"","Compile without running: reports syntax errors"),saveBtn=btn("Save","save",()=>save(),"","Save to the WiCAN (Ctrl+S)"),
-    dlBtn=btn("Download","download",()=>download(),"gh","Download the saved file"),delBtn=btn("Delete","trash",()=>del(),"gh danger","Delete the saved file");
+    checkBtn=btn("Check","check",()=>check(),"","Compile without running: reports syntax errors"),saveBtn=btn("Save","save",()=>save(),"","Save to the WiCAN (Ctrl+S)");
   const insSel=h("select",{title:"Insert a call at the cursor",onchange:()=>{const b=binds.find(x=>x.name===insSel.value);if(b)ed.insert(b.ex+"\n");insSel.value="";}},
-    h("option",{value:""},"Insert…"),...groups.map(g=>h("optgroup",{label:g.title},...binds.filter(b=>b.group===g.id).map(b=>h("option",{value:b.name},b.sig)))));
-  const bar=h("div",{class:"scr-bar"},nameIn,h("span",{class:"dim",style:"margin-left:-2px"},".be"),saveBtn,runBtn,stopBtn,checkBtn,insSel,dlBtn,delBtn,statusEl);
+    h("option",{value:""},"Insert a call…"),...groups.map(g=>h("optgroup",{label:g.title},...binds.filter(b=>b.group===g.id).map(b=>h("option",{value:b.name},b.sig)))));
+  const bar=h("div",{class:"scr-bar"},h("label",{class:"scr-name"},"Name",nameIn,h("span",{class:"dim"},".be")),saveBtn,runBtn,stopBtn,checkBtn,h("span",{class:"sep"}),insSel);
+  const keys=h("div",{class:"scr-keys"},h("kbd",{},"Ctrl+S")," save · ",h("kbd",{},"Ctrl+Enter")," run · ",h("kbd",{},"Ctrl+Space")," complete a name · ",h("kbd",{},"Ctrl+/")," comment · ",h("kbd",{},"Tab")," indent");
+  function setChip(kind,txt){statusEl.className="chip scr-status "+kind;statusEl.lastChild.textContent=txt;statusEl.style.display=txt?"":"none";}
   function paintStatus(){
     const canRun=enabled&&!running;
     runBtn.disabled=!canRun;checkBtn.disabled=!canRun;stopBtn.disabled=!running;
-    runBtn.title=enabled?"Run what is in the editor (Ctrl+Enter)":"Scripting is off: turn it on below";
-    dlBtn.disabled=!cur||dirty;delBtn.disabled=!cur;
-    statusEl.textContent=running?"Running…":dirty?(cur?"Unsaved changes":"New script, not saved yet"):cur?"Saved":"";
-    listEl.querySelectorAll(".scr-item").forEach(b=>b.classList.toggle("on",b.dataset.name===cur));
+    runBtn.title=enabled?"Run what is in the editor (Ctrl+Enter)":"Scripting is off: turn it on under Settings";
+    fileEl.textContent=cur?cur:(dirty||nameIn.value)?"New script":"Nothing open";
+    if(running)setChip("",  "Running…");else if(dirty)setChip("warn",cur?"Unsaved changes":"Not saved yet");else if(cur)setChip("ok","Saved");else setChip("","");
+    listEl.querySelectorAll("tr.scr-row").forEach(tr=>tr.classList.toggle("on",tr.dataset.name===cur));
   }
   function paintList(){
-    listEl.replaceChildren(...scripts.map(x=>h("button",{class:"scr-item"+(x.name===cur?" on":""),type:"button",dataset:{name:x.name},onclick:()=>open(x.name)},x.name.replace(/\.be$/,""),h("span",{class:"sz"},fmtK(x.size)))));
-    if(!scripts.length)listEl.append(h("div",{class:"empty",style:"padding:14px 6px"},"No scripts yet. Start from an example, or click New."));
+    const rowBtn=(label,icon,fn,cls,title)=>h("button",{class:"btn sm gh "+(cls||""),type:"button",title,onclick:fn},ic(icon),label);
+    const t=dataTable([
+      {label:"Name",get:x=>h("span",{class:"scr-fn"},x.name.replace(/\.be$/,""))},
+      {label:"Size",get:x=>fmtK(x.size)},
+      {label:"",get:x=>h("div",{class:"scr-acts"},
+        rowBtn("Open","code",()=>open(x.name),"","Open in the editor"),
+        rowBtn("Run","play",async()=>{if(await open(x.name))run();},"",enabled?"Open and run":"Scripting is off: turn it on under Settings"),
+        rowBtn("Download","download",()=>download(x.name),"","Download the file"),
+        rowBtn("Delete","trash",()=>del(x.name),"danger","Delete from the WiCAN"))}
+    ],scripts,{empty:"No scripts yet. Start from an example, or click New script.",responsive:false});
+    t.querySelectorAll("tbody tr").forEach((tr,i)=>{tr.classList.add("scr-row");tr.dataset.name=scripts[i].name;tr.classList.toggle("on",scripts[i].name===cur);});
+    listEl.replaceChildren(t);
   }
   async function refreshList(){const r=await tryGet("/api/scripts");scripts=(r&&r.scripts)||[];paintList();paintStatus();}
   async function confirmDiscard(){return !dirty||await confirmModal("The editor has unsaved changes. Discard them?","Unsaved changes");}
   async function open(name){
-    if(name!==cur&&!await confirmDiscard())return;
+    if(name!==cur&&!await confirmDiscard())return false;
     try{const r=await fetch(API+"/api/fs/download?path="+encP(SCR_DIR+"/"+name),{cache:"no-store"});if(!r.ok)throw new Error("HTTP "+r.status);
-      ed.set(await r.text());cur=name;nameIn.value=name.replace(/\.be$/,"");dirty=false;showOut("",true);paintStatus();}
-    catch(e){toast("Could not open "+name+": "+e.message,"err");}
+      ed.set(await r.text());cur=name;nameIn.value=name.replace(/\.be$/,"");dirty=false;showOut("",true);paintStatus();return true;}
+    catch(e){toast("Could not open "+name+": "+e.message,"err");return false;}
   }
   async function newScript(ex){
     if(!await confirmDiscard())return;
     const nIn=h("input",{class:"mono",value:ex?ex.id:"",placeholder:"my_script",maxlength:36});
     const sel=ex?null:h("select",{},h("option",{value:""},"Blank"),...examples.map(x=>h("option",{value:x.id},x.title)));
-    const ok=await new Promise(res=>modal({title:ex?"New script from \u201c"+ex.title+"\u201d":"New script",body:h("div",{},
+    const ok=await new Promise(res=>modal({title:ex?"New script from “"+ex.title+"”":"New script",body:h("div",{},
       h("div",{class:"frow"},h("label",{},"Name"),h("div",{class:"ctl"},h("div",{class:"rowflex",style:"gap:4px;align-items:center"},nIn,h("span",{class:"dim"},".be")),h("div",{class:"help"},"Letters, digits, _ and -; up to 36 characters."))),
       sel?h("div",{class:"frow"},h("label",{},"Start from"),h("div",{class:"ctl"},sel,h("div",{class:"help"},"An example is a complete, commented program you can run as it is and then change."))):null),
       actions:[{label:"Cancel",fn:()=>res(false)},{label:"Create",kind:"pri",fn:()=>res(true)}]}));
@@ -191,7 +212,7 @@ PAGES.__scripts=async(view,sub)=>{
     const id=ex?ex.id:sel.value;let src="# "+name+".be\nlog('hello from "+name+"')\n";
     if(id){try{src=await exampleSrc(id);}catch(e){toast("Could not load the example: "+e.message,"err");return;}}
     cur=null;nameIn.value=name;ed.set(src);dirty=true;showOut("",true);paintStatus();
-    if(subNav)subNav.show("editor");ed.focus();
+    goTab("editor");ed.focus();
   }
   async function save(){
     const name=cleanName(nameIn.value);if(!name){toast("Pick a name: letters, digits, _ and -","err");nameIn.focus();return false;}
@@ -209,7 +230,7 @@ PAGES.__scripts=async(view,sub)=>{
     let first=null;
     for(const ln of txt.replace(/\n$/,"").split("\n")){
       const m=ln.match(/string:(\d+):/);
-      const el=h("div",{class:(!ok&&(/^ERROR:|_error:|traceback|^\t|string:\d+:/.test(ln)))?"er":""});
+      const el=h("div",{class:(!ok&&(/^ERROR:|_error:|traceback|^\t|string:\d+:/.test(ln)))?"er":(/^(finished in|failed after) /.test(ln)?"dim":"")});
       if(m){const i=ln.indexOf(m[0]);el.append(ln.slice(0,i),h("a",{href:"#",title:"Go to this line",onclick:e=>{e.preventDefault();ed.goto(Number(m[1]));}},m[0]),ln.slice(i+m[0].length));if(first==null)first=Number(m[1]);}
       else el.textContent=ln;
       outEl.append(el);
@@ -226,7 +247,7 @@ PAGES.__scripts=async(view,sub)=>{
       if(text.length>((ref&&ref.limits&&ref.limits.src_max)||8192)-64){if(!await save())throw new Error("save first: the script is longer than the inline limit");body={name:cur};}
       const r=await api("/api/scripts/run",{method:"POST",body});
       const secs=((Date.now()-t0)/1000).toFixed(1);
-      showOut((r.output||"")+(r.ok?"":"")+"\n"+(r.ok?"— finished in "+secs+" s":"— failed after "+secs+" s"),r.ok!==false);
+      showOut((r.output||"")+"\n"+(r.ok?"finished in "+secs+" s":"failed after "+secs+" s"),r.ok!==false);
     }catch(e){showOut("ERROR: "+e.message,false);}
     running=false;paintStatus();
   }
@@ -237,37 +258,38 @@ PAGES.__scripts=async(view,sub)=>{
     catch(e){showOut("ERROR: "+e.message,false);}
   }
   async function stop(){try{await api("/api/scripts/stop",{method:"POST"});toast("Stop requested","ok");}catch(e){toast(e.message,"err");}}
-  function download(){if(!cur)return;h("a",{href:API+"/api/fs/download?path="+encP(SCR_DIR+"/"+cur),download:cur}).click();}
-  async function del(){
-    if(!cur||!await confirmModal("Delete "+cur+" from the WiCAN?","Delete script"))return;
-    try{await api("/api/fs/file?path="+encP(SCR_DIR+"/"+cur),{method:"DELETE"});toast("Deleted "+cur,"ok");cur=null;nameIn.value="";ed.set("");dirty=false;showOut("",true);await refreshList();}
+  function download(name){h("a",{href:API+"/api/fs/download?path="+encP(SCR_DIR+"/"+name),download:name}).click();}
+  async function del(name){
+    if(!await confirmModal("Delete "+name+" from the WiCAN?","Delete script"))return;
+    try{await api("/api/fs/file?path="+encP(SCR_DIR+"/"+name),{method:"DELETE"});toast("Deleted "+name,"ok");
+      if(cur===name){cur=null;nameIn.value="";ed.set("");dirty=false;showOut("",true);}
+      await refreshList();}
     catch(e){toast("Delete failed: "+e.message,"err");}
   }
-  /* ---- editor pane ---- */
-  const offBanner=(!st&&!ref)?banner("crit","alert","The scripting service did not answer. Reload the page in a moment."):enabled?null:banner("warn","alert","Scripting is off: scripts can be written and saved, but not run. Turn it on under Settings below, then Submit Changes (the WiCAN restarts).");
+  /* ---- editor tab: the scripts table, then the editor card ---- */
+  const offBanner=(!st&&!ref)?banner("crit","alert","The scripting service did not answer. Reload the page in a moment."):enabled?null:banner("warn","alert","Scripting is off: scripts can be written and saved, but not run. Turn it on under ",tabLink("settings","Settings"),", then Submit Changes (the WiCAN restarts).");
   const installBox=window.CodeMirror?null:h("div",{class:"installbox"},"The code editor (CodeMirror 5, 210 KB, MIT) adds highlighting, line numbers, bracket matching and autocomplete. It is downloaded once by this browser and stored on the WiCAN. ",
     h("button",{class:"btn sm pri",type:"button",onclick:async()=>{if(await installResource(UI_RES.cm)){installBox.remove();ed.upgrade(ref);}}},ic("download"),"Install (210 KB)"));
-  const newBtn=h("button",{class:"btn sm pri",type:"button",onclick:()=>newScript(null)},ic("plus"),"New");
-  paneEd.append(offBanner,installBox,
-    h("div",{class:"scr-grid"},
-      h("div",{},h("div",{class:"subhead",style:"margin-top:0;justify-content:space-between"},"Stored scripts",newBtn),listEl,
-        h("div",{class:"help",style:"margin-top:12px;grid-column:auto"},"Files under ",h("code",{},SCR_DIR),". A rule runs one with the action ",h("code",{},"script.run"),"; see the ",h("a",{href:"#/scripts/reference"},"Reference"),".")),
-      h("div",{},bar,edHost,outEl,hintEl)));
-  try{const rows=await settingsForm("script_engine",["enabled","max_runtime_ms","allow_reflash"],{advanced:["allow_reflash"]});paneEd.append(section("Settings","Scripting is off until you turn it on and submit (restart).",...rows));}
-  catch(e){paneEd.append(banner("warn","alert","The scripting settings are unavailable: "+e.message));}
+  const newBtn=h("button",{class:"btn sm pri",type:"button",onclick:()=>newScript(null)},ic("plus"),"New script");
+  const listCard=sectionTools("Stored scripts",[newBtn],listEl,
+    h("div",{class:"help",style:"grid-column:auto;margin-top:10px"},"Files under ",h("code",{},SCR_DIR),". A rule runs one with the action ",h("code",{},"script.run"),"; see the ",tabLink("reference","Reference"),"."));
+  const edCard=h("div",{class:"section"},
+    h("div",{class:"legend"},h("h3",{},"Editor"),fileEl,h("span",{class:"tools"},statusEl)),
+    h("div",{class:"body"},bar,edHost,outEl,hintEl,keys));
+  paneEd.append(offBanner,installBox,listCard,edCard);
   ensureResource(UI_RES.cm).then(ok=>{if(ok){if(installBox)installBox.remove();ed.upgrade(ref);}});   /* not awaited: the textarea works meanwhile */
   await refreshList();
   if(st&&st.busy){running=true;paintStatus();outEl.replaceChildren(h("span",{class:"dim"},"A script is running (started elsewhere). Stop ends it."));}
-  /* ---- examples pane ---- */
+  /* ---- examples tab ---- */
   paneEx.append(h("p",{class:"desc",style:"margin:0 0 12px"},"Complete, commented programs. Open one, run it as it is, then change it. They live in the firmware, so your copies are yours to edit."),
     examples.length?h("div",{class:"xcards"},...examples.map(x=>h("div",{class:"xcard"},h("h4",{},x.title),h("p",{},x.desc),
       h("div",{class:"rowflex"},chip(SCR_LEVEL[x.level]||"Example",""),x.needs?chip(SCR_NEEDS[x.needs]||x.needs,"warn"):chip("Runs anywhere","ok"),h("span",{class:"dim",style:"font-size:11px;margin-left:auto"},fmtK(x.size))),
       h("div",{class:"rowflex"},h("button",{class:"btn sm pri",type:"button",onclick:()=>newScript(x)},ic("code"),"Open in the editor"))))):h("div",{class:"empty"},"The firmware did not report any examples."));
-  /* ---- reference pane ---- */
+  /* ---- reference tab ---- */
   const lim=(ref&&ref.limits)||{};
   const search=h("input",{placeholder:"filter by name or description…",style:"max-width:340px",oninput:()=>paintRef(search.value.trim().toLowerCase())});
   const refList=h("div",{});
-  const insertInto=b=>{ed.insert(b.ex+"\n");if(subNav)subNav.show("editor");ed.focus();};
+  const insertInto=b=>{ed.insert(b.ex+"\n");goTab("editor");ed.focus();};
   function paintRef(q){
     refList.replaceChildren(...groups.map(g=>{const items=binds.filter(b=>b.group===g.id&&(!q||(b.name+" "+b.doc+" "+b.sig).toLowerCase().includes(q)));
       return items.length?h("div",{},h("div",{class:"subhead"},g.title),...items.map(b=>h("div",{class:"ref-item"},
@@ -278,7 +300,7 @@ PAGES.__scripts=async(view,sub)=>{
   paintRef("");
   paneRef.append(
     ref?h("div",{},
-      h("p",{class:"desc",style:"margin:0 0 10px"},(ref.language||"Berry")+". Inline runs up to "+fmtK(lim.src_max||8192)+", stored scripts up to "+fmtK(lim.file_max||65536)+", output up to "+fmtK(lim.out_max||4096)+" per run, sleep_ms up to "+((lim.sleep_max_ms||60000)/1000)+" s per call, runtime budget "+(lim.max_runtime_ms||0)+" ms (Settings). Responses longer than "+(lim.resp_max_bytes||128)+" bytes are cut in the returned hex."),
+      h("p",{class:"desc",style:"margin:0 0 10px"},(ref.language||"Berry")+". Inline runs up to "+fmtK(lim.src_max||8192)+", stored scripts up to "+fmtK(lim.file_max||65536)+", output up to "+fmtK(lim.out_max||4096)+" per run, sleep_ms up to "+((lim.sleep_max_ms||60000)/1000)+" s per call, runtime budget "+(lim.max_runtime_ms||0)+" ms (",tabLink("settings","Settings"),"). Responses longer than "+(lim.resp_max_bytes||128)+" bytes are cut in the returned hex."),
       section("Functions",null,search,refList),
       section("Globals a script can read",null,kv((ref.globals||[]).map(g=>[h("code",{},g.name),g.doc]))),
       section("Berry in a minute",null,h("div",{class:"prim"},...(ref.primer||[]).map(x=>h("div",{},h("b",{},x.title),h("pre",{},x.code),x.note?h("div",{class:"note"},x.note):null)))),
@@ -286,6 +308,11 @@ PAGES.__scripts=async(view,sub)=>{
         h("a",{href:"#/events/rules"},"Rules & Events → Add Rule"),": pick the trigger under When, set Do to ",h("code",{},(ref.rules&&ref.rules.action)||"script.run")," and With to ",h("code",{},(ref.rules&&ref.rules.with)||'{"name": "<script>"}'),". The trigger reaches the script as the evt_* globals above; whatever the script emits with emit('script', 'done', 'value', …) is the ",h("code",{},(ref.rules&&ref.rules.event)||"script.done")," event another rule can act on (${value}). An event-triggered run blocks the rules engine while it runs, so keep those scripts short.")),
       section("When something fails",null,kv((ref.errors||[]).map(e=>[h("code",{},e.match),e.hint]))))
     :banner("warn","alert","The scripting reference is unavailable (older firmware?)."));
+  /* ---- settings tab ---- */
+  try{const rows=await settingsForm("script_engine",["enabled","max_runtime_ms","allow_reflash"],{advanced:["allow_reflash"]});
+    paneSet.append(section("Scripting",enabled?"Scripting is on. Changes here apply after Submit Changes (the WiCAN restarts).":"Scripting is off until you turn it on and Submit Changes (the WiCAN restarts).",...rows,
+      h("div",{class:"help",style:"grid-column:auto;margin-top:8px"},"Scripts can do what rules can do: talk to ECUs over OBD-II and UDS, send CAN frames, scan trouble codes and publish events. ECU reprogramming services stay blocked unless Allow ECU flashing is on.")));}
+  catch(e){paneSet.append(banner("warn","alert","The scripting settings are unavailable: "+e.message));}
   return null;
 };
 })();

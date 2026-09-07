@@ -14,6 +14,16 @@
 
 #include "data_logger_private.h"
 
+/* test_recover.c */
+void test_text_keep_whole_when_newline_terminated(void);
+void test_text_keep_drops_the_torn_last_line(void);
+void test_wdl_scan_counts_complete_records_only(void);
+void test_wdl_scan_flags_garbage(void);
+void test_corrupt_names_round_trip(void);
+void test_record_sanity(void);
+void test_ring_sanity_and_fill_recovery(void);
+void test_crc32_known_vector(void);
+
 void setUp(void)
 {
 }
@@ -415,5 +425,14 @@ void app_main(void)
     RUN_TEST(test_mf4_prelude_structure);
     RUN_TEST(test_mf4_record_golden);
     RUN_TEST(test_blf_builders_golden);
+    /* recovery helpers (test_recover.c, ROBUSTNESS.md) */
+    RUN_TEST(test_text_keep_whole_when_newline_terminated);
+    RUN_TEST(test_text_keep_drops_the_torn_last_line);
+    RUN_TEST(test_wdl_scan_counts_complete_records_only);
+    RUN_TEST(test_wdl_scan_flags_garbage);
+    RUN_TEST(test_corrupt_names_round_trip);
+    RUN_TEST(test_record_sanity);
+    RUN_TEST(test_ring_sanity_and_fill_recovery);
+    RUN_TEST(test_crc32_known_vector);
     UNITY_END();
 }

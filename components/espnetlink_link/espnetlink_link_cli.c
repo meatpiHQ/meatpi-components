@@ -91,6 +91,15 @@ static int cmd_espnetlink(int argc, char **argv)
                    (int)st.usb_attached, st.pair_state,
                    (unsigned long)st.cuts, (unsigned long)st.vbus_cycles,
                    (unsigned long)st.pair_errors);
+    if (st.pair_blocked_factory_pw || st.last_error[0] != '\0')
+    {
+        cmdline_printf("  pairing: %s%s%s\n",
+                       st.pair_blocked_factory_pw
+                           ? "ON HOLD (factory AP password)" : "",
+                       (st.pair_blocked_factory_pw &&
+                        st.last_error[0] != '\0') ? " | " : "",
+                       st.last_error);
+    }
     cmdline_printf("  gps: valid=%d age=%lu ms | dongle: valid=%d lte=%d "
                    "rssi=%d op='%s' net=%s fix=%d usb_data=%d | polls=%lu "
                    "fail=%lu link_ups=%lu\n",

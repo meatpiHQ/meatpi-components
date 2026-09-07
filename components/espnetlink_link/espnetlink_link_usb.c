@@ -49,6 +49,7 @@
 #include "http_client_manager.h"
 #include "restart_tracker.h"
 #include "usb_host_manager.h"
+#include "wifi_manager.h"
 
 #include "espnetlink_link.h"
 #include "espnetlink_link_core.h"
@@ -524,6 +525,19 @@ void espnl_usb_tick(bool ap_stale)
         {
             ESP_LOGI(TAG, "usb link up (%04x:%04x, %s)", st.vid, st.pid,
                      st.ip);
+            if (is_espnl && cfg->mode == ESPNETLINK_MODE_WIFI_MODEM &&
+                cfg->ssid[0] == '\0' &&
+                wifi_manager_ap_password_is_factory())
+            {
+                /* zero-touch is held: the key store would be refused by
+                 * wifi_manager's factory-password gate (2026-09-07) —
+                 * don't identify/cut/churn; the password change restarts
+                 * the device and pairing then runs by itself. */
+                ESP_LOGW(TAG, "ESPNetLink attached but pairing is on "
+                         "hold (factory AP password): set a new AP "
+                         "password in the web UI to pair");
+                return;
+            }
             if (is_espnl)
             {
                 /* a fresh enumeration = the dongle (re)booted: the AP

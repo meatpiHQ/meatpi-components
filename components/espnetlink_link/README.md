@@ -81,6 +81,19 @@ bench 2026-08-24) — polls are held 15 s meanwhile.
 
 ## Fresh devices (out of the box)
 
+**Pairing hold (2026-09-07):** `wifi_manager` refuses any settings save
+that keeps the factory AP password, and the zero-touch key store is such
+a save. While the AP password is still the factory one, the link HOLDS
+pairing instead of churning: the machine stays `idle` (no cut, no VBUS
+cycles), `pair_blocked_factory_pw` is set in the status/HTTP surface, the
+web UI shows a warning on the ESPNetLink card, and the CLI prints
+`pairing: ON HOLD (factory AP password)`. Changing the AP password
+reboots the device (reboot-to-apply) and pairing then completes by
+itself. Any store failure is also recorded verbatim in `last_error`
+(status/HTTP/UI) — the field failure surfaced only as the misleading
+"Not an ESPNetLink / gave up" label before.
+
+
 A fresh WiCAN boots with `wifi_manager.mode=ap` and no STA networks; the
 pairing store flips it to `apsta` and the one reboot after the cut
 applies it. The user is typically joined to the WiCAN's AP with a phone

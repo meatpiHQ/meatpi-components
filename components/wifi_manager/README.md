@@ -147,6 +147,15 @@ so a PSRAM stack is compliant with §2.
 
 `wifi_manager_register_cli()` (main, CLI builds) registers the `wifi [scan]` command with cmdline_manager (`wifi_manager_cli.c`).
 
+## Factory AP password (2026-09-07)
+
+`on_validate` refuses any save that keeps the factory AP password once
+the device is up (the boot pass still accepts it, or a fresh device could
+never come up). `wifi_manager_ap_password_is_factory()` lets consumers
+that write wifi_manager themselves (espnetlink_link's pairing store)
+detect the state and hold off with a clear warning instead of failing
+opaquely (field-hit 2026-09-07).
+
 ## AP-client pause policy (2026-08-31)
 
 While a client sits on the WiCAN's own AP, a STA (re)connect that hops

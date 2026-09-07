@@ -437,6 +437,16 @@ static esp_err_t wm_on_apply(const cJSON *settings)
     return ESP_OK;
 }
 
+
+bool wifi_manager_ap_password_is_factory(void)
+{
+    const wm_config_t *c = wm_settings_config();
+
+    return c != NULL &&
+           strcmp((const char *)c->ap.password,
+                  WM_AP_PASSWORD_DEFAULT) == 0;
+}
+
 static esp_err_t wm_on_validate(const cJSON *settings, char *err,
                                 size_t err_len)
 {

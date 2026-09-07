@@ -108,3 +108,8 @@ void espnl_engine_note_device_id(const char *device_id);
  *  hold the polls and re-join its AP (the association is dead either
  *  way). No-op unless the AP is the current uplink. */
 void espnl_engine_dongle_rebooting(void);
+
+/** Record the last pairing failure for the status/HTTP/UI surface
+ *  ("" clears). Any store/identify failure should name itself here —
+ *  the pair_state label alone proved misleading (field 2026-09-07). */
+void espnl_status_set_last_error(const char *msg);

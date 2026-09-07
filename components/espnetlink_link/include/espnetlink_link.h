@@ -102,6 +102,10 @@ typedef struct
     uint32_t cuts;             /**< successful usb_data cuts             */
     uint32_t vbus_cycles;      /**< recovery power cycles                */
     uint32_t pair_errors;      /**< failed identify/key/cut sequences    */
+    bool     pair_blocked_factory_pw; /**< zero-touch held: the AP still
+                                           has the factory password (the
+                                           store would be refused)       */
+    char     last_error[64];   /**< last pairing failure text, "" = none */
     /* GPS (last poll) */
     bool     gps_valid;
     uint32_t gps_age_ms;       /**< since the last valid fix; 0 if none  */

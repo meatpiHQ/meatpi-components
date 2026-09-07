@@ -168,6 +168,14 @@ esp_err_t wifi_manager_sta_reconnect(void);
 /** Whether the BOOT-CONFIGURED mode includes STA / AP (regardless of any
  *  runtime suspension) — policy inputs for interface_manager. */
 bool wifi_manager_mode_has_sta(void);
+
+/** True while the APPLIED AP password is still the factory default. The
+ *  settings on_validate gate (2026-09-07) refuses any save that keeps it,
+ *  so consumers that write wifi_manager themselves (espnetlink_link's
+ *  zero-touch pairing store) hold off and surface a warning instead of
+ *  failing opaquely (field-hit 2026-09-07: a fresh device reported
+ *  "Not an ESPNetLink / gave up"). Changes only via reboot-to-apply. */
+bool wifi_manager_ap_password_is_factory(void);
 bool wifi_manager_mode_has_ap(void);
 
 /**

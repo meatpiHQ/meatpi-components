@@ -178,6 +178,14 @@ void espnl_engine_note_device_id(const char *device_id)
     xSemaphoreGive(s_lock);
 }
 
+void espnl_status_set_last_error(const char *msg)
+{
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    snprintf(s_st.last_error, sizeof(s_st.last_error), "%s",
+             msg != NULL ? msg : "");
+    xSemaphoreGive(s_lock);
+}
+
 void espnl_engine_dongle_rebooting(void)
 {
     /* the dongle is going down (VBUS cycle) or just came back up (its
@@ -628,10 +636,24 @@ esp_err_t espnetlink_link_start(void)
     s_st.mode = cfg->mode;
     s_st.auto_pair = cfg->auto_pair;
     s_st.paired = cfg->ssid[0] != '\0';
+    /* reboot-to-apply: the AP password cannot change within this boot,
+     * so the hold is a boot-time fact */
+    s_st.pair_blocked_factory_pw =
+        cfg->enabled && !s_st.paired &&
+        cfg->mode == ESPNETLINK_MODE_WIFI_MODEM &&
+        wifi_manager_ap_password_is_factory();
+    s_st.last_error[0] = '\0';
     strncpy(s_st.ssid, cfg->ssid, sizeof(s_st.ssid) - 1);
     strncpy(s_st.device_id, cfg->device_id, sizeof(s_st.device_id) - 1);
     xSemaphoreGive(s_lock);
 
+    if (s_st.pair_blocked_factory_pw)
+    {
+        ESP_LOGW(TAG, "zero-touch pairing is ON HOLD: the access point "
+                 "still uses the factory password. Set a new AP password "
+                 "in the web UI; the restart completes the pairing "
+                 "automatically.");
+    }
     if (!cfg->enabled)
     {
         ESP_LOGI(TAG, "disabled");

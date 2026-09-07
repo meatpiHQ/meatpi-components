@@ -3159,11 +3159,12 @@ PAGES.usb=async(view,sub)=>{
     if(!haveNl){nlKv.replaceChildren(h("div",{class:"help"},"ESPNetLink support is not in this build."));return;}
     const e=nl,ps=PST[(e.usb||{}).pair_state]||[(e.usb||{}).pair_state||"—",""],up=UPL[e.uplink]||[e.uplink,""];
     const d=e.dongle||{},g=e.gps||{};
-    nlKv.replaceChildren(kv([
+    const nlRows=[
       ["Enabled",e.enabled?"yes":"no"],
       ["Mode",e.mode==="usb_ncm"?"USB Ethernet (NCM)":e.mode==="usb_rndis"?"USB Ethernet (RNDIS)":"WiFi modem (USB = power only)"],
       ["Uplink",chip(up[0],up[1])],
       ["Pairing",chip(ps[0],ps[1])],
+      ...(e.last_error&&!e.paired?[["Last pairing error",chip(e.last_error,"warn")]]:[]),
       ["Dongle AP",e.ssid||"not paired"],
       ["Device ID",e.device_id||"—"],
       ["Dongle address",e.host||"—"],
@@ -3171,7 +3172,10 @@ PAGES.usb=async(view,sub)=>{
       ["LTE",d.valid?(d.lte_connected?chip((d.operator||"connected")+(d.network_type?" · "+d.network_type:"")+(d.rssi_dbm?" · "+d.rssi_dbm+" dBm":""),"ok"):chip("not connected","warn")):"—"],
       ["GPS (dongle)",d.valid?(d.gps_fix?chip("fix","ok"):chip("no fix","")):"—"],
       ["GPS (cached fix)",g.valid?(g.satellites+" sats · "+(g.age_ms/1000).toFixed(1)+" s old"):"—"],
-      ["Counters","cuts "+((e.usb||{}).cuts??0)+" · VBUS cycles "+((e.usb||{}).vbus_cycles??0)+" · errors "+((e.usb||{}).errors??0)+" · polls "+(e.polls??0)+" / failed "+(e.failures??0)]]));
+      ["Counters","cuts "+((e.usb||{}).cuts??0)+" · VBUS cycles "+((e.usb||{}).vbus_cycles??0)+" · errors "+((e.usb||{}).errors??0)+" · polls "+(e.polls??0)+" / failed "+(e.failures??0)]];
+    nlKv.replaceChildren(
+      ...(e.pair_blocked_factory_pw?[note("warn","Zero-touch pairing is on hold: the access point still uses the factory password. Set a new AP password (see the banner above or the WiFi page); the device restarts and pairing then completes automatically.")]:[]),
+      kv(nlRows));
   }
   async function repair(){
     if(!await confirmModal("Power-cycle the dongle's USB rail so it re-enumerates and the WiCAN reads its AP key again? The dongle reboots (GPS re-acquires).","Re-pair dongle"))return;

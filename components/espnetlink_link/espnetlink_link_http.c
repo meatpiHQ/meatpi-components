@@ -93,6 +93,9 @@ static esp_err_t status_handler(httpd_req_t *req)
                           st.uplink == ESPNETLINK_UPLINK_ESPNETLINK_AP ||
                           st.uplink == ESPNETLINK_UPLINK_ESPNETLINK_USB);
     cJSON_AddStringToObject(o, "host", st.host);
+    cJSON_AddBoolToObject(o, "pair_blocked_factory_pw",
+                          st.pair_blocked_factory_pw);
+    cJSON_AddStringToObject(o, "last_error", st.last_error);
 
     cJSON *u = cJSON_AddObjectToObject(o, "usb");
 

@@ -118,8 +118,12 @@ static esp_err_t persist(const char *name, cJSON *o, bool *changed)
     {
         ESP_LOGE(TAG, "pair: %s set: %s %s", name, esp_err_to_name(err),
                  errbuf);
+        espnl_status_set_last_error(errbuf[0] != '\0'
+                                        ? errbuf
+                                        : esp_err_to_name(err));
         return err;
     }
+    espnl_status_set_last_error("");
     if (did && changed != NULL)
     {
         *changed = true;

@@ -97,6 +97,9 @@ typedef struct
     uint32_t frames_written;     /**< frames committed since boot       */
     uint32_t frames_dropped;     /**< frame-ring overflows since boot   */
     uint32_t can_rotations;      /**< CAN-file rotations since boot     */
+    /* robustness (2026-09-07, ROBUSTNESS.md) */
+    uint32_t salvaged;           /**< records carried over a warm reset      */
+    uint32_t corrupt;            /**< *.corrupt files set aside on the card   */
 } data_logger_stats_t;
 
 /** Register descriptors (settings/log/events). No storage access. */

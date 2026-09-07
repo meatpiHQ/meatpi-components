@@ -86,9 +86,18 @@ apart.
 
 `cli` (bool, default true): register this component's console command(s) with cmdline_manager on the settings boot apply (reboot-to-apply). Ownership: the component registers its own commands — main wires nothing (2026-07-05).
 
-`enabled` (bool, true) · `smd` (bool, true) · `wom` (bool, true) ·
-`smd_sensitivity` (0..4, default 0) · `wom_threshold` (1..255, default 8
-≈ 31 mg) · `stationary_s` (1..3600, default 3).
+`enabled` (bool, true) · `smd` (bool, true) · `wom` (bool, **false**) ·
+`smd_sensitivity` (0..4, default 0) · `wom_threshold` (1..255, default 32
+≈ 125 mg) · `stationary_s` (1..3600, default 3).
+
+Defaults decision (meatpi 2026-09-07): the IMU itself stays ON, but
+anything a user reads as sleep/wake related ships OFF — WoM ("Wake on
+motion" in the UI) defaults to off, and its threshold to a real bump
+(32 ≈ 125 mg, was 8 ≈ 31 mg) so enabling it is not twitchy. The web UI
+flags an enabled WoM on the Power Saving page and spells out what it
+does: `imu.bump` events for rules/MQTT — it does NOT wake the WiCAN from
+sleep_manager's light sleep (timer/voltage wake only). Defaults only:
+devices with stored settings keep their values (no schema bump).
 
 History: v1 = WoM only, v2 = SMD only, v3 = both. Both migrations are
 pass-throughs (`imu_manager_settings.c`, pure, host-tested) — every

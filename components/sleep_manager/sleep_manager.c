@@ -170,11 +170,14 @@ static void nap_and_verify(void)
     }
 }
 
-static void wake_reboot(const char *why)
+/* The planned reason is what the next boot reports (restart history, the web
+ * UI's "Last wake-up") — a voltage recovery and the periodic check-in must be
+ * told apart (meatpi 2026-09-07). */
+static void wake_reboot(const char *why,
+                        restart_tracker_planned_reason_t reason)
 {
     ESP_LOGI(TAG, "waking by reboot (%s)", why);
-    restart_tracker_restart(RESTART_TRACKER_PLANNED_REASON_POWER_WAKE,
-                            RESTART_TRACKER_SOURCE_SLEEP_MODE, 0);
+    restart_tracker_restart(reason, RESTART_TRACKER_SOURCE_SLEEP_MODE, 0);
 }
 
 /* boot-loop guard: repeated unexpected resets on a sagging battery
@@ -253,7 +256,8 @@ static void state_task(void *arg)
                 nap_and_verify();
             }
 
-            wake_reboot("test timer");
+            wake_reboot("test timer", /* stands in for a voltage wake */
+                        RESTART_TRACKER_PLANNED_REASON_POWER_WAKE);
         }
 
         /* LAST-LINE battery defense (legacy parity, meatpi 2026-07-21):
@@ -307,11 +311,13 @@ static void state_task(void *arg)
                 break;
 
             case SM_ACT_WAKE_REBOOT:
-                wake_reboot("voltage recovered");
+                wake_reboot("voltage recovered",
+                            RESTART_TRACKER_PLANNED_REASON_POWER_WAKE);
                 break;
 
             case SM_ACT_PERIODIC_WAKE:
-                wake_reboot("periodic check-in");
+                wake_reboot("periodic check-in",
+                            RESTART_TRACKER_PLANNED_REASON_PERIODIC_WAKE);
                 break;
 
             default:

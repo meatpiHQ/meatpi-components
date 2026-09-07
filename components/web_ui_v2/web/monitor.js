@@ -176,9 +176,10 @@ const fmtVal=v=>{if(!Number.isFinite(v))return"?";const a=Math.abs(v);return a>=
 
 PAGES.__monitor=async(view,sub)=>{
   const prefs=loadPrefs();
-  /* opens PAUSED (Ali, 2026-09-07: "it should be paused by default"): the socket
-     connects, but nothing is counted or listed until Resume */
-  const S={alive:true,ws:null,connected:false,manualOff:false,reT:null,paused:true,filter:"",sortKey:"id",
+  /* opens DISCONNECTED (Ali, 2026-09-07: "it should be disconnected by default"):
+     no socket is opened until Connect… in the page header is confirmed; from then
+     on the stream runs (Pause is the user's) and reconnects until Disconnect */
+  const S={alive:true,ws:null,connected:false,manualOff:true,reT:null,paused:false,filter:"",sortKey:"id",
     rx:new Map(),rxDirty:true,trace:[],traceNew:[],traceRebuild:true,traceOn:true,
     traceLimit:TRACE_LIMITS.includes(prefs.traceLimit)?prefs.traceLimit:1000,
     selRx:null,selTx:0,colW:validColW(prefs.colW)||{rx:COLW.rx.slice(),tx:COLW.tx.slice(),tr:COLW.tr.slice()},
@@ -676,7 +677,7 @@ PAGES.__monitor=async(view,sub)=>{
   tabbedPage(body,"monitor",[{id:"monitor",el:paneMon},{id:"trace",el:paneTr},{id:"settings",el:paneSet}],sub);
   paintTx();paintRx();paintTrace();paintStatus();paintDevice();paintDbcCard();
   loadWiring();loadSigs();
-  connect();
+  /* no connect() here: the page starts offline until Connect… */
   const fastT=setInterval(()=>{const cut=performance.now()-1000;if(S.rateWin.length&&S.rateWin[0]<cut)S.rateWin=S.rateWin.filter(t=>t>=cut);
     const tab=curTab();if(tab==="monitor"){paintRx();if(S.decodeDirty){S.decodeDirty=false;paintDecode();}}else if(tab==="trace")paintTrace();},200);
   const cycT=setInterval(()=>{if(!S.connected)return;const now=performance.now();

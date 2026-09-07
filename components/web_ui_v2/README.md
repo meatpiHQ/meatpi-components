@@ -308,6 +308,19 @@ green afterwards). What changed, and what to keep doing:
   password)" is gone from AP security (firmware enum v7 with an
   open → auto migration; the page also filters it out of an older
   schema). Probe: `probe_wifi_mode.mjs`.
+- Radio Arbitration + AP auto-off (meatpi 2026-09-07: "these should be in
+  wifi settings. And we should recommend to shutdown AP if station is
+  connected"): the interface_manager card (Enabled · pause the station while
+  a phone is connected over Bluetooth · pause the access point while a phone
+  is connected over Bluetooth) left the Advanced page for a fourth card in
+  Settings, WiFi, with a note that it only acts while Bluetooth is on.
+  `wifi_manager.ap_auto_disable` (drop the AP once the station has an IP,
+  back on station loss) left the AP card's advanced fold, is labelled "Turn
+  the access point off while the station is connected" with a recommending
+  help line, and a banner under the mode tiles ("Recommended: turn the access
+  point off while the station is connected", button "Turn it on" = stage
+  `ap_auto_disable:true`) shows whenever Access point + Station is selected
+  without it. Probe: `probe_wifi_mode.mjs`.
 - Factory AP password (meatpi 2026-09-07: "we should not allow submitting
   the password if it is still the default"): while `/api/wifi/status`
   reports `ap_default_password`, the header shows "Factory AP password:
@@ -343,8 +356,9 @@ green afterwards). What changed, and what to keep doing:
   status bar, connect dialog; its own light/dark palette from the design
   (`.pmv` tokens, prefixed `--p*` so the app's tokens stay untouched);
   shipped transmit rows are manual (nothing goes on a vehicle bus by
-  itself); the page OPENS PAUSED (Ali: "it should be paused by default";
-  the socket connects, Resume starts counting and listing); CAN FD
+  itself); the page OPENS DISCONNECTED (Ali: "it should be disconnected
+  by default": no socket until Connect… in the page header is confirmed,
+  then the stream runs and reconnects until Disconnect); CAN FD
   controls render disabled (the TWAI controller has no FD);
   prefs in localStorage `wican.canmon.v1`. Probe: `probe_monitor.mjs` (mock
   `__mockState.canEnabled`, `wsCanPeriod`, `wsSent`, `wsCanRefuse`,
@@ -407,7 +421,8 @@ shown as unavailable), DECODING (DBC files, upload), SETTINGS FILE
 (save/load JSON); status bar connected · bus · load · rx/s · frames · err ·
 TEC/REC; page-header connection chip + Connect/Disconnect. Speaks **slcan
 over `/ws/can`**; chunk `web/monitor.js`) · Terminal (console `/ws/cli` or
-ELM327 `/ws/obd`) · Advanced (IMU · radio arbitration — no OBD chip card
+ELM327 `/ws/obd`) · Advanced (IMU only: radio arbitration moved to Settings,
+WiFi on 2026-09-07 — no OBD chip card
 since 2026-09-07)
 · System (reboot · backup/restore · restart history · factory reset ·
 **Certificates** (cert_manager sets: list w/ part flags, per-part PEM

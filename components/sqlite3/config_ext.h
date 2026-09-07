@@ -1,6 +1,6 @@
 #define BUILD_sqlite -DNDEBUG
 #define SQLITE_CORE                          1
-#define SQLITE_NO_SYNC                       1
+#define SQLITE_NO_SYNC                       0 /* 2026-09-07: fsync ON — see data_logger/ROBUSTNESS.md */
 #define YYSTACKDEPTH                        20
 #define SQLITE_TEMP_STORE                    1
 #define SQLITE_SYSTEM_MALLOC                 1
@@ -53,7 +53,8 @@
 #define SQLITE_OMIT_FOREIGN_KEY              1
 #define SQLITE_OMIT_GET_TABLE                1
 #define SQLITE_OMIT_INCRBLOB                 1
-#define SQLITE_OMIT_INTEGRITY_CHECK          1
+/* SQLITE_OMIT_INTEGRITY_CHECK dropped 2026-09-07: data_logger runs PRAGMA
+   quick_check on every resumed file (data_logger/ROBUSTNESS.md case 5) */
 #undef SQLITE_OMIT_LIKE_OPTIMIZATION
 #define SQLITE_OMIT_LOAD_EXTENSION           1
 #undef SQLITE_OMIT_LOCALTIME

@@ -75,7 +75,7 @@ rotation, then fetch. Rotated files are always free.
 
 `enabled` (false), `format` (sqlite|csv|binary|jsonl), `max_file_mb`
 (1–32, 4), `max_files` (1–500, 100), `batch_rows` (16–1024, 256),
-`flush_ms` (100–60000, 1000), `autopid_log` (off|changed|all, off),
+`flush_ms` (100–60000, **5000** since 2026-09-07), `autopid_log` (off|changed|all, off),
 `can_log` (false), `can_format`
 (binary|csv|sqlite|mf4|blf|candump|asc|jsonl, binary), `can_filter`
 (hex id, "" = all), `can_mask` (hex, "7FF"), `can_ext` (false),
@@ -125,10 +125,25 @@ Actions:
   synthetic `test.value` records, `logger frametest <n>` synthetic
   frames (engine throughput without a bus).
 
+## Robustness (power cuts, crashes, corrupt files)
+
+See `ROBUSTNESS.md` (2026-09-07) — the fail-case matrix and what each
+case costs. In short: sqlite commits are atomic (the port syncs again,
+`journal_mode=PERSIST` + `synchronous=FULL`); text and `.wdl` files get
+their torn tail cut on resume; a corrupt file is set aside as
+`<name>.corrupt` (fault `logger_file_corrupt`, best-effort salvage into a
+fresh file of the old name, `tools/db_recover.py` for the thorough pass)
+and logging goes on in a new file; the registry and both rings live in a
+PSRAM `.noinit` envelope so a crash or watchdog loses nothing queued
+(`salvaged` in `/api/logger`); `data_logger_stop()` is synchronous and
+an `esp_restart` shutdown hook calls it, so sleep entry and every
+planned restart close the files first.
+
 ## Testing
 
-- Host: `host_test/` (13 tests — file-name/prefix rules, hex filter
-  parse, `.wdl` + csv frame-encoder golden vectors).
+- Host: `host_test/` (20 tests — file-name/prefix rules, hex filter
+  parse, `.wdl` + csv frame-encoder golden vectors, and the recovery
+  helpers: torn text/.wdl tails, set-aside names, salvage sanity, CRC).
 - Live: `tools/testbench/data_logger_bench.py` (`test.ps1` stage
   `live datalog`) — the full format matrix with CONTENT validation
   (python sqlite3 / csv / wdl_dump byte-exact vs PCAN-sent frames),
@@ -138,11 +153,14 @@ Actions:
 
 ## Why the sqlite pragmas look like that
 
-The vendored port (components/sqlite3, PROVENANCE.md) compiles out
-xSync AND WAL; legacy toggled `journal_mode` per store call and got
-the DELETE-journal worst case. See `BENCHMARKS.md` for the measured
-matrix (legacy 130 → tuned 724 rows/s; littlefs-on-SD rejected,
-7–13× slower everywhere; 2026-07-09 end-to-end stream numbers).
+Legacy toggled `journal_mode` per store call and got the DELETE-journal
+worst case; setting the pragmas once + batching was the 5.6× fix
+(`BENCHMARKS.md`: legacy 130 → tuned 724 rows/s; littlefs-on-SD
+rejected, 7–13× slower everywhere). Until 2026-09-07 the port also
+compiled out xSync and ran `journal_mode=MEMORY` — fast, but a power cut
+mid-commit corrupted the file. Now: sync on, `journal_mode=PERSIST`,
+`synchronous=FULL` (ROBUSTNESS.md case 1); the extra fsyncs are paid
+for by the 5 s default batch.
 
 ## Footprint
 

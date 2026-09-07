@@ -283,6 +283,13 @@ bool wm_core_started(void);
 esp_err_t wm_settings_register(void);
 
 /** Boot-applied config; valid once wm_settings_is_configured(). */
+/* The factory access point password. It has to work on a fresh device (the
+ * first connection uses it) but it is public knowledge: after the boot pass
+ * any settings write that would leave it in place is refused (on_validate),
+ * /api/wifi/status reports `ap_default_password`, and the web UI stops the
+ * Submit until a new one is typed (meatpi 2026-09-07). */
+#define WM_AP_PASSWORD_DEFAULT "@meatpi#"
+
 const wm_config_t *wm_settings_config(void);
 bool wm_settings_is_configured(void);
 

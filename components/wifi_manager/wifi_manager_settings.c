@@ -45,6 +45,10 @@ static const char *TAG = "wifi_manager";
 /* Field table -> the manager generates the JSON Schema at registration
    (settings_manager.h). One row per field, one source of truth (§5). */
 /* clang-format off */
+static bool s_boot_applied; /* on_validate refuses the factory AP password
+                               only after the boot pass (a fresh device must
+                               come up with it) */
+
 static const settings_field_t WM_FIELDS[] =
 {
     /* shipping default = AP (meatpi 2026-07-05): a fresh device is an
@@ -108,6 +112,8 @@ static const settings_field_t WM_FIELDS[] =
     SETTINGS_BOOL("fallback5_trusted",  true),
     SETTINGS_STR ("ap_ssid",            32, ""),
     /* legacy default AP password (meatpi 2026-07-18 defaults pass) */
+    /* literal on purpose: the web-UI mock extractor reads this table; it is
+       the same string as WM_AP_PASSWORD_DEFAULT (wifi_manager_private.h) */
     SETTINGS_STR_LEN("ap_password",      8, 64, "@meatpi#"),
     SETTINGS_INT ("ap_channel",          1, 13, 6),
     SETTINGS_INT ("ap_max_connections",  1, 10, 4),
@@ -122,8 +128,9 @@ static const settings_field_t WM_FIELDS[] =
     SETTINGS_STR ("ap_ip",              15, "192.168.0.10"),
     SETTINGS_BOOL("ap_hidden",          false),
     SETTINGS_STR_ENUM("ap_bandwidth",   "ht20,ht40", "ht20"),
-    SETTINGS_STR_ENUM("ap_auth",        "auto,open,wpa2,wpa2wpa3,wpa3",
-                      "auto"),
+    /* v7 (meatpi 2026-09-07): an OPEN access point is not offered any more;
+       "auto" = WPA2 (the 8-character password minimum makes it so) */
+    SETTINGS_STR_ENUM("ap_auth",        "auto,wpa2,wpa2wpa3,wpa3", "auto"),
     SETTINGS_STR_ENUM("power_save",     "none,min,max", "none"),
     /* v2: while connected to a FALLBACK network, re-scan this often and
        migrate when a higher-priority one (e.g. home) is visible; 0=off */
@@ -415,6 +422,14 @@ static esp_err_t wm_on_apply(const cJSON *settings)
         }
     }
 
+    if (strcmp(c->ap.password, WM_AP_PASSWORD_DEFAULT) == 0)
+    {
+        ESP_LOGW(TAG, "the access point still uses the factory password; "
+                 "the first settings save has to replace it");
+    }
+
+    s_boot_applied = true;
+
     /* §10: don't log secrets — SSIDs only. */
     ESP_LOGI(TAG, "config applied: mode=%d sta_networks=%u ap_ssid=%s",
              (int)c->mode, (unsigned)c->sta_count, c->ap.ssid);
@@ -552,11 +567,23 @@ static esp_err_t wm_on_validate(const cJSON *settings, char *err,
                        ap_pass->valuestring[0] != '\0';
 
     if (cJSON_IsString(auth) && auth->valuestring != NULL &&
-        strcmp(auth->valuestring, "open") != 0 &&
         strcmp(auth->valuestring, "auto") != 0 && !ap_pass_set)
     {
         snprintf(err, err_len,
                  "ap_auth '%s' needs an ap_password", auth->valuestring);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    /* the factory password is public: once the device is up, a write that
+       keeps it is refused — the API merges a blank password with the stored
+       one before validation, so "leave it" lands here too (meatpi
+       2026-09-07). The boot pass still accepts it, or a fresh device could
+       never come up. */
+    if (s_boot_applied && ap_pass_set &&
+        strcmp(ap_pass->valuestring, WM_AP_PASSWORD_DEFAULT) == 0)
+    {
+        snprintf(err, err_len, "the access point still has the factory "
+                 "password: set a new one (8 to 63 characters)");
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -565,11 +592,23 @@ static esp_err_t wm_on_validate(const cJSON *settings, char *err,
 
 static esp_err_t wm_on_migrate(uint32_t from_version, cJSON *settings)
 {
-    (void)from_version; /* v1->v2 +sta_roam_interval_s, v2->v3 +trusted
-                           flags, v3->v4 +ap_ip/hidden/bandwidth/auth,
-                           v4->v5 +wifi_ram_profile, v5->v6 +STA static
-                           addressing; fill-missing defaults cover all */
-    (void)settings;
+    /* v1->v2 +sta_roam_interval_s, v2->v3 +trusted flags, v3->v4
+       +ap_ip/hidden/bandwidth/auth, v4->v5 +wifi_ram_profile, v5->v6 +STA
+       static addressing: fill-missing defaults cover all of those.
+       v6->v7 (2026-09-07): ap_auth "open" is gone — a device that had it
+       comes up with "auto" (= WPA2 with its stored password) instead of
+       failing validation and losing its whole WiFi setup. */
+    if (from_version < 7 && settings != NULL)
+    {
+        cJSON *auth = cJSON_GetObjectItemCaseSensitive(settings, "ap_auth");
+
+        if (cJSON_IsString(auth) && auth->valuestring != NULL &&
+            strcmp(auth->valuestring, "open") == 0)
+        {
+            cJSON_SetValuestring(auth, "auto");
+        }
+    }
+
     return ESP_OK;
 }
 
@@ -578,9 +617,10 @@ esp_err_t wm_settings_register(void)
     static const settings_descriptor_t desc =
     {
         .name          = "wifi_manager",
-        .version       = 6, /* v6: +STA static addressing; v5:
-                               +wifi_ram_profile; v4: +AP LAN knobs;
-                               v3: +trusted flags; v2: +roam */
+        .version       = 7, /* v7: no open AP (2026-09-07); v6: +STA
+                               static addressing; v5: +wifi_ram_profile;
+                               v4: +AP LAN knobs; v3: +trusted flags;
+                               v2: +roam */
         .fields        = WM_FIELDS,
         .field_count   = sizeof(WM_FIELDS) / sizeof(WM_FIELDS[0]),
         .defaults_json = NULL,

@@ -32,6 +32,7 @@
  * there are deliberately no bespoke config routes here.
  */
 #include <stdlib.h>
+#include <string.h>
 
 #include "esp_http_server.h"
 #include "esp_log.h"
@@ -40,6 +41,7 @@
 #include "http_server_manager.h"
 
 #include "wifi_manager.h"
+#include "wifi_manager_private.h" /* wm_settings_config, the factory password */
 
 static const char *TAG = "wifi_manager";
 
@@ -79,6 +81,15 @@ static esp_err_t wifi_status_handler(httpd_req_t *req)
                           wifi_manager_is_sta_connected());
     cJSON_AddStringToObject(resp, "ip", ip);
     cJSON_AddBoolToObject(resp, "ap_started", wifi_manager_is_ap_started());
+    /* the factory AP password is public: the web UI warns and gates Submit */
+    {
+        const wm_config_t *wc = wm_settings_config();
+
+        cJSON_AddBoolToObject(resp, "ap_default_password",
+                              wc != NULL &&
+                              strcmp(wc->ap.password,
+                                     WM_AP_PASSWORD_DEFAULT) == 0);
+    }
     cJSON_AddNumberToObject(resp, "clients",
                             wifi_manager_get_ap_station_count());
 

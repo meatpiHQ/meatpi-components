@@ -88,8 +88,8 @@ by the future button/input manager).
 | `sta_static_gw` / `fallback1..5_static_gw` | string (IPv4) | `""` | v6: optional (isolated-LAN use); validated as a host address when set |
 | `sta_dns` | string (IPv4) | `""` | v6: GLOBAL custom DNS override for BOTH ip modes (Pi-hole/1.1.1.1 case). Empty = automatic: the DHCP-provided server, or the connected network's gateway when static. In DHCP mode the override is re-asserted on every got-ip (the lease overwrites MAIN DNS); the 1.1.1.1 backup-DNS resilience still applies |
 | `ap_ssid` | string ≤32 | `""` | empty → derived `WiCAN_<12-hex device id>` (SoftAP MAC, lowercase — legacy on-air format) |
-| `ap_password` | string 8..64 | `@meatpi#` | legacy default; key material; auth mode set by `ap_auth` |
-| `ap_auth` | enum auto/open/wpa2/wpa2wpa3/wpa3 | `auto` | v4: `auto` = WPA2 with a password / OPEN without (historic). WPA3 + mixed enable PMF; an encrypted mode with no password is rejected |
+| `ap_password` | string 8..64 | `@meatpi#` | legacy default; key material; auth mode set by `ap_auth`. **Cannot be kept** (2026-09-07): after the boot pass a write whose effective password is still the factory one is refused, `/api/wifi/status` reports `ap_default_password`, the web UI stops Submit until a new one is typed |
+| `ap_auth` | enum auto/wpa2/wpa2wpa3/wpa3 (`open` removed in v7, 2026-09-07 — a stored `open` migrates to `auto`) | `auto` | v4: `auto` = WPA2 with a password (the 8-char minimum rules OPEN out). WPA3 + mixed enable PMF; an encrypted mode with no password is rejected |
 | `ap_ip` | string (IPv4) | `192.168.0.10` | v4: AP gateway address; `/24` assumed, DHCP pool follows it. Validated dotted-quad, host octet 1..254. Live value echoed in `/api/wifi/status` `ap_ip`. Legacy default = the classic ELM327-WiFi-adapter address (`192.168.0.10:35000`) so OBD apps work unconfigured |
 | `ap_channel` | int 1..13 | `6` | In APSTA the single radio parks on the associated upstream AP's channel, so once the STA connects the softAP FOLLOWS it (config synced from `esp_wifi_sta_get_ap_info` on association / got-IP / `WIFI_EVENT_HOME_CHANNEL_CHANGE`, incl. upstream-router CSA) and stays there across STA drops; this setting only takes effect while the STA is unassociated (HIL S8) |
 | `ap_bandwidth` | enum ht20/ht40 | `ht20` | v4: 40 MHz for throughput vs 20 MHz for robustness |
@@ -106,7 +106,9 @@ by the future button/input manager).
 
 `on_validate` (cross-field): rejects `sta_password` set with empty
 `sta_ssid`; static mode without a valid `sta_static_ip`; malformed
-netmask/gateway/DNS addresses.
+netmask/gateway/DNS addresses; and, after boot, an `ap_password` that is
+still the factory `@meatpi#` (the API's blank-password merge means "keep
+it" is refused as well; a fresh device still boots with it).
 
 ## HTTP API (requirement — full endpoint reference: `HTTP_API.md` in this directory; conventions: `components/HTTP_API.md`)
 

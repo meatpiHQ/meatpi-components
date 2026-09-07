@@ -23,8 +23,11 @@
 /**
  * @file obd_chip_settings.c
  * @brief Settings descriptor ("obd_chip", field table, reboot-to-apply §4.2):
- *        chip UART baud, auto-sleep, and the monitor arbitration policy
- *        (reserved; v1 implements "manual" only — task §5 open question).
+ *        auto-sleep, the monitor arbitration policy (reserved; v1 implements
+ *        "manual" only — task §5 open question) and the chip's stored sleep
+ *        thresholds. The UART baud is NOT a setting since v3 (OBD_CHIP_BAUD,
+ *        meatpi 2026-09-07), and the web UI shows none of these fields —
+ *        they stay reachable through the settings API / CLI / backup.
  */
 #include <stdlib.h>
 #include <string.h>
@@ -41,7 +44,7 @@
 /* clang-format off */
 static const settings_field_t OBD_FIELDS[] =
 {
-    SETTINGS_STR_ENUM("baud", "115200,230400,460800,921600,2000000", "2000000"),
+    /* no "baud": the UART speed is fixed (OBD_CHIP_BAUD) — v3, 2026-09-07 */
     SETTINGS_BOOL    ("auto_sleep",     false),
     /* legacy parity (Ali 2026-07-26): a chip not at the packaged fw
        version is auto-flashed to it after bring-up */
@@ -64,7 +67,6 @@ static bool s_configured;
 
 static esp_err_t obd_on_apply(const cJSON *settings)
 {
-    const cJSON *baud = cJSON_GetObjectItemCaseSensitive(settings, "baud");
     const cJSON *auto_sleep =
         cJSON_GetObjectItemCaseSensitive(settings, "auto_sleep");
     const cJSON *policy =
@@ -77,8 +79,6 @@ static esp_err_t obd_on_apply(const cJSON *settings)
     const cJSON *sleep_min =
         cJSON_GetObjectItemCaseSensitive(settings, "sleep_time_min");
 
-    s_config.baud = (cJSON_IsString(baud) && baud->valuestring != NULL)
-                        ? atoi(baud->valuestring) : 2000000;
     s_config.auto_sleep = cJSON_IsTrue(auto_sleep);
     s_config.auto_update = !cJSON_IsFalse(
         cJSON_GetObjectItemCaseSensitive(settings, "auto_update"));
@@ -150,6 +150,13 @@ static esp_err_t obd_settings_migrate(uint32_t from_version, cJSON *settings)
         }
     }
 
+    /* v2 -> v3 (2026-09-07): the UART baud is fixed (OBD_CHIP_BAUD) — drop a
+       stored value so nothing can ever feed a stale one back */
+    if (from_version < 3 && settings != NULL)
+    {
+        cJSON_DeleteItemFromObjectCaseSensitive(settings, "baud");
+    }
+
     return ESP_OK;
 }
 
@@ -158,7 +165,7 @@ esp_err_t obd_settings_register(void)
     static const settings_descriptor_t desc =
     {
         .name        = "obd_chip",
-        .version     = 2, /* v2: sane ranges + wake > sleep (2026-09-06) */
+        .version     = 3, /* v3: baud dropped, fixed OBD_CHIP_BAUD (2026-09-07) */
         .fields      = OBD_FIELDS,
         .field_count = sizeof(OBD_FIELDS) / sizeof(OBD_FIELDS[0]),
         .on_apply    = obd_on_apply,

@@ -508,13 +508,12 @@ static void chip_provision(const obd_config_t *cfg)
         bare_probe("STSLU off, off\r", resp, sizeof(resp), 1000);
         vTaskDelay(pdMS_TO_TICKS(10));
 
-        if (cfg->baud == 2000000)
-        {
-            /* persist 2M as the chip's power-on baud (legacy PP value) */
-            bare_probe("ATPP 0F SV 95\r", resp, sizeof(resp), 1000);
-            bare_probe("ATPP 0F ON\r", resp, sizeof(resp), 1000);
-            vTaskDelay(pdMS_TO_TICKS(10));
-        }
+        /* persist 2M as the chip's power-on baud (legacy PP value 0x95;
+           the baud is fixed at OBD_CHIP_BAUD since 2026-09-07) */
+        _Static_assert(OBD_CHIP_BAUD == 2000000, "PP 0F SV 95 encodes 2 Mbaud");
+        bare_probe("ATPP 0F SV 95\r", resp, sizeof(resp), 1000);
+        bare_probe("ATPP 0F ON\r", resp, sizeof(resp), 1000);
+        vTaskDelay(pdMS_TO_TICKS(10));
 
         bare_probe("STSLUIT 1200\r", resp, sizeof(resp), 1000);
         vTaskDelay(pdMS_TO_TICKS(10));
@@ -527,7 +526,7 @@ static void chip_provision(const obd_config_t *cfg)
            echo back on — re-run the tail of the bring-up */
         obd_uart_write((const uint8_t *)"ATZ\r", 4);
         vTaskDelay(pdMS_TO_TICKS(1500));
-        obd_uart_set_baud(cfg->baud);
+        obd_uart_set_baud(OBD_CHIP_BAUD);
         obd_uart_write((const uint8_t *)"\r", 1);
         vTaskDelay(pdMS_TO_TICKS(100));
         obd_uart_flush_input();
@@ -563,7 +562,7 @@ static esp_err_t bringup_run(void)
 
     /* legacy elm327_hardreset_chip: hardware reset ONLY when the READY
        pin says asleep/stuck (HIGH); an awake chip gets a soft ATZ */
-    obd_uart_set_baud(cfg->baud);
+    obd_uart_set_baud(OBD_CHIP_BAUD);
 
     if (obd_pin_ready())
     {
@@ -582,9 +581,9 @@ static esp_err_t bringup_run(void)
         vTaskDelay(pdMS_TO_TICKS(1500)); /* chip boot time after reset */
     }
 
-    /* baud negotiation: configured baud first, then the chip default */
+    /* baud negotiation: the fixed baud first, then the chip's power-on default */
     static const int FALLBACK_BAUD = 115200;
-    const int try_bauds[2] = { cfg->baud, FALLBACK_BAUD };
+    const int try_bauds[2] = { OBD_CHIP_BAUD, FALLBACK_BAUD };
     bool alive = false;
 
     for (size_t b = 0; b < 2 && !alive; b++)
@@ -609,33 +608,33 @@ static esp_err_t bringup_run(void)
 
     if (!alive)
     {
-        ESP_LOGE(TAG, "chip not responding at %d or %d baud", cfg->baud,
+        ESP_LOGE(TAG, "chip not responding at %d or %d baud", OBD_CHIP_BAUD,
                  FALLBACK_BAUD);
         return ESP_ERR_NOT_FOUND;
     }
 
-    /* switch the chip to the configured baud if it woke at the fallback */
-    if (s_active_baud != cfg->baud)
+    /* switch the chip to the fixed baud if it woke at the fallback */
+    if (s_active_baud != OBD_CHIP_BAUD)
     {
         char cmd[24];
 
-        snprintf(cmd, sizeof(cmd), "STSBR %d\r", cfg->baud);
+        snprintf(cmd, sizeof(cmd), "STSBR %d\r", OBD_CHIP_BAUD);
         obd_uart_write((const uint8_t *)cmd, strlen(cmd));
         vTaskDelay(pdMS_TO_TICKS(100));
-        obd_uart_set_baud(cfg->baud);
+        obd_uart_set_baud(OBD_CHIP_BAUD);
 
         if (bare_probe("ATI\r", resp, sizeof(resp), 1500))
         {
-            s_active_baud = cfg->baud;
+            s_active_baud = OBD_CHIP_BAUD;
             /* legacy: persist the negotiated baud as the chip's
-               power-on default (next boot answers at cfg->baud) */
+               power-on default (next boot answers at OBD_CHIP_BAUD) */
             bare_probe("STWBR\r", resp, sizeof(resp), 1500);
         }
         else
         {
             obd_uart_set_baud(FALLBACK_BAUD); /* stay where the chip is */
             s_active_baud = FALLBACK_BAUD;
-            ESP_LOGW(TAG, "STSBR to %d failed; staying at %d", cfg->baud,
+            ESP_LOGW(TAG, "STSBR to %d failed; staying at %d", OBD_CHIP_BAUD,
                      FALLBACK_BAUD);
         }
     }

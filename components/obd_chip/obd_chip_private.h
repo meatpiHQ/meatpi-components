@@ -155,10 +155,15 @@ void      obd_core_release(void);
  *  obd_chip.c, shared with the request engine in obd_chip_cmd.c). */
 extern const char obd_chip_gate_owner[1];
 
+/** Chip UART speed — FIXED, deliberately not a setting (meatpi 2026-09-07:
+ *  exposing it invited a user changing it, breaking the chip and claiming
+ *  warranty). The chip powers on at 115200 until `STWBR`/`ATPP 0F` persist
+ *  this as its default; bring-up walks 2 M -> 115200 and switches (`STSBR`). */
+#define OBD_CHIP_BAUD 2000000
+
 /* config applied at boot by the settings descriptor */
 typedef struct
 {
-    int  baud;
     bool auto_sleep;
     bool monitor_auto_interrupt;
     bool auto_update;       /* flash the packaged fw on version mismatch

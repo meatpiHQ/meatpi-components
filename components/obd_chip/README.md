@@ -139,11 +139,18 @@ instead of streaming records into 5 s timeouts. Bumping the packaged
 version = new `EMBED_TXTFILES` path + `OBD_FW_BUILTIN_VERSION` in
 `obd_chip_fw.c`.
 
-## Settings (`"obd_chip"`, version 1)
+## Settings (`"obd_chip"`, version 3)
+
+The UART baud is **not a setting**: `OBD_CHIP_BAUD` (2 Mbaud) in
+`obd_chip_private.h`. meatpi 2026-09-07: exposing it invited a user changing
+it, breaking the chip and claiming warranty; v3 drops a stored `baud` on
+migration. The same decision took **every** `obd_chip` field out of the web
+UI (they only confused users) — the group stays reachable through the
+settings API / CLI / backup for the future sleep_manager work.
+
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| `baud` | enum 115200…2000000 | `2000000` | chip switched via `STSBR` when it wakes at the 115200 default |
 | `auto_sleep` | bool | `false` | reserved (the future sleep_manager arms the chip's controls) |
 | `auto_update` | bool | `true` | flash the packaged chip fw (V2.3.22) on version mismatch after bring-up — legacy parity |
 | `monitor_policy` | enum manual/auto_interrupt | `manual` | `auto_interrupt` reserved (§5 open question) |

@@ -5,7 +5,8 @@ Low-power manager (rewrite of legacy `sleep_mode.c`,
 **battery_monitor**, this component owns no ADC — drives a pure
 ladder: `NORMAL → LOW_VOLTAGE` (below `sleep_mv`, countdown of
 `sleep_delay_min`) `→ SLEEPING → WAKE_PENDING` (recovered ≥
-sleep + 0.1 V, stable 1 s) `→ reboot` via restart_tracker POWER_WAKE —
+sleep + 0.1 V, stable 1 s) `→ reboot` via restart_tracker POWER_WAKE
+(PERIODIC_WAKE for a check-in, 2026-09-07 — the Status page shows which) —
 wake-by-reboot, not resume-in-place (every manager restarts clean).
 
 SLEEPING = repeated **light sleep** with a 2 s timer wake; voltage is

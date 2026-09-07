@@ -47,7 +47,10 @@ static const settings_field_t FIELDS[] =
     SETTINGS_INT("max_file_mb", 1, 32, 4),
     SETTINGS_INT("max_files", 1, 500, 100),
     SETTINGS_INT("batch_rows", 16, 1024, 256),
-    SETTINGS_INT("flush_ms", 100, 60000, 1000),
+    /* 5 s since 2026-09-07 (ROBUSTNESS.md "Fewer writes"): batches sit in
+       PSRAM, commits are atomic, a crash/restart loses nothing — a power
+       cut loses at most this much */
+    SETTINGS_INT("flush_ms", 100, 60000, 5000),
     /* v2: producer integration + the CAN stream (TASK addendum);
      * mf4/blf/candump/asc/jsonl added by addendum 2 (enum additions
      * are schema-compatible — stored values stay valid) */

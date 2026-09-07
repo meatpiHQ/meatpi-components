@@ -61,6 +61,7 @@ static esp_err_t logger_handler(httpd_req_t *req)
              "\"file_rows\":%lu,\"files\":%lu,\"queued\":%lu,"
              "\"frames_written\":%lu,\"frames_dropped\":%lu,"
              "\"rotations\":%lu},"
+             "\"salvaged\":%lu,\"corrupt\":%lu,"
              "\"dir\":\"/sd/logs\"}",
              st.enabled ? "true" : "false",
              st.running ? "true" : "false",
@@ -78,7 +79,8 @@ static esp_err_t logger_handler(httpd_req_t *req)
              (unsigned long)st.can_queued,
              (unsigned long)st.frames_written,
              (unsigned long)st.frames_dropped,
-             (unsigned long)st.can_rotations);
+             (unsigned long)st.can_rotations,
+             (unsigned long)st.salvaged, (unsigned long)st.corrupt);
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_send(req, body, HTTPD_RESP_USE_STRLEN);
 }

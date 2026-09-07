@@ -44,6 +44,8 @@
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <sys/time.h>
 #include <time.h>
 
@@ -56,6 +58,103 @@
 static const char *TAG = "data_logger";
 
 #define AP_BUF_SZ 4096
+
+/* A torn tail from a power cut mid-write (ROBUSTNESS.md cases 2/3): a text
+ * file is cut back to its last newline, a .wdl to its last complete
+ * record. Done on a read handle BEFORE the append handle exists (FS_LOCK
+ * refuses a second open once we hold the file for writing); the caller's
+ * DMA-capable stdio buffer serves the read handle, the scan data sits in
+ * PSRAM. */
+static void ap_repair_tail(const char *path, uint8_t fmt, char *stdio_buf)
+{
+    struct stat sb;
+
+    if (stat(path, &sb) != 0 || sb.st_size <= 0)
+    {
+        return; /* a new file */
+    }
+
+    uint64_t size = (uint64_t)sb.st_size;
+    uint64_t keep = size;
+    uint8_t *buf = heap_caps_malloc(AP_BUF_SZ,
+                                    MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    FILE *r = (buf != NULL) ? fopen(path, "rb") : NULL;
+
+    if (r == NULL)
+    {
+        heap_caps_free(buf);
+        return;
+    }
+
+    setvbuf(r, stdio_buf, _IOFBF, AP_BUF_SZ);
+
+    if (fmt == DL_AP_WDL)
+    {
+        if (size < 4)
+        {
+            keep = 0; /* not even the WDL1 header */
+        }
+        else
+        {
+            size_t carry = 0;
+            bool bad = false;
+
+            keep = 4;
+            fseek(r, 4, SEEK_SET);
+
+            while (!bad)
+            {
+                size_t n = fread(buf + carry, 1, AP_BUF_SZ - carry, r);
+
+                if (n == 0)
+                {
+                    break;
+                }
+
+                size_t avail = carry + n;
+                size_t done = dl_recover_wdl_scan(buf, avail, &bad);
+
+                keep += done;
+                carry = avail - done;
+
+                if (carry > 260) /* longer than any record: garbage */
+                {
+                    bad = true;
+                    break;
+                }
+
+                memmove(buf, buf + done, carry);
+            }
+        }
+    }
+    else
+    {
+        size_t n = (size > AP_BUF_SZ) ? AP_BUF_SZ : (size_t)size;
+
+        fseek(r, (long)(size - n), SEEK_SET);
+
+        if (fread(buf, 1, n, r) == n)
+        {
+            keep = (size - n) + dl_recover_text_keep((const char *)buf, n);
+        }
+    }
+
+    fclose(r);
+    heap_caps_free(buf);
+
+    if (keep < size)
+    {
+        if (truncate(path, (off_t)keep) == 0)
+        {
+            ESP_LOGW(TAG, "%s: dropped %llu torn byte(s) at the tail", path,
+                     (unsigned long long)(size - keep));
+        }
+        else
+        {
+            ESP_LOGE(TAG, "%s: truncate failed (errno %d)", path, errno);
+        }
+    }
+}
 
 /* The stdio buffer must be INTERNAL (DMA-capable), deliberately not
  * PSRAM: FATFS hands big flushes straight to sdmmc, and a non-DMA
@@ -97,6 +196,8 @@ static esp_err_t ap_open(dl_append_ctx_t *c, const char *path,
         ESP_LOGE(TAG, "no internal RAM for the stdio buffer");
         return ESP_ERR_NO_MEM;
     }
+
+    ap_repair_tail(path, fmt, c->buf);
 
     FILE *f = fopen(path, "a");
 
@@ -351,6 +452,7 @@ static esp_err_t bin_write(void *ctx, const dl_record_t *rec,
 const dl_engine_t dl_engine_binary =
 {
     .ext = ".wdl",
+    .resume_max = 16u * 1024u * 1024u, /* the torn-tail check reads it all */
     .open = bin_open,
     .close = ap_close,
     .is_open = ap_is_open,

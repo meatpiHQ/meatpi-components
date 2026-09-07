@@ -44,13 +44,17 @@
                                 carries hundreds of params */
 #define DL_SOURCE_MAX   16
 #define DL_NAME_MAX     32
-#define DL_RING_LEN     512  /* param ring (PSRAM)                     */
+#define DL_RING_LEN     2048  /* param ring (PSRAM)                     */
 #define DL_CAN_RING_MAX 8192 /* frame ring cap; ring_len setting picks
                                 the live size (static PSRAM, ~192 KB
                                 at cap — caps not rationing)           */
 #define DL_DIR          "/sd/logs"
 #define DL_PREFIX_PARAM "dl_"
 #define DL_PREFIX_CAN   "can_"
+/* ROBUSTNESS.md (2026-09-07) */
+#define DL_CORRUPT_SUFFIX ".corrupt"            /* set-aside file: <name>.corrupt   */
+#define DL_CORRUPT_KEEP   2                     /* set-aside files kept per stream  */
+#define DL_QUICKCHECK_MAX (8u * 1024u * 1024u)  /* resume-time quick_check bound (B) */
 #define DL_BYTES_PER_ROW   26 /* measured: 100 KB / 4000 rows          */
 #define DL_BYTES_PER_FRAME 44 /* sqlite frames-table size estimate     */
 
@@ -117,6 +121,12 @@ typedef struct
                        dl_param_entry_t *p);
     esp_err_t (*commit)(void *ctx);  /* commit / flush                   */
     uint64_t  (*bytes)(void *ctx);   /* approx bytes in the current file */
+    /* optional (ROBUSTNESS.md): "the last failure means the FILE is bad"
+     * — the writer sets such a file aside instead of retrying it forever */
+    bool      (*corrupt)(void *ctx);
+    /* optional: never resume a file bigger than this (0 = no limit); the
+     * .wdl torn-tail check is a full read, so huge CAN logs start fresh */
+    uint64_t  resume_max;
 } dl_engine_t;
 
 extern const dl_engine_t dl_engine_sqlite;   /* data_logger_db.c     */
@@ -180,6 +190,7 @@ typedef struct
     void    *ins_frame;          /* prepared INSERT (frames)          */
     uint64_t rows;
     uint64_t frame_rows;
+    bool     corrupt;            /* last error was SQLITE_CORRUPT/NOTADB */
 } dl_sq_ctx_t;
 
 /* rule-driven gate (logger.enable / logger.disable actions). While the
@@ -235,6 +246,21 @@ bool dl_settings_is_configured(void); /* boot apply ran (standard §4.3) */
 /** Apply-time engine/stream re-bind: data_logger.c owns the stream
  *  table and the rings; on_apply calls this after parsing. */
 void dl_core_apply(const dl_cfg_t *cfg);
+
+/* ---- recovery helpers (data_logger_recover.c — PURE, host-tested) ---------- */
+size_t   dl_recover_text_keep(const char *buf, size_t len);
+size_t   dl_recover_wdl_scan(const uint8_t *buf, size_t len, bool *bad);
+bool     dl_recover_corrupt_name(const char *fname, char *out, size_t cap);
+bool     dl_recover_is_corrupt_name(const char *fname, const char *prefix,
+                                    int64_t *epoch_out);
+bool     dl_recover_record_sane(const dl_record_t *r);
+bool     dl_recover_ring_sane(uint32_t cap, uint32_t cap_limit, uint32_t head,
+                              uint32_t tail, uint32_t *fill);
+uint32_t dl_recover_crc32_update(uint32_t crc, const void *data, size_t len);
+/* sqlite salvage (data_logger_db.c): copy what can still be read from @p src
+ * into a fresh @p dst with the stream's schema; rows copied in *rows_out */
+esp_err_t dl_sq_salvage(const char *src, const char *dst, bool frames,
+                        uint32_t budget_ms, uint32_t *rows_out);
 
 /* ---- data_logger_files.c — PURE (host-tested) ---------------------------- */
 

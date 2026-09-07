@@ -29,9 +29,13 @@
  *        (two streams can both pick sqlite = two open .db files).
  *
  * Pragma hygiene per BENCHMARKS.md (the 5.6× fix): everything set ONCE
- * at open — journal_mode=MEMORY (WAL is compiled out and would fail
- * silently; DELETE would churn a journal file on the card per commit),
- * temp_store=MEMORY — plus forever-prepared INSERTs.
+ * at open, plus forever-prepared INSERTs. Since 2026-09-07 (ROBUSTNESS.md
+ * case 1) the commits are ATOMIC: the port syncs again (SQLITE_NO_SYNC
+ * off), journal_mode=PERSIST (rollback journal on the card, header zeroed
+ * per commit — no create/delete churn) and synchronous=FULL. A resumed
+ * file gets PRAGMA quick_check first; SQLITE_CORRUPT/NOTADB anywhere sets
+ * the ctx's `corrupt` flag so the writer sets the file aside instead of
+ * retrying it (that loop dropped every record on the bench).
  *
  * Schema: params(id, source, name UNIQUE) + records(ts, param_id,
  * value REAL) + frames(ts, id, ext, rtr, dlc, data BLOB), ts-indexed.
@@ -40,9 +44,12 @@
  */
 #include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 
 #include "sqlite3.h"
 
@@ -93,6 +100,12 @@ static void sq_mem_shutdown(void *arg)
     (void)arg;
 }
 
+static bool rc_is_corrupt(int rc)
+{
+    rc &= 0xFF;
+    return rc == SQLITE_CORRUPT || rc == SQLITE_NOTADB;
+}
+
 static esp_err_t dl_exec(sqlite3 *db, const char *sql)
 {
     char *errmsg = NULL;
@@ -106,6 +119,132 @@ static esp_err_t dl_exec(sqlite3 *db, const char *sql)
     }
 
     return ESP_OK;
+}
+
+/* dl_exec on the ctx's connection, noting a corrupt file */
+static esp_err_t sq_exec(dl_sq_ctx_t *c, const char *sql)
+{
+    esp_err_t err = dl_exec((sqlite3 *)c->db, sql);
+
+    if (err != ESP_OK && rc_is_corrupt(sqlite3_errcode((sqlite3 *)c->db)))
+    {
+        c->corrupt = true;
+    }
+
+    return err;
+}
+
+static esp_err_t sq_tables(sqlite3 *db)
+{
+    if (dl_exec(db, "CREATE TABLE IF NOT EXISTS params ("
+                "id INTEGER PRIMARY KEY, source TEXT, name TEXT, "
+                "UNIQUE(source, name));") != ESP_OK ||
+        dl_exec(db, "CREATE TABLE IF NOT EXISTS records ("
+                "ts INTEGER, param_id INTEGER, value REAL);") != ESP_OK ||
+        dl_exec(db, "CREATE TABLE IF NOT EXISTS frames ("
+                "ts INTEGER, id INTEGER, ext INTEGER, rtr INTEGER, "
+                "dlc INTEGER, data BLOB);") != ESP_OK)
+    {
+        return ESP_FAIL;
+    }
+
+    return ESP_OK;
+}
+
+static esp_err_t sq_indexes(sqlite3 *db)
+{
+    if (dl_exec(db, "CREATE INDEX IF NOT EXISTS records_ts "
+                "ON records(ts);") != ESP_OK ||
+        dl_exec(db, "CREATE INDEX IF NOT EXISTS frames_ts "
+                "ON frames(ts);") != ESP_OK)
+    {
+        return ESP_FAIL;
+    }
+
+    return ESP_OK;
+}
+
+static esp_err_t sq_schema(sqlite3 *db)
+{
+    return (sq_tables(db) == ESP_OK && sq_indexes(db) == ESP_OK) ? ESP_OK
+                                                                  : ESP_FAIL;
+}
+
+/* one-row count; false = the statement failed (corrupt flagged when so) */
+static bool sq_count(dl_sq_ctx_t *c, const char *sql, uint64_t *out)
+{
+    sqlite3_stmt *st = NULL;
+    bool ok = false;
+
+    if (sqlite3_prepare_v2((sqlite3 *)c->db, sql, -1, &st, NULL) == SQLITE_OK)
+    {
+        int rc = sqlite3_step(st);
+
+        if (rc == SQLITE_ROW)
+        {
+            *out = (uint64_t)sqlite3_column_int64(st, 0);
+            ok = true;
+        }
+        else
+        {
+            ESP_LOGE(TAG, "%s: %s", sql, sqlite3_errmsg((sqlite3 *)c->db));
+
+            if (rc_is_corrupt(rc))
+            {
+                c->corrupt = true;
+            }
+        }
+    }
+    else if (rc_is_corrupt(sqlite3_errcode((sqlite3 *)c->db)))
+    {
+        c->corrupt = true;
+    }
+
+    sqlite3_finalize(st);
+    return ok;
+}
+
+/* PRAGMA quick_check(1): "ok", or a damage report. No answer at all (a
+ * build with the check omitted — that was the case on 2026-09-07 and it
+ * set every good file aside) counts as UNKNOWN, never as corrupt. */
+static bool sq_quick_check(sqlite3 *db)
+{
+    sqlite3_stmt *st = NULL;
+    bool ok = true;
+
+    if (sqlite3_prepare_v2(db, "PRAGMA quick_check(1);", -1, &st, NULL) ==
+        SQLITE_OK)
+    {
+        int rc = sqlite3_step(st);
+
+        if (rc == SQLITE_ROW)
+        {
+            const unsigned char *txt = sqlite3_column_text(st, 0);
+
+            ok = txt != NULL && strcmp((const char *)txt, "ok") == 0;
+
+            if (!ok)
+            {
+                ESP_LOGE(TAG, "quick_check: %s", txt ? (const char *)txt : "?");
+            }
+        }
+        else if (rc_is_corrupt(rc))
+        {
+            ESP_LOGE(TAG, "quick_check: %s", sqlite3_errmsg(db));
+            ok = false;
+        }
+        else
+        {
+            ESP_LOGW(TAG, "quick_check gave no answer (rc %d); trusting the file", rc);
+        }
+    }
+    else
+    {
+        ESP_LOGW(TAG, "quick_check unavailable; trusting the file");
+    }
+
+    sqlite3_finalize(st);
+    return ok;
 }
 
 static void sq_close(void *ctx)
@@ -171,11 +310,21 @@ static esp_err_t sq_open(void *ctx, const char *path, bool frames)
     }
 
     sqlite3 *db = NULL;
+    struct stat sb;
+    bool existing = stat(path, &sb) == 0 && sb.st_size > 0;
+
+    c->corrupt = false;
 
     if (sqlite3_open(path, &db) != SQLITE_OK)
     {
         ESP_LOGE(TAG, "open %s: %s", path,
                  (db != NULL) ? sqlite3_errmsg(db) : "?");
+
+        if (db != NULL && rc_is_corrupt(sqlite3_errcode(db)))
+        {
+            c->corrupt = true;
+        }
+
         c->db = db;
         sq_close(c);
         return ESP_FAIL;
@@ -183,21 +332,34 @@ static esp_err_t sq_open(void *ctx, const char *path, bool frames)
 
     c->db = db;
 
-    if (dl_exec(db, "PRAGMA journal_mode=MEMORY;") != ESP_OK ||
-        dl_exec(db, "PRAGMA temp_store=MEMORY;") != ESP_OK ||
-        dl_exec(db, "CREATE TABLE IF NOT EXISTS params ("
-                "id INTEGER PRIMARY KEY, source TEXT, name TEXT, "
-                "UNIQUE(source, name));") != ESP_OK ||
-        dl_exec(db, "CREATE TABLE IF NOT EXISTS records ("
-                "ts INTEGER, param_id INTEGER, value REAL);") != ESP_OK ||
-        dl_exec(db, "CREATE INDEX IF NOT EXISTS records_ts "
-                "ON records(ts);") != ESP_OK ||
-        dl_exec(db, "CREATE TABLE IF NOT EXISTS frames ("
-                "ts INTEGER, id INTEGER, ext INTEGER, rtr INTEGER, "
-                "dlc INTEGER, data BLOB);") != ESP_OK ||
-        dl_exec(db, "CREATE INDEX IF NOT EXISTS frames_ts "
-                "ON frames(ts);") != ESP_OK)
+    /* a resumed file is checked before it is trusted (bounded: a few
+       seconds of card reads); a hot journal from a cut commit is rolled
+       back by this first access */
+    if (existing && (uint64_t)sb.st_size <= DL_QUICKCHECK_MAX)
     {
+        int64_t t0 = esp_timer_get_time();
+
+        if (!sq_quick_check(db))
+        {
+            c->corrupt = true;
+            sq_close(c);
+            return ESP_FAIL;
+        }
+
+        ESP_LOGI(TAG, "%s: quick_check ok (%lld ms)", path,
+                 (long long)((esp_timer_get_time() - t0) / 1000));
+    }
+
+    if (sq_exec(c, "PRAGMA journal_mode=PERSIST;") != ESP_OK ||
+        sq_exec(c, "PRAGMA synchronous=FULL;") != ESP_OK ||
+        sq_exec(c, "PRAGMA temp_store=MEMORY;") != ESP_OK ||
+        sq_schema(db) != ESP_OK)
+    {
+        if (rc_is_corrupt(sqlite3_errcode(db)))
+        {
+            c->corrupt = true;
+        }
+
         sq_close(c);
         return ESP_FAIL;
     }
@@ -230,29 +392,24 @@ static esp_err_t sq_open(void *ctx, const char *path, bool frames)
 
     c->ins_frame = st;
 
-    /* resuming an existing file: seed the size estimates */
+    /* resuming an existing file: seed the size estimates. These full
+       scans double as THE resume check — the port answers nothing to
+       PRAGMA quick_check (bench 2026-09-07), but walking each table's
+       btree surfaces SQLITE_CORRUPT on a torn file, which sets the
+       ctx's corrupt flag and fails the open (the writer sets the file
+       aside). */
     c->rows = 0;
     c->frame_rows = 0;
-    st = NULL;
 
-    if (sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM records;", -1,
-                           &st, NULL) == SQLITE_OK &&
-        sqlite3_step(st) == SQLITE_ROW)
+    if (!sq_count(c, "SELECT COUNT(*) FROM records;", &c->rows) ||
+        !sq_count(c, "SELECT COUNT(*) FROM frames;", &c->frame_rows))
     {
-        c->rows = (uint64_t)sqlite3_column_int64(st, 0);
+        ESP_LOGE(TAG, "%s: table scan failed (%s)", path,
+                 c->corrupt ? "corrupt" : "error");
+        sq_close(c);
+        return ESP_FAIL;
     }
 
-    sqlite3_finalize(st);
-    st = NULL;
-
-    if (sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM frames;", -1,
-                           &st, NULL) == SQLITE_OK &&
-        sqlite3_step(st) == SQLITE_ROW)
-    {
-        c->frame_rows = (uint64_t)sqlite3_column_int64(st, 0);
-    }
-
-    sqlite3_finalize(st);
     return ESP_OK;
 }
 
@@ -305,7 +462,12 @@ static int sq_intern(sqlite3 *db, const char *source, const char *name)
 
 static esp_err_t sq_begin(void *ctx)
 {
-    return dl_exec((sqlite3 *)((dl_sq_ctx_t *)ctx)->db, "BEGIN;");
+    return sq_exec((dl_sq_ctx_t *)ctx, "BEGIN;");
+}
+
+static bool sq_corrupt(void *ctx)
+{
+    return ((dl_sq_ctx_t *)ctx)->corrupt;
 }
 
 static esp_err_t sq_write(void *ctx, const dl_record_t *rec,
@@ -335,6 +497,12 @@ static esp_err_t sq_write(void *ctx, const dl_record_t *rec,
         {
             ESP_LOGE(TAG, "frame insert: %s",
                      sqlite3_errmsg((sqlite3 *)c->db));
+
+            if (rc_is_corrupt(sqlite3_errcode((sqlite3 *)c->db)))
+            {
+                c->corrupt = true;
+            }
+
             return ESP_FAIL;
         }
 
@@ -355,6 +523,11 @@ static esp_err_t sq_write(void *ctx, const dl_record_t *rec,
 
         if (p->db_id <= 0)
         {
+            if (rc_is_corrupt(sqlite3_errcode((sqlite3 *)c->db)))
+            {
+                c->corrupt = true;
+            }
+
             return ESP_FAIL;
         }
     }
@@ -367,6 +540,12 @@ static esp_err_t sq_write(void *ctx, const dl_record_t *rec,
     if (sqlite3_step(st) != SQLITE_DONE)
     {
         ESP_LOGE(TAG, "insert: %s", sqlite3_errmsg((sqlite3 *)c->db));
+
+        if (rc_is_corrupt(sqlite3_errcode((sqlite3 *)c->db)))
+        {
+            c->corrupt = true;
+        }
+
         return ESP_FAIL;
     }
 
@@ -376,7 +555,7 @@ static esp_err_t sq_write(void *ctx, const dl_record_t *rec,
 
 static esp_err_t sq_commit(void *ctx)
 {
-    return dl_exec((sqlite3 *)((dl_sq_ctx_t *)ctx)->db, "COMMIT;");
+    return sq_exec((dl_sq_ctx_t *)ctx, "COMMIT;");
 }
 
 static uint64_t sq_bytes(void *ctx)
@@ -393,8 +572,184 @@ const dl_engine_t dl_engine_sqlite =
     .open = sq_open,
     .close = sq_close,
     .is_open = sq_is_open,
+    .corrupt = sq_corrupt,
     .begin = sq_begin,
     .write = sq_write,
     .commit = sq_commit,
     .bytes = sq_bytes,
 };
+
+/* ---- salvage (ROBUSTNESS.md case 5) -------------------------------------------
+   Copy what sqlite can still read out of a set-aside file into a fresh one:
+   the params dictionary first (ids keep their meaning), then the rows in
+   rowid order, in 1000-row transactions, stopping at the first read error
+   or when the time budget is spent. Writer task only (single toucher);
+   the destination uses the fast pragmas — a crash mid-salvage leaves a
+   valid partial file that the next boot resumes, and the source is never
+   retried. */
+esp_err_t dl_sq_salvage(const char *src, const char *dst, bool frames,
+                        uint32_t budget_ms, uint32_t *rows_out)
+{
+    sqlite3 *in = NULL;
+    sqlite3 *out = NULL;
+    sqlite3_stmt *sel = NULL;
+    sqlite3_stmt *ins = NULL;
+    uint32_t rows = 0;
+    int64_t t0 = esp_timer_get_time();
+
+    *rows_out = 0;
+
+    if (sqlite3_open_v2(src, &in, SQLITE_OPEN_READONLY, NULL) != SQLITE_OK)
+    {
+        ESP_LOGW(TAG, "salvage: cannot open %s: %s", src,
+                 (in != NULL) ? sqlite3_errmsg(in) : "?");
+        sqlite3_close(in);
+        return ESP_FAIL;
+    }
+
+    unlink(dst);
+
+    /* tables only: the indexes are built once, after the copy (an index
+       maintained per insert halved the salvage rate on the bench) */
+    if (sqlite3_open(dst, &out) != SQLITE_OK ||
+        dl_exec(out, "PRAGMA journal_mode=MEMORY;") != ESP_OK ||
+        dl_exec(out, "PRAGMA synchronous=OFF;") != ESP_OK ||
+        dl_exec(out, "PRAGMA temp_store=MEMORY;") != ESP_OK || /* the index sort: no temp file on the card (bench: "disk I/O error") */
+        sq_tables(out) != ESP_OK)
+    {
+        ESP_LOGW(TAG, "salvage: cannot create %s", dst);
+        sqlite3_close(in);
+        sqlite3_close(out);
+        unlink(dst);
+        return ESP_FAIL;
+    }
+
+    if (sqlite3_prepare_v2(in, "SELECT id, source, name FROM params "
+                           "ORDER BY id;", -1, &sel, NULL) == SQLITE_OK &&
+        sqlite3_prepare_v2(out, "INSERT OR IGNORE INTO params "
+                           "(id, source, name) VALUES (?, ?, ?);", -1,
+                           &ins, NULL) == SQLITE_OK &&
+        dl_exec(out, "BEGIN;") == ESP_OK)
+    {
+        while (sqlite3_step(sel) == SQLITE_ROW)
+        {
+            sqlite3_reset(ins);
+            sqlite3_bind_int(ins, 1, sqlite3_column_int(sel, 0));
+            sqlite3_bind_text(ins, 2,
+                              (const char *)sqlite3_column_text(sel, 1), -1,
+                              SQLITE_TRANSIENT);
+            sqlite3_bind_text(ins, 3,
+                              (const char *)sqlite3_column_text(sel, 2), -1,
+                              SQLITE_TRANSIENT);
+
+            if (sqlite3_step(ins) != SQLITE_DONE)
+            {
+                break;
+            }
+        }
+
+        dl_exec(out, "COMMIT;");
+    }
+
+    sqlite3_finalize(sel);
+    sqlite3_finalize(ins);
+    sel = NULL;
+    ins = NULL;
+
+    const char *q = frames
+        ? "SELECT ts, id, ext, rtr, dlc, data FROM frames ORDER BY rowid;"
+        : "SELECT ts, param_id, value FROM records ORDER BY rowid;";
+    const char *iq = frames
+        ? "INSERT INTO frames (ts, id, ext, rtr, dlc, data) "
+          "VALUES (?, ?, ?, ?, ?, ?);"
+        : "INSERT INTO records (ts, param_id, value) VALUES (?, ?, ?);";
+
+    if (sqlite3_prepare_v2(in, q, -1, &sel, NULL) == SQLITE_OK &&
+        sqlite3_prepare_v2(out, iq, -1, &ins, NULL) == SQLITE_OK)
+    {
+        bool open_tx = dl_exec(out, "BEGIN;") == ESP_OK;
+
+        while (open_tx && sqlite3_step(sel) == SQLITE_ROW)
+        {
+            sqlite3_reset(ins);
+
+            if (frames)
+            {
+                sqlite3_bind_int64(ins, 1, sqlite3_column_int64(sel, 0));
+                sqlite3_bind_int64(ins, 2, sqlite3_column_int64(sel, 1));
+                sqlite3_bind_int(ins, 3, sqlite3_column_int(sel, 2));
+                sqlite3_bind_int(ins, 4, sqlite3_column_int(sel, 3));
+                sqlite3_bind_int(ins, 5, sqlite3_column_int(sel, 4));
+                sqlite3_bind_blob(ins, 6, sqlite3_column_blob(sel, 5),
+                                  sqlite3_column_bytes(sel, 5),
+                                  SQLITE_TRANSIENT);
+            }
+            else
+            {
+                sqlite3_bind_int64(ins, 1, sqlite3_column_int64(sel, 0));
+                sqlite3_bind_int(ins, 2, sqlite3_column_int(sel, 1));
+                sqlite3_bind_double(ins, 3, sqlite3_column_double(sel, 2));
+            }
+
+            if (sqlite3_step(ins) != SQLITE_DONE)
+            {
+                break;
+            }
+
+            rows++;
+
+            if ((rows % 5000) == 0)
+            {
+                dl_exec(out, "COMMIT;");
+
+                if ((esp_timer_get_time() - t0) / 1000 > (int64_t)budget_ms)
+                {
+                    ESP_LOGW(TAG, "salvage: time budget spent after %lu rows",
+                             (unsigned long)rows);
+                    open_tx = false;
+                    break;
+                }
+
+                open_tx = dl_exec(out, "BEGIN;") == ESP_OK;
+            }
+        }
+
+        if (open_tx)
+        {
+            dl_exec(out, "COMMIT;");
+        }
+    }
+
+    sqlite3_finalize(sel);
+    sqlite3_finalize(ins);
+    sqlite3_close(in);
+
+    if (rows > 0)
+    {
+        /* the ts index needs a sort; the port has no temp files (its VFS
+           answered "disk I/O error" on the bench), so give the sorter room
+           in PSRAM and take a miss as a warning — readers stay correct */
+        char *errmsg = NULL;
+
+        (void)sqlite3_exec(out, "PRAGMA cache_size=-4096;", NULL, NULL, NULL);
+
+        if (sqlite3_exec(out, "CREATE INDEX IF NOT EXISTS records_ts "
+                         "ON records(ts); CREATE INDEX IF NOT EXISTS frames_ts "
+                         "ON frames(ts);", NULL, NULL, &errmsg) != SQLITE_OK)
+        {
+            ESP_LOGW(TAG, "salvage: ts index not built (%s); the file is "
+                     "complete, queries just walk it", errmsg ? errmsg : "?");
+            sqlite3_free(errmsg);
+        }
+    }
+
+    sqlite3_close(out);
+
+    if (rows == 0)
+    {
+        unlink(dst);
+    }
+
+    *rows_out = rows;
+    return ESP_OK;
+}

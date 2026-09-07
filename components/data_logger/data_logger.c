@@ -36,6 +36,9 @@
  * flood can never evict param records.
  */
 #include <dirent.h>
+#include <errno.h>
+#include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/time.h>
@@ -43,11 +46,14 @@
 #include <unistd.h>
 
 #include "esp_attr.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 
+#include "dev_status_manager.h"
 #include "external_storage.h"
 #include "log_manager.h"
 
@@ -56,7 +62,7 @@
 static const char *TAG = "data_logger";
 
 /* param registry (RAM; registration is allowed before start) */
-static dl_param_entry_t s_params[DL_MAX_PARAMS] EXT_RAM_BSS_ATTR;
+/* the registry lives in the PSRAM .noinit envelope below (s_params) */
 static SemaphoreHandle_t s_lock;
 static StaticSemaphore_t s_lock_buf;   /* internal: FreeRTOS object */
 
@@ -74,10 +80,130 @@ typedef struct
     uint32_t     dropped;
 } dl_ring_t;
 
-static dl_record_t s_param_slots[DL_RING_LEN] EXT_RAM_BSS_ATTR;
-static dl_record_t s_frame_slots[DL_CAN_RING_MAX] EXT_RAM_BSS_ATTR;
-static dl_ring_t s_param_ring = { s_param_slots, DL_RING_LEN };
-static dl_ring_t s_frame_ring = { s_frame_slots, 2048 };
+/* ---- PSRAM .noinit envelope (2026-09-07, ROBUSTNESS.md case 6) ------------
+   The registry and both rings survive warm resets: after a panic, a
+   watchdog or a restart that skipped the clean stop, the next boot
+   validates this envelope (magic/version/caps, a CRC over the registry
+   names, index + per-record sanity — data_logger_recover.c) and writes
+   the records that were still queued BEFORE anything new. Power cuts and
+   EN-pin resets leave random or bit-rotten PSRAM; the envelope catches
+   that and starts clean. Same pattern as restart_tracker / log_manager's
+   ring, including the 64-byte MSPI tuning guard that must lead the object. */
+#define DL_PS_MAGIC   0x53504C44u /* "DLPS" */
+#define DL_PS_VERSION 1u
+
+typedef struct
+{
+    uint8_t          guard[64];
+    uint32_t         magic;
+    uint32_t         version;
+    uint32_t         param_cap;
+    uint32_t         frame_cap;
+    uint32_t         reg_crc;          /* used + names of params[]         */
+    dl_ring_t        param_ring;
+    dl_ring_t        frame_ring;
+    dl_param_entry_t params[DL_MAX_PARAMS];
+    dl_record_t      param_slots[DL_RING_LEN];
+    dl_record_t      frame_slots[DL_CAN_RING_MAX];
+} dl_psram_t;
+
+static dl_psram_t s_ps EXT_RAM_NOINIT_ATTR;
+#define s_params     (s_ps.params)
+#define s_param_ring (s_ps.param_ring)
+#define s_frame_ring (s_ps.frame_ring)
+
+static uint32_t reg_crc_calc(void)
+{
+    uint32_t crc = 0;
+
+    for (int i = 0; i < DL_MAX_PARAMS; i++)
+    {
+        const dl_param_entry_t *p = &s_ps.params[i];
+        uint8_t used = p->used ? 1 : 0;
+
+        crc = dl_recover_crc32_update(crc, &used, 1);
+        crc = dl_recover_crc32_update(crc, p->source, sizeof(p->source));
+        crc = dl_recover_crc32_update(crc, p->name, sizeof(p->name));
+    }
+
+    return crc;
+}
+
+static void ps_reset(void)
+{
+    memset(&s_ps.magic, 0, sizeof(s_ps) - offsetof(dl_psram_t, magic));
+    s_ps.magic = DL_PS_MAGIC;
+    s_ps.version = DL_PS_VERSION;
+    s_ps.param_cap = DL_RING_LEN;
+    s_ps.frame_cap = DL_CAN_RING_MAX;
+    s_ps.param_ring.buf = s_ps.param_slots;
+    s_ps.param_ring.cap = DL_RING_LEN;
+    s_ps.frame_ring.buf = s_ps.frame_slots;
+    s_ps.frame_ring.cap = 2048; /* live length set by dl_core_apply */
+    s_ps.reg_crc = reg_crc_calc();
+}
+
+/* drop everything from the first record that does not look like one */
+static void ring_trim(dl_ring_t *r)
+{
+    for (uint32_t i = 0; i < r->fill; i++)
+    {
+        if (!dl_recover_record_sane(&r->buf[(r->tail + i) % r->cap]))
+        {
+            r->fill = i;
+            r->head = (r->tail + i) % r->cap;
+            return;
+        }
+    }
+}
+
+/* returns the number of records carried over from before a warm reset */
+static uint32_t ps_adopt(void)
+{
+    bool ok = s_ps.magic == DL_PS_MAGIC && s_ps.version == DL_PS_VERSION &&
+              s_ps.param_cap == DL_RING_LEN &&
+              s_ps.frame_cap == DL_CAN_RING_MAX &&
+              s_ps.reg_crc == reg_crc_calc() &&
+              dl_recover_ring_sane(s_ps.param_ring.cap, DL_RING_LEN,
+                                   s_ps.param_ring.head, s_ps.param_ring.tail,
+                                   &s_ps.param_ring.fill) &&
+              dl_recover_ring_sane(s_ps.frame_ring.cap, DL_CAN_RING_MAX,
+                                   s_ps.frame_ring.head, s_ps.frame_ring.tail,
+                                   &s_ps.frame_ring.fill);
+
+    for (int i = 0; ok && i < DL_MAX_PARAMS; i++)
+    {
+        const dl_param_entry_t *p = &s_ps.params[i];
+
+        if (p->used &&
+            (strnlen(p->source, DL_SOURCE_MAX) >= DL_SOURCE_MAX ||
+             strnlen(p->name, DL_NAME_MAX) >= DL_NAME_MAX ||
+             p->source[0] == '\0' || p->name[0] == '\0'))
+        {
+            ok = false;
+        }
+    }
+
+    if (!ok)
+    {
+        ps_reset();
+        return 0;
+    }
+
+    s_ps.param_ring.buf = s_ps.param_slots;
+    s_ps.frame_ring.buf = s_ps.frame_slots;
+    ring_trim(&s_ps.param_ring);
+    ring_trim(&s_ps.frame_ring);
+    s_ps.param_ring.dropped = 0;
+    s_ps.frame_ring.dropped = 0;
+
+    for (int i = 0; i < DL_MAX_PARAMS; i++)
+    {
+        s_ps.params[i].db_id = 0; /* interned per open file */
+    }
+
+    return s_ps.param_ring.fill + s_ps.frame_ring.fill;
+}
 
 /* writer task. PSRAM stack per the standard: it only touches the SD
  * card via SDMMC (never internal flash), so the §2 corollary doesn't
@@ -107,6 +233,10 @@ typedef struct
     uint32_t           files;
     uint32_t           rotations;
     uint32_t           written;
+    /* ROBUSTNESS.md */
+    uint32_t           open_fails;    /* consecutive open failures        */
+    uint32_t           corrupt_files; /* *.corrupt set aside for this stream */
+    char               last_try[48];  /* file name of the last open attempt */
 } dl_stream_t;
 
 enum { ST_PARAM = 0, ST_CAN = 1, ST_COUNT = 2 };
@@ -127,6 +257,10 @@ static dl_stream_t s_stream[ST_COUNT] =
 static data_logger_stats_t s_stats;
 static volatile bool s_run;
 static volatile bool s_gate = true;  /* logger.enable/disable rules */
+static volatile uint32_t s_park_seq; /* bumps each time the writer parks with
+                                        both files closed (stop() waits on it) */
+static bool s_hooked;                /* esp_restart shutdown handler in place */
+#define DL_OPEN_FAILS_FAULT 3
 
 /* ---- engine binding (applied from data_logger_settings.c) ------------------ */
 
@@ -191,11 +325,18 @@ void dl_core_apply(const dl_cfg_t *cfg)
     s_stream[ST_PARAM].max_files = cfg->max_files;
     s_stream[ST_CAN].max_mb = cfg->can_max_file_mb;
     s_stream[ST_CAN].max_files = cfg->can_max_files;
-    s_frame_ring.cap = cfg->ring_len;
+    uint32_t want = (cfg->ring_len > DL_CAN_RING_MAX) ? DL_CAN_RING_MAX
+                                                      : cfg->ring_len;
 
-    if (s_frame_ring.cap > DL_CAN_RING_MAX)
+    if (s_frame_ring.cap != want)
     {
-        s_frame_ring.cap = DL_CAN_RING_MAX;
+        /* a different live length re-bases the modular indices: anything
+           carried over a warm reset in this ring is void (a settings
+           change always came with a clean restart anyway) */
+        s_frame_ring.cap = want;
+        s_frame_ring.head = 0;
+        s_frame_ring.tail = 0;
+        s_frame_ring.fill = 0;
     }
 
     s_stream[ST_PARAM].active = cfg->enabled;
@@ -313,6 +454,84 @@ static void enforce_retention(dl_stream_t *st)
     }
 }
 
+/* A dev_status fault latches to NVS — a flash write. The writer task's
+ * stack is in PSRAM, and a task on a PSRAM stack must never write flash:
+ * the cache is off during the write and the stack is gone with it
+ * (cache_utils.c:126 assert — three panics on the bench, 2026-09-07).
+ * Raise from a short-lived task on an internal stack instead. */
+typedef struct
+{
+    char code[24];
+    char detail[48];
+} dl_fault_msg_t;
+
+static void fault_task(void *arg)
+{
+    dl_fault_msg_t *m = arg;
+
+    dev_status_manager_fault_raise(m->code, m->detail);
+    heap_caps_free(m);
+    vTaskDelete(NULL);
+}
+
+static void raise_fault_async(const char *code, const char *detail)
+{
+    dl_fault_msg_t *m = heap_caps_malloc(sizeof(*m),
+                                         MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+
+    if (m == NULL)
+    {
+        return;
+    }
+
+    snprintf(m->code, sizeof(m->code), "%s", code);
+    snprintf(m->detail, sizeof(m->detail), "%s", (detail != NULL) ? detail : "");
+
+    if (xTaskCreate(fault_task, "dl_fault", 4096, m, 2, NULL) != pdPASS)
+    {
+        heap_caps_free(m);
+        ESP_LOGW(TAG, "fault %s not latched (no task)", code);
+    }
+}
+
+/* set-aside files (<name>.corrupt) of one stream; the oldest by name */
+static uint32_t count_corrupt(const char *prefix, char *oldest, size_t cap)
+{
+    DIR *dir = opendir(DL_DIR);
+    uint32_t n = 0;
+
+    if (oldest != NULL && cap > 0)
+    {
+        oldest[0] = '\0';
+    }
+
+    if (dir == NULL)
+    {
+        return 0;
+    }
+
+    struct dirent *ent;
+
+    while ((ent = readdir(dir)) != NULL)
+    {
+        if (!dl_recover_is_corrupt_name(ent->d_name, prefix, NULL))
+        {
+            continue;
+        }
+
+        n++;
+
+        if (oldest != NULL && cap > strlen(ent->d_name) &&
+            (oldest[0] == '\0' || strcmp(ent->d_name, oldest) < 0))
+        {
+            strcpy(oldest, ent->d_name);
+        }
+    }
+
+    closedir(dir);
+    return n;
+}
+
 /* the newest file is resumable only if the current engine wrote it */
 static bool ext_matches(const char *fname, const char *ext)
 {
@@ -336,8 +555,25 @@ static esp_err_t open_current(dl_stream_t *st, bool force_new)
     mkdir(DL_DIR, 0775);
     scan_dir(&scan, st->prefix);
 
-    if (!force_new && scan.count > 0 &&
-        ext_matches(scan.newest, st->eng->ext))
+    bool resume = !force_new && scan.count > 0 &&
+                  ext_matches(scan.newest, st->eng->ext);
+
+    if (resume && st->eng->resume_max != 0)
+    {
+        struct stat sb;
+        char p[80];
+
+        snprintf(p, sizeof(p), DL_DIR "/%s", scan.newest);
+
+        if (stat(p, &sb) == 0 && (uint64_t)sb.st_size > st->eng->resume_max)
+        {
+            ESP_LOGI(TAG, "%s is too big for the torn-tail check; starting "
+                     "a new file", scan.newest);
+            resume = false;
+        }
+    }
+
+    if (resume)
     {
         strcpy(fname, scan.newest);
     }
@@ -358,6 +594,7 @@ static esp_err_t open_current(dl_stream_t *st, bool force_new)
     }
 
     snprintf(st->cur_path, sizeof(st->cur_path), DL_DIR "/%s", fname);
+    snprintf(st->last_try, sizeof(st->last_try), "%s", fname);
 
     esp_err_t err = st->eng->open(st->ctx, st->cur_path, st->frames);
 
@@ -375,6 +612,9 @@ static esp_err_t open_current(dl_stream_t *st, bool force_new)
     snprintf(st->file, sizeof(st->file), "%s", fname);
     st->file_rows = 0;
     enforce_retention(st);
+    st->corrupt_files = count_corrupt(st->prefix, NULL, 0);
+    s_stats.corrupt = s_stream[ST_PARAM].corrupt_files +
+                      s_stream[ST_CAN].corrupt_files;
     ESP_LOGI(TAG, "logging to %s (rotate at %lu MB)", fname,
              (unsigned long)st->max_mb);
     return ESP_OK;
@@ -412,6 +652,131 @@ static void rotate(dl_stream_t *st)
     }
 }
 
+/* keep at most DL_CORRUPT_KEEP set-aside files per stream */
+static void prune_corrupt(dl_stream_t *st)
+{
+    char oldest[64];
+
+    for (int guard = 0; guard < 8; guard++)
+    {
+        uint32_t n = count_corrupt(st->prefix, oldest, sizeof(oldest));
+
+        st->corrupt_files = n;
+
+        if (n <= DL_CORRUPT_KEEP || oldest[0] == '\0')
+        {
+            return;
+        }
+
+        char path[96];
+
+        snprintf(path, sizeof(path), DL_DIR "/%s", oldest);
+
+        if (unlink(path) != 0)
+        {
+            return;
+        }
+
+        ESP_LOGI(TAG, "set-aside cap: deleted %s", oldest);
+    }
+}
+
+/* The file just failed as CORRUPT (ROBUSTNESS.md case 5): set it aside as
+ * <name>.corrupt, drop its journal, latch a fault, copy what sqlite can
+ * still read into a fresh file with the old name, and go on in a new
+ * file. Never retry a bad file — that was the loop that dropped every
+ * record. Writer task only. */
+static void quarantine(dl_stream_t *st)
+{
+    char orig[48], bad[64], origpath[96], badpath[96], jpath[112];
+
+    snprintf(orig, sizeof(orig), "%s",
+             st->file[0] != '\0' ? st->file : st->last_try);
+    close_current(st);
+
+    if (orig[0] == '\0' || !dl_recover_corrupt_name(orig, bad, sizeof(bad)))
+    {
+        return;
+    }
+
+    snprintf(origpath, sizeof(origpath), DL_DIR "/%s", orig);
+    snprintf(badpath, sizeof(badpath), DL_DIR "/%s", bad);
+    snprintf(jpath, sizeof(jpath), "%s-journal", origpath);
+    unlink(badpath); /* an older set-aside copy of the same name */
+
+    if (rename(origpath, badpath) != 0)
+    {
+        ESP_LOGE(TAG, "%s: cannot set aside (errno %d); deleting it so "
+                 "logging can go on", orig, errno);
+        unlink(origpath);
+        bad[0] = '\0';
+    }
+
+    unlink(jpath); /* a hot journal must never meet a new file of that name */
+    raise_fault_async("logger_file_corrupt", orig);
+    s_stats.corrupt++;
+    dl_events_error("corrupt", (int)s_stats.corrupt);
+    ESP_LOGE(TAG, "%s is corrupt: set aside as %s; logging continues in a "
+             "fresh file", orig, bad[0] != '\0' ? bad : "(deleted)");
+    prune_corrupt(st);
+
+    if (bad[0] != '\0' && st->eng == &dl_engine_sqlite)
+    {
+        uint32_t rows = 0;
+
+        if (dl_sq_salvage(badpath, origpath, st->frames, 120000, &rows) ==
+                ESP_OK && rows > 0)
+        {
+            ESP_LOGW(TAG, "salvaged %lu row(s) from %s into %s",
+                     (unsigned long)rows, bad, orig);
+        }
+    }
+
+    if (open_current(st, true) != ESP_OK)
+    {
+        s_stats.errors++;
+    }
+}
+
+/* open the stream's file; a corrupt one is set aside on the spot; repeated
+ * failures latch a fault and slow the retries down (case 10) */
+static bool ensure_open(dl_stream_t *st)
+{
+    if (st->eng->is_open(st->ctx))
+    {
+        return true;
+    }
+
+    if (open_current(st, false) == ESP_OK)
+    {
+        st->open_fails = 0;
+        return true;
+    }
+
+    if (st->eng->corrupt != NULL && st->eng->corrupt(st->ctx))
+    {
+        quarantine(st);
+
+        if (st->eng->is_open(st->ctx))
+        {
+            st->open_fails = 0;
+            return true;
+        }
+    }
+
+    s_stats.errors++;
+
+    if (++st->open_fails == DL_OPEN_FAILS_FAULT)
+    {
+        ESP_LOGE(TAG, "%s stream: cannot open a file on the card; backing "
+                 "off to 10 s retries", st->frames ? "CAN" : "params");
+        raise_fault_async("logger_storage_error",
+                          st->frames ? "can" : "params");
+    }
+
+    return false;
+}
+
 /* drain up to batch_rows records inside one transaction/flush */
 static void write_batch(dl_stream_t *st)
 {
@@ -446,10 +811,17 @@ static void write_batch(dl_stream_t *st)
 
     if (failed)
     {
-        /* card yanked mid-write, disk full, corruption — drop the file
-         * handle and let the mount/open path recover next lap */
         s_stats.errors++;
         dl_events_error("write", (int)s_stats.errors);
+
+        if (st->eng->corrupt != NULL && st->eng->corrupt(st->ctx))
+        {
+            quarantine(st); /* set aside + fresh file — never retry a bad file */
+            return;
+        }
+
+        /* card yanked mid-write, disk full — drop the file handle and let
+         * the mount/open path recover next lap */
         close_current(st);
         return;
     }
@@ -479,6 +851,7 @@ static void writer_task(void *arg)
              * the newest records from before the trigger */
             close_all();
             s_stats.storage_ok = false;
+            s_park_seq++; /* data_logger_stop() waits for this */
             ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(200)); /* resume promptly too */
             continue;
         }
@@ -498,23 +871,23 @@ static void writer_task(void *arg)
         }
 
         bool all_open = true;
+        bool backoff = false;
 
         for (int i = 0; i < ST_COUNT; i++)
         {
             dl_stream_t *st = &s_stream[i];
 
-            if (st->active && !st->eng->is_open(st->ctx) &&
-                open_current(st, false) != ESP_OK)
+            if (st->active && !ensure_open(st))
             {
-                s_stats.errors++;
                 all_open = false;
+                backoff = backoff || st->open_fails >= DL_OPEN_FAILS_FAULT;
             }
         }
 
         if (!all_open)
         {
             s_stats.storage_ok = false;
-            vTaskDelay(pdMS_TO_TICKS(2000));
+            vTaskDelay(pdMS_TO_TICKS(backoff ? 10000 : 2000));
             continue;
         }
 
@@ -577,8 +950,30 @@ esp_err_t data_logger_init(void)
         s_lock = xSemaphoreCreateMutexStatic(&s_lock_buf);
     }
 
+    uint32_t carried = ps_adopt();
+
+    if (carried > 0)
+    {
+        s_stats.salvaged = carried;
+        ESP_LOGW(TAG, "salvaged %lu record(s) queued before the last reset",
+                 (unsigned long)carried);
+    }
+
     dl_events_register();
     return dl_settings_register();
+}
+
+/* esp_restart() runs this before the reset — user restart, settings
+ * apply, OTA, CLI, factory reset: the files are flushed and closed the
+ * way sleep entry does it (ROBUSTNESS.md case 7). Panics never get here;
+ * the PSRAM envelope covers those (case 6). */
+static void dl_on_shutdown(void)
+{
+    if (s_run)
+    {
+        ESP_LOGI(TAG, "restart: flushing and closing the log files");
+        data_logger_stop();
+    }
 }
 
 esp_err_t data_logger_start(void)
@@ -601,6 +996,11 @@ esp_err_t data_logger_start(void)
     }
 
     s_run = true;
+
+    if (!s_hooked && esp_register_shutdown_handler(dl_on_shutdown) == ESP_OK)
+    {
+        s_hooked = true;
+    }
 
     if (s_task == NULL)
     {
@@ -637,8 +1037,35 @@ esp_err_t data_logger_start(void)
 
 esp_err_t data_logger_stop(void)
 {
-    s_run = false; /* writer closes the files on its next lap */
+    uint32_t seq = s_park_seq;
+
+    s_run = false;
     s_stats.running = false;
+
+    if (s_task == NULL)
+    {
+        return ESP_OK;
+    }
+
+    /* synchronous since 2026-09-07 (ROBUSTNESS.md cases 7/8): sleep entry
+       unmounts the card right after this and a restart cuts the IO —
+       wait for the writer to finish its batch and close both files */
+    xTaskNotifyGive(s_task);
+
+    for (int i = 0; i < 300 && s_park_seq == seq; i++)
+    {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
+    if (s_park_seq == seq)
+    {
+        ESP_LOGW(TAG, "stop: the writer did not park within 3 s");
+    }
+    else
+    {
+        ESP_LOGI(TAG, "stopped: log files flushed and closed");
+    }
+
     return ESP_OK;
 }
 
@@ -677,6 +1104,7 @@ esp_err_t data_logger_register_param(const char *source, const char *name,
         strcpy(s_params[i].name, name);
         s_params[i].db_id = 0;
         s_params[i].used = true;
+        s_ps.reg_crc = reg_crc_calc(); /* the envelope must match at boot */
         *out = (dl_param_t)i;
         err = ESP_OK;
         break;

@@ -54,6 +54,7 @@
 #include "expression_parser.h"
 
 #include "autopid_private.h"
+#include "autopid_transport.h"
 
 static const char *TAG = "autopid";
 
@@ -88,6 +89,7 @@ static bool s_enabled;
 
 /* runtime */
 static volatile bool s_paused_voltage;
+static volatile bool s_paused_client;     /* an app is driving the chip */
 static volatile bool s_scan_pause;        /* std scan owns the chip     */
 static QueueHandle_t s_batt_q;
 static int           s_batt_watch = -1;
@@ -137,16 +139,52 @@ static void poller_task(void *arg)
             }
         }
 
+        /* yield to an external app (Car Scanner & co. over a bridge):
+         * while it drives the chip our requests would interleave with
+         * its conversations - it would read our lines as its answers and
+         * our commands would STOP its requests (bench 2026-09-08). Legacy
+         * parity: off the chip until the app has been silent
+         * AP_CLIENT_YIELD_MS. */
+        bool client = (ap_be()->client_idle_ms != NULL) &&
+                      ap_sched_client_hold(ap_be()->client_idle_ms());
+
+        if (client != s_paused_client)
+        {
+            s_paused_client = client;
+
+            if (client)
+            {
+                ESP_LOGI(TAG, "paused: external OBD client active (resumes "
+                         "%u s after its last command)",
+                         (unsigned)(AP_CLIENT_YIELD_MS / 1000));
+            }
+            else
+            {
+                ESP_LOGI(TAG, "resumed: external OBD client idle");
+
+                /* the app left the chip in ITS state (ATS0/ATH1/ATSH/
+                   ATCRA...): restore the baseline the parser and the
+                   PID inits assume before the first poll (bench
+                   2026-09-08: every resumed poll failed on the app's
+                   ATS0 otherwise). Only when we are going to poll. */
+                if (s_enabled && !s_paused_voltage && !s_scan_pause)
+                {
+                    ap_runner_restore_baseline();
+                }
+            }
+        }
+
         /* periodic DTC scan due-check — runs every iteration, incl. the
          * idle branch, so DTC works with polling disabled (dtc_enabled
          * without enabled; TASK_dtc.md §5). Voltage pause gates it: a
-         * weak battery is no time for bus traffic. */
-        if (!s_paused_voltage && !s_scan_pause)
+         * weak battery is no time for bus traffic; the client pause too. */
+        if (!s_paused_voltage && !s_scan_pause && !s_paused_client)
         {
             ap_dtc_periodic_check();
         }
 
-        if (!s_enabled || s_paused_voltage || s_scan_pause)
+        if (!s_enabled || s_paused_voltage || s_scan_pause ||
+            s_paused_client)
         {
             s_stats.running = false;
             dev_status_manager_set(DEV_STATUS_BIT_AUTOPID_IDLE);
@@ -623,6 +661,7 @@ esp_err_t autopid_stats(autopid_stats_t *out)
 
     *out = s_stats;
     out->paused_voltage = s_paused_voltage;
+    out->paused_client = s_paused_client;
     return ESP_OK;
 }
 

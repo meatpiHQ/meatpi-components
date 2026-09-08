@@ -51,6 +51,10 @@ typedef struct
     esp_err_t (*subscribe)(QueueHandle_t q, const char *name);
     esp_err_t (*unsubscribe)(QueueHandle_t q);
     esp_err_t (*monitor_stop)(void);
+    /** ms since an EXTERNAL app (bridged TCP/BLE/USB/WS client) last
+     *  wrote to the chip; UINT32_MAX = never. NULL = no such notion. The
+     *  poller yields the chip while this is below AP_CLIENT_YIELD_MS. */
+    uint32_t  (*client_idle_ms)(void);
 } ap_transport_t;
 
 /** The OBD transport (never NULL). */

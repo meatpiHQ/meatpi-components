@@ -121,6 +121,7 @@ typedef struct
     int64_t  last_poll_us;   /* 0 = never */
     bool     running;        /* poller up and polling (not paused)     */
     bool     paused_voltage; /* pause_below_v engaged                  */
+    bool     paused_client;  /* yielding to an external ELM app        */
 } autopid_stats_t;
 
 esp_err_t autopid_stats(autopid_stats_t *out);

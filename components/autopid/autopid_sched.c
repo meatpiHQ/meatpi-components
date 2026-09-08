@@ -38,6 +38,11 @@ static int entry_count(const ap_config_t *cfg)
     return cfg->n_pids + cfg->n_filters;
 }
 
+bool ap_sched_client_hold(uint32_t idle_ms)
+{
+    return idle_ms < AP_CLIENT_YIELD_MS;
+}
+
 static int entry_group(const ap_config_t *cfg, int i)
 {
     return (i < cfg->n_pids) ? cfg->pids[i].group

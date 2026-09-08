@@ -111,6 +111,16 @@ static void send_init(const char *init)
     }
 }
 
+void ap_runner_restore_baseline(void)
+{
+    /* the app's ATZ/ATS0/ATH1/ATSH/ATCRA are all still in effect: put
+       back what the parser and the std PIDs assume (the same prelude
+       the std scan uses - ATTP not ATSP, so no EEPROM write), then let
+       the next poll replay the configured type/PID inits on top */
+    send_init(ap_std_prelude());
+    ap_runner_reset();
+}
+
 esp_err_t ap_runner_test(const char *init, const char *rxheader,
                          const char *cmd, char *raw, size_t raw_len,
                          int64_t *elapsed_us)

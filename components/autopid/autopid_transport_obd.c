@@ -42,6 +42,7 @@ static const ap_transport_t BE_OBD =
     .subscribe     = obd_chip_subscribe,
     .unsubscribe   = obd_chip_unsubscribe,
     .monitor_stop  = obd_chip_monitor_stop,
+    .client_idle_ms = obd_chip_client_idle_ms,
 };
 
 const ap_transport_t *ap_be(void)

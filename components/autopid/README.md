@@ -16,6 +16,32 @@ Decisions log there is authoritative; the big ones:
   concept, so the legacy behavior is unrepresentable.
 - **No transports inside**: autopid produces values/events; delivery
   (MQTT/HTTP/HA/ABRP) belongs to event_manager and future components.
+- **An external ELM app owns the chip while it is active** (2026-09-08,
+  legacy parity): the poller stays off the chip until a bridged client
+  (Car Scanner over TCP:35000, a BLE/USB/WS terminal) has been silent
+  for `AP_CLIENT_YIELD_MS` = 10 s - the old firmware's
+  `DEV_AUTOPID_ELM327_APP_BIT` + 10 s timer. Reproduced on the bench
+  with the two interleaved (the field report "RPM dial choppy, values
+  jump"): the chip fans EVERY line out to every subscriber, so the app
+  read autopid's `0105 / 41 05 82` as the answer to its own request, and
+  the app's command landing mid-poll made the chip print `STOPPED` -
+  80 of 200 app requests came back wrong, 0 of 200 with autopid off.
+  Source of truth is `obd_chip_client_idle_ms()` via the transport's
+  `client_idle_ms` hook (the bridge glue touches it on every app write);
+  the pure predicate `ap_sched_client_hold()` is host-tested. Visible
+  as `stats.paused_client` in `/api/autopid`, `(yielding to an OBD app)`
+  in the `autopid` console command and INFO lines `paused: external OBD
+  client active` / `resumed: external OBD client idle`. On resume the
+  poller first re-sends the protocol prelude (`ap_std_prelude()`:
+  `ATS1;ATH0;ATST96;ATTP<p>;ATSH..;ATCRA`) and replays every type/PID
+  init (`ap_runner_restore_baseline()`) - the app leaves the chip in ITS
+  state, and Car Scanner's `ATS0` alone made every resumed poll fail to
+  parse (bench: 110 failed polls, 0 ok, until the reboot). Side effects
+  while an app drives: no autopid values/events, the periodic DTC check
+  waits, and `autopid_ecu_online()` (HA `ecu_status`) goes false 30 s
+  after the last poll - the same as legacy; user-started jobs (std scan,
+  DTC scan, test-a-PID) are not gated. Not a setting on purpose (the
+  chip is a single-master serial device: sharing it is never right).
 - **Tables in a file, knobs in settings**: `/data/autopid/config.json`
   (groups/pids/filters/parameters, validated + applied LIVE via
   `PUT /api/autopid/config`) vs the `autopid` settings component
@@ -227,8 +253,21 @@ runner path: init chain, rxheader, expression — see HTTP_API §6e4).
 (one-request-per-PID-per-period, group toggle/override, type gates,
 round-robin, backoff, stagger), response-parser vectors (single frame,
 SEARCHING noise, headers-on lowest responder, ISO-TP both header
-modes, error lines), config parse happy/invalid. Bench verification per
-TASK_autopid.md Phase 1.
+modes, error lines), config parse happy/invalid, the yield-to-app window
+predicate. Bench verification per TASK_autopid.md Phase 1.
+
+**ELM app responsiveness bench (2026-09-08)** -
+`tools/testbench/obd/elm_app_bench.py [dut[:port]] [--dut-ip 10.42.1.194]`
+(PC-run; the request loop runs on rpi001 over the hotspot, verdict
+`ELM APP PASS`): a Car Scanner style `010C 1` loop of 200 requests over
+TCP:35000 while autopid is configured and polling must see zero
+foreign/`STOPPED`/`NO DATA` answers, p50 <= 12 ms, p95 <= 40 ms, >= 40
+req/s, `paused_client` reported and `polls_ok` frozen meanwhile; the
+hint-less `010C` loop must be clean too (its RTT is the chip's own
+multi-ECU wait); polling resumes within 15 s of the app's last command.
+See TESTING.md for the numbers of the last run, and
+`tools/testbench/obd/elm_compare.py` for the before/after table with a
+reference USB adapter (OBDLink) on the same bus.
 
 **Bench matrix (2026-09-06)** —
 `tools/testbench/obd/autopid_matrix_bench.py [dut[:port]] [--sim 192.168.8.1]

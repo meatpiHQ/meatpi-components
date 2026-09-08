@@ -448,6 +448,15 @@ static const char *scan_prelude(void)
     }
 }
 
+const char *ap_std_prelude(void)
+{
+    /* also the poller's chip baseline after an external ELM app had the
+       chip (spaces/headers/protocol/header/mask are whatever the app
+       left - bench 2026-09-08: Car Scanner's ATS0 made every resumed
+       poll fail to parse until the next reboot) */
+    return scan_prelude();
+}
+
 static void scan_task(void *arg)
 {
     static char resp[AP_RESP_MAX] EXT_RAM_BSS_ATTR; /* scan task only */

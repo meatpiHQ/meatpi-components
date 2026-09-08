@@ -155,6 +155,18 @@ typedef struct
  *  flagged in /api/autopid; period 0 = deliberate max-rate mode. */
 #define AP_PERIOD_FLOOR_MS      50
 
+/** Yield-to-app window: the poller stays off the chip until an external
+ *  ELM client (TCP/BLE/USB/WS app) has been silent this long. Legacy
+ *  parity: main.c cleared DEV_AUTOPID_ELM327_APP_BIT on every app
+ *  command and a 10 s timer set it back. Bench 2026-09-08 with the two
+ *  interleaved: 80 of 200 app requests answered with autopid's lines,
+ *  STOPPED or NO DATA (the "choppy RPM dial" report). */
+#define AP_CLIENT_YIELD_MS      10000
+
+/** True while the poller must stay off the chip for an external client
+ *  (@p idle_ms = ms since the client's last write, UINT32_MAX = never). */
+bool ap_sched_client_hold(uint32_t idle_ms);
+
 /** Reset slots (stagger initial due times) + runtime state from config. */
 void ap_sched_reset(ap_sched_t *st, const ap_config_t *cfg, int64_t now_us);
 
@@ -235,6 +247,10 @@ bool ap_runner_run(const ap_pid_t *pid, int pid_index,
                    const ap_param_t *params);
 void ap_runner_set_type_init(int type, const char *init);
 void ap_runner_reset(void);        /* replay inits on the next poll     */
+/** After an external ELM app had the chip: re-send the protocol prelude
+ *  (spaces on, headers off, timeout, protocol, header, mask) and replay
+ *  every type/PID init on the next poll. Poller-task context. */
+void ap_runner_restore_baseline(void);
 
 /* ATMA filter window (autopid_filter.c — poller-task context) */
 bool ap_runner_run_filter(const ap_filter_t *f, const ap_param_t *params);
@@ -248,6 +264,7 @@ esp_err_t ap_runner_test(const char *init, const char *rxheader,
 /* standard-PID scan (autopid_std.c, target half) */
 esp_err_t autopid_std_scan_start(void);     /* INVALID_STATE if running  */
 cJSON *ap_std_scan_status_json(void);       /* {status,found,error,ts}   */
+const char *ap_std_prelude(void);           /* ATS1;ATH0;ATST96;ATTP<p>.. */
 cJSON *ap_std_table_json(void);             /* the full SAE table for UI */
 const char *autopid_std_scan_path(void);    /* /data/autopid/std_scan.json */
 #endif

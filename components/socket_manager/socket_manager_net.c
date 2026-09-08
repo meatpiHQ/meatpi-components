@@ -89,6 +89,12 @@ static void set_keepalive(int fd, uint16_t idle_s)
     int intvl = 5;
     int cnt = 3;
 
+    /* interactive request/response streams (ELM327 apps): a response
+       often leaves the chip as two small writes (data line, then the
+       prompt after its multi-ECU wait) - with Nagle on, the second one
+       sits until the peer ACKs the first (delayed ACK: 40-200 ms). Ship
+       every write at once; the bridge already batches by chunk. */
+    setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &on, sizeof(on));
     setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &on, sizeof(on));
     setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, &idle, sizeof(idle));
     setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &intvl, sizeof(intvl));

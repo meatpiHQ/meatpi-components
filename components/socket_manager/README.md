@@ -33,6 +33,13 @@ nothing about what flows through it — protocol logic is translator territory.
 - **Stalled/dead clients**: TCP keepalive (idle=`keepalive_s`, intvl 5 s,
   cnt 3) + bounded send (`SO_SNDTIMEO` 100 ms); a failed send closes THAT
   client only (`tx_drops`), the server keeps running.
+- **`TCP_NODELAY` on every accepted client** (2026-09-08): the streams
+  these servers carry are interactive request/response (ELM327 apps on
+  35000, slcan, GVRET) and a chip response often leaves as two small
+  writes (the data line, then the `>` prompt after the chip's multi-ECU
+  wait). With Nagle on, the second write waits for the peer's ACK of the
+  first - a phone's delayed ACK is 40-200 ms of jitter per request. The
+  bridge already batches by chunk, so there is nothing for Nagle to win.
 - **Listener recovery**: creation failures (netif down) retry with bounded
   backoff 1→2→4→8 s (cap), never busy-spinning; recreations counted in
   `reconnects`.

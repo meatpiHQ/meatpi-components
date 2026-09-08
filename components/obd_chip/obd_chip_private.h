@@ -40,7 +40,12 @@ extern "C" {
 
 /* ---- pure parsing / framing (obd_chip_parse.c, host-testable) -------------- */
 
-#define OBD_RESP_MAX 4096 /* covers long multi-line proprietary responses */
+/* 4096 -> 16384 (2026-09-08): a 4 KB ISO-TP response (the chip's maximum,
+ * "4K data = 8K ASCII") is 8.2 KB of hex with spaces off and ~12.5 KB with
+ * spaces on plus `N:` line prefixes; the engine truncated it at 4096
+ * ("response to '23230001' exceeded 4096 bytes"). Two accumulators live in
+ * PSRAM (cmd engine + bare_probe), so the cost is 24 KB of PSRAM. */
+#define OBD_RESP_MAX 16384
 
 /** Response accumulator: feed RX bytes until the '>' prompt terminates it. */
 typedef struct
@@ -119,6 +124,8 @@ esp_err_t obd_uart_set_baud(int baud);
 esp_err_t obd_uart_write(const uint8_t *data, size_t len);
 int       obd_uart_read(uint8_t *buf, size_t len, uint32_t timeout_ms);
 void      obd_uart_flush_input(void);
+void      obd_uart_get_stats(uint32_t *tx_bytes, uint32_t *rx_overflows,
+                             uint32_t *rx_buffered);
 esp_err_t obd_uart_rx_task_start(void);
 void      obd_uart_rx_task_stop(void);
 

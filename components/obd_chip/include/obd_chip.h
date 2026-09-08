@@ -127,6 +127,22 @@ uint32_t obd_chip_dropped(QueueHandle_t q);
  */
 esp_err_t obd_chip_send(const uint8_t *data, size_t len);
 
+/* ---- external-client activity clock --------------------------------------------- */
+
+/**
+ * Mark "an external app just wrote to the chip". Called by the bridge
+ * glue's obd endpoint on every send (TCP/BLE/USB/WS apps) - NOT by
+ * obd_chip_send itself, because autopid's own monitor sends go through
+ * that too and would pause autopid against itself. ESP-side pollers
+ * (autopid) read obd_chip_client_idle_ms() and yield the chip while an
+ * app is driving it (legacy DEV_AUTOPID_ELM327_APP_BIT parity).
+ */
+void obd_chip_client_touch(void);
+
+/** Milliseconds since the last obd_chip_client_touch(); UINT32_MAX when
+ *  no external client ever wrote. */
+uint32_t obd_chip_client_idle_ms(void);
+
 /* ---- request -> response --------------------------------------------------------- */
 
 /**
@@ -199,6 +215,35 @@ esp_err_t obd_chip_firmware_update_builtin(bool force);
 
 /** The packaged image's version string ("V2.3.22"). */
 const char *obd_chip_builtin_fw_version(void);
+
+/* ---- observability ---------------------------------------------------------------- */
+
+typedef struct
+{
+    bool        ready;
+    const char *claim;          /* none | command | monitor | exclusive   */
+    uint32_t    rx_bytes;       /* chip output fanned out (after chunking) */
+    uint32_t    rx_chunks;
+    uint16_t    rx_max_chunk;
+    uint32_t    rx_overflows;   /* UART FIFO/ring overflows (input flushed) */
+    uint32_t    rx_buffered;    /* bytes waiting in the driver ring now   */
+    uint32_t    tx_bytes;       /* bytes written to the chip              */
+    uint32_t    client_idle_ms; /* obd_chip_client_idle_ms()              */
+} obd_chip_stats_t;
+
+typedef struct
+{
+    const char *name;
+    uint32_t    dropped;        /* chunks lost because the queue was full */
+    uint32_t    queued;         /* chunks waiting now                     */
+    uint32_t    depth;
+} obd_chip_sub_stats_t;
+
+esp_err_t obd_chip_get_stats(obd_chip_stats_t *out);
+size_t    obd_chip_get_subscribers(obd_chip_sub_stats_t *out, size_t max);
+
+/** GET /api/obd_chip (own-routes pattern; HTTP compositions only). */
+esp_err_t obd_chip_register_http(void);
 
 #ifdef __cplusplus
 }

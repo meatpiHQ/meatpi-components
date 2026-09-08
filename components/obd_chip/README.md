@@ -18,7 +18,57 @@ subscriber receives ALL chip output (other components' responses, monitor
 frames, unsolicited lines) and keeps or ignores what it wants. A full
 subscriber queue drops that subscriber's chunk (counted, rate-limited WARN at
 1/100) and never stalls the RX task or other subscribers. The command engine
-itself is just another subscriber. Do not add per-subscriber filters here.
+itself is just another subscriber - one that subscribes for exactly the
+duration of each `request()` (2026-09-08: a standing subscription filled
+its 64-slot queue with every app line while idle, so an ELM app streaming
+through a bridge for minutes drew a drop WARN every 100 chunks for
+nothing). Do not add per-subscriber filters here.
+
+**RX latency (2026-09-08):** the RX task blocks on the UART driver's
+event queue and drains by buffered length, so a response is fanned out
+as soon as the chip finished printing it (the FIFO rx-timeout, 10
+symbol times = 50 us at 2 Mbaud). It used to poll `uart_read_bytes(128,
+20 ms)`, which keeps waiting for "more" after the LAST byte until the
+budget expires - every short response paid ~20 ms on top of the chip's
+~3 ms (bench: a hinted `010C 1` over TCP cost 23-26 ms end to end; the
+legacy firmware, event-driven, was in the single digits). Overflow
+events (`UART_FIFO_OVF`/`UART_BUFFER_FULL`) flush the ring and log a
+WARN; the idle wake (100 ms) drains too, so a lost event can never
+strand bytes. Do not reintroduce a timed read on this task.
+
+## Measured chip behaviour, large payloads and floods (2026-09-08)
+
+Bench: `tools/testbench/obd/vt_large_bench.py` (PCAN memory ECU on
+7E4/7EC with the simulator's ECU switched off; `pcan_memory_ecu.py`)
+and `atma_flood_bench.py` (PCAN counter frames, `/api/can` as the on-bus
+witness), both through the product path TCP:35000 → bridge → UART → chip.
+
+- **Transmit, 4 KB**: `VTFullyRequestCk0FFF36<bsc><4064 B><CCCC>` (the
+  MTPS-OBD tester's shape, `wican_pro_tester/MTPS-OBD+Log.TXT`) — the
+  8 159-char line crosses socket → bridge → UART intact (bytes conserved)
+  and the chip transmits the ISO-TP transfer in ~220 ms; the ECU verified
+  every byte at 64/512/2048/4064 B. Its `7F 36 78` (pending) then `76 xx`
+  come back as the tester sees them.
+- **Receive, 4 KB**: a `23` read of 4094 B is delivered complete —
+  headers ON: 586 raw frame lines (`7EC 10 FF 63 00 01 …`, `7EC 21 …`),
+  11.7 KB of text, ~150 ms of frames + the `ATST` wait; headers OFF: a
+  length line (`FFF`) then `0: 63 00 …` rows (7 B per row, one-hex-digit
+  index that wraps), 14.6 KB with spaces. Byte-exact at the client, zero
+  drops at every hop, `rx_max_chunk` 128.
+- **The `1` "expected responses" hint ends a multi-frame response after
+  its FIRST FRAME when headers are on** (64 B → one FF line, 2 KB → `NO
+  DATA`). Hinted requests are for single-frame answers (the RPM case);
+  never hint a long read. With headers off the hint counts messages.
+- **Multi-frame assembly and automatic flow control exist only for the
+  OBD physical range** (`ATSH 7E0–7E7`, responses 7E8–7EF). On 740/748
+  the chip printed the First Frame raw and sent no FC — `ATFCSH`/`ATFCSD
+  300000`/`ATFCSM1` did not change that on this chip. `ATAL` is accepted
+  and harmless (the tester sends it).
+- **ATMA flood**: 4000 frames/s (12 000 counter frames) printed at
+  56 KB/s with every frame seen once, in order; no UART overflow, no
+  fan-out drops, bytes conserved to the client. The limit that was found
+  sat on the ESP side (one socket send per frame line) and is fixed by
+  the raw-bridge coalescing in bridge_manager.
 
 ## Chunk format & memory choice
 
@@ -37,6 +87,8 @@ zero-copy only with numbers.
 | `obd_chip_subscribe/unsubscribe(q, name)` | RX fan-out registration (caller owns the queue, item = `obd_chunk_t`). |
 | `obd_chip_dropped(q)` | Per-subscriber drop counter. |
 | `obd_chip_send(data,len)` | Serialized raw TX (a 4 KB VT payload is one call); rejected during EXCLUSIVE. |
+| `obd_chip_get_stats()` / `obd_chip_get_subscribers()` / `obd_chip_register_http()` | Observability (2026-09-08): wire + fan-out counters (`rx_bytes/chunks/max_chunk`, `rx_overflows`, `rx_buffered`, `tx_bytes`, claim, client idle) and per-subscriber `dropped/queued/depth`, served as `GET /api/obd_chip` (`obd_chip_http.c`, hand-formatted JSON). The first hop of any "missed frames" investigation: compare with `/api/bridges` and `/api/sockets`. |
+| `obd_chip_client_touch()` / `obd_chip_client_idle_ms()` | The external-client activity clock (2026-09-08): the bridge glue's `obd` endpoint touches it on every app write (TCP/BLE/USB/WS), autopid reads the idle time and yields the chip while an app drives it (legacy `DEV_AUTOPID_ELM327_APP_BIT` parity, 10 s). NOT touched by `obd_chip_send` itself - autopid's own monitor sends go through that and would pause autopid against itself. `UINT32_MAX` = no client ever wrote. |
 | `obd_chip_request(cmd,resp,len,timeout)` | One transaction: claims COMMAND, collects to the `>` prompt, strips echo+prompt. Refuses monitor-class cmds (`ESP_ERR_NOT_SUPPORTED`). |
 | `obd_chip_claim/release(type,timeout)` | COMMAND / MONITOR / EXCLUSIVE arbitration. |
 | `obd_chip_is_monitor_cmd(cmd)` | Table-driven monitor-class test (pure). |
@@ -254,7 +306,7 @@ managers; `settings_manager_start()` before `obd_chip_start()`.
 | Where | What | Size |
 |---|---|---|
 | Internal | UART driver RX 8 KB + TX 4 KB (`// internal: DMA`), RX-task stack 16 KB (`// internal: UART driver path`), TX mutex/TCB | ~29 KB |
-| PSRAM `.bss` | subscriber registry, cmd-engine queue (64×130 B) + accumulator (4 KB), config | ~13 KB |
+| PSRAM `.bss` | subscriber registry, cmd-engine queue (64×130 B) + accumulator (16 KB since 2026-09-08 — a 4 KB ISO-TP response is 8–12.5 KB of hex; the 4 KB accumulator truncated it) + bare_probe accumulator (16 KB), config | ~41 KB |
 | PSRAM heap | fw image buffer during update only | ~500 KB transient |
 
 ## Tests

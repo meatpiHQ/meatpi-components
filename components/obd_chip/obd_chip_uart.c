@@ -64,6 +64,23 @@ static const char *TAG = "obd_chip";
 #define OBD_UART_RX_BUF (18 * 1024)
 #define OBD_UART_TX_BUF (18 * 1024)
 
+/* The driver's event queue: the RX task blocks on it instead of polling
+ * uart_read_bytes with a time budget. uart_read_bytes(128, 20 ms) kept
+ * waiting for "more" after the LAST byte of every short response until
+ * the budget ran out (bench 2026-09-08: a 12-byte hinted 010C answer cost
+ * 23 ms end to end, the chip itself ~3 ms). The UART_DATA event fires at
+ * the FIFO rx-timeout (10 symbol times = 50 us at 2 Mbaud), so a response
+ * is fanned out as soon as the chip finished printing it - the legacy
+ * firmware read on the same event (wc_uart.c / elm327.c). */
+#define OBD_UART_EVT_DEPTH 32
+#define OBD_UART_EVT_WAIT_MS 100 /* wake to re-check the running flag */
+
+static QueueHandle_t s_evt_q; /* driver-owned (uart_driver_install) */
+
+/* wire accounting for GET /api/obd_chip */
+static uint32_t s_tx_bytes;
+static uint32_t s_rx_overflows;
+
 static SemaphoreHandle_t s_tx_lock;
 static StaticSemaphore_t s_tx_lock_buf; /* internal: FreeRTOS object */
 
@@ -153,7 +170,8 @@ esp_err_t obd_uart_init(int baud)
     }
 
     esp_err_t err = uart_driver_install(OBD_UART, OBD_UART_RX_BUF,
-                                        OBD_UART_TX_BUF, 0, NULL, 0);
+                                        OBD_UART_TX_BUF, OBD_UART_EVT_DEPTH,
+                                        &s_evt_q, 0);
 
     if (err != ESP_OK)
     {
@@ -186,6 +204,11 @@ esp_err_t obd_uart_write(const uint8_t *data, size_t len)
     int written = uart_write_bytes(OBD_UART, data, len);
     esp_err_t err = (written == (int)len) ? ESP_OK : ESP_FAIL;
 
+    if (written > 0)
+    {
+        s_tx_bytes += (uint32_t)written;
+    }
+
     if (err == ESP_OK)
     {
         err = uart_wait_tx_done(OBD_UART, pdMS_TO_TICKS(2000));
@@ -205,12 +228,51 @@ void obd_uart_flush_input(void)
     uart_flush_input(OBD_UART);
 }
 
+void obd_uart_get_stats(uint32_t *tx_bytes, uint32_t *rx_overflows,
+                        uint32_t *rx_buffered)
+{
+    size_t buffered = 0;
+
+    uart_get_buffered_data_len(OBD_UART, &buffered);
+    *tx_bytes = s_tx_bytes;
+    *rx_overflows = s_rx_overflows;
+    *rx_buffered = (uint32_t)buffered;
+}
+
 /* ---- RX fan-out task ------------------------------------------------------------- */
 
-static void rx_task(void *arg)
+/** Fan out everything the driver has buffered, chunk by chunk. The bytes
+ *  are already in the ring buffer, so the 1-tick budget only guards the
+ *  driver's rx mutex - there is no waiting for "more" after the last byte. */
+static void rx_drain(void)
 {
     /* internal: handed to the UART driver read path */
     static uint8_t chunk[OBD_CHIP_CHUNK_SIZE];
+    size_t avail = 0;
+
+    uart_get_buffered_data_len(OBD_UART, &avail);
+
+    /* re-checked per chunk: EXCLUSIVE may be claimed while we sleep in
+       the event wait, and the wake-up event could be the fw-update
+       engine's own first response */
+    while (avail > 0 && s_rx_running && !obd_core_exclusive_held())
+    {
+        size_t want = (avail > sizeof(chunk)) ? sizeof(chunk) : avail;
+        int got = uart_read_bytes(OBD_UART, chunk, want, 1);
+
+        if (got <= 0)
+        {
+            break;
+        }
+
+        obd_core_fanout(chunk, (size_t)got);
+        avail -= (size_t)got;
+    }
+}
+
+static void rx_task(void *arg)
+{
+    uart_event_t evt;
 
     (void)arg;
     ESP_LOGD(TAG, "rx task up");
@@ -218,20 +280,36 @@ static void rx_task(void *arg)
     while (s_rx_running)
     {
         /* MUST check BEFORE reading: during EXCLUSIVE the fw-update engine
-           reads the UART itself — a read here would steal its responses */
+           reads the UART itself - a read here would steal its responses.
+           Events posted meanwhile are stale by the time we resume; the
+           drain below reads by buffered length, not by event size. */
         if (obd_core_exclusive_held())
         {
             vTaskDelay(pdMS_TO_TICKS(50));
             continue;
         }
 
-        int got = uart_read_bytes(OBD_UART, chunk, sizeof(chunk),
-                                  pdMS_TO_TICKS(20));
+        bool have_evt = (xQueueReceive(s_evt_q, &evt,
+                                       pdMS_TO_TICKS(OBD_UART_EVT_WAIT_MS))
+                         == pdTRUE);
 
-        if (got > 0)
+        if (have_evt &&
+            (evt.type == UART_FIFO_OVF || evt.type == UART_BUFFER_FULL))
         {
-            obd_core_fanout(chunk, (size_t)got);
+            /* the chip out-ran the 18 KB ring (monitor flood with every
+               subscriber stalled): drop the backlog, keep the stream sane */
+            uart_flush_input(OBD_UART);
+            xQueueReset(s_evt_q);
+            s_rx_overflows++;
+            ESP_LOGW(TAG, "rx overflow (%s) - input flushed",
+                     evt.type == UART_FIFO_OVF ? "fifo" : "ring");
+            continue;
         }
+
+        /* drain on data events AND on the idle wake: a lost event (queue
+           full while exclusive) can never strand bytes in the ring for
+           longer than OBD_UART_EVT_WAIT_MS */
+        rx_drain();
     }
 
     s_rx_task = NULL;
@@ -245,6 +323,14 @@ esp_err_t obd_uart_rx_task_start(void)
         return ESP_OK;
     }
 
+    if (s_evt_q == NULL)
+    {
+        return ESP_ERR_INVALID_STATE; /* driver not installed */
+    }
+
+    /* bring-up's bare probes left their events behind; the ring itself
+       was flushed before each probe, so only the queue needs clearing */
+    xQueueReset(s_evt_q);
     s_rx_running = true;
     s_rx_task = xTaskCreateStatic(rx_task, "obd_chip_rx",
                                   sizeof(s_rx_stack) / sizeof(s_rx_stack[0]),

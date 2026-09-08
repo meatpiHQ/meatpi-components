@@ -64,10 +64,22 @@ esp_err_t obd_cmd_engine_init(void)
             return ESP_ERR_NO_MEM;
         }
 
-        return obd_chip_subscribe(s_q, "cmd_engine");
+        /* NOT subscribed here: the engine subscribes per transaction
+           (below). A standing subscription filled the 64-slot queue with
+           every app line while no request was in flight — an ELM app
+           streaming through a bridge for minutes (autopid yielded) made
+           the fan-out drop-count this queue and WARN every 100 chunks
+           for nothing (2026-09-08). */
     }
 
     return ESP_OK;
+}
+
+static void cmd_engine_done(void)
+{
+    obd_chip_unsubscribe(s_q);
+    obd_gate_release(obd_chip_gate_owner);
+    obd_core_release();
 }
 
 esp_err_t obd_chip_request(const char *cmd, char *resp, size_t resp_len,
@@ -112,11 +124,22 @@ esp_err_t obd_chip_request(const char *cmd, char *resp, size_t resp_len,
        path below; the fan-out's '>' detection may beat us to it) */
     (void)obd_gate_acquire(obd_chip_gate_owner, OBD_GATE_WAIT_MS);
 
-    /* start clean: drop stale chunks from before our transaction */
+    /* start clean: drop stale chunks from before our transaction, then
+       join the fan-out for exactly this transaction (subscribe BEFORE
+       the write so the response's first chunk cannot be missed) */
     obd_chunk_t chunk;
 
     while (xQueueReceive(s_q, &chunk, 0) == pdTRUE)
     {
+    }
+
+    err = obd_chip_subscribe(s_q, "cmd_engine");
+
+    if (err != ESP_OK)
+    {
+        obd_gate_release(obd_chip_gate_owner);
+        obd_core_release();
+        return err;
     }
 
     obd_parse_reset(&s_acc);
@@ -134,8 +157,7 @@ esp_err_t obd_chip_request(const char *cmd, char *resp, size_t resp_len,
 
     if (err != ESP_OK)
     {
-        obd_gate_release(obd_chip_gate_owner);
-        obd_core_release();
+        cmd_engine_done();
         return err;
     }
 
@@ -148,8 +170,7 @@ esp_err_t obd_chip_request(const char *cmd, char *resp, size_t resp_len,
 
         if (now >= deadline)
         {
-            obd_gate_release(obd_chip_gate_owner);
-            obd_core_release();
+            cmd_engine_done();
             ESP_LOGD(TAG, "request '%.8s' timed out (%u bytes so far)", cmd,
                      (unsigned)s_acc.len);
             return ESP_ERR_TIMEOUT;
@@ -162,8 +183,7 @@ esp_err_t obd_chip_request(const char *cmd, char *resp, size_t resp_len,
     }
 
     obd_parse_extract(&s_acc, cmd, resp, resp_len);
-    obd_gate_release(obd_chip_gate_owner);
-    obd_core_release();
+    cmd_engine_done();
 
     if (s_acc.overflow)
     {

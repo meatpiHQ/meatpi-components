@@ -69,6 +69,19 @@ typedef enum
     CLAIM_EXCLUSIVE,
 } claim_state_t;
 
+/* external-client activity clock (obd_chip_client_touch): the last time a
+ * bridge (TCP/BLE/USB/WS app) wrote to the chip; 0 = never. Read by
+ * autopid to yield the chip while an app drives it (legacy
+ * DEV_AUTOPID_ELM327_APP_BIT parity, bench 2026-09-08). */
+static volatile int64_t s_client_touch_us;
+
+/* RX fan-out accounting (GET /api/obd_chip): what the chip printed vs
+ * what each subscriber managed to take - the first hop of any "missed
+ * frames" question (ATMA floods, 8 KB VT responses). RX-task-only writes. */
+static uint32_t s_rx_bytes;
+static uint32_t s_rx_chunks;
+static uint16_t s_rx_max_chunk;
+
 /* registry + state: PSRAM .bss (§2) */
 static obd_sub_t s_subs[OBD_MAX_SUBSCRIBERS] EXT_RAM_BSS_ATTR;
 static size_t s_sub_count;
@@ -134,6 +147,14 @@ void obd_core_fanout(const uint8_t *data, size_t len)
     chunk.len = (uint16_t)((len > OBD_CHIP_CHUNK_SIZE) ? OBD_CHIP_CHUNK_SIZE
                                                        : len);
     memcpy(chunk.data, data, chunk.len);
+
+    s_rx_bytes += chunk.len;
+    s_rx_chunks++;
+
+    if (chunk.len > s_rx_max_chunk)
+    {
+        s_rx_max_chunk = chunk.len;
+    }
 
     for (size_t i = 0; i < s_sub_count; i++)
     {
@@ -345,6 +366,75 @@ esp_err_t obd_chip_send(const uint8_t *data, size_t len)
     }
 
     return obd_uart_write(data, len);
+}
+
+/* ---- observability (GET /api/obd_chip) ----------------------------------------- */
+
+esp_err_t obd_chip_get_stats(obd_chip_stats_t *out)
+{
+    if (out == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    static const char *CLAIMS[] = { "none", "command", "monitor",
+                                    "exclusive" };
+
+    memset(out, 0, sizeof(*out));
+    out->ready = obd_chip_ready();
+    out->claim = CLAIMS[(s_claim <= CLAIM_EXCLUSIVE) ? s_claim : 0];
+    out->rx_bytes = s_rx_bytes;
+    out->rx_chunks = s_rx_chunks;
+    out->rx_max_chunk = s_rx_max_chunk;
+    out->client_idle_ms = obd_chip_client_idle_ms();
+    obd_uart_get_stats(&out->tx_bytes, &out->rx_overflows,
+                       &out->rx_buffered);
+    return ESP_OK;
+}
+
+size_t obd_chip_get_subscribers(obd_chip_sub_stats_t *out, size_t max)
+{
+    size_t n = 0;
+
+    for (size_t i = 0; i < s_sub_count && n < max; i++)
+    {
+        QueueHandle_t q = s_subs[i].q;
+
+        if (q == NULL)
+        {
+            continue;
+        }
+
+        out[n].name = s_subs[i].name;
+        out[n].dropped = s_subs[i].dropped;
+        out[n].queued = (uint32_t)uxQueueMessagesWaiting(q);
+        out[n].depth = out[n].queued + (uint32_t)uxQueueSpacesAvailable(q);
+        n++;
+    }
+
+    return n;
+}
+
+/* ---- external-client activity clock ------------------------------------------- */
+
+void obd_chip_client_touch(void)
+{
+    s_client_touch_us = esp_timer_get_time();
+}
+
+uint32_t obd_chip_client_idle_ms(void)
+{
+    int64_t t = s_client_touch_us;
+
+    if (t == 0)
+    {
+        return UINT32_MAX; /* never */
+    }
+
+    int64_t idle = (esp_timer_get_time() - t) / 1000;
+
+    return (idle < 0) ? 0 : (idle > UINT32_MAX) ? UINT32_MAX
+                                                : (uint32_t)idle;
 }
 
 /* ---- chip management ------------------------------------------------------------- */

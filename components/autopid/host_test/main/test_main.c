@@ -1854,6 +1854,20 @@ void test_config_parse_mux_param(void)
     TEST_ASSERT_TRUE(strstr(err, "mux") != NULL);
 }
 
+/* ---- yield-to-app window (legacy DEV_AUTOPID_ELM327_APP_BIT parity) ---------- */
+
+static void test_client_hold_window(void)
+{
+    /* an app that just wrote holds the chip; silence past the window
+       releases it; "never wrote" (UINT32_MAX) never holds */
+    TEST_ASSERT_TRUE(ap_sched_client_hold(0));
+    TEST_ASSERT_TRUE(ap_sched_client_hold(AP_CLIENT_YIELD_MS - 1));
+    TEST_ASSERT_FALSE(ap_sched_client_hold(AP_CLIENT_YIELD_MS));
+    TEST_ASSERT_FALSE(ap_sched_client_hold(AP_CLIENT_YIELD_MS + 1));
+    TEST_ASSERT_FALSE(ap_sched_client_hold(UINT32_MAX));
+    TEST_ASSERT_EQUAL_UINT32(10000, AP_CLIENT_YIELD_MS); /* the legacy 10 s */
+}
+
 void app_main(void)
 {
     UNITY_BEGIN();
@@ -1921,6 +1935,8 @@ void app_main(void)
     RUN_TEST(test_dbc_parse_mux_extended_flags);
     RUN_TEST(test_dbc_mux_cond);
     RUN_TEST(test_dbc_muxed_value_crosscheck);
+
+    RUN_TEST(test_client_hold_window);
 
     UNITY_END();
 }

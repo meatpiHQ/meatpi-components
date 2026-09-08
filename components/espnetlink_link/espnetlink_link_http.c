@@ -96,6 +96,10 @@ static esp_err_t status_handler(httpd_req_t *req)
     cJSON_AddBoolToObject(o, "pair_blocked_factory_pw",
                           st.pair_blocked_factory_pw);
     cJSON_AddStringToObject(o, "last_error", st.last_error);
+    cJSON_AddStringToObject(o, "dongle_fw", st.dongle_fw);
+    cJSON_AddNumberToObject(o, "dongle_api", st.dongle_api);
+    cJSON_AddNumberToObject(o, "dongle_api_min", ESPNL_MIN_API_LEVEL);
+    cJSON_AddBoolToObject(o, "health_unsupported", st.health_unsupported);
 
     cJSON *u = cJSON_AddObjectToObject(o, "usb");
 

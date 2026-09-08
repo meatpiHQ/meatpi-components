@@ -81,17 +81,35 @@ bench 2026-08-24) — polls are held 15 s meanwhile.
 
 ## Fresh devices (out of the box)
 
-**Pairing hold (2026-09-07):** `wifi_manager` refuses any settings save
-that keeps the factory AP password, and the zero-touch key store is such
-a save. While the AP password is still the factory one, the link HOLDS
-pairing instead of churning: the machine stays `idle` (no cut, no VBUS
-cycles), `pair_blocked_factory_pw` is set in the status/HTTP surface, the
-web UI shows a warning on the ESPNetLink card, and the CLI prints
-`pairing: ON HOLD (factory AP password)`. Changing the AP password
-reboots the device (reboot-to-apply) and pairing then completes by
-itself. Any store failure is also recorded verbatim in `last_error`
-(status/HTTP/UI) — the field failure surfaced only as the misleading
-"Not an ESPNetLink / gave up" label before.
+**Pairing hold (2026-09-07, reworked 2026-09-08):** `wifi_manager`
+refuses any settings save that keeps the factory AP password, and the
+zero-touch key store is such a save. The machine still identifies the
+dongle and reads its key (so the status shows the dongle's id, firmware
+and API level), then parks in the `hold` state instead of storing or
+cutting: no retries, no VBUS cycles. `pair_blocked_factory_pw` (a
+boot-time fact for an unpaired device) and `last_error` say why, the web
+UI shows the note on the ESPNetLink card, the CLI prints the state and
+the text. A PAIRED WiCAN that meets a re-provisioned dongle (new key)
+while its AP still has the factory password parks the same way — the
+gate refuses the changed key and `last_error` carries the gate's own
+message. Changing the AP password reboots the device (reboot-to-apply)
+and the next enumeration pairs by itself.
+
+**Unsupported dongle firmware (2026-09-08):** a dongle that answers
+`/api/info` but 404s the WiFi-modem routes parks in `unsupported` —
+the bench found a July test build (`v1.22-41-gf0e8804`, api 6) on a
+field unit: no credentials route, no `/api/wifi_modem` health, no
+`usb_dev_ethernet.class`, LTE never started, AP named `GPS-USB-TEST`.
+It used to surface as "Not an ESPNetLink / gave up" plus VBUS churn;
+now `last_error` names the missing route and says to update the dongle
+firmware, the health poll sets `health_unsupported` instead of leaving
+the LTE panel on "waiting for the first poll", and in the USB modes a
+missing settings API keeps the link (`ncm_up`) with `last_error`
+explaining why the class stayed CDC-NCM. `/api/info`'s `fw_version` /
+`api_level` live in the status (`dongle_fw`, `dongle_api`,
+`dongle_api_min` = `ESPNL_MIN_API_LEVEL`, 7 = the WiFi-modem surface);
+a level below the minimum is flagged in the UI even when the routes
+happen to exist.
 
 
 A fresh WiCAN boots with `wifi_manager.mode=ap` and no STA networks; the

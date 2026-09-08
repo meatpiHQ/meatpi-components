@@ -105,7 +105,11 @@ typedef struct
     bool     pair_blocked_factory_pw; /**< zero-touch held: the AP still
                                            has the factory password (the
                                            store would be refused)       */
-    char     last_error[64];   /**< last pairing failure text, "" = none */
+    char     last_error[160];  /**< last pairing failure text, "" = none */
+    char     dongle_fw[24];    /**< /api/info fw_version, "" = not seen  */
+    int      dongle_api;       /**< /api/info api_level, 0 = not seen    */
+    bool     health_unsupported; /**< /api/wifi_modem answered 404: the
+                                      dongle firmware has no health API  */
     /* GPS (last poll) */
     bool     gps_valid;
     uint32_t gps_age_ms;       /**< since the last valid fix; 0 if none  */

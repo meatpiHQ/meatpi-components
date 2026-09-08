@@ -42,6 +42,12 @@ extern "C" {
 #define ESPNL_USB_JTAG_PID  0x1001   /* S3 ROM serial-JTAG: boot window */
 #define ESPNL_USB_HOST_ADDR "192.168.7.1"   /* the dongle on the NCM link */
 #define ESPNL_USB_OWN_ADDR  "192.168.7.2"   /* what its DHCP hands us     */
+/* The dongle's /api/info api_level this integration was written against:
+ * 7 = the WiFi-modem surface (credentials, /api/wifi_modem health, the
+ * runtime USB class). Older builds are still probed (they may carry the
+ * routes without the bump), but the mismatch is reported in the status
+ * so a stale dongle build is visible instead of a "foreign device". */
+#define ESPNL_MIN_API_LEVEL 7
 
 /** True for the ESPNetLink's own composite device only. */
 bool espnl_core_is_espnetlink(uint16_t vid, uint16_t pid);
@@ -146,6 +152,11 @@ typedef enum
     ESPNL_SM_FOREIGN,    /**< not an ESPNetLink / gave up until re-plug    */
     ESPNL_SM_NCM_SHARE,  /**< usb_ncm mode: ensuring the dongle shares     */
     ESPNL_SM_NCM_UP,     /**< usb_ncm mode: steady, polling over USB       */
+    ESPNL_SM_HOLD,       /**< key read but it cannot be stored now (factory
+                              AP password / store refused): wait for the
+                              operator, no retries, no VBUS cycles         */
+    ESPNL_SM_UNSUPPORTED,/**< the dongle firmware lacks the API (404 /
+                              api_level too old): update it, then re-plug */
     ESPNL_SM_COUNT
 } espnl_sm_state_t;
 
@@ -161,6 +172,9 @@ typedef enum
     ESPNL_EV_NOT_ESPNETLINK,  /**< /api/info answered, wrong device_type  */
     ESPNL_EV_AP_STALE,        /**< stored key no longer joins the AP      */
     ESPNL_EV_REPAIR,          /**< operator asked for a re-pair           */
+    ESPNL_EV_HOLD,            /**< key read, store not possible now (the
+                                   engine explains in last_error)         */
+    ESPNL_EV_UNSUPPORTED,     /**< the dongle has no such API (HTTP 404)  */
 } espnl_sm_event_t;
 
 typedef enum

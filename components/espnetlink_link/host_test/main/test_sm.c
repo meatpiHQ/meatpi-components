@@ -272,6 +272,63 @@ static void test_sm_ncm_mode(void)
     TEST_ASSERT_EQUAL(ESPNL_SM_NCM_UP, sm.state);
 }
 
+/* The key was read but the WiCAN cannot store it now (factory AP
+ * password, 2026-09-08 field-hit): park, never retry or power-cycle; the
+ * link edges and the operator's re-pair are the only ways out. */
+static void test_sm_hold_parks_without_churn(void)
+{
+    setup_wifi();
+    TEST_ASSERT_EQUAL(ESPNL_ACT_GET_INFO, step(ESPNL_EV_LINK_UP));
+    TEST_ASSERT_EQUAL(ESPNL_ACT_GET_KEY, step(ESPNL_EV_OK));
+    TEST_ASSERT_EQUAL(ESPNL_ACT_NONE, step(ESPNL_EV_HOLD));
+    TEST_ASSERT_EQUAL(ESPNL_SM_HOLD, sm.state);
+    TEST_ASSERT_EQUAL_STRING("hold", espnl_sm_state_str(sm.state));
+    TEST_ASSERT_EQUAL(ESPNL_ACT_NONE, tick(5000));
+    TEST_ASSERT_EQUAL(ESPNL_ACT_NONE, tick(60000));
+    TEST_ASSERT_EQUAL(ESPNL_SM_HOLD, sm.state);
+    TEST_ASSERT_EQUAL_INT(0, sm.cycles);
+    /* the operator's re-pair still works (one cycle, re-read the key) */
+    TEST_ASSERT_EQUAL(ESPNL_ACT_VBUS_CYCLE, step(ESPNL_EV_REPAIR));
+    TEST_ASSERT_EQUAL(ESPNL_SM_IDLE, sm.state);
+    /* and a re-plug simply tries again */
+    TEST_ASSERT_EQUAL(ESPNL_ACT_GET_INFO, step(ESPNL_EV_LINK_UP));
+    TEST_ASSERT_EQUAL(ESPNL_ACT_GET_KEY, step(ESPNL_EV_OK));
+    TEST_ASSERT_EQUAL(ESPNL_ACT_NONE, step(ESPNL_EV_HOLD));
+    TEST_ASSERT_EQUAL(ESPNL_ACT_NONE, step(ESPNL_EV_LINK_DOWN));
+    TEST_ASSERT_EQUAL(ESPNL_SM_IDLE, sm.state);
+}
+
+/* A dongle whose firmware predates the WiFi-modem API (bench 2026-09-08:
+ * a July test build answered /api/info but 404'd the credentials): say
+ * so and wait for a firmware update, never "foreign", never a cycle. */
+static void test_sm_unsupported_dongle_firmware(void)
+{
+    setup_wifi();
+    TEST_ASSERT_EQUAL(ESPNL_ACT_GET_INFO, step(ESPNL_EV_LINK_UP));
+    TEST_ASSERT_EQUAL(ESPNL_ACT_GET_KEY, step(ESPNL_EV_OK));
+    TEST_ASSERT_EQUAL(ESPNL_ACT_NONE, step(ESPNL_EV_UNSUPPORTED));
+    TEST_ASSERT_EQUAL(ESPNL_SM_UNSUPPORTED, sm.state);
+    TEST_ASSERT_EQUAL_STRING("unsupported", espnl_sm_state_str(sm.state));
+    TEST_ASSERT_EQUAL(ESPNL_ACT_NONE, tick(60000));
+    TEST_ASSERT_EQUAL(ESPNL_SM_UNSUPPORTED, sm.state);
+    TEST_ASSERT_EQUAL_INT(0, sm.cycles);
+    TEST_ASSERT_EQUAL(ESPNL_ACT_NONE, step(ESPNL_EV_LINK_DOWN));
+    TEST_ASSERT_EQUAL(ESPNL_SM_IDLE, sm.state);
+
+    /* the verdict can also come from /api/info itself (api_level) */
+    TEST_ASSERT_EQUAL(ESPNL_ACT_GET_INFO, step(ESPNL_EV_LINK_UP));
+    TEST_ASSERT_EQUAL(ESPNL_ACT_NONE, step(ESPNL_EV_UNSUPPORTED));
+    TEST_ASSERT_EQUAL(ESPNL_SM_UNSUPPORTED, sm.state);
+
+    /* usb_ncm mode: no settings API = run with what the dongle offers */
+    now = 5000;
+    espnl_sm_init(&sm, true, 2, now);
+    TEST_ASSERT_EQUAL(ESPNL_ACT_GET_INFO, step(ESPNL_EV_LINK_UP));
+    TEST_ASSERT_EQUAL(ESPNL_ACT_ENSURE_SHARE, step(ESPNL_EV_OK));
+    TEST_ASSERT_EQUAL(ESPNL_ACT_NONE, step(ESPNL_EV_UNSUPPORTED));
+    TEST_ASSERT_EQUAL(ESPNL_SM_NCM_UP, sm.state);
+}
+
 static void test_sm_init_clamps(void)
 {
     espnl_sm_init(&sm, false, 0, 0);
@@ -296,5 +353,7 @@ void run_sm_tests(void)
     RUN_TEST(test_sm_reenumeration_rereads_key);
     RUN_TEST(test_sm_ap_stale_and_repair);
     RUN_TEST(test_sm_ncm_mode);
+    RUN_TEST(test_sm_hold_parks_without_churn);
+    RUN_TEST(test_sm_unsupported_dongle_firmware);
     RUN_TEST(test_sm_init_clamps);
 }

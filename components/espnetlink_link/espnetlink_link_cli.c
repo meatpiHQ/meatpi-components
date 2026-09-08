@@ -80,12 +80,16 @@ static int cmd_espnetlink(int argc, char **argv)
     (void)espnetlink_link_status(&st);
 
     cmdline_printf("ESPNETLINK: enabled=%d mode=%s auto_pair=%d paired=%d "
-                   "ssid='%s' device_id=%s uplink=%s host=%s\n",
+                   "ssid='%s' device_id=%s uplink=%s host=%s fw=%s api=%d"
+                   "%s\n",
                    (int)st.enabled,
                    espnl_core_mode_str((espnl_core_mode_t)st.mode),
                    (int)st.auto_pair, (int)st.paired, st.ssid,
                    st.device_id[0] ? st.device_id : "-",
-                   uplink_str(st.uplink), st.host[0] ? st.host : "-");
+                   uplink_str(st.uplink), st.host[0] ? st.host : "-",
+                   st.dongle_fw[0] ? st.dongle_fw : "-", st.dongle_api,
+                   (st.dongle_api != 0 && st.dongle_api < ESPNL_MIN_API_LEVEL)
+                       ? " (older than this WiCAN expects)" : "");
     cmdline_printf("  usb: attached=%d pair_state=%s cuts=%lu "
                    "vbus_cycles=%lu errors=%lu\n",
                    (int)st.usb_attached, st.pair_state,
@@ -100,11 +104,14 @@ static int cmd_espnetlink(int argc, char **argv)
                         st.last_error[0] != '\0') ? " | " : "",
                        st.last_error);
     }
-    cmdline_printf("  gps: valid=%d age=%lu ms | dongle: valid=%d lte=%d "
+    cmdline_printf("  gps: valid=%d age=%lu ms | dongle: valid=%d%s lte=%d "
                    "rssi=%d op='%s' net=%s fix=%d usb_data=%d | polls=%lu "
                    "fail=%lu link_ups=%lu\n",
                    (int)st.gps_valid, (unsigned long)st.gps_age_ms,
-                   (int)st.health_valid, (int)st.lte_connected, st.rssi_dbm,
+                   (int)st.health_valid,
+                   st.health_unsupported ? " (no health API in this dongle "
+                                           "firmware)" : "",
+                   (int)st.lte_connected, st.rssi_dbm,
                    st.operator_name, st.network_type[0] ? st.network_type
                                                         : "-",
                    (int)st.dongle_gps_fix, (int)st.dongle_usb_data,

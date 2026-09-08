@@ -166,15 +166,22 @@ esp_err_t espnetlink_link_status(espnetlink_link_status_t *out)
     return ESP_OK;
 }
 
-void espnl_engine_note_device_id(const char *device_id)
+void espnl_engine_note_info(const char *device_id, const char *fw_version,
+                            int api_level)
 {
-    if (device_id == NULL || s_lock == NULL)
+    if (s_lock == NULL)
     {
         return;
     }
     xSemaphoreTake(s_lock, portMAX_DELAY);
-    strncpy(s_st.device_id, device_id, sizeof(s_st.device_id) - 1);
-    s_st.device_id[sizeof(s_st.device_id) - 1] = '\0';
+    if (device_id != NULL)
+    {
+        strncpy(s_st.device_id, device_id, sizeof(s_st.device_id) - 1);
+        s_st.device_id[sizeof(s_st.device_id) - 1] = '\0';
+    }
+    snprintf(s_st.dongle_fw, sizeof(s_st.dongle_fw), "%s",
+             fw_version != NULL ? fw_version : "");
+    s_st.dongle_api = api_level;
     xSemaphoreGive(s_lock);
 }
 
@@ -242,8 +249,11 @@ static void sta_gateway(char *out, size_t len)
 
 /* ---- HTTP polls ---------------------------------------------------- */
 
+/* @p status_out: the HTTP status (-1 = no answer), also on failure — a
+ * 404 means the dongle firmware has no such route, which the caller
+ * reports instead of retrying in silence. */
 static bool http_get(const char *url, int timeout_ms,
-                     http_client_response_t *resp)
+                     http_client_response_t *resp, int *status_out)
 {
     http_client_request_t req =
     {
@@ -256,6 +266,10 @@ static bool http_get(const char *url, int timeout_ms,
     memset(resp, 0, sizeof(*resp));
     esp_err_t err = http_client_manager_request(&req, resp);
 
+    if (status_out != NULL)
+    {
+        *status_out = err == ESP_OK ? resp->status_code : -1;
+    }
     if (err != ESP_OK || resp->status_code != 200 || resp->data == NULL)
     {
         ESP_LOGD(TAG, "GET %s: %s status %d", url, esp_err_to_name(err),
@@ -280,7 +294,7 @@ static void poll_gps(const char *host)
     s_st.polls++;
     xSemaphoreGive(s_lock);
 
-    if (!http_get(url, ESPNL_GPS_TIMEOUT_MS, &resp))
+    if (!http_get(url, ESPNL_GPS_TIMEOUT_MS, &resp, NULL))
     {
         xSemaphoreTake(s_lock, portMAX_DELAY);
         s_st.failures++;
@@ -325,10 +339,21 @@ static void poll_health(const char *host)
         return;
     }
 
-    if (!http_get(url, ESPNL_HEALTH_TIMEOUT_MS, &resp))
+    int status = -1;
+
+    if (!http_get(url, ESPNL_HEALTH_TIMEOUT_MS, &resp, &status))
     {
         xSemaphoreTake(s_lock, portMAX_DELAY);
         s_health.valid = false;
+        if (status == 404 && !s_st.health_unsupported)
+        {
+            /* a dongle build from before the WiFi-modem work (bench
+             * 2026-09-08): the LTE panel would sit on "waiting for the
+             * first poll" forever without this */
+            s_st.health_unsupported = true;
+            ESP_LOGW(TAG, "dongle health: GET /api/wifi_modem answers 404 - "
+                     "the dongle firmware has no health API (update it)");
+        }
         xSemaphoreGive(s_lock);
         s_consec_fail++;
         return;
@@ -340,6 +365,7 @@ static void poll_health(const char *host)
     http_client_manager_free(&resp);
 
     xSemaphoreTake(s_lock, portMAX_DELAY);
+    s_st.health_unsupported = false;
     if (ok)
     {
         bool was_up = s_health.valid && s_health.lte_connected;
@@ -529,6 +555,7 @@ static void link_task(void *arg)
             {
                 s_gps.valid = false;
                 s_health.valid = false;
+                s_st.health_unsupported = false;
             }
             xSemaphoreGive(s_lock);
         }
@@ -643,6 +670,9 @@ esp_err_t espnetlink_link_start(void)
         cfg->mode == ESPNETLINK_MODE_WIFI_MODEM &&
         wifi_manager_ap_password_is_factory();
     s_st.last_error[0] = '\0';
+    s_st.dongle_fw[0] = '\0';
+    s_st.dongle_api = 0;
+    s_st.health_unsupported = false;
     strncpy(s_st.ssid, cfg->ssid, sizeof(s_st.ssid) - 1);
     strncpy(s_st.device_id, cfg->device_id, sizeof(s_st.device_id) - 1);
     xSemaphoreGive(s_lock);

@@ -101,8 +101,11 @@ const char *espnl_usb_host(void);
 
 /* ---- engine hooks used by the USB driver -------------------------------- */
 
-/** The identified dongle's device id (status document). */
-void espnl_engine_note_device_id(const char *device_id);
+/** The identified dongle (status document): device id, firmware version
+ *  and API level from /api/info — a stale dongle build is visible in the
+ *  status instead of surfacing as a "foreign device" (bench 2026-09-08). */
+void espnl_engine_note_info(const char *device_id, const char *fw_version,
+                            int api_level);
 
 /** The USB side is power-cycling the dongle, or saw it re-enumerate:
  *  hold the polls and re-join its AP (the association is dead either

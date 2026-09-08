@@ -143,7 +143,17 @@ static espnl_sm_event_t act_get_info(void)
 
     ESP_LOGI(TAG, "identified ESPNetLink %s (fw %s, api %d)", info.device_id,
              info.fw_version, info.api_level);
-    espnl_engine_note_device_id(info.device_id);
+    espnl_engine_note_info(info.device_id, info.fw_version, info.api_level);
+    if (info.api_level < ESPNL_MIN_API_LEVEL)
+    {
+        /* still probed: dongle builds between the routes and the level
+         * bump exist. A 404 below turns this into UNSUPPORTED with the
+         * exact reason; the status shows the level either way. */
+        ESP_LOGW(TAG, "dongle firmware %s reports API level %d; this WiCAN "
+                 "expects %d - update the dongle firmware if pairing, the "
+                 "USB class or the LTE health stay unavailable",
+                 info.fw_version, info.api_level, ESPNL_MIN_API_LEVEL);
+    }
     return ESPNL_EV_OK;
 }
 
@@ -164,11 +174,42 @@ static espnl_sm_event_t act_get_key(void)
 
     http_client_manager_free(&resp);
 
+    if (status == 404)
+    {
+        /* bench 2026-09-08: a July test build on the dongle answered
+         * /api/info but had no WiFi-modem routes at all. Deterministic:
+         * no retry, no VBUS cycle, say what to do. */
+        ESP_LOGW(TAG, "credentials: HTTP 404 - the dongle firmware has no "
+                 "WiFi-modem API; update the dongle firmware");
+        espnl_status_set_last_error("the dongle firmware has no WiFi-modem "
+                                    "API (credentials: HTTP 404): update "
+                                    "the dongle firmware, then plug it in "
+                                    "again");
+        return ESPNL_EV_UNSUPPORTED;
+    }
     if (!parsed)
     {
         /* 403 = the dongle thinks we arrived over WiFi: not a USB link */
         ESP_LOGW(TAG, "credentials: status %d", status);
         return ESPNL_EV_FAIL;
+    }
+
+    if (espnl_config()->ssid[0] == '\0' &&
+        wifi_manager_ap_password_is_factory())
+    {
+        /* a fresh WiCAN: the store would write wifi_manager and its
+         * factory-password gate (2026-09-07) refuses that. Park instead
+         * of churning; the password change restarts the device and the
+         * next enumeration pairs. */
+        memset(creds.password, 0, sizeof(creds.password));
+        ESP_LOGW(TAG, "zero-touch pairing is ON HOLD (factory AP password): "
+                 "set a new AP password in the web UI; the restart then "
+                 "completes the pairing by itself");
+        espnl_status_set_last_error("pairing is on hold: the access point "
+                                    "still has the factory password. Set a "
+                                    "new AP password; the device restarts "
+                                    "and pairs by itself");
+        return ESPNL_EV_HOLD;
     }
 
     int slot = -1;
@@ -181,9 +222,13 @@ static espnl_sm_event_t act_get_key(void)
 
     if (err != ESP_OK)
     {
-        ESP_LOGE(TAG, "credentials: store failed: %s",
-                 esp_err_to_name(err));
-        return ESPNL_EV_FAIL;
+        /* the store already recorded why (last_error): a settings-gate
+         * refusal (a paired WiCAN with the factory AP password meeting a
+         * re-provisioned dongle) or no free WiFi slot. Neither a retry
+         * nor a dongle power cycle changes that: park. */
+        ESP_LOGE(TAG, "credentials: store failed: %s - pairing on hold "
+                 "until the settings allow it", esp_err_to_name(err));
+        return ESPNL_EV_HOLD;
     }
 
     s_sm.reboot_pending = changed;
@@ -326,10 +371,24 @@ static espnl_sm_event_t act_ensure_share(void)
     const char *cls = espnl_core_mode_usb_class(
         (espnl_core_mode_t)espnl_config()->mode);
     bool changed = false;
+    bool unsupported = false;
 
     int r = ensure_dongle_setting("/api/settings/lte_upstream_pppos",
                                   "ncm_share", cJSON_CreateBool(true));
 
+    if (r == -2)
+    {
+        /* no LTE settings component at all: a dongle build from before
+         * the WiFi-modem work. The link stays a link; internet over it
+         * cannot be arranged from here. */
+        ESP_LOGW(TAG, "dongle firmware has no LTE settings API (HTTP 404): "
+                 "it cannot share LTE over USB - update the dongle firmware");
+        espnl_status_set_last_error("the dongle firmware has no LTE "
+                                    "settings API (HTTP 404): it cannot "
+                                    "share LTE over USB. Update the dongle "
+                                    "firmware");
+        return ESPNL_EV_UNSUPPORTED;
+    }
     if (r < 0)
     {
         return ESPNL_EV_FAIL;
@@ -346,7 +405,12 @@ static espnl_sm_event_t act_ensure_share(void)
         {
             ESP_LOGW(TAG, "dongle firmware cannot select the USB class "
                      "(no usb_dev_ethernet settings): it stays on its "
-                     "built-in default");
+                     "built-in default - update the dongle firmware");
+            espnl_status_set_last_error("the dongle firmware cannot select "
+                                        "the USB class (no usb_dev_ethernet "
+                                        "settings): it stays on CDC-NCM. "
+                                        "Update the dongle firmware");
+            unsupported = true;
         }
     }
     else if (r < 0)
@@ -362,7 +426,11 @@ static espnl_sm_event_t act_ensure_share(void)
     {
         ESP_LOGI(TAG, "dongle USB uplink already configured (class %s, "
                  "ncm_share on)", cls != NULL ? cls : "ncm");
-        return ESPNL_EV_OK;
+        if (!unsupported)
+        {
+            espnl_status_set_last_error("");
+        }
+        return unsupported ? ESPNL_EV_UNSUPPORTED : ESPNL_EV_OK;
     }
 
     http_client_response_t resp;
@@ -382,6 +450,10 @@ static espnl_sm_event_t act_ensure_share(void)
 
     ESP_LOGI(TAG, "dongle USB uplink reconfigured (class %s, ncm_share on) "
              "— it reboots to apply", cls != NULL ? cls : "ncm");
+    if (!unsupported)
+    {
+        espnl_status_set_last_error("");
+    }
     return ESPNL_EV_OK;
 }
 
@@ -450,7 +522,9 @@ static void run(espnl_sm_event_t ev)
                 ESP_LOGI(TAG, "usb gone: cable is power only (cut #%lu)",
                          (unsigned long)s_cuts);
             }
-            else if (s_sm.state == ESPNL_SM_FOREIGN && before != ESPNL_SM_IDLE)
+            else if ((s_sm.state == ESPNL_SM_FOREIGN ||
+                      s_sm.state == ESPNL_SM_UNSUPPORTED) &&
+                     before != ESPNL_SM_IDLE)
             {
                 s_errors++;
             }
@@ -525,19 +599,9 @@ void espnl_usb_tick(bool ap_stale)
         {
             ESP_LOGI(TAG, "usb link up (%04x:%04x, %s)", st.vid, st.pid,
                      st.ip);
-            if (is_espnl && cfg->mode == ESPNETLINK_MODE_WIFI_MODEM &&
-                cfg->ssid[0] == '\0' &&
-                wifi_manager_ap_password_is_factory())
-            {
-                /* zero-touch is held: the key store would be refused by
-                 * wifi_manager's factory-password gate (2026-09-07) —
-                 * don't identify/cut/churn; the password change restarts
-                 * the device and pairing then runs by itself. */
-                ESP_LOGW(TAG, "ESPNetLink attached but pairing is on "
-                         "hold (factory AP password): set a new AP "
-                         "password in the web UI to pair");
-                return;
-            }
+            /* the factory-password hold (2026-09-07) is decided AFTER the
+             * identify + key read (act_get_key -> HOLD): the status then
+             * shows which dongle/firmware is there, and nothing is cut */
             if (is_espnl)
             {
                 /* a fresh enumeration = the dongle (re)booted: the AP

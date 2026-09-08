@@ -374,7 +374,7 @@ bool espnl_core_url(char *out, unsigned out_len, const char *host,
 static const char *const STATE_STR[ESPNL_SM_COUNT] =
 {
     "idle", "identify", "read_key", "cut", "wait_drop", "done", "tether",
-    "foreign", "ncm_share", "ncm_up",
+    "foreign", "ncm_share", "ncm_up", "hold", "unsupported",
 };
 
 const char *espnl_sm_state_str(espnl_sm_state_t s)
@@ -485,6 +485,11 @@ espnl_sm_action_t espnl_sm_step(espnl_sm_t *sm, espnl_sm_event_t ev,
         case ESPNL_SM_IDLE:
         case ESPNL_SM_FOREIGN:
         case ESPNL_SM_TETHER:
+        case ESPNL_SM_HOLD:
+        case ESPNL_SM_UNSUPPORTED:
+            /* terminal until the link edges or the operator's re-pair:
+             * nothing to retry, and never a VBUS cycle (a HOLD waits for
+             * a settings change, UNSUPPORTED for a firmware update) */
             return ESPNL_ACT_NONE;
 
         case ESPNL_SM_IDENTIFY:
@@ -501,6 +506,11 @@ espnl_sm_action_t espnl_sm_step(espnl_sm_t *sm, espnl_sm_event_t ev,
             if (ev == ESPNL_EV_NOT_ESPNETLINK)
             {
                 enter(sm, ESPNL_SM_FOREIGN, now_ms);
+                return ESPNL_ACT_NONE;
+            }
+            if (ev == ESPNL_EV_UNSUPPORTED)
+            {
+                enter(sm, ESPNL_SM_UNSUPPORTED, now_ms);
                 return ESPNL_ACT_NONE;
             }
             if (ev == ESPNL_EV_TICK || ev == ESPNL_EV_FAIL)
@@ -523,6 +533,19 @@ espnl_sm_action_t espnl_sm_step(espnl_sm_t *sm, espnl_sm_event_t ev,
                 enter(sm, ESPNL_SM_CUT, now_ms);
                 sm->cut_posts = 1;
                 return ESPNL_ACT_POST_CUT;
+            }
+            if (ev == ESPNL_EV_HOLD)
+            {
+                /* the key is fine, the WiCAN side cannot take it yet
+                 * (factory AP password): a retry or a power cycle would
+                 * change nothing — park until the operator acts */
+                enter(sm, ESPNL_SM_HOLD, now_ms);
+                return ESPNL_ACT_NONE;
+            }
+            if (ev == ESPNL_EV_UNSUPPORTED)
+            {
+                enter(sm, ESPNL_SM_UNSUPPORTED, now_ms);
+                return ESPNL_ACT_NONE;
             }
             if (ev == ESPNL_EV_TICK || ev == ESPNL_EV_FAIL)
             {
@@ -596,8 +619,11 @@ espnl_sm_action_t espnl_sm_step(espnl_sm_t *sm, espnl_sm_event_t ev,
             return ESPNL_ACT_NONE;
 
         case ESPNL_SM_NCM_SHARE:
-            if (ev == ESPNL_EV_OK)
+            if (ev == ESPNL_EV_OK || ev == ESPNL_EV_UNSUPPORTED)
             {
+                /* UNSUPPORTED: the dongle firmware has no settings API
+                 * for the class/sharing — the link itself works, so run
+                 * with what it offers (the engine reports the gap) */
                 sm->cycles = 0;
                 enter(sm, ESPNL_SM_NCM_UP, now_ms);
                 return ESPNL_ACT_NONE;

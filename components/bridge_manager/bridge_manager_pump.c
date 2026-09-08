@@ -49,7 +49,19 @@
 
 static const char *TAG = "bridge_manager";
 
-#define BM_QUEUE_DEPTH 32
+/* 32 -> 64 (2026-09-08): an ATMA flood at 2500 frames/s arrives as one
+ * ~29-byte chunk per frame from the event-driven obd_chip RX; the deeper
+ * queue rides out send() hiccups (WiFi retries) without the fan-out
+ * dropping. Cost: +33 KB PSRAM across 4 bridges x 2 directions. */
+#define BM_QUEUE_DEPTH 64
+
+/* Raw-bridge coalescing (2026-09-08): the pump gathers every chunk already
+ * waiting in the queue into ONE send() of up to this many bytes. Costs
+ * nothing when a single chunk is waiting (a short ELM reply goes out at
+ * once), and turns 2500 socket sends/s into a few hundred under a flood -
+ * measured: at 2500 frames/s the per-chunk pump dropped 6052 chunks at the
+ * fan-out while every other counter was clean. */
+#define BM_COALESCE_MAX 1024
 
 typedef struct
 {
@@ -72,6 +84,8 @@ typedef struct
 
     uint8_t ctx_a2b[BM_CTX_MAX];        /* translator reassembly contexts */
     uint8_t ctx_b2a[BM_CTX_MAX];
+
+    uint8_t batch[BM_COALESCE_MAX];     /* raw coalescing buffer (PSRAM)  */
 } bm_bridge_t;
 
 static bm_bridge_t s_br[BRIDGE_MANAGER_MAX_BRIDGES] EXT_RAM_BSS_ATTR;
@@ -117,6 +131,85 @@ static esp_err_t reply_sink(void *arg, const uint8_t *out, size_t out_len)
 {
     const bridge_endpoint_t *ep = arg;
     return ep->send(out, out_len);
+}
+
+static void pump_one(bm_bridge_t *br, const bridge_chunk_t *chunk, bool a2b);
+
+/** Raw path: the chunk in hand plus every chunk already queued behind it
+ *  (up to BM_COALESCE_MAX bytes) go out as ONE endpoint send.
+ *
+ *  Queue-set discipline (FreeRTOS): a member queue may only be read after
+ *  xQueueSelectFromSet handed it out - reading it directly leaves the
+ *  set's container holding stale notifications until it overflows
+ *  (`assert prvNotifyQueueSetContainer queue.c:3362`, seen live at 2500
+ *  frames/s on the first cut of this batching). So every extra chunk is
+ *  claimed through the set; when the set hands out the OTHER direction's
+ *  queue instead, that chunk is pumped right after this batch. */
+static void pump_raw_batch(bm_bridge_t *br, QueueHandle_t q,
+                           const bridge_chunk_t *first, bool a2b)
+{
+    const bridge_endpoint_t *dst = a2b ? br->b : br->a;
+    size_t len = first->len;
+    uint32_t chunks = 1;
+    bridge_chunk_t more;
+    bridge_chunk_t other;
+    bool have_other = false;
+
+    memcpy(br->batch, first->data, first->len);
+
+    while (len + sizeof(more.data) <= BM_COALESCE_MAX)
+    {
+        QueueSetMemberHandle_t m = xQueueSelectFromSet(br->set, 0);
+
+        if (m == NULL)
+        {
+            break;
+        }
+
+        if (m == (QueueSetMemberHandle_t)q)
+        {
+            if (xQueueReceive(q, &more, 0) != pdTRUE)
+            {
+                break;
+            }
+
+            memcpy(br->batch + len, more.data, more.len);
+            len += more.len;
+            chunks++;
+        }
+        else
+        {
+            /* the set handed us the other direction: take it (the set
+               entry is consumed) and deliver it after this batch */
+            if (xQueueReceive((QueueHandle_t)m, &other, 0) == pdTRUE)
+            {
+                have_other = true;
+            }
+
+            break;
+        }
+    }
+
+    if (dst->send(br->batch, len) != ESP_OK)
+    {
+        br->stats.send_errors++;
+    }
+
+    if (a2b)
+    {
+        br->stats.a2b_chunks += chunks;
+        br->stats.a2b_bytes += len;
+    }
+    else
+    {
+        br->stats.b2a_chunks += chunks;
+        br->stats.b2a_bytes += len;
+    }
+
+    if (have_other)
+    {
+        pump_one(br, &other, !a2b);
+    }
 }
 
 static void pump_one(bm_bridge_t *br, const bridge_chunk_t *chunk, bool a2b)
@@ -206,7 +299,16 @@ static void pump_task(void *arg)
         if (ready != NULL &&
             xQueueReceive((QueueHandle_t)ready, &chunk, 0) == pdTRUE)
         {
-            pump_one(br, &chunk, ready == (QueueSetMemberHandle_t)br->qa);
+            bool a2b = (ready == (QueueSetMemberHandle_t)br->qa);
+
+            if (br->tr == NULL)
+            {
+                pump_raw_batch(br, (QueueHandle_t)ready, &chunk, a2b);
+            }
+            else
+            {
+                pump_one(br, &chunk, a2b);
+            }
         }
 
         if (br->tr != NULL && br->tr->flush != NULL)

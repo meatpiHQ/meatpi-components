@@ -63,6 +63,10 @@ _Static_assert(sizeof(bridge_chunk_t) == sizeof(websocket_chunk_t),
 
 static esp_err_t obd_ep_send(const uint8_t *d, size_t l)
 {
+    /* every byte from a bridged app (TCP/BLE/USB/WS) counts as client
+       activity: autopid yields the chip while the app drives it (legacy
+       DEV_AUTOPID_ELM327_APP_BIT parity, see obd_chip.h) */
+    obd_chip_client_touch();
     return obd_chip_send(d, l);
 }
 

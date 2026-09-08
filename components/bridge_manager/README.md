@@ -29,12 +29,27 @@ one translator component. No combinatorial code.
   vs two slim tasks; the queue-set wait gives per-chunk fairness between
   directions with zero cross-blocking). `raw` bridges are pure move-bytes —
   no parsing on the hot path.
+- **Raw coalescing (2026-09-08)**: a raw pump sends the chunk in hand plus
+  every chunk already waiting behind it in the same queue as ONE endpoint
+  `send()` (up to `BM_COALESCE_MAX` = 1 KB). Zero cost for a lone chunk (a
+  short ELM reply leaves at once); under an ATMA flood the event-driven
+  obd_chip RX emits one ~29-byte chunk per CAN frame, and one socket send
+  per chunk capped the TCP bridge around 1000 frames/s (bench: at 2500
+  frames/s the fan-out dropped 6052 chunks while every other counter was
+  clean). Translators still see chunks one at a time. **Queue-set rule:**
+  every extra chunk is claimed through `xQueueSelectFromSet(set, 0)` — a
+  direct `xQueueReceive` on a member queue leaves the set's container
+  holding stale notifications until it overflows (`assert
+  prvNotifyQueueSetContainer queue.c:3362`, a panic seen live at 2500
+  frames/s on the first cut); when the set hands out the other
+  direction's queue, that chunk is pumped right after the batch.
 - **Translators** run per direction with a per-direction reassembly ctx from
   a static PSRAM pool (`decode` on a→b, `encode` on b→a); the sink callback
   lets one input emit zero/one/many frames (slcan/GVRET reassembly shape),
   keeping codecs allocation-free and pure.
 - **Slow-side policy**: the pump blocks only inside an endpoint's bounded
-  `send()`; meanwhile the bridge-owned RX queues (depth 32) fill and the
+  `send()`; meanwhile the bridge-owned RX queues (depth 64 since 2026-09-08,
+  was 32) fill and the
   PRODUCING endpoint drops-and-counts (obd fan-out drops, socket rx_drops).
   A bridge can never block its faster side indefinitely.
 
@@ -76,7 +91,7 @@ the providers' `_start()` (their subscribe/send must be live).
 
 | Where | What | ~Size |
 |---|---|---|
-| PSRAM `.bss` | 4 bridges × (2 queues × 32 × 130 B + 4 KB stack + 2 × 256 B ctx) | ~50 KB |
+| PSRAM `.bss` | 4 bridges × (2 queues × 64 × 130 B + 4 KB stack + 2 × 256 B ctx + 1 KB coalescing buffer) | ~88 KB |
 | PSRAM `.bss` | endpoint (8) + translator (4) + config (4) tables | ~1.5 KB |
 | Internal `.bss` | queue/task control blocks | ~1 KB |
 

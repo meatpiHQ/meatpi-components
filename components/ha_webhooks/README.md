@@ -8,8 +8,9 @@ autopid webhook poster). Owns the HA telemetry link in both directions:
 - **inbound** `/api/webhook` — the HA HACS integration auto-registers its
   webhook URL (discovery push), applied live;
 - **outbound** a poster task that, every `interval_s` while enabled +
-  autopid enabled + network up, POSTs `{status, autopid_data, config}` to
-  the URL(s) with failover.
+  network up, POSTs `{status, autopid_data, config, gps}` to the URL(s)
+  with failover. autopid may be OFF: `autopid_data` is then simply omitted
+  (a status-only push is a valid contract push).
 
 Feature component. Consumes `http_server_manager` (the route),
 `http_client_manager` (outbound POST + TLS), `cert_manager` (private-CA
@@ -41,7 +42,23 @@ identical on every product built from the V6 core.
   up — `vpn_status`/`vpn_ip` (HA's away-from-home backup endpoint).
   Sections are diffed in `changed` mode and omitted when empty; a fresh
   registration forces a full **resync** so a new HA sees the complete
-  state.
+  state. **`gps`** (2026-09-09): the contract §5.4 block
+  `{latitude, longitude, accuracy, altitude, speed, heading, satellites}`
+  from `usb_acm_cli_gps_get()` while a live fix exists — what HA's
+  Location device_tracker reads (it never updated for WiCAN Pro before);
+  sent whole on change, omitted without a fix.
+- **No autopid gate (2026-09-08).** The poster used to skip every lap
+  while `autopid.enabled` was false. A fresh device ships autopid OFF,
+  so HA's discovery push got `201 Created` and then not one telemetry
+  push ever left the device (`GET /api/webhook` stayed
+  `status:"disabled"`, success/fail 0/0) - every entity in HA stayed
+  "unavailable" with no error anywhere. The HA contract
+  (`DEVICE_COMPATIBILITY_GUIDE.md` §4: "a push with only `status` is
+  fine") and the integration's fixed sensors (battery voltage, WiFi
+  mode, uptime, ECU online) need no vehicle data, so the poster now
+  gates on enabled + network only; `autopid_data` is omitted until
+  autopid produces values. Regression bench:
+  `tools/testbench/ha/ha_webhook_gate_bench.py`.
 - **Failover** across `url` + `url2` (PRO); first 2xx wins. An HTTP 403
   from HA (identity rejection) skips failover; 3 consecutive rejected
   cycles pause the poster (`status: "rejected"`) until the next
@@ -72,8 +89,38 @@ identical on every product built from the V6 core.
 - `tools/testbench/ha_webhook_bench.py` (live-suite stage `ha_webhook`): a
   mock HA receiver on the Pi → register via `POST /api/webhook` → assert
   `{status+device_id, autopid_data?, config}` telemetry, failover to
-  `url2`, GET stats, DELETE. Real HA end-to-end available on `rpi002`
-  (`~/workspace/ha-wican`).
+  `url2`, GET stats, DELETE.
+- `tools/testbench/ha/ha_webhook_gate_bench.py` (`HA WEBHOOK GATE
+  PASS`): the fresh-device regression - autopid DISABLED (settings
+  PUT + submit), register a receiver, expect status-only pushes
+  (`status.device_id` present, no `autopid_data`) and `status:"ok"`
+  stats; restores autopid and clears the webhook. Receiver on any
+  host both sides reach (`--serve` on the PC, or `--pi rpi001`).
+- `tools/testbench/ha/ha_lte_push_bench.py` (`HA LTE PUSH PASS`, runs ON
+  rpi001): the car-on-the-road leg - the DUT roams to the paired
+  ESPNetLink AP (LTE + GPS), `--capture` asserts the `gps` block + the
+  `gps_*` sensors in the pushes; the HA mode registers the PRO dual URLs
+  and proves the HTTPS failover carries the pushes over LTE; `--dut-vpn`
+  is the REAL test against a bench HA reached through the WiCAN's own
+  WireGuard tunnel (`tools/testbench/vpn/wg_ha_route.sh`). 2026-09-09:
+  capture PASS; VPN mode PASS - HA registered its tunnel URL, the DUT
+  roamed to LTE and kept pushing through the tunnel, HA's Location
+  tracker took the `gps` block (`Updated GPS location ... accuracy 3m`).
+  The HTTPS leg reached an HA over LTE but the dev HA's Nabu Casa remote
+  domain belongs to another instance (TESTING.md).
+  Real HA end-to-end available on `rpi002` (`~/workspace/ha-wican`).
+
+## Open items
+
+- **URL ordering on the road (2026-09-09).** `post_failover` always
+  tries `url` (HA's local http URL) first; over LTE that address is
+  unroutable, so EVERY cycle spends ~6 s in a connect timeout and logs
+  the IDF connect-failure E triplet (`esp-tls select() timeout` /
+  `Failed to open a new connection` / `Connection failed, sock < 0`)
+  before `url2` delivers. A car parked on LTE does this forever. Worth
+  a small policy: after N consecutive connect failures on `url`, try
+  `url2` first and re-probe `url` every few minutes (never drop it -
+  driving home must switch back).
 
 ## HTTP API
 

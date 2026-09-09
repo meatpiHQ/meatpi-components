@@ -58,8 +58,11 @@ Clear + disable. `204 No Content`.
 
 ## Telemetry (device → HA, outbound) — the push contract
 
-Every `interval_s`, while enabled + autopid enabled + network up, the
-poster POSTs to the URL(s) with failover (first 2xx wins):
+Every `interval_s`, while enabled + network up, the poster POSTs to the
+URL(s) with failover (first 2xx wins). autopid may be off: the push
+then carries `status` (+ `config`) only - a status-only push is valid
+(guide §4) and is what a fresh device sends until AutoPID is set up
+(the old autopid gate silenced fresh devices entirely, 2026-09-08):
 ```json
 { "schema": 1,
   "status": { "device_id": "…", "fw_version": "6.0.0", "hw_version": "WiCAN-PRO",
@@ -72,7 +75,9 @@ poster POSTs to the URL(s) with failover (first 2xx wins):
                     "gps_latitude": -37.90535, "gps_longitude": 145.145047,
                     "gps_altitude": 88.8, "gps_speed": 61.6,
                     "gps_heading": 270.5, "gps_satellites": 7 },
-  "config": { … the /data/autopid/config.json tables … } }
+  "config": { … the /data/autopid/config.json tables … },
+  "gps": { "latitude": -37.90535, "longitude": 145.145047, "accuracy": 3,
+           "altitude": 88.8, "speed": 17.1, "heading": 270.5, "satellites": 7 } }
 ```
 - **`schema`** — payload shape version (contract-v2 ask #3); currently
   `1`, bumped only on breaking changes. Always present.
@@ -83,13 +88,19 @@ poster POSTs to the URL(s) with failover (first 2xx wins):
 - **`vpn_ip` / `vpn_status`** — present while the WireGuard/Tailscale
   tunnel is CONNECTED; HA records the address as the away-from-home
   backup endpoint for registration + control commands.
-- **GPS**: no top-level `gps` section (the contract's `gps` block maps
-  to a device_tracker only in HA's *espnetlink* profile). When an
-  ESPNetLink dongle is attached, its fix rides `autopid_data` as the
-  `gps_latitude`/`gps_longitude`/`gps_altitude`/`gps_speed`/`gps_heading`/
-  `gps_satellites` parameters (HA makes them sensors automatically) —
-  `autopid_publish_external()` + main's GPS sink; ha_webhooks has no GPS
-  code. Only a live fix appears.
+- **`gps`** (contract §5.4, added 2026-09-09): present while there is a
+  LIVE fix — `{latitude, longitude, accuracy (m), altitude (m), speed
+  (m/s), heading (°), satellites}`, the same shape as `GET /api/gps`
+  (source `usb_acm_cli_gps_get()`, which also serves the espnetlink
+  HTTP-polled fix). HA's **Location** device_tracker reads exactly this
+  block — the WiCAN Pro profile has `supports_gps=True`, and before the
+  block existed the tracker never left "unavailable". In `changed` mode
+  the block is sent WHOLE whenever any field changed (a partial block
+  means nothing to the tracker); without a live fix it is omitted and HA
+  keeps the last known location. The same fix ALSO rides `autopid_data`
+  as the `gps_latitude`/`gps_longitude`/`gps_altitude`/`gps_speed`(km/h)/
+  `gps_heading`/`gps_satellites` sensors (`autopid_publish_external()` +
+  main's GPS sink).
 - **`data_mode`** (settings): `full` = every section each cycle;
   `changed` (default) = only keys that changed vs the previous post, empty
   sections omitted (except the identity overlay above). A fresh

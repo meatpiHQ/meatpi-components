@@ -166,6 +166,15 @@ bool wm_parse_ap_ipv4(const char *s, uint32_t *out);
 /** True when @p mask (host order) is a contiguous netmask (/1../31). */
 bool wm_netmask_valid(uint32_t mask);
 
+/** The DHCP/DNS host name to give the STA netif: @p configured (the
+ *  `hostname` setting) when non-empty, else `wican_<device_id>` - the
+ *  same name mdns_manager advertises as `<host>.local`, so a router's
+ *  client list and the .local name agree (lwIP's own default is
+ *  "espressif", 2026-09-08). false = nothing to set (no id, or the
+ *  result would not fit @p cap); @p out is "" then. Pure, host-tested. */
+bool wm_default_hostname(const char *configured, const char *device_id,
+                         char *out, size_t cap);
+
 /* ---- pure candidate selection + failure memory (wifi_manager_select.c) --- */
 
 typedef struct

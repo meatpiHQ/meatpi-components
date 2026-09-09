@@ -79,7 +79,7 @@ by the future button/input manager).
 | `mode` | enum `off/sta/ap/apsta` | `apsta` | |
 | `sta_ssid` / `sta_password` | string ≤32 / ≤64 | `""` | empty ssid = no STA network |
 | `fallback1..5_ssid` / `_password` | string | `""` | priority order; flat keys (schema subset has no arrays) |
-| `hostname` | string ≤32 | `""` | |
+| `hostname` | string ≤32 | `""` | DHCP/DNS host name of the STA netif. Empty → `wican_<12-hex device id>` (the name `mdns_manager` advertises as `.local`), pushed with `esp_netif_set_hostname` before the DHCP client starts, so a router's client list shows it instead of lwIP's default `espressif` (2026-09-08; pure builder `wm_default_hostname`, host-tested) |
 | `sta_auto_reconnect` | bool | `true` | |
 | `sta_max_retry` | int −1..1000 | `-1` | −1 = infinite; limit hits trigger a 1-min cooldown |
 | `sta_ip_mode` / `fallback1..5_ip_mode` | enum `dhcp/static` | `dhcp` | v6: PER-NETWORK STA addressing — each network (primary + every fallback) carries its own choice, since they live on different LANs. Applied per CONNECT ATTEMPT (`apply_sta_network`): DHCP client stopped + `esp_netif_set_ip_info` for a static candidate, restarted (stale address cleared) for a DHCP one; got-ip still fires so the reconnect/roam machinery is unchanged. Bench-verified 2026-07-11 (static reachable from the LAN, DHCP restore clean) |

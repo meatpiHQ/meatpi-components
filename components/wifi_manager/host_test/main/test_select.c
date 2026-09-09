@@ -321,6 +321,37 @@ void test_parse_ap_ipv4(void)
     TEST_ASSERT_FALSE(wm_parse_ap_ipv4(NULL, &ip));
 }
 
+void test_default_hostname(void)
+{
+    char out[WM_HOSTNAME_LEN];
+
+    /* empty setting -> wican_<device id> (the mDNS host name) */
+    TEST_ASSERT_TRUE(wm_default_hostname("", "68ee8f5a653d", out,
+                                         sizeof(out)));
+    TEST_ASSERT_EQUAL_STRING("wican_68ee8f5a653d", out);
+
+    /* a configured name wins verbatim */
+    TEST_ASSERT_TRUE(wm_default_hostname("garage-car", "68ee8f5a653d",
+                                         out, sizeof(out)));
+    TEST_ASSERT_EQUAL_STRING("garage-car", out);
+
+    /* nothing to build from: false + empty output */
+    TEST_ASSERT_FALSE(wm_default_hostname("", "", out, sizeof(out)));
+    TEST_ASSERT_EQUAL_STRING("", out);
+    TEST_ASSERT_FALSE(wm_default_hostname(NULL, NULL, out, sizeof(out)));
+
+    /* the 32-char setting cap fits WM_HOSTNAME_LEN exactly */
+    TEST_ASSERT_TRUE(wm_default_hostname("abcdefghijklmnopqrstuvwxyz012345",
+                                         "x", out, sizeof(out)));
+    TEST_ASSERT_EQUAL_INT(32, (int)strlen(out));
+
+    /* a buffer too small for the result is refused, never truncated */
+    char tiny[8];
+
+    TEST_ASSERT_FALSE(wm_default_hostname("", "68ee8f5a653d", tiny,
+                                          sizeof(tiny)));
+}
+
 void test_parse_ipv4_plain(void)
 {
     uint32_t ip = 0;

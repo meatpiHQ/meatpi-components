@@ -29,8 +29,32 @@
  */
 #include "wifi_manager_private.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+bool wm_default_hostname(const char *configured, const char *device_id,
+                         char *out, size_t cap)
+{
+    if (out == NULL || cap == 0)
+    {
+        return false;
+    }
+
+    out[0] = '\0';
+
+    if (configured != NULL && configured[0] != '\0')
+    {
+        return snprintf(out, cap, "%s", configured) < (int)cap;
+    }
+
+    if (device_id == NULL || device_id[0] == '\0')
+    {
+        return false;
+    }
+
+    return snprintf(out, cap, "wican_%s", device_id) < (int)cap;
+}
 
 bool wm_parse_ipv4(const char *s, uint32_t *out)
 {

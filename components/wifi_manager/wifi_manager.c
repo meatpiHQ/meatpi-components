@@ -1328,9 +1328,28 @@ esp_err_t wifi_manager_start(void)
     {
         dev_status_manager_set(DEV_STATUS_BIT_STA_ENABLED);
 
-        if (cfg->hostname[0] != '\0')
+        /* DHCP/DNS host name: the `hostname` setting, else
+           wican_<device id> (what mdns_manager advertises as .local).
+           lwIP's default "espressif" is what every router showed
+           before (meatpi 2026-09-08). Set BEFORE apply_sta_network
+           starts the DHCP client so the first DISCOVER carries it. */
+        char host[WM_HOSTNAME_LEN];
+
+        if (wm_default_hostname(cfg->hostname,
+                                dev_status_manager_device_id(), host,
+                                sizeof(host)))
         {
-            esp_netif_set_hostname(s_sta_netif, cfg->hostname);
+            esp_err_t herr = esp_netif_set_hostname(s_sta_netif, host);
+
+            if (herr == ESP_OK)
+            {
+                ESP_LOGI(TAG, "STA hostname %s", host);
+            }
+            else
+            {
+                ESP_LOGW(TAG, "STA hostname '%s' rejected: %s", host,
+                         esp_err_to_name(herr));
+            }
         }
 
         /* v6: per-network addressing is applied inside apply_sta_network

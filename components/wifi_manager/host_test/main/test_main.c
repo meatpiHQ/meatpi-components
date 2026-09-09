@@ -24,6 +24,7 @@ void test_duplicate_ssid_entries_are_independent(void);
 void test_roam_never_to_same_ssid(void);
 void test_parse_ap_ipv4(void);
 void test_parse_ipv4_plain(void);
+void test_default_hostname(void);
 void test_netmask_valid(void);
 void test_backoff_curve(void);
 void test_ap_client_pause_policy(void);
@@ -51,6 +52,7 @@ void app_main(void)
     RUN_TEST(test_roam_never_to_same_ssid);
     RUN_TEST(test_parse_ap_ipv4);
     RUN_TEST(test_parse_ipv4_plain);
+    RUN_TEST(test_default_hostname);
     RUN_TEST(test_netmask_valid);
     RUN_TEST(test_backoff_curve);
     RUN_TEST(test_ap_client_pause_policy);

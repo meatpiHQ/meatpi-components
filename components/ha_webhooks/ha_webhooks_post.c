@@ -23,8 +23,8 @@
 /**
  * @file ha_webhooks_post.c
  * @brief The poster task (PSRAM stack): builds {schema, status,
- *        autopid_data, config} (device-contract v2) and POSTs it to the
- *        HA webhook URL(s) with failover. status.device_id/fw_version/
+ *        autopid_data, config, gps} (device-contract v2) and POSTs it to
+ *        the HA webhook URL(s) with failover. status.device_id/fw_version/
  *        hw_version are guaranteed in EVERY push; HTTP 403 from HA
  *        (identity rejection) pauses posting after HW_REJECT_LIMIT
  *        consecutive cycles until the next registration.
@@ -33,8 +33,13 @@
  *   - autopid_data  -> autopid_snapshot()          (RAM cache)
  *   - config        -> autopid_config_json_dup()    (PSRAM cache, no flash)
  *   - status        -> dev_status_manager getters   (RAM)
+ *   - gps           -> usb_acm_cli_gps_get()        (RAM fix cache)
  * and the outbound HTTP goes through http_client_manager (its own task).
  * Stats updates are cache-only (no flash) — §2 corollary.
+ *
+ * The poster does NOT depend on autopid being enabled (2026-09-08): a
+ * status-only push is a valid contract push and the HA integration's
+ * fixed sensors (battery, wifi mode, uptime ...) need no vehicle data.
  */
 #include <string.h>
 
@@ -54,6 +59,7 @@
 #include "http_client_manager.h"
 #include "mdns_manager.h"
 #include "sdkconfig.h"
+#include "usb_acm_cli.h" /* usb_acm_cli_gps_get: the dongle fix */
 #include "vpn_manager.h"
 
 #include "ha_webhooks_private.h"
@@ -85,6 +91,7 @@ static volatile bool    s_run;
 static char *s_prev_status EXT_RAM_BSS_ATTR;
 static char *s_prev_autopid EXT_RAM_BSS_ATTR;
 static char *s_prev_config EXT_RAM_BSS_ATTR;
+static char *s_prev_gps EXT_RAM_BSS_ATTR;
 static volatile bool s_resync; /* next build = full snapshot */
 
 /* consecutive identity-rejected (403) cycles; >= HW_REJECT_LIMIT pauses
@@ -102,9 +109,11 @@ static void drop_prev_caches(void)
     free(s_prev_status);
     free(s_prev_autopid);
     free(s_prev_config);
+    free(s_prev_gps);
     s_prev_status = NULL;
     s_prev_autopid = NULL;
     s_prev_config = NULL;
+    s_prev_gps = NULL;
 }
 
 /* ---- status section (mirror of /api/status + device_id) ------------------- */
@@ -224,6 +233,70 @@ static cJSON *build_status(void)
     }
 
     return s;
+}
+
+/* ---- gps section (device-contract §5.4: HA's device_tracker) -------------- */
+
+/** The contract's `gps` block - the SAME shape as GET /api/gps minus
+ *  `valid`/`age_ms`: {latitude, longitude, accuracy (m), altitude (m),
+ *  speed (m/s), heading, satellites}. HA's Location tracker reads exactly
+ *  this (device_tracker.py); the fix ALSO rides autopid_data as the
+ *  gps_* sensors (main's GPS sink). NULL without a LIVE fix - a cached
+ *  AGNSS position is never presented as current - so the section drops
+ *  out and HA keeps the last known location. Source =
+ *  usb_acm_cli_gps_get(): the dongle console's fix, else the
+ *  espnetlink_link HTTP-polled fix (main wires that fallback). Bench
+ *  2026-09-09: before this block existed the WiCAN Pro tracker in HA
+ *  never left "unavailable". */
+static cJSON *build_gps(void)
+{
+    usb_acm_gps_t g;
+
+    if (usb_acm_cli_gps_get(&g) != ESP_OK || !g.valid)
+    {
+        return NULL;
+    }
+
+    cJSON *o = cJSON_CreateObject();
+
+    if (o == NULL)
+    {
+        return NULL;
+    }
+
+    cJSON_AddNumberToObject(o, "latitude", g.latitude);
+    cJSON_AddNumberToObject(o, "longitude", g.longitude);
+    cJSON_AddNumberToObject(o, "accuracy", g.accuracy_m);
+    cJSON_AddNumberToObject(o, "altitude", g.altitude_m);
+    cJSON_AddNumberToObject(o, "speed", g.speed_kmph / 3.6); /* m/s */
+    cJSON_AddNumberToObject(o, "heading", g.heading_deg);
+    cJSON_AddNumberToObject(o, "satellites", g.satellites);
+    return o;
+}
+
+/** Add the gps block WHOLE (never a key diff: a block without both
+ *  latitude and longitude means nothing to the tracker) when it differs
+ *  from the previous post, or always in full mode. Takes @p gps. */
+static void add_gps_section(cJSON *root, cJSON *gps, bool full)
+{
+    char *now = cJSON_PrintUnformatted(gps);
+    bool changed = full || now == NULL || s_prev_gps == NULL ||
+                   strcmp(now, s_prev_gps) != 0;
+
+    if (changed)
+    {
+        cJSON_AddItemToObject(root, "gps", gps);
+    }
+    else
+    {
+        cJSON_Delete(gps);
+    }
+
+    if (now != NULL)
+    {
+        free(s_prev_gps);
+        s_prev_gps = now; /* PSRAM heap via cJSON's default alloc */
+    }
 }
 
 /* ---- diff: keys in curr that are new or changed vs prev ------------------- */
@@ -398,6 +471,15 @@ static char *build_payload(bool full)
             add_section(root, "config", cfg, full, &s_prev_config);
             cJSON_Delete(cfg);
         }
+    }
+
+    /* gps (contract §5.4 -> HA's device_tracker); omitted without a
+       live fix */
+    cJSON *gps = build_gps();
+
+    if (gps != NULL)
+    {
+        add_gps_section(root, gps, full);
     }
 
     char *body = cJSON_PrintUnformatted(root);
@@ -599,10 +681,13 @@ static void poster_task(void *arg)
             continue;
         }
 
-        if (!dev_status_manager_is_set(DEV_STATUS_BIT_AUTOPID_ENABLED))
-        {
-            continue;
-        }
+        /* NO autopid gate here: status (+config) goes out whenever the
+           link is enabled and the network is up; autopid_data is simply
+           omitted while autopid is off or has no values (contract: a
+           status-only push is valid). The gate that used to sit here
+           silenced every FRESH device - autopid ships disabled, HA's
+           registration returned 201 and not one push ever left the
+           device (bench 2026-09-08, ha_webhook_gate_bench.py). */
 
         if (s_reject_streak >= HW_REJECT_LIMIT)
         {

@@ -2,7 +2,8 @@
 
 Talk to an attached USB CDC-ACM device's console over the CherryUSB **host**
 stack. Overrides the WEAK `usbh_cdc_acm_run/stop` hooks, runs a
-PSRAM-stacked RX task, and exposes:
+PSRAM-stacked RX task (its 2 KB StreamBuffer storage is PSRAM too since
+2026-09-22; the control block stays internal), and exposes:
 - `POST /api/usb/acm/cmd` `{"cmd","timeout_ms"?}` → send one line, collect
   the reply until the device's `esp>` PROMPT (`{"ok","response",
   "connected"}`). `timeout_ms` (default 8000) is a cap, not a latency —

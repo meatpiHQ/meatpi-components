@@ -91,7 +91,8 @@ static struct usbh_cdc_acm *volatile s_acm;   /* the bound instance */
 
 static StreamBufferHandle_t s_rx_sb;
 static StaticStreamBuffer_t s_rx_sb_buf;
-static uint8_t s_rx_sb_store[ACM_RX_SB_SIZE + 1];
+static uint8_t s_rx_sb_store[ACM_RX_SB_SIZE + 1] EXT_RAM_BSS_ATTR; /* StreamBuffer storage; the
+                                              control block stays internal (2 KB saved) */
 
 static SemaphoreHandle_t s_tx_lock;
 static StaticSemaphore_t s_tx_lock_buf;

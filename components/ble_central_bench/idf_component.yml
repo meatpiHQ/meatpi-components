@@ -1,0 +1,6 @@
+## MeatPi component manifest
+version: "1.0.0"
+description: NimBLE central bench instrument for the WiCAN BLE app platform (throughput_app-class link tuning, timed GATT and HTTP-over-BLE tests)
+dependencies:
+  idf: ">=5.4"
+  espressif/cjson: "*"

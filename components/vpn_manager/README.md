@@ -54,7 +54,7 @@ latency ever hurts, add a rule on `vpn.state`.
 
 ## Footprint
 
-PSRAM: 6 KB state-task stack. Internal: FreeRTOS objects + the lwip
+PSRAM: 6 KB state-task stack, plus the two peer-snapshot tables of the HTTP and CLI surfaces (1.3 KB each, PSRAM since 2026-09-22). Internal: FreeRTOS objects + the lwip
 netif esp_wireguard creates while up. Host tests: `host_test/`
 (6 tests, pure config checks). Bench: WireGuard server on rpi001,
 LOCAL-ONLY (TASK §3.1) — handshake + ping + MQTT-through-tunnel.

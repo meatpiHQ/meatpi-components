@@ -25,6 +25,7 @@
  * @brief The `vpn` CLI command — registered by
  *        vpn_manager_register_cli() on the settings apply (§6b).
  */
+#include "esp_attr.h"
 #include "cmdline_manager.h"
 
 #include "vpn_manager.h"
@@ -59,7 +60,7 @@ static int cmd_vpn(int argc, char **argv)
         cmdline_printf("  tailnet ip %s, %d peer(s)\n", st.ts_ip,
                        st.ts_peers);
 
-        static vpn_ts_peer_t peers[16]; /* console task only */
+        static vpn_ts_peer_t peers[16] EXT_RAM_BSS_ATTR; /* console task only; PSRAM (1.3 KB) */
         int n = vpn_ts_get_peers(peers, 16);
 
         for (int i = 0; i < n; i++)

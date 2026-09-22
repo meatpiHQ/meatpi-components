@@ -27,6 +27,7 @@
  *        lands in pending settings). Config itself is the plain
  *        /api/settings/vpn_manager surface.
  */
+#include "esp_attr.h"
 #include <stdio.h>
 
 #include "esp_http_server.h"
@@ -79,7 +80,7 @@ static esp_err_t vpn_get_handler(httpd_req_t *req)
 
     if (st.tailscale)
     {
-        static vpn_ts_peer_t peers[VPN_HTTP_MAX_PEERS]; /* httpd task only */
+        static vpn_ts_peer_t peers[VPN_HTTP_MAX_PEERS] EXT_RAM_BSS_ATTR; /* httpd task only; PSRAM (1.3 KB) */
         int n = vpn_ts_get_peers(peers, VPN_HTTP_MAX_PEERS);
         cJSON *arr = cJSON_AddArrayToObject(obj, "peers");
 

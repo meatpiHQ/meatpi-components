@@ -1,0 +1,5 @@
+## IDF v6 dropped the bundled `json` component; cJSON comes from the registry.
+## rpi001 is offline from the registry: copy managed_components/ +
+## dependencies.lock from a sibling cJSON suite (event_manager/host_test).
+dependencies:
+  espressif/cjson: "^1.7.18"

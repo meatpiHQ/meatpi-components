@@ -77,6 +77,11 @@ typedef struct
     bool      rtr;         /**< True = Remote Transmission Request frame.    */
     uint8_t   dlc;         /**< Data Length Code (0–8).                      */
     uint8_t   data[8];     /**< Frame payload.                               */
+    uint32_t  ts_us;       /**< Receive time, microseconds since boot, taken
+                                in the driver's RX interrupt (wraps every
+                                ~71.6 min); 0 = unknown / a frame built for
+                                transmission. 2026-09-21: the timestamp that
+                                the binary BLE stream, GVRET and J2534 carry. */
 } can_core_frame_t;
 
 /* -------------------------------------------------------------------------

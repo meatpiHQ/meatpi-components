@@ -27,15 +27,25 @@
  *        the `can` bridge endpoint and every CAN translator (slcan/gvret/
  *        realdash) use exactly this one definition so there is no drift.
  *
- * Layout (little-endian id; see bridge_manager/DESIGN_translators.md §2):
+ * Layout (little-endian; see bridge_manager/DESIGN_translators.md §2):
  *   off 0  size 4  identifier (uint32 LE, 11- or 29-bit)
  *   off 4  size 1  flags: bit0 = extended, bit1 = RTR (other bits reserved 0)
  *   off 5  size 1  dlc (0..8)
- *   off 6  size N  data[dlc]   (absent for RTR / dlc 0)
- *   total = 6 + dlc  (min 6, max 14)
+ *   off 6  size 4  ts_us: receive time, uint32 LE microseconds since boot
+ *                  (taken in the CAN RX interrupt, wraps every ~71.6 min);
+ *                  0 = unknown / a frame heading for transmission
+ *   off 10 size N  data[dlc]   (absent for RTR / dlc 0)
+ *   total = 10 + dlc  (min 10, max 18)
  *
- * One chunk = one frame (≤14 B ≪ 128 B chunk), so the CAN side never needs
- * reassembly. This format is bridge-internal and never leaves the device.
+ * One chunk = one frame (≤18 B ≪ 128 B chunk), so the CAN side never needs
+ * reassembly.
+ *
+ * PUBLIC since 2026-09-21: a `can <-raw-> ble` bridge row puts these records
+ * on the BLE data pipe (FFF1/FFF2) as the device's compact binary CAN stream
+ * for phone apps (ble_manager/BLE_API.md 4.2). The layout is therefore
+ * frozen: a change is a NEW translator name, never an edit here. (The
+ * timestamp field went in the same day, before anything shipped, so that
+ * logging and timing analysis over BLE need no second format.)
  */
 #pragma once
 
@@ -46,8 +56,8 @@
 
 #include "can_core.h" /* can_core_frame_t {id, ext, rtr, dlc, data[8]} */
 
-#define CAN_WIRE_HDR      6
-#define CAN_WIRE_MAX      (CAN_WIRE_HDR + 8) /* 14 */
+#define CAN_WIRE_HDR      10
+#define CAN_WIRE_MAX      (CAN_WIRE_HDR + 8) /* 18 */
 #define CAN_WIRE_FLAG_EXT 0x01u
 #define CAN_WIRE_FLAG_RTR 0x02u
 
@@ -63,6 +73,10 @@ static inline size_t can_wire_encode(const can_core_frame_t *f, uint8_t *out)
     out[4] = (uint8_t)((f->ext ? CAN_WIRE_FLAG_EXT : 0) |
                        (f->rtr ? CAN_WIRE_FLAG_RTR : 0));
     out[5] = dlc;
+    out[6] = (uint8_t)(f->ts_us);
+    out[7] = (uint8_t)(f->ts_us >> 8);
+    out[8] = (uint8_t)(f->ts_us >> 16);
+    out[9] = (uint8_t)(f->ts_us >> 24);
 
     if (!f->rtr && dlc)
     {
@@ -94,6 +108,8 @@ static inline bool can_wire_decode(const uint8_t *in, size_t len,
     f->ext = (flags & CAN_WIRE_FLAG_EXT) != 0;
     f->rtr = (flags & CAN_WIRE_FLAG_RTR) != 0;
     f->dlc = dlc;
+    f->ts_us = (uint32_t)in[6] | ((uint32_t)in[7] << 8) |
+               ((uint32_t)in[8] << 16) | ((uint32_t)in[9] << 24);
 
     memset(f->data, 0, sizeof(f->data));
 

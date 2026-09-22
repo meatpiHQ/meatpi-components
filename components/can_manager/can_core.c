@@ -91,6 +91,7 @@ static bool dispatch_frame_to_queue_subscriber(QueueHandle_t queue,
 typedef struct
 {
     uint32_t id;
+    uint32_t ts_us;     /* esp_timer at the RX interrupt (the bus time) */
     uint8_t  flags;
     uint8_t  dlc;
     uint8_t  data[8];
@@ -124,6 +125,10 @@ static bool IRAM_ATTR can_on_rx_done(twai_node_handle_t node,
         can_rx_raw_t raw;
 
         raw.id    = f.header.id;
+        /* stamp HERE, not in the dispatch task: the queue adds up to a
+           few ms of jitter under load and consumers (BLE raw stream,
+           GVRET, J2534, the logger) want bus time. ISR-safe. */
+        raw.ts_us = (uint32_t)esp_timer_get_time();
         raw.flags = (uint8_t)((f.header.ide ? CAN_RX_RAW_EXT : 0) |
                               (f.header.rtr ? CAN_RX_RAW_RTR : 0));
         raw.dlc   = (uint8_t)(f.header.dlc > 8 ? 8 : f.header.dlc);
@@ -298,6 +303,8 @@ static void can_rx_task(void *arg)
         frame.ext = (raw.flags & CAN_RX_RAW_EXT) != 0;
         frame.rtr = (raw.flags & CAN_RX_RAW_RTR) != 0;
         frame.dlc = raw.dlc;
+        frame.ts_us = raw.ts_us;
+        memset(frame.data, 0, sizeof(frame.data));
         memcpy(frame.data, raw.data, frame.dlc);
 
         /* Dispatch to matching clients */

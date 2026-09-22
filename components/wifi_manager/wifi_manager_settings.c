@@ -142,7 +142,11 @@ static const settings_field_t WM_FIELDS[] =
        to run WiFi + BLE together); `custom` uses the three numeric knobs
        below. The knobs only apply when profile = custom; their ranges
        match the IDF Kconfig bounds so no combination is invalid. */
-    SETTINGS_STR_ENUM("wifi_ram_profile", "full,lean,custom", "full"),
+    /* lean since 2026-09-22 (Ali): BLE ships on this device class and the
+       controller's 12 static ACL TX buffers took the last 3 KB of internal
+       headroom (`full` = boot free 4.8 KB, cliff within minutes; `lean` =
+       18 KB). Persisted devices keep their stored value. */
+    SETTINGS_STR_ENUM("wifi_ram_profile", "full,lean,custom", "lean"),
     SETTINGS_INT ("wifi_static_rx",      2, 25, 10),
     SETTINGS_INT ("wifi_static_tx",      1, 64, 8),
     SETTINGS_INT ("wifi_cache_tx",       0, 128, 32),

@@ -61,7 +61,7 @@ recompile; reboot to apply):
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| `wifi_ram_profile` | enum `full`/`lean`/`custom` | `full` | `full` = IDF-default buffers. `lean` frees **~14.4 KB internal** (static RX 10→6, static TX 8→4, cache TX 32→16) at **no measured throughput cost** — the device's real traffic is app/TLS-capped (~900 KB/s) below WiFi's buffer-limited ceiling (bench A/B 2026-07-08). Use `lean` to run WiFi + BLE together (the internal-RAM cliff). `custom` = the three knobs below. |
+| `wifi_ram_profile` | enum `full`/`lean`/`custom` | `lean` (since 2026-09-22; `full` before) | `full` = IDF-default buffers. `lean` frees **~14.4 KB internal** (static RX 10→6, static TX 8→4, cache TX 32→16) at **no measured throughput cost** — the device's real traffic is app/TLS-capped (~900 KB/s) below WiFi's buffer-limited ceiling (bench A/B 2026-07-08). Use `lean` to run WiFi + BLE together (the internal-RAM cliff). `custom` = the three knobs below. |
 | `wifi_static_rx` | int 2..25 | `10` | custom only — static RX buffers (~1.6 KB internal DMA each). |
 | `wifi_static_tx` | int 1..64 | `8` | custom only — static TX buffers (~1.6 KB internal DMA each). |
 | `wifi_cache_tx` | int 0..128 | `32` | custom only — cache TX buffers. Ranges match the IDF Kconfig bounds, so no combination fails `esp_wifi_init`; `rx_ba_win` and the dynamic (PSRAM) pools are left at their defaults. |

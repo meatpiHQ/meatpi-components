@@ -129,6 +129,11 @@ esp_err_t http_server_manager_set_asset_fetcher(http_asset_fetch_fn_t fn);
 typedef bool (*http_request_gate_fn_t)(int sockfd);
 esp_err_t http_server_manager_set_request_gate(http_request_gate_fn_t fn);
 
+/** The TCP port the server listens on (80 unless overridden at build
+ *  time) - for in-device clients that replay requests over loopback
+ *  (ble_http). */
+uint16_t http_server_manager_port(void);
+
 /**
  * @brief The underlying server handle, for APIs that require it (e.g. async
  *        WebSocket sends via httpd_ws_send_frame_async).

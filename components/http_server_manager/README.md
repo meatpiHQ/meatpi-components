@@ -97,6 +97,12 @@ component, not to this server — see ARCHITECTURE.md §9.)
 
 ## Memory footprint
 
+Task stack: **8 KB internal** since 2026-09-22 (was 12 KB). `system -t`
+showed 9060 B of the 12 KB never used through the BLE tunnel + storage +
+UDS benches (~3.2 KB in use); 8 KB keeps ~4.9 KB of headroom and returns
+4 KB of internal RAM. The stack stays internal because route handlers
+write flash (`/api/fs/upload`, OTA, settings). `TASK_internal_ram.md`.
+
 No task of its own beyond httpd's own workers (owned by esp_http_server). All
 numbers **estimated** — replace with **measured** before release.
 

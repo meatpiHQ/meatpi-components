@@ -34,6 +34,7 @@
 #include "esp_mac.h"
 #include "sdkconfig.h"
 
+#include "ble_manager.h"
 #include "bridge_manager.h"
 #include "event_manager.h"
 #include "cmdline_manager.h"
@@ -184,6 +185,12 @@ static esp_err_t status_handler(httpd_req_t *req)
     cJSON_AddNumberToObject(c, "used", au);
     cJSON_AddNumberToObject(c, "cap", ac);
 
+    /* BLE stream channels (ble_http, ble_j2534; standard §12, 2026-09-21) */
+    ble_manager_channel_capacity(&used, &cap);
+    c = cJSON_AddObjectToObject(caps, "ble_ch");
+    cJSON_AddNumberToObject(c, "used", used);
+    cJSON_AddNumberToObject(c, "cap", cap);
+
     cJSON_AddNumberToObject(health, "faults",
                             dev_status_manager_faults(NULL, 0));
 
@@ -194,7 +201,7 @@ static esp_err_t status_handler(httpd_req_t *req)
 
 static esp_err_t faults_handler(httpd_req_t *req)
 {
-    static dev_status_fault_t faults[DEV_STATUS_FAULT_MAX]; /* off-stack */
+    static dev_status_fault_t faults[DEV_STATUS_FAULT_MAX] EXT_RAM_BSS_ATTR; /* off-stack, PSRAM (1.3 KB) */
     int n = dev_status_manager_faults(faults, DEV_STATUS_FAULT_MAX);
     cJSON *resp = cJSON_CreateObject();
     cJSON *arr = cJSON_AddArrayToObject(resp, "faults");

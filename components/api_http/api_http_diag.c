@@ -46,7 +46,8 @@
 /* ring snapshot lives in PSRAM; the wire chunks go through internal RAM
  * (§9.4 serving rules) */
 static char s_ring_buf[RING_BUF_SIZE] EXT_RAM_BSS_ATTR;
-static char s_chunk[RING_CHUNK]; /* internal: socket-send bounce buffer */
+static char s_chunk[RING_CHUNK] EXT_RAM_BSS_ATTR; /* socket-send bounce buffer: lwIP copies
+                                                   into its (PSRAM) pbufs, no DMA from here */
 static SemaphoreHandle_t s_ring_lock;
 static StaticSemaphore_t s_ring_lock_buf; /* internal: FreeRTOS object */
 

@@ -65,7 +65,8 @@ down anyway).
 | Where | What | ~Size |
 |---|---|---|
 | PSRAM `.bss` | ring-dump snapshot buffer | 20 KB |
-| Internal `.bss` | wire chunk buffer (1 KB) + mutex/TCB | ~2 KB |
+| Internal `.bss` | fs wire chunk buffer (1 KB, the source of flash writes) + mutex/TCB | ~1 KB |
+| PSRAM `.bss` | diag ring chunk (1 KB, lwIP copies into its own pbufs) and the `/api/faults` snapshot table (1.3 KB), both moved 2026-09-22 (`TASK_internal_ram.md`) | ~2.3 KB |
 | Heap (transient) | PUT bodies (PSRAM, ≤8 KB), cJSON trees, reboot task stack (3 KB internal, one-shot) | request-scoped |
 
 ## Tests

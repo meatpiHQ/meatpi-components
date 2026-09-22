@@ -1,0 +1,2 @@
+## No managed dependencies: ble_manager + j2534_server are in-tree components.
+dependencies: {}

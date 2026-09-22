@@ -35,6 +35,7 @@
 
 #include "esp_app_desc.h"
 #include "esp_heap_caps.h"
+#include "esp_memory_utils.h"
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_ota_ops.h"
@@ -108,9 +109,62 @@ esp_err_t dev_status_manager_init(void)
     return ESP_OK;
 }
 
+/* ---- internal-RAM guard ----------------------------------------------------------- */
+
+static esp_timer_handle_t s_ram_timer;
+static bool s_ram_low_raised;
+
+static void ram_guard_cb(void *arg)
+{
+    (void)arg;
+
+    if (s_ram_low_raised)
+    {
+        return; /* one latch per boot; the count keeps in NVS across boots */
+    }
+
+    uint32_t caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+    uint32_t free_now = (uint32_t)heap_caps_get_free_size(caps);
+    uint32_t min_free = (uint32_t)heap_caps_get_minimum_free_size(caps);
+
+    if (free_now < DEV_STATUS_RAM_LOW_FREE || min_free < DEV_STATUS_RAM_LOW_MIN)
+    {
+        char detail[48];
+
+        snprintf(detail, sizeof(detail), "free=%lu min=%lu largest=%lu",
+                 (unsigned long)free_now, (unsigned long)min_free,
+                 (unsigned long)heap_caps_get_largest_free_block(caps));
+        ESP_LOGW(TAG, "internal RAM low: %s (the cliff: event loop, BLE "
+                 "restart and the BT controller fail silently below ~5 KB)",
+                 detail);
+        (void)dev_status_manager_fault_raise("internal_ram_low", detail);
+        s_ram_low_raised = true;
+    }
+}
+
 esp_err_t dev_status_manager_start(void)
 {
-    return s_inited ? ESP_OK : ESP_ERR_INVALID_STATE;
+    if (!s_inited)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (s_ram_timer == NULL)
+    {
+        const esp_timer_create_args_t args =
+        {
+            .callback = ram_guard_cb,
+            .name = "ram_guard",
+            .dispatch_method = ESP_TIMER_TASK,
+        };
+
+        if (esp_timer_create(&args, &s_ram_timer) == ESP_OK)
+        {
+            (void)esp_timer_start_periodic(s_ram_timer, 10 * 1000 * 1000);
+        }
+    }
+
+    return ESP_OK;
 }
 
 esp_err_t dev_status_manager_stop(void)
@@ -358,6 +412,7 @@ esp_err_t dev_status_manager_task_stats(dev_status_task_t *out, size_t cap,
         t->prio = (uint8_t)tasks[i].uxCurrentPriority;
         t->stack_hw = (uint32_t)tasks[i].usStackHighWaterMark *
                       sizeof(StackType_t);
+        t->stack_ext = esp_ptr_external_ram(tasks[i].pxStackBase);
 #if configGENERATE_RUN_TIME_STATS == 1
         t->runtime_us = (uint64_t)tasks[i].ulRunTimeCounter;
 #endif

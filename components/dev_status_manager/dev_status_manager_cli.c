@@ -27,6 +27,7 @@
  *        dev_status_manager_register_cli() (main wires it in CLI
  *        compositions only, like the *_register_http pattern).
  */
+#include "esp_attr.h"
 #include <string.h>
 
 #include "esp_app_desc.h"
@@ -97,7 +98,7 @@ static int cmd_faults(int argc, char **argv)
         return 0;
     }
 
-    static dev_status_fault_t faults[DEV_STATUS_FAULT_MAX]; /* off-stack */
+    static dev_status_fault_t faults[DEV_STATUS_FAULT_MAX] EXT_RAM_BSS_ATTR; /* off-stack, PSRAM (1.3 KB) */
     int n = dev_status_manager_faults(faults, DEV_STATUS_FAULT_MAX);
 
     if (n == 0)

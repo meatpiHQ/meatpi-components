@@ -162,6 +162,15 @@ esp_err_t dev_status_manager_register_settings(void);
 /** Snapshot both heaps. Cheap; poll-friendly. */
 esp_err_t dev_status_manager_memory(dev_status_memory_t *out);
 
+/* Internal-RAM guard (2026-09-22, TASK_internal_ram.md): a 10 s esp_timer
+ * latches the fault `internal_ram_low` (once per boot, W log) when the
+ * internal heap's free size drops under DEV_STATUS_RAM_LOW_FREE or its
+ * lifetime minimum under DEV_STATUS_RAM_LOW_MIN. Below ~5 KB the device
+ * misbehaves silently: the default event loop stops taking the web
+ * server's events, BLE does not restart, the BT controller drops PDUs. */
+#define DEV_STATUS_RAM_LOW_FREE 8192
+#define DEV_STATUS_RAM_LOW_MIN  4096
+
 /* ---- flash-write observability (2026-07-19) --------------------------------
  * Counts since boot, from the SPI-flash driver's own counters
  * (CONFIG_SPI_FLASH_ENABLE_COUNTERS). THE tripwire for the
@@ -226,6 +235,7 @@ typedef struct
     uint8_t  prio;
     uint32_t stack_hw;   /* stack high-water: unused bytes remaining    */
     uint64_t runtime_us; /* cumulative run time (u64 — never wraps)     */
+    bool     stack_ext;  /* stack lives in PSRAM (else internal DRAM)   */
 } dev_status_task_t;
 
 /**

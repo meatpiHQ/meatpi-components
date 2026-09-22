@@ -27,6 +27,7 @@ they reset on reboot and are **not** settings.
 | `dev_status_manager_device_id()` | THE device identity: 12 hex chars of the SoftAP MAC (legacy `hw_config_get_device_id`) — BLE name (`WiCAN_<id>`), AP SSID and STA hostname all derive from it; no component reads the MAC for naming itself. |
 | `dev_status_manager_memory(*out)` | Both heaps (internal + PSRAM): total/free/min_free/**largest_block** — the fragmentation signal (Architecture §12b). |
 | `dev_status_manager_task_stats(out,cap,*n,*total_us)` | Task monitor snapshot (2026-07-08): per-task name/state/core/prio/stack high-water/cumulative runtime, busiest first + per-core scheduler time. CPU% = deltas between two snapshots ÷ (total-delta × cores). Needs `CONFIG_FREERTOS_USE_TRACE_FACILITY` (+ `_GENERATE_RUN_TIME_STATS`, u64 counter — both in sdkconfig.defaults). |
+| RAM guard (2026-09-22, `TASK_internal_ram.md`) | a 10 s esp_timer started by `dev_status_manager_start()` latches the fault `internal_ram_low` (once per boot, W log with free/min/largest) when the internal heap's free size drops under `DEV_STATUS_RAM_LOW_FREE` (8 KB) or its lifetime minimum under `DEV_STATUS_RAM_LOW_MIN` (4 KB): below ~5 KB the default event loop stops taking the web server's events, BLE does not restart after an AP station leaves and the BT controller drops PDUs silently, all without an E line of their own. `dev_status_task_t.stack_ext` says whether a task's stack lives in PSRAM (`system -t` prints it). |
 | `dev_status_manager_temperature(*c)` | Die temperature, °C (ESP32-S3 internal sensor, lazy install). |
 
 `DEV_STATUS_NETWORK_CONNECTED_MASK` = STA | ETH ("any upstream path").
@@ -62,7 +63,8 @@ bits are owned by their publishers.
 | Where | What | Size |
 |---|---|---|
 | Internal `.bss` | static event group + app descriptor copy | ~320 B |
-| PSRAM / heap / task stacks | none (passive, caller context); task_stats scratch is transient PSRAM | 0 |
+| PSRAM / heap / task stacks | none (passive, caller context); task_stats scratch is transient PSRAM; the CLI's fault-table snapshot (1.3 KB) is PSRAM `.bss` since 2026-09-22 | 0 |
+| Internal | one esp_timer (the RAM guard) | ~50 B |
 | Internal (FIRMWARE-WIDE, task monitoring) | the two runtime-stats Kconfig flags: 828 B static + 8 B/task u64 TCB counters (~330 B @ 41 tasks) — **~1.1 KB measured A/B 2026-07-08** (+ ~1 µs esp_timer read per context switch). Not this component's `.bss`, but it owns the feature so the cost is booked here. | ~1.1 KB |
 | Internal heap | temperature-sensor driver handle (lazy, first call) | ~100 B |
 

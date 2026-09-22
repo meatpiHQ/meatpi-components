@@ -2133,7 +2133,8 @@ PAGES.automate=async(view,sub)=>{
       toast("Configuration applied. Settings saved: restart to apply them","ok");
       await refreshSettingsList();paintPending();buildMenu(curSection);}
     /* scan-results picker: firmware stores ready-made config rows —
-       review, tick, merge into the table (then Apply). */
+       review, tick, merge into the table (then Apply). Nothing is ticked
+       by default: the user picks what to poll (2026-09-22). */
     function offerScanResults(r){
       const rows=(r&&r.supported)||[];
       if(!rows.length)return toast("Scan stored no supported PIDs","err");
@@ -2141,7 +2142,7 @@ PAGES.automate=async(view,sub)=>{
       const have=new Set(cfg.pids.map(p=>norm(p.cmd)));
       const boxes=rows.map(row=>{
         const dup=have.has(norm(row.cmd));
-        const cb=h("input",{type:"checkbox",checked:!dup});
+        const cb=h("input",{type:"checkbox",checked:false,disabled:dup});
         const prm=(row.parameters&&row.parameters[0])||{};
         return{row,cb,el:h("label",{style:"display:grid;grid-template-columns:24px 130px 1fr 90px;gap:8px;align-items:center;padding:5px 4px;border-top:1px solid var(--border);cursor:pointer;opacity:"+(dup?".55":"1")},
           cb,h("span",{class:"mono"},row.cmd),h("span",{},row.name+(dup?", already configured":"")),

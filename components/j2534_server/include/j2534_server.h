@@ -64,7 +64,14 @@ typedef struct {
     bool     exclusive;          /* runtime: autopid off the bus while a  */
                                  /* tester is attached (obd_gate hold)   */
     bool     autopid_paused;     /* the pollers acknowledged the hold    */
+    char     transport[8];       /* "tcp" | "serial" | "ble" | "none"    */
 } j2534_server_status_t;
+
+/** The setting (`enabled`), stable across runtime stop: the truth BLE glue
+ *  keys its channel registration on. */
+bool j2534_server_is_enabled(void);
+/** Started and enabled: sessions are being served. */
+bool j2534_server_is_running(void);
 
 esp_err_t j2534_server_status(j2534_server_status_t *out);
 
@@ -76,12 +83,37 @@ bool j2534_server_exclusive(void);
 
 esp_err_t j2534_server_register_http(void); /* GET /api/j2534 */
 
-/* ---- serial transport (device_class=cdc) ------------------------------
- * The same framed wire protocol can run over a CDC-ACM serial link instead
- * of TCP. A CDC-device component provides these two blocking byte ops and
- * registers them, then calls j2534_server_serve_serial() from its own task
- * once the host has opened the port. The single-tester guard makes a
- * serial and a TCP session mutually exclusive (second is refused). */
+/* ---- transports ----------------------------------------------------------
+ * One framed wire protocol (J2534_WIRE_PROTOCOL.md) over any reliable,
+ * in-order byte link. A transport - the TCP listener in this component,
+ * usb_cdc_device (CDC-ACM), ble_j2534 (a BLE stream channel) - supplies two
+ * blocking byte ops + a context and runs ONE tester session per link-up
+ * from its own task. Single tester across all transports: a second one is
+ * answered ACK ERR_DEVICE_IN_USE (0x1A) to its first frame and its session
+ * ends. */
+typedef struct j2534_transport
+{
+    const char *name;   /* "tcp" | "serial" | "ble" - shown in status  */
+    /* read up to n bytes, blocking up to timeout_ms; >0 bytes, 0 timeout,
+     * <0 link down (ends the session) */
+    int (*read)(void *ctx, uint8_t *buf, size_t n, uint32_t timeout_ms);
+    /* write n bytes - one complete wire frame per call (header + payload
+     * are handed over contiguously); n on success, <0 on link error */
+    int (*write)(void *ctx, const uint8_t *buf, size_t n);
+    void *ctx;
+} j2534_transport_t;
+
+/** Run one tester session on @p t. Blocks until the link drops, the server
+ *  stops or the tester sends a malformed header. Returns at once when the
+ *  server is not running (`enabled=false` / stopped). Refuses (ACK
+ *  ERR_DEVICE_IN_USE, then returns) when a tester is attached on another
+ *  transport. Callers loop to serve the next link-up. */
+void j2534_server_serve_transport(const j2534_transport_t *t);
+
+/* ---- legacy serial vtable (device_class=cdc) --------------------------
+ * usb_cdc_device provides these two blocking byte ops and registers them,
+ * then calls j2534_server_serve_serial() from its own task once the host
+ * has opened the port. Thin wrappers over the transport API above. */
 typedef struct {
     /* read up to n bytes, blocking up to timeout_ms; return bytes read
      * (>0), 0 on timeout, <0 on link error (session ends) */

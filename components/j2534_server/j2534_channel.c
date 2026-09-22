@@ -552,7 +552,8 @@ bool j2534_channel_poll_rx(int slot, j2534_msg_t *out)
             {
                 memset(out, 0, sizeof(*out));
                 out->protocol_id = J2534_PROT_CAN;
-                out->timestamp = now_us();
+                /* the frame's own RX-interrupt time, not the poll time */
+                out->timestamp = fr.ts_us ? fr.ts_us : now_us();
                 out->rx_status = fr.ext ? J2534_RX_CAN_29BIT_ID : 0;
                 out->data_size = 4 + fr.dlc;
                 memcpy(out->data, view, out->data_size);

@@ -42,12 +42,14 @@ static int cmd_j2534(int argc, char **argv)
         return 1;
     }
 
-    cmdline_printf("J2534 PassThru server (Phase 1: handshake)\n");
+    cmdline_printf("J2534 PassThru server (CAN + ISO15765; tcp/serial/ble)\n");
     cmdline_printf("  enabled     : %s\n", st.enabled ? "yes" : "no");
     cmdline_printf("  tcp port    : %u\n", st.port);
     cmdline_printf("  listening   : %s\n", st.listening ? "yes" : "no");
-    cmdline_printf("  tester      : %s\n",
-                   st.client_connected ? "connected" : "-");
+    cmdline_printf("  tester      : %s%s%s\n",
+                   st.client_connected ? "connected (" : "-",
+                   st.client_connected ? st.transport : "",
+                   st.client_connected ? ")" : "");
     cmdline_printf("  device_open : %s\n", st.device_open ? "yes" : "no");
     cmdline_printf("  exclusive   : %s%s\n", st.exclusive ? "yes" : "no",
                    st.autopid_paused ? " (autopid paused)" : "");

@@ -2,6 +2,7 @@ idf_component_register(
     SRCS "j2534_proto.c"
          "j2534_channel.c"
          "j2534_server.c"
+         "j2534_server_transport.c"
          "j2534_server_settings.c"
          "j2534_server_http.c"
          "j2534_server_cli.c"

@@ -60,6 +60,7 @@ static esp_err_t status_handler(httpd_req_t *req)
     cJSON_AddBoolToObject(o, "allow_lan", st.allow_lan);
     cJSON_AddBoolToObject(o, "exclusive", st.exclusive);
     cJSON_AddBoolToObject(o, "autopid_paused", st.autopid_paused);
+    cJSON_AddStringToObject(o, "transport", st.transport);
     cJSON_AddStringToObject(o, "phase", "2 (CAN + ISO15765 channels)");
 
     char *s = cJSON_PrintUnformatted(o);

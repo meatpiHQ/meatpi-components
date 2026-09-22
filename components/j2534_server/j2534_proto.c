@@ -201,3 +201,117 @@ const char *j2534_status_name(uint32_t status)
         default:                             return "?";
     }
 }
+
+/* ---- transport-agnostic framer ---------------------------------------- */
+
+/* read exactly n bytes into buf (or discard them when buf == NULL) */
+static j2534_frame_rc_t read_exact(j2534_read_fn rd, void *ctx,
+                                   uint32_t per_read_ms,
+                                   uint32_t max_idle_reads,
+                                   volatile const bool *run, uint8_t *buf,
+                                   size_t n)
+{
+    uint8_t scratch[32];
+    size_t got = 0;
+    uint32_t idle = 0;
+
+    while (got < n)
+    {
+        if (run != NULL && !*run)
+        {
+            return J2534_FR_STOPPED;
+        }
+
+        uint8_t *dst = (buf != NULL) ? buf + got : scratch;
+        size_t want = n - got;
+
+        if (buf == NULL && want > sizeof(scratch))
+        {
+            want = sizeof(scratch);
+        }
+
+        int r = rd(ctx, dst, want, per_read_ms);
+
+        if (r < 0)
+        {
+            return J2534_FR_LINK_DOWN;
+        }
+
+        if (r == 0)
+        {
+            if (max_idle_reads != 0 && ++idle >= max_idle_reads)
+            {
+                return J2534_FR_TIMEOUT;
+            }
+
+            continue;
+        }
+
+        idle = 0;
+        got += (size_t)r;
+    }
+
+    return J2534_FR_OK;
+}
+
+j2534_frame_rc_t j2534_frame_read(j2534_read_fn rd, void *ctx,
+                                  uint32_t per_read_ms,
+                                  uint32_t max_idle_reads,
+                                  volatile const bool *run, j2534_hdr_t *h,
+                                  uint8_t *payload, size_t payload_cap)
+{
+    uint8_t hdr[J2534_HDR_SIZE];
+    j2534_frame_rc_t rc = read_exact(rd, ctx, per_read_ms, max_idle_reads,
+                                     run, hdr, sizeof(hdr));
+
+    if (rc != J2534_FR_OK)
+    {
+        return rc;
+    }
+
+    if (!j2534_hdr_decode(hdr, sizeof(hdr), h))
+    {
+        return J2534_FR_BAD_HDR;
+    }
+
+    if (h->length > payload_cap)
+    {
+        return J2534_FR_TOO_BIG;
+    }
+
+    if (h->length == 0)
+    {
+        return J2534_FR_OK;
+    }
+
+    return read_exact(rd, ctx, per_read_ms, max_idle_reads, run, payload,
+                      h->length);
+}
+
+size_t j2534_ack_encode(uint8_t *buf, size_t cap, uint16_t seq,
+                        uint16_t channel, uint32_t status,
+                        const uint32_t *result)
+{
+    uint32_t len = (result != NULL) ? 8 : 4;
+
+    if (buf == NULL || cap < J2534_HDR_SIZE + len)
+    {
+        return 0;
+    }
+
+    j2534_hdr_encode(buf, J2534_MT_ACK, seq, channel, len);
+    put_u32(buf + J2534_HDR_SIZE, status);
+
+    if (result != NULL)
+    {
+        put_u32(buf + J2534_HDR_SIZE + 4, *result);
+    }
+
+    return J2534_HDR_SIZE + len;
+}
+
+bool j2534_tcp_gate_allowed(bool allow_lan, bool loopback, bool on_ap,
+                            bool on_usb)
+{
+    return allow_lan || loopback || on_ap || on_usb;
+}

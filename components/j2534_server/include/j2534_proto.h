@@ -198,6 +198,60 @@ bool j2534_filter_match(const uint8_t *mask, size_t mask_len,
 /** Human name for a status code (static string; "?" if unknown). */
 const char *j2534_status_name(uint32_t status);
 
+/* ---- transport-agnostic framer (pure: fed by any read function) --------- */
+
+/** One whole wire frame: header + the largest PASSTHRU_MSG (RX_MSG). */
+#define J2534_MAX_FRAME (J2534_HDR_SIZE + 24 + J2534_MAX_DATA)  /* 4164 */
+/** The largest request payload the device accepts (WRITE_MSGS with one
+ *  maximal message + slack). */
+#define J2534_RX_CAP    (J2534_MAX_DATA + 256)
+
+/** Read up to n bytes, blocking up to timeout_ms: >0 bytes, 0 timeout,
+ *  <0 link down. The j2534_transport_t.read contract. */
+typedef int (*j2534_read_fn)(void *ctx, uint8_t *buf, size_t n,
+                             uint32_t timeout_ms);
+
+typedef enum {
+    J2534_FR_OK = 0,
+    J2534_FR_TIMEOUT,    /* max_idle_reads consecutive empty reads      */
+    J2534_FR_LINK_DOWN,  /* read returned <0                            */
+    J2534_FR_BAD_HDR,    /* magic / version mismatch (stream desync)    */
+    J2534_FR_TOO_BIG,    /* header announces more than payload_cap      */
+    J2534_FR_STOPPED,    /* *run went false                             */
+} j2534_frame_rc_t;
+
+/**
+ * Read one frame: the 12-byte header, then `length` payload bytes into
+ * @p payload (cap @p payload_cap). payload == NULL = discard mode (the
+ * bytes are consumed but not kept; payload_cap still bounds `length`).
+ * @p per_read_ms is one read() poll; @p max_idle_reads consecutive empty
+ * polls give up (0 = wait forever); @p run (nullable) aborts when false.
+ * Bytes are consumed exactly: a partial chunk from the transport never
+ * desyncs the stream.
+ */
+j2534_frame_rc_t j2534_frame_read(j2534_read_fn rd, void *ctx,
+                                  uint32_t per_read_ms,
+                                  uint32_t max_idle_reads,
+                                  volatile const bool *run, j2534_hdr_t *h,
+                                  uint8_t *payload, size_t payload_cap);
+
+/**
+ * Encode a complete ACK frame (header + status u32 [+ result u32]) into
+ * @p buf. Returns 16 or 20 bytes, 0 when cap is too small.
+ */
+size_t j2534_ack_encode(uint8_t *buf, size_t cap, uint16_t seq,
+                        uint16_t channel, uint32_t status,
+                        const uint32_t *result);
+
+/**
+ * The TCP interface-exposure predicate: with allow_lan off, only
+ * connections that landed on loopback, WiCAN's own SoftAP or the
+ * USB-device (NCM) netif are accepted. Serial and BLE transports never
+ * consult it (paired / cabled local links).
+ */
+bool j2534_tcp_gate_allowed(bool allow_lan, bool loopback, bool on_ap,
+                            bool on_usb);
+
 #ifdef __cplusplus
 }
 #endif

@@ -24,11 +24,41 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include "esp_err.h"
 
+#include "j2534_proto.h"
+#include "j2534_server.h"
+
 esp_err_t j2534_server_register_cli(void);
+
+/* ---- core (j2534_server.c) <-> transport layer (j2534_server_transport.c) --- */
+
+/* core -> transport */
+esp_err_t j2534_srv_transport_init(void);           /* mutexes            */
+esp_err_t j2534_srv_listener_start(uint16_t port);  /* the TCP task       */
+bool      j2534_srv_listening(void);
+const j2534_transport_t *j2534_srv_active(void);    /* NULL = idle        */
+bool      j2534_srv_send_frame(const j2534_transport_t *t, uint8_t type,
+                               uint16_t seq, uint16_t channel,
+                               const uint8_t *payload, uint32_t len);
+bool      j2534_srv_send_ack(const j2534_transport_t *t, uint16_t seq,
+                             uint16_t channel, uint32_t status,
+                             const uint32_t *result);
+
+/* transport -> core */
+bool      j2534_srv_running(void);
+volatile const bool *j2534_srv_run_flag(void);
+uint8_t  *j2534_srv_req_payload(size_t *cap);       /* PSRAM, one session */
+void      j2534_srv_count_rx(void);
+void      j2534_srv_count_tx(void);
+void      j2534_srv_session_begin(const char *transport_name);
+void      j2534_srv_session_end(void);
+void      j2534_srv_handle_frame(const j2534_transport_t *t,
+                                 const j2534_hdr_t *h,
+                                 const uint8_t *payload);
 
 /* ---- settings (j2534_server_settings.c) -------------------------------- */
 

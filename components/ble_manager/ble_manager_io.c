@@ -111,7 +111,10 @@ static void tx_task(void *arg)
 
                     if (--free_packets == 0 && consumed < chunk.len)
                     {
-                        ESP_LOGE(TAG, "ran out of free packets too soon");
+                        /* a data-path condition (credits expired under
+                           load), handled by the next pacing pass: never
+                           an E line (standard §10) */
+                        ESP_LOGD(TAG, "ran out of free packets too soon");
                         break;
                     }
                 }

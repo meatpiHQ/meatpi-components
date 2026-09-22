@@ -9,9 +9,16 @@ if(CONFIG_BT_ENABLED)
     set(blm_srcs "ble_manager.c"
                  "ble_manager_settings.c"
                  "ble_manager_io.c"
-                 "ble_manager_pack.c")
+                 "ble_manager_pack.c"
+                 "ble_manager_channel.c"
+                 "ble_manager_http.c")
     if(CONFIG_BT_NIMBLE_ENABLED)
-        list(APPEND blm_srcs "ble_manager_gatt_nimble.c")
+        # GAP/security/notify path + the service table (stream channels
+        # are NimBLE-only; the Bluedroid backend stubs them)
+        list(APPEND blm_srcs "ble_manager_gatt_nimble.c"
+                             "ble_manager_gatt_tx.c"
+                             "ble_manager_gatt_svc.c"
+                             "ble_manager_gatt_adv.c")
     else()
         list(APPEND blm_srcs "ble_manager_gatt.c")
     endif()
@@ -27,4 +34,5 @@ idf_component_register(
     # (Legacy ble.c stays in this directory as the on-air reference — it is
     # deliberately NOT compiled.)
     PRIV_REQUIRES bt settings_manager log_manager dev_status_manager
+                  http_server_manager esp_http_server espressif__cjson
 )

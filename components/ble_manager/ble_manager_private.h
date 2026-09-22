@@ -33,6 +33,8 @@
 
 #include "esp_err.h"
 
+#include "ble_manager.h" /* channel descriptor / event types */
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -74,6 +76,23 @@ int blm_ident_clamp_tx_power(int dbm);
 void blm_ident_conn_window(const char *profile, uint16_t *min_units,
                            uint16_t *max_units);
 
+/* BLE 5 as settings (2026-09-21): the PHY the device PREFERS and the
+   advertising set(s) it runs. Masks/modes are stack-agnostic. */
+#define BLM_PHY_1M    0x01u
+#define BLM_PHY_2M    0x02u
+#define BLM_PHY_CODED 0x04u
+
+#define BLM_ADV_LEGACY   0u   /* the 4.2-visible set only (today's bytes)   */
+#define BLM_ADV_EXTENDED 1u   /* the 5.0 extended set only                  */
+#define BLM_ADV_BOTH     2u   /* both sets at once                          */
+
+/** `phy` setting -> preferred PHY mask ("1m"/unknown = 1M, "2m" = 2M,
+ *  "coded" = coded, "auto" = 1M|2M). */
+uint8_t blm_ident_phy_mask(const char *phy);
+
+/** `advertising` setting -> BLM_ADV_* ("legacy"/unknown = legacy). */
+uint8_t blm_ident_adv_mode(const char *mode);
+
 /* ---- settings (ble_manager_settings.c) --------------------------------------- */
 
 typedef struct
@@ -88,6 +107,8 @@ typedef struct
     int      tx_power_dbm;
     uint16_t conn_min_units;   /* requested connection window, 1.25 ms units */
     uint16_t conn_max_units;
+    uint8_t  phy_mask;         /* v4: BLM_PHY_* preferred on a link          */
+    uint8_t  adv_mode;         /* v4: BLM_ADV_* advertising set(s)            */
 } blm_config_t;
 
 /** Register the "ble_manager" descriptor with settings_manager. */
@@ -106,7 +127,7 @@ void blm_core_on_connect(void);
 void blm_core_on_disconnect(void);
 bool blm_core_pairing_allowed(void);
 
-/* ---- GATT layer (ble_manager_gatt.c) ----------------------------------------- */
+/* ---- GATT layer (ble_manager_gatt_nimble.c / ble_manager_gatt.c) ------------- */
 
 esp_err_t blm_gatt_stack_up(const char *dev_name);    /* controller..adv    */
 void      blm_gatt_stack_down(void);
@@ -118,6 +139,91 @@ int       blm_gatt_free_packets(void);
 esp_err_t blm_gatt_notify_data(const uint8_t *buf, uint16_t len); /* FFF1   */
 esp_err_t blm_gatt_notify_cli(const uint8_t *buf, uint16_t len);  /* CLIOUT */
 void      blm_gatt_allow_pairing(bool allow);         /* + late encryption  */
+
+/** Notify any value handle, retrying ENOMEM (mbuf/credit exhaustion) up
+ *  to max_wait_ms. ESP_ERR_INVALID_STATE without a secured link,
+ *  ESP_ERR_TIMEOUT when the credits never came back, ESP_FAIL otherwise.
+ *  The congestion window it feeds is self-expiring (no latch). Bluedroid
+ *  backend: ESP_ERR_NOT_SUPPORTED (channels are NimBLE-only). */
+esp_err_t blm_gatt_notify_handle(uint16_t val_handle, const uint8_t *buf,
+                                 uint16_t len, uint32_t max_wait_ms);
+
+/** INDICATE any value handle and wait for the central's confirmation
+ *  (one indication in flight per link). ESP_ERR_INVALID_STATE without a
+ *  secured link or when the link drops mid-wait, ESP_ERR_TIMEOUT when
+ *  neither the send credits nor the confirmation came within max_wait_ms
+ *  (the PDU may still be delivered later), ESP_FAIL otherwise. The stream
+ *  channels use this: a confirmed PDU is never silently lost. */
+esp_err_t blm_gatt_indicate_handle(uint16_t val_handle, const uint8_t *buf,
+                                   uint16_t len, uint32_t max_wait_ms);
+
+/** OUT value handle of channel idx (0 when unknown / not NimBLE). */
+uint16_t  blm_gatt_channel_out_handle(int idx);
+
+/* ---- TX primitives (ble_manager_gatt_tx.c, NimBLE only) ------------------------ */
+
+uint16_t  blm_gatt_conn_handle(void);      /* BLE_HS_CONN_HANDLE_NONE when down */
+void      blm_tx_init(void);               /* indication semaphores, once      */
+void      blm_tx_on_link_reset(void);      /* connect / disconnect / host reset */
+void      blm_tx_on_indicate_done(int status); /* GAP NOTIFY_TX, indication     */
+
+/** The live link's PHYs (1 = 1M, 2 = 2M, 3 = coded; 0 = not connected /
+ *  not NimBLE). */
+void      blm_gatt_phy(uint8_t *tx, uint8_t *rx);
+
+/* ---- advertising sets (ble_manager_gatt_adv.c, NimBLE only) ------------------- */
+
+struct ble_gap_event; /* NimBLE; opaque here so the host build compiles */
+
+/** Configure the legacy / extended advertising instances for @p adv_mode
+ *  with the FFF0 UUID, @p name and the secondary PHY from @p phy_mask.
+ *  Once per stack bring-up, from the host's sync callback. */
+esp_err_t blm_adv_configure(uint8_t own_addr_type, const char *name,
+                            uint8_t adv_mode, uint8_t phy_mask,
+                            int (*gap_cb)(struct ble_gap_event *, void *));
+void      blm_adv_start(void);   /* the configured set(s)                  */
+void      blm_adv_stop(void);    /* every instance (a central connected)   */
+
+/* ---- GATT service table (ble_manager_gatt_svc.c, NimBLE only) ----------------- */
+
+esp_err_t blm_svc_register(const char *dev_name);   /* DIS + FFF0 (+channels) */
+void      blm_svc_reset_rx(void);                   /* CLI reassembly buffer  */
+uint16_t  blm_svc_data_out_handle(void);            /* FFF1                   */
+uint16_t  blm_svc_cli_out_handle(void);             /* CLI OUT                */
+uint16_t  blm_svc_channel_out_handle(int idx);
+void      blm_svc_publish_handles(void);            /* after ble_gatts_start  */
+
+/* ---- stream channel registry (ble_manager_channel.c) --------------------------- */
+
+/* one indication's budget (send credits + the central's confirmation).
+   The ATT indication timeout is 30 s; a phone confirms only after the
+   writes it has already queued went out (a 16 KB upload window at the
+   coex-limited 2 KB/s is ~9 s), so 2 s was too short (bench 2026-09-21). */
+#define BLM_CHANNEL_TX_WAIT_MS 30000
+
+int         blm_channel_count(void);
+const ble_manager_channel_desc_t *blm_channel_desc(int idx);
+void        blm_channel_set_in_handle(int idx, uint16_t attr_handle);
+void        blm_channel_set_out_handle(int idx, uint16_t attr_handle);
+int         blm_channel_find_in_handle(uint16_t attr_handle); /* -1 = none */
+/** The OUT modes the owner allows (BLE_MANAGER_CH_OUT_* mask; a 0 in the
+ *  descriptor reads as INDICATE only). Drives the GATT properties. */
+uint8_t     blm_channel_out_modes(int idx);
+/** Host-task: the central wrote a CCCD (GAP SUBSCRIBE); routed by the OUT
+ *  value handle, ignored for handles that are not a channel's. */
+void        blm_channel_on_subscribe(uint16_t attr_handle, bool notify,
+                                     bool indicate);
+/** Pure (ble_manager_pack.c, host-tested): the live OUT mode from what the
+ *  owner allows and what the central subscribed to. Notify wins when both
+ *  are subscribed and allowed; INDICATE when nothing usable is subscribed
+ *  (indications need no CCCD on this stack: the pre-2026-09-22 contract). */
+uint8_t     blm_channel_pick_out(uint8_t allowed, bool sub_notify,
+                                 bool sub_indicate);
+/** Host-task RX: true when every byte was accepted. */
+bool        blm_channel_on_rx(int idx, const uint8_t *data, size_t len);
+/** Host-task link events, fanned to every channel. */
+void        blm_channel_on_link(ble_manager_channel_event_t evt);
+void        blm_channel_lock(void);                 /* freeze at start        */
 
 /* ---- IO layer (ble_manager_io.c) ---------------------------------------------- */
 

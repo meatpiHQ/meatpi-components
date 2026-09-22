@@ -125,6 +125,122 @@ esp_err_t ble_manager_set_cli_handler(ble_cli_handler_t handler);
 /** Write console output back to the client (CLI OUT notify, MTU-chunked). */
 esp_err_t ble_manager_cli_write(const char *data, size_t len);
 
+/* ---- stream channels (ble_http, ble_j2534, ...) ------------------------------
+ * A channel = one IN characteristic (write + write-no-rsp, ENC|AUTHEN) and
+ * one OUT characteristic (indicate and/or notify, the owner decides which
+ * it allows) appended to the FFF0 service, 16-bit UUIDs on the FFF0 base
+ * (odd = device -> app, even = app -> device, like FFF1/FFF2). Byte-stream
+ * semantics: BLE adds no framing, the owner's protocol does. Registration
+ * is PRE-START only (the GATT table is built at ble_manager_start()); the
+ * registry survives runtime stop/start cycles (interface_manager). Bounded
+ * registry (standard §12). Documented for app developers in BLE_API.md;
+ * NimBLE backend only.
+ *
+ * OUT mode (2026-09-22): the APP picks it with the CCCD it writes on the
+ * OUT characteristic. Indications = one PDU in flight, confirmed end to
+ * end, no app-side flow control needed, slow (one 490 B unit per two
+ * connection intervals). Notifications = the controller packs several
+ * PDUs per connection event (2x-10x faster, PHY-scaled), the owner's
+ * protocol MUST carry app-side credits and a per-frame counter: the LL is
+ * reliable, but a stack can drop a PDU it already accepted (measured: the
+ * controller dropped notifications when its heap-allocated ACL TX buffer
+ * failed, fixed with CONFIG_BT_CTRL_BLE_STATIC_ACL_TX_BUF_NB=12; a phone
+ * stack can drop when it is slow). A channel registered with out_modes 0
+ * or INDICATE only keeps today's contract. */
+
+#define BLE_MANAGER_CHANNEL_MAX       4    /* bounded registry            */
+#define BLE_MANAGER_CHANNEL_WRITE_MAX 490  /* one ATT write from the app  */
+#define BLE_MANAGER_CHANNEL_RX_MIN    2048 /* smallest accepted rx_size   */
+
+/* OUT direction modes: a bitmask in the descriptor (what the owner
+   allows) and the single live value the central selected via its CCCD */
+#define BLE_MANAGER_CH_OUT_NONE       0    /* not subscribed              */
+#define BLE_MANAGER_CH_OUT_INDICATE   1    /* CCCD 0x0002                 */
+#define BLE_MANAGER_CH_OUT_NOTIFY     2    /* CCCD 0x0001 (wins if both)  */
+
+typedef enum
+{
+    BLE_MANAGER_CH_CONNECTED = 0,  /* link up, NOT yet secured: unusable  */
+    BLE_MANAGER_CH_SECURED,        /* enc + authen: bytes flow from here  */
+    BLE_MANAGER_CH_DISCONNECTED,   /* link down: reads return <0 once     */
+} ble_manager_channel_event_t;
+
+/** Runs in the BT host task: set a flag / give a notification, never
+ *  block and never call back into ble_manager. */
+typedef void (*ble_manager_channel_event_cb_t)(int id,
+                                               ble_manager_channel_event_t evt,
+                                               void *arg);
+
+typedef struct
+{
+    const char *name;        /* "http", "j2534" - status/CLI label        */
+    uint16_t    uuid_out;    /* 16-bit on the FFF0 base, notify           */
+    uint16_t    uuid_in;     /* 16-bit on the FFF0 base, write            */
+    uint8_t    *rx_storage;  /* caller-owned StreamBuffer storage (PSRAM) */
+    size_t      rx_size;     /* >= BLE_MANAGER_CHANNEL_RX_MIN             */
+    ble_manager_channel_event_cb_t on_event; /* nullable                  */
+    void       *arg;
+    uint8_t     out_modes;   /* BLE_MANAGER_CH_OUT_* mask the owner allows;
+                                0 = INDICATE only (the pre-2026-09-22
+                                contract). The GATT properties follow it. */
+} ble_manager_channel_desc_t;
+
+typedef struct
+{
+    uint32_t rx_bytes;
+    uint32_t tx_bytes;
+    uint32_t rx_overflow;    /* writes (partially) dropped: buffer full   */
+    uint32_t tx_timeouts;    /* notify credit waits that expired          */
+    uint32_t tx_link_down;   /* writes refused: no secured link           */
+    uint32_t tx_notifications; /* PDUs sent as notifications              */
+    uint32_t tx_indications; /* PDUs sent (and confirmed) as indications  */
+    size_t   rx_pending;     /* bytes waiting in the StreamBuffer         */
+    uint8_t  out_mode;       /* live BLE_MANAGER_CH_OUT_* (0 = unsubscribed) */
+} ble_manager_channel_stats_t;
+
+/** ESP_ERR_INVALID_STATE after start; ESP_ERR_NO_MEM when the registry is
+ *  full (logged E, §12); ESP_ERR_INVALID_ARG on a bad descriptor or a
+ *  UUID already in use (incl. FFF1/FFF2). */
+esp_err_t ble_manager_channel_register(const ble_manager_channel_desc_t *desc,
+                                       int *out_id);
+
+/** Read up to n bytes, blocking up to timeout_ms. Returns bytes read
+ *  (>0), 0 on timeout, <0 when the link is down or the id is unknown -
+ *  the j2534 transport read contract. Bytes left over from a previous
+ *  link are discarded on the first read after it dropped. One reader
+ *  task per channel. */
+int ble_manager_channel_read(int id, uint8_t *buf, size_t n,
+                             uint32_t timeout_ms);
+
+/** Write n bytes as MTU-sized PDUs in the OUT mode the central selected
+ *  (ble_manager_channel_out_mode): indications are confirmed one at a
+ *  time, notifications are queued with a bounded ENOMEM retry; both wait
+ *  up to BLM_CHANNEL_TX_WAIT_MS per PDU. Returns n, or <0: -1 no secured
+ *  link / unknown id, -2 credit timeout (a prefix may have been sent).
+ *  Never call from the BT host task. */
+int ble_manager_channel_write(int id, const uint8_t *buf, size_t n);
+
+/** The live OUT mode of channel id (BLE_MANAGER_CH_OUT_*): what the
+ *  central's CCCD selected among the owner's out_modes; INDICATE when it
+ *  has not subscribed (writes still go out as indications, as before). */
+uint8_t ble_manager_channel_out_mode(int id);
+
+/** "none" | "indicate" | "notify" (status / logs). */
+const char *ble_manager_channel_out_name(uint8_t mode);
+
+/** Largest payload of one OUT PDU on the current link: min(490, MTU-3).
+ *  20 when nothing is connected. */
+uint16_t ble_manager_channel_pdu_max(void);
+
+esp_err_t ble_manager_channel_stats(int id, ble_manager_channel_stats_t *out);
+
+/** Registry occupancy for WICAN CAPS / /api/status health.caps (§12). */
+void ble_manager_channel_capacity(size_t *used, size_t *cap);
+
+/** GET /api/ble: link state + the channel registry with its counters
+ *  (components/HTTP_API.md 6e15). Call before http_server_manager_start(). */
+esp_err_t ble_manager_register_http(void);
+
 #ifdef __cplusplus
 }
 #endif

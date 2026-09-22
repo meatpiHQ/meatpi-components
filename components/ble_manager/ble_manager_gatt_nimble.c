@@ -22,22 +22,27 @@
 
 /**
  * @file ble_manager_gatt_nimble.c
- * @brief The NimBLE GATT backend — the SAME on-air contract as
+ * @brief The NimBLE GATT backend - the SAME on-air contract as
  *        ble_manager_gatt.c (Bluedroid), selected by the sdkconfig BT
  *        host choice (CONFIG_BT_NIMBLE_ENABLED) for the memory/perf
  *        A/B meatpi asked for (2026-07-05). Same UUIDs, Device Info
  *        strings, security level (SC+MITM+BOND, static passkey),
- *        MTU 517, adv layout and conn-window request.
+ *        MTU 517, adv layout and conn-window request. The service
+ *        table + access callbacks live in ble_manager_gatt_svc.c; this
+ *        file owns GAP, security, advertising and the notify path.
  *
  *        Stack-mapping notes:
  *         - free-packets pacing: NimBLE exposes no controller-credit
  *           count; notify_* do a bounded ENOMEM retry instead and feed
- *           a congestion flag, which the IO layer's pacing tolerates.
+ *           a SELF-EXPIRING congestion window (ble_manager_gatt_tx.c), which the IO layer's
+ *           pacing tolerates. (The 2026-09-21 slcan bench found the
+ *           former latch never cleared once the TX task stopped
+ *           notifying while it was set: BLE TX dead for the boot.)
  *         - CCCD security: NimBLE has no per-CCCD permission flags;
  *           notify_* additionally refuse until the link is secured
  *           (same effective policy as legacy's ENC_MITM CCCDs).
  *         - long CLI writes: NimBLE reassembles queued writes and
- *           delivers ONE access call — newline-split as usual.
+ *           delivers ONE access call - newline-split as usual.
  */
 #include <string.h>
 
@@ -63,30 +68,6 @@ extern void ble_store_config_init(void);
 
 static const char *TAG = "ble_manager";
 
-/* ---- identity strings (byte-identical to the Bluedroid backend) --------------- */
-
-static const char MANUFACTURER_NAME[] = "MEATPI.COM";
-static const char MODEL_NUMBER[]      = "WiCAN-PRO";
-static char s_serial_number[32]       = "";
-static const char HARDWARE_REV[]      = "1_53         ";
-static const char FIRMWARE_REV[]      = "400";
-static const char SOFTWARE_REV[]      = "0000";
-static const uint8_t SYSTEM_ID[8]     = { 0 };
-static const uint8_t REG_CERT_DATA[8] = { 0 };
-
-/* 128-bit CLI UUIDs — same LSB-first byte arrays as legacy */
-static const ble_uuid128_t CLI_OUT_UUID = BLE_UUID128_INIT(
-    0xBE, 0xF0, 0xAD, 0xDE, 0x34, 0x12, 0x78, 0x56,
-    0x9A, 0xBC, 0xEF, 0x01, 0xC0, 0xDE, 0x00, 0x02);
-static const ble_uuid128_t CLI_IN_UUID = BLE_UUID128_INIT(
-    0xBE, 0xF0, 0xAD, 0xDE, 0x34, 0x12, 0x78, 0x56,
-    0x9A, 0xBC, 0xEF, 0x01, 0xC0, 0xDE, 0x00, 0x03);
-
-/* advertised service uuid: FFF0 on the 128-bit base (legacy) */
-static const ble_uuid128_t ADV_SVC_UUID = BLE_UUID128_INIT(
-    0xFB, 0x34, 0x9B, 0x5F, 0x80, 0x00, 0x00, 0x80,
-    0x00, 0x10, 0x00, 0x00, 0xF0, 0xFF, 0x00, 0x00);
-
 /* ---- state ---------------------------------------------------------------------- */
 
 static const char *s_dev_name;
@@ -95,223 +76,42 @@ static uint16_t s_mtu = 23;
 static uint16_t s_max_data = 20;
 static volatile bool s_connected;
 static volatile bool s_secured;
-static volatile bool s_congested;
 static uint8_t s_own_addr_type;
 
-static uint16_t s_fff1_val_handle;
-static uint16_t s_fff2_val_handle;
-static uint16_t s_cli_out_val_handle;
-static uint16_t s_cli_in_val_handle;
+/* the live link's PHYs (BLE_HCI_LE_PHY_1M/2M/CODED = 1/2/3), 0 = none */
+static volatile uint8_t s_phy_tx;
+static volatile uint8_t s_phy_rx;
 
-/* CLI IN reassembly (line splitting), PSRAM per §2 */
-static char s_cli_buf[BLM_CLI_MAX] EXT_RAM_BSS_ATTR;
-static size_t s_cli_len;
+static bool s_phy_requested;           /* one PHY request per link */
 
-static void adv_start(void);
-
-/* ---- CLI line reassembly (same semantics as the Bluedroid backend) ------------- */
-
-static void cli_process_lines(void)
+/* the `phy` setting: ask for the preferred PHY(s); the central decides (a
+   4.2 peer keeps 1M), the result comes back as PHY_UPDATE_COMPLETE */
+static void phy_request(void)
 {
-    size_t line_start = 0;
+    uint8_t mask = blm_core_config()->phy_mask;
 
-    for (size_t i = 0; i < s_cli_len; i++)
+    if (mask == BLM_PHY_1M || s_phy_requested || !s_connected)
     {
-        char c = s_cli_buf[i];
-
-        if (c == '\r' || c == '\n')
-        {
-            s_cli_buf[i] = '\0';
-
-            if (i > line_start)
-            {
-                blm_core_on_cli_line(&s_cli_buf[line_start]);
-            }
-
-            line_start = i + 1;
-        }
+        return;
     }
 
-    if (line_start > 0)
+    if ((mask == BLM_PHY_2M && s_phy_tx == BLE_HCI_LE_PHY_2M) ||
+        (mask == BLM_PHY_CODED && s_phy_tx == BLE_HCI_LE_PHY_CODED))
     {
-        size_t remaining = s_cli_len - line_start;
+        s_phy_requested = true; /* the controller's default preference already did it */
+        return;
+    }
 
-        memmove(s_cli_buf, &s_cli_buf[line_start], remaining);
-        s_cli_len = remaining;
-        s_cli_buf[s_cli_len] = '\0';
+    s_phy_requested = true;
+
+    int prc = ble_gap_set_prefered_le_phy(s_conn_handle, mask, mask,
+                                          BLE_GAP_LE_PHY_CODED_ANY);
+
+    if (prc != 0)
+    {
+        ESP_LOGW(TAG, "PHY preference 0x%02x refused (%d)", mask, prc);
     }
 }
-
-/* ---- GATT access callbacks -------------------------------------------------------- */
-
-/** Device Info: every characteristic is a static read-only string. */
-static int dev_info_access(uint16_t conn_handle, uint16_t attr_handle,
-                           struct ble_gatt_access_ctxt *ctxt, void *arg)
-{
-    const void *data = NULL;
-    size_t len = 0;
-    uint16_t uuid16 = ble_uuid_u16(ctxt->chr->uuid);
-
-    (void)conn_handle;
-    (void)attr_handle;
-    (void)arg;
-
-    /* lengths = sizeof() incl. the NUL, serial padded to 32 — the
-       Bluedroid attribute table served exactly these bytes (legacy
-       apps see identical values on either stack) */
-    switch (uuid16)
-    {
-        case 0x2A29: data = MANUFACTURER_NAME; len = sizeof(MANUFACTURER_NAME); break;
-        case 0x2A24: data = MODEL_NUMBER; len = sizeof(MODEL_NUMBER); break;
-        case 0x2A25: data = s_serial_number; len = sizeof(s_serial_number); break;
-        case 0x2A27: data = HARDWARE_REV; len = sizeof(HARDWARE_REV); break;
-        case 0x2A26: data = FIRMWARE_REV; len = sizeof(FIRMWARE_REV); break;
-        case 0x2A28: data = SOFTWARE_REV; len = sizeof(SOFTWARE_REV); break;
-        case 0x2A23: data = SYSTEM_ID; len = sizeof(SYSTEM_ID); break;
-        case 0x2A2A: data = REG_CERT_DATA; len = sizeof(REG_CERT_DATA); break;
-        default: return BLE_ATT_ERR_UNLIKELY;
-    }
-
-    return (os_mbuf_append(ctxt->om, data, len) == 0)
-               ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
-}
-
-/** FFF0: FFF1/CLI OUT are notify-only (reads answer a dummy byte like
- *  the Bluedroid table); FFF2/CLI IN are the write pipes. */
-static int fff0_access(uint16_t conn_handle, uint16_t attr_handle,
-                       struct ble_gatt_access_ctxt *ctxt, void *arg)
-{
-    (void)conn_handle;
-    (void)arg;
-
-    if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR)
-    {
-        static const uint8_t dummy = 0x00;
-
-        return (os_mbuf_append(ctxt->om, &dummy, 1) == 0)
-                   ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
-    }
-
-    if (ctxt->op != BLE_GATT_ACCESS_OP_WRITE_CHR)
-    {
-        return BLE_ATT_ERR_UNLIKELY;
-    }
-
-    uint16_t len = OS_MBUF_PKTLEN(ctxt->om);
-
-    if (attr_handle == s_fff2_val_handle)
-    {
-        /* the data pipe — the GATT flags (WRITE_ENC|WRITE_AUTHEN) already
-           bar unpaired writes; this mirrors the CLI path's software check
-           so the vehicle-command pipe is gated symmetrically */
-        if (!s_secured)
-        {
-            ESP_LOGW(TAG, "data write rejected: link not securely paired");
-            return BLE_ATT_ERR_INSUFFICIENT_AUTHEN;
-        }
-
-        /* copy out flat and fan out (hot path) */
-        static uint8_t rx_buf[BLM_SEND_BUF_SIZE] EXT_RAM_BSS_ATTR;
-        uint16_t out_len = 0;
-
-        if (ble_hs_mbuf_to_flat(ctxt->om, rx_buf, sizeof(rx_buf),
-                                &out_len) != 0)
-        {
-            return BLE_ATT_ERR_INSUFFICIENT_RES;
-        }
-
-        blm_core_on_rx(rx_buf, out_len);
-        return 0;
-    }
-
-    if (attr_handle == s_cli_in_val_handle)
-    {
-        if (!s_secured)
-        {
-            ESP_LOGW(TAG, "CLI write rejected: link not securely paired");
-            return BLE_ATT_ERR_INSUFFICIENT_AUTHEN;
-        }
-
-        size_t room = BLM_CLI_MAX - 1 - s_cli_len;
-        uint16_t to_copy = (len > room) ? (uint16_t)room : len;
-        uint16_t copied = 0;
-
-        ble_hs_mbuf_to_flat(ctxt->om, (uint8_t *)&s_cli_buf[s_cli_len],
-                            to_copy, &copied);
-        s_cli_len += copied;
-        s_cli_buf[s_cli_len] = '\0';
-        cli_process_lines();
-        return 0;
-    }
-
-    return BLE_ATT_ERR_UNLIKELY;
-}
-
-/* ---- service tables ----------------------------------------------------------------- */
-
-/* Device Info reads require an encrypted + authenticated (paired/bonded)
-   link too (meatpi 2026-07-08): NO characteristic is readable by an
-   unpaired peer — an unpaired read gets Insufficient Authentication,
-   which prompts the client to pair. */
-#define DI_CHR(uuid16) \
-    { .uuid = BLE_UUID16_DECLARE(uuid16), .access_cb = dev_info_access, \
-      .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_READ_ENC | \
-               BLE_GATT_CHR_F_READ_AUTHEN }
-
-static const struct ble_gatt_svc_def GATT_SVCS[] =
-{
-    {   /* Device Information (0x180A) — same eight characteristics */
-        .type = BLE_GATT_SVC_TYPE_PRIMARY,
-        .uuid = BLE_UUID16_DECLARE(0x180A),
-        .characteristics = (struct ble_gatt_chr_def[])
-        {
-            DI_CHR(0x2A29), DI_CHR(0x2A24), DI_CHR(0x2A25), DI_CHR(0x2A27),
-            DI_CHR(0x2A26), DI_CHR(0x2A28), DI_CHR(0x2A23), DI_CHR(0x2A2A),
-            { 0 }
-        },
-    },
-    {   /* FFF0 — the data pipes + the CLI pipes */
-        .type = BLE_GATT_SVC_TYPE_PRIMARY,
-        .uuid = BLE_UUID16_DECLARE(0xFFF0),
-        .characteristics = (struct ble_gatt_chr_def[])
-        {
-            {   /* FFF1: data OUT (notify/indicate; enc+authen reads) */
-                .uuid = BLE_UUID16_DECLARE(0xFFF1),
-                .access_cb = fff0_access,
-                .val_handle = &s_fff1_val_handle,
-                .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_READ_ENC |
-                         BLE_GATT_CHR_F_READ_AUTHEN |
-                         BLE_GATT_CHR_F_NOTIFY | BLE_GATT_CHR_F_INDICATE,
-            },
-            {   /* FFF2: data IN (write/write-nr; enc+authen) */
-                .uuid = BLE_UUID16_DECLARE(0xFFF2),
-                .access_cb = fff0_access,
-                .val_handle = &s_fff2_val_handle,
-                .flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP |
-                         BLE_GATT_CHR_F_WRITE_ENC |
-                         BLE_GATT_CHR_F_WRITE_AUTHEN,
-            },
-            {   /* CLI OUT (128-bit) */
-                .uuid = &CLI_OUT_UUID.u,
-                .access_cb = fff0_access,
-                .val_handle = &s_cli_out_val_handle,
-                .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_READ_ENC |
-                         BLE_GATT_CHR_F_READ_AUTHEN |
-                         BLE_GATT_CHR_F_NOTIFY | BLE_GATT_CHR_F_INDICATE,
-            },
-            {   /* CLI IN (128-bit) */
-                .uuid = &CLI_IN_UUID.u,
-                .access_cb = fff0_access,
-                .val_handle = &s_cli_in_val_handle,
-                .flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP |
-                         BLE_GATT_CHR_F_WRITE_ENC |
-                         BLE_GATT_CHR_F_WRITE_AUTHEN,
-            },
-            { 0 }
-        },
-    },
-    { 0 }
-};
 
 /* ---- GAP ------------------------------------------------------------------------------ */
 
@@ -324,14 +124,18 @@ static int gap_event(struct ble_gap_event *event, void *arg)
         case BLE_GAP_EVENT_CONNECT:
             if (event->connect.status != 0)
             {
-                adv_start();
+                blm_adv_start();
                 break;
             }
 
             s_conn_handle = event->connect.conn_handle;
             s_connected = true;
             s_secured = false;
-            s_cli_len = 0;
+            s_phy_tx = BLE_HCI_LE_PHY_1M; /* every link starts on 1M */
+            s_phy_rx = BLE_HCI_LE_PHY_1M;
+            blm_tx_on_link_reset();
+            blm_svc_reset_rx();
+            blm_adv_stop(); /* one central: the other advertising set too */
 
             {
                 /* the configured connection window (conn_profile) */
@@ -346,33 +150,97 @@ static int gap_event(struct ble_gap_event *event, void *arg)
                 ble_gap_update_params(s_conn_handle, &params);
             }
 
+            /* the `phy` setting is requested in CONN_UPDATE / ENC_CHANGE
+               (phy_request), once the 4 s supervision timeout above is in
+               force: asked here, at connect, the 2M switch happened under
+               the central's default 420 ms timeout and the link dropped
+               with reason 0x08 every time (UB500/BlueZ, 2026-09-21) */
+            s_phy_requested = false;
+
             /* NOTE: do NOT request Data Length Extension here. Tried
                2026-07-05 (the esp-idf ble_throughput demo's lever):
                with WiFi coex active the 251-byte/2.1 ms LL packets
                collide with WiFi airtime and TX COLLAPSED 28 -> 2 KB/s,
                plus connect instability. The demo's numbers assume a
                radio without WiFi. Controllers may still negotiate DLE
-               on their own — just don't force long TX packets. */
+               on their own - just don't force long TX packets. */
 
-            if (blm_core_pairing_allowed())
-            {
-                /* mirror of legacy esp_ble_set_encryption on connect */
-                ble_gap_security_initiate(s_conn_handle);
-            }
+            /* No Security Request from our side at connect (the legacy
+               esp_ble_set_encryption mirror, removed 2026-09-21): phones
+               pair on their first encrypted access anyway, and a
+               peripheral-initiated request makes Windows start a
+               system pairing that an app's own ceremony then cannot join
+               (WinRT custom pairing "Failed", no ceremony asked; the DUT
+               saw ENOTCONN 2 s in). The runtime pairing window still
+               applies through PASSKEY_ACTION. */
 
             blm_core_on_connect();
+            blm_channel_on_link(BLE_MANAGER_CH_CONNECTED);
             break;
 
         case BLE_GAP_EVENT_DISCONNECT:
             s_connected = false;
             s_secured = false;
             s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
-            s_cli_len = 0;
+            s_phy_tx = 0;
+            s_phy_rx = 0;
+            blm_tx_on_link_reset(); /* + wakes an indication waiter */
+            blm_svc_reset_rx();
             blm_core_on_disconnect();
-            adv_start(); /* re-advertise */
+            blm_channel_on_link(BLE_MANAGER_CH_DISCONNECTED);
+            blm_adv_start(); /* re-advertise the configured set(s) */
+            break;
+
+        case BLE_GAP_EVENT_CONN_UPDATE:
+            if (event->conn_update.status == 0)
+            {
+                phy_request(); /* our 4 s supervision timeout is live now */
+            }
+            break;
+
+        case BLE_GAP_EVENT_PHY_UPDATE_COMPLETE:
+            if (event->phy_updated.status == 0)
+            {
+                s_phy_tx = event->phy_updated.tx_phy;
+                s_phy_rx = event->phy_updated.rx_phy;
+                ESP_LOGI(TAG, "PHY now tx %s rx %s",
+                         s_phy_tx == BLE_HCI_LE_PHY_2M ? "2M" :
+                         s_phy_tx == BLE_HCI_LE_PHY_CODED ? "coded" : "1M",
+                         s_phy_rx == BLE_HCI_LE_PHY_2M ? "2M" :
+                         s_phy_rx == BLE_HCI_LE_PHY_CODED ? "coded" : "1M");
+            }
+            else
+            {
+                ESP_LOGW(TAG, "PHY update failed (%d); staying on the current PHY",
+                         event->phy_updated.status);
+            }
+            break;
+
+        case BLE_GAP_EVENT_ADV_COMPLETE:
+            /* an advertising instance stopped (the one that produced the
+               connection, or our own stop); DISCONNECT restarts the set(s) */
+            break;
+
+        case BLE_GAP_EVENT_SUBSCRIBE:
+            /* the central wrote a CCCD (or a bonded one's was restored):
+               a stream channel's OUT mode follows it */
+            blm_channel_on_subscribe(event->subscribe.attr_handle,
+                                     event->subscribe.cur_notify,
+                                     event->subscribe.cur_indicate);
+            break;
+
+        case BLE_GAP_EVENT_NOTIFY_TX:
+            /* status 0 = the PDU went to the controller; for an indication
+               EDONE = the central confirmed it, ETIMEOUT = it did not */
+            if (event->notify_tx.indication &&
+                event->notify_tx.status != 0)
+            {
+                blm_tx_on_indicate_done(event->notify_tx.status);
+            }
             break;
 
         case BLE_GAP_EVENT_ENC_CHANGE:
+            phy_request(); /* fallback when the central kept its own parameters */
         {
             struct ble_gap_conn_desc desc;
 
@@ -388,7 +256,21 @@ static int gap_event(struct ble_gap_event *event, void *arg)
                          desc.sec_state.bonded, desc.sec_state.key_size);
             }
 
-            ESP_LOGI(TAG, "pairing %s", s_secured ? "success" : "failed");
+            if (s_secured)
+            {
+                ESP_LOGI(TAG, "pairing success");
+            }
+            else
+            {
+                /* NimBLE status: BLE_HS_SM_US_ERR(x) = 0x500+x our side,
+                   BLE_HS_SM_PEER_ERR(x) = 0x600+x the peer's SMP reason */
+                ESP_LOGW(TAG, "pairing failed (status 0x%03x)", event->enc_change.status);
+            }
+
+            if (s_secured)
+            {
+                blm_channel_on_link(BLE_MANAGER_CH_SECURED);
+            }
             break;
         }
 
@@ -442,57 +324,15 @@ static int gap_event(struct ble_gap_event *event, void *arg)
     return 0;
 }
 
-/* ---- advertising ----------------------------------------------------------------------- */
-
-static void adv_start(void)
-{
-    struct ble_hs_adv_fields fields = { 0 };
-    struct ble_hs_adv_fields rsp = { 0 };
-    struct ble_gap_adv_params params = { 0 };
-    static uint8_t mfg_data[] = "MeatPi";
-
-    /* adv: flags + txpower + the 128-bit FFF0-base uuid (legacy set;
-       the full name rides the scan response, as on-air with Bluedroid) */
-    fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
-    fields.tx_pwr_lvl_is_present = 1;
-    fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
-    fields.uuids128 = (ble_uuid128_t *)&ADV_SVC_UUID;
-    fields.num_uuids128 = 1;
-    fields.uuids128_is_complete = 1;
-
-    rsp.name = (const uint8_t *)s_dev_name;
-    rsp.name_len = strlen(s_dev_name);
-    rsp.name_is_complete = 1;
-    rsp.mfg_data = mfg_data;
-    rsp.mfg_data_len = sizeof(mfg_data) - 1;
-
-    if (ble_gap_adv_set_fields(&fields) != 0 ||
-        ble_gap_adv_rsp_set_fields(&rsp) != 0)
-    {
-        ESP_LOGE(TAG, "adv field config failed");
-        return;
-    }
-
-    params.conn_mode = BLE_GAP_CONN_MODE_UND;
-    params.disc_mode = BLE_GAP_DISC_MODE_GEN;
-    params.itvl_min = 0x100; /* legacy 160 ms */
-    params.itvl_max = 0x100;
-
-    int rc = ble_gap_adv_start(s_own_addr_type, NULL, BLE_HS_FOREVER,
-                               &params, gap_event, NULL);
-
-    if (rc != 0 && rc != BLE_HS_EALREADY)
-    {
-        ESP_LOGE(TAG, "advertising start failed (%d)", rc);
-    }
-    else
-    {
-        ESP_LOGI(TAG, "advertising");
-    }
-}
+/* ---- host sync: address, PHY preference, advertising sets ------------------------------- */
 
 static void on_sync(void)
 {
+    const blm_config_t *cfg = blm_core_config();
+
+    /* attribute handles are assigned by now (ble_gatts_start ran) */
+    blm_svc_publish_handles();
+
     /* resolvable private address like legacy; public as fallback */
     if (ble_hs_util_ensure_addr(0) != 0 ||
         ble_hs_id_infer_auto(1, &s_own_addr_type) != 0)
@@ -500,7 +340,30 @@ static void on_sync(void)
         s_own_addr_type = BLE_OWN_ADDR_PUBLIC;
     }
 
-    adv_start();
+    /* the `phy` setting as the controller's default preference for new
+       links: it is what our LL answers a central's PHY request with, so
+       `1m` (mask 0x01) really keeps a 5.0 central on 1M (a PC's Intel
+       adapter asked for 2M on its own and got it while the preference was
+       unset, 2026-09-21), and `2m`/`coded`/`auto` make the controller
+       start the switch itself right after the connection */
+    {
+        int prc = ble_gap_set_prefered_default_le_phy(cfg->phy_mask,
+                                                      cfg->phy_mask);
+
+        if (prc != 0)
+        {
+            ESP_LOGW(TAG, "default PHY preference 0x%02x refused (%d)",
+                     cfg->phy_mask, prc);
+        }
+    }
+
+    /* the advertising set(s) per the `advertising` setting (the adv file
+       owns the on-air bytes; the legacy set is byte-identical to 2026-07) */
+    if (blm_adv_configure(s_own_addr_type, s_dev_name, cfg->adv_mode,
+                          cfg->phy_mask, gap_event) == ESP_OK)
+    {
+        blm_adv_start();
+    }
 }
 
 static void on_reset(int reason)
@@ -508,6 +371,7 @@ static void on_reset(int reason)
     ESP_LOGW(TAG, "NimBLE host reset (%d)", reason);
     s_connected = false;
     s_secured = false;
+    blm_tx_on_link_reset();
 }
 
 static void host_task(void *arg)
@@ -524,7 +388,8 @@ esp_err_t blm_gatt_stack_up(const char *dev_name)
     const blm_config_t *cfg = blm_core_config();
 
     s_dev_name = dev_name;
-    blm_ident_serial(dev_name, s_serial_number, sizeof(s_serial_number));
+
+    blm_tx_init(); /* the indication semaphores, once */
 
     esp_err_t err = nimble_port_init(); /* controller + host */
 
@@ -536,7 +401,7 @@ esp_err_t blm_gatt_stack_up(const char *dev_name)
 
     /* security block: LE Secure Connections + MITM (static passkey via
        DisplayOnly). Bonding (long-term key exchange/retention) is a
-       setting — OFF still encrypts+authenticates per session but keeps no
+       setting - OFF still encrypts+authenticates per session but keeps no
        reusable key, so every reconnect re-pairs. */
     ble_hs_cfg.sync_cb = on_sync;
     ble_hs_cfg.reset_cb = on_reset;
@@ -564,27 +429,16 @@ esp_err_t blm_gatt_stack_up(const char *dev_name)
     ble_svc_gap_init();
     ble_svc_gatt_init();
 
-    int rc = ble_gatts_count_cfg(GATT_SVCS);
+    err = blm_svc_register(dev_name);
 
-    if (rc == 0)
+    if (err != ESP_OK)
     {
-        rc = ble_gatts_add_svcs(GATT_SVCS);
-    }
-
-    if (rc == 0)
-    {
-        rc = ble_svc_gap_device_name_set(dev_name);
-    }
-
-    if (rc != 0)
-    {
-        ESP_LOGE(TAG, "GATT registration failed (%d)", rc);
-        return ESP_FAIL;
+        return err;
     }
 
     ble_att_set_preferred_mtu(517); /* legacy */
 
-    /* TX power (settings, clamped) — controller API, stack-agnostic */
+    /* TX power (settings, clamped) - controller API, stack-agnostic */
     esp_power_level_t lvl;
 
     switch (cfg->tx_power_dbm)
@@ -614,6 +468,7 @@ void blm_gatt_stack_down(void)
 
     s_connected = false;
     s_secured = false;
+    blm_tx_on_link_reset();
 }
 
 /* ---- accessors for the IO layer -------------------------------------------------------------- */
@@ -628,72 +483,38 @@ bool blm_gatt_secured(void)
     return s_secured;
 }
 
+uint16_t blm_gatt_conn_handle(void)
+{
+    return s_conn_handle;
+}
+
 uint16_t blm_gatt_max_data(void)
 {
     return s_max_data;
 }
 
-bool blm_gatt_congested(void)
+uint16_t blm_gatt_channel_out_handle(int idx)
 {
-    return s_congested;
+    return blm_svc_channel_out_handle(idx);
 }
 
-int blm_gatt_free_packets(void)
+void blm_gatt_phy(uint8_t *tx, uint8_t *rx)
 {
-    /* NimBLE exposes no controller-credit count: report a fixed credit
-       while healthy; ENOMEM inside notify_* flips the congestion flag,
-       which the IO layer's pacing loop honors. */
-    return (s_connected && !s_congested) ? 8 : 0;
-}
+    uint8_t t = 0;
+    uint8_t r = 0;
 
-/** Notify with a bounded ENOMEM retry (the pacing emulation). */
-static esp_err_t notify_handle(uint16_t val_handle, const uint8_t *buf,
-                               uint16_t len)
-{
-    if (!s_connected || !s_secured)
+    if (s_connected)
     {
-        return ESP_ERR_INVALID_STATE; /* legacy CCCD-security equivalent */
+        /* the controller's answer wins over the cached event values */
+        if (ble_gap_read_le_phy(s_conn_handle, &t, &r) != 0)
+        {
+            t = s_phy_tx;
+            r = s_phy_rx;
+        }
     }
 
-    for (int attempt = 0; attempt < 50; attempt++)
-    {
-        struct os_mbuf *om = ble_hs_mbuf_from_flat(buf, len);
-
-        if (om == NULL)
-        {
-            s_congested = true;
-            vTaskDelay(pdMS_TO_TICKS(2));
-            continue;
-        }
-
-        int rc = ble_gatts_notify_custom(s_conn_handle, val_handle, om);
-
-        if (rc == 0)
-        {
-            s_congested = false;
-            return ESP_OK;
-        }
-
-        if (rc != BLE_HS_ENOMEM)
-        {
-            return ESP_FAIL;
-        }
-
-        s_congested = true;
-        vTaskDelay(pdMS_TO_TICKS(2));
-    }
-
-    return ESP_ERR_TIMEOUT;
-}
-
-esp_err_t blm_gatt_notify_data(const uint8_t *buf, uint16_t len)
-{
-    return notify_handle(s_fff1_val_handle, buf, len);
-}
-
-esp_err_t blm_gatt_notify_cli(const uint8_t *buf, uint16_t len)
-{
-    return notify_handle(s_cli_out_val_handle, buf, len);
+    if (tx != NULL) *tx = t;
+    if (rx != NULL) *rx = r;
 }
 
 void blm_gatt_allow_pairing(bool allow)

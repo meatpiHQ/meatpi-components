@@ -26,6 +26,7 @@
  *        TX-power clamping. No BT stack — host-tests on the linux target.
  */
 #include <stdio.h>
+#include <stdbool.h>
 #include <string.h>
 
 #include "ble_manager_private.h"
@@ -101,6 +102,41 @@ void blm_ident_conn_window(const char *profile, uint16_t *min_units,
     *max_units = 0x20;
 }
 
+uint8_t blm_ident_phy_mask(const char *phy)
+{
+    if (phy != NULL && strcmp(phy, "2m") == 0)
+    {
+        return BLM_PHY_2M;              /* strict: 2M, the LL keeps 1M if the peer cannot */
+    }
+
+    if (phy != NULL && strcmp(phy, "coded") == 0)
+    {
+        return BLM_PHY_CODED;           /* long range (S=2/S=8), same fallback rule */
+    }
+
+    if (phy != NULL && strcmp(phy, "auto") == 0)
+    {
+        return BLM_PHY_1M | BLM_PHY_2M; /* whichever the peer negotiates */
+    }
+
+    return BLM_PHY_1M;                  /* "1m" and anything unknown: 4.2 behaviour */
+}
+
+uint8_t blm_ident_adv_mode(const char *mode)
+{
+    if (mode != NULL && strcmp(mode, "extended") == 0)
+    {
+        return BLM_ADV_EXTENDED;
+    }
+
+    if (mode != NULL && strcmp(mode, "both") == 0)
+    {
+        return BLM_ADV_BOTH;
+    }
+
+    return BLM_ADV_LEGACY;              /* "legacy" and anything unknown */
+}
+
 int blm_ident_clamp_tx_power(int dbm)
 {
     static const int LEVELS[] = { -12, -9, -6, -3, 0, 3, 6, 9 };
@@ -124,4 +160,28 @@ int blm_ident_clamp_tx_power(int dbm)
     }
 
     return best;
+}
+
+/* ---- stream channel OUT mode ------------------------------------------------------ */
+
+uint8_t blm_channel_pick_out(uint8_t allowed, bool sub_notify, bool sub_indicate)
+{
+    if (allowed == 0)
+    {
+        allowed = BLE_MANAGER_CH_OUT_INDICATE; /* the pre-2026-09-22 default */
+    }
+
+    if (sub_notify && (allowed & BLE_MANAGER_CH_OUT_NOTIFY))
+    {
+        return BLE_MANAGER_CH_OUT_NOTIFY;
+    }
+
+    if (sub_indicate && (allowed & BLE_MANAGER_CH_OUT_INDICATE))
+    {
+        return BLE_MANAGER_CH_OUT_INDICATE;
+    }
+
+    /* nothing usable subscribed: indications, which NimBLE sends without
+       a CCCD (custom indicate) - the behaviour every client saw so far */
+    return BLE_MANAGER_CH_OUT_INDICATE;
 }

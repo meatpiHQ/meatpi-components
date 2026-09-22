@@ -55,6 +55,14 @@ static const settings_field_t FIELDS[] =
     /* the connection window the device REQUESTS on connect: iOS-friendly
        legacy default, or short-interval max performance (user's choice) */
     SETTINGS_STR_ENUM("conn_profile", "ios,android_fast", "ios"),
+    /* v4 (2026-09-21): BLE 5 as a user choice. `phy` = the PHY the device
+       prefers on a link (requested after connect; the central decides, a
+       4.2 phone keeps 1M): 1m = today's behaviour, 2m = double the on-air
+       bit rate, coded = long range, auto = 1M or 2M. `advertising` = which
+       advertising set(s) run: legacy = the 4.2-visible set every scanner
+       sees, extended = the 5.0 set only (invisible to 4.2 phones), both. */
+    SETTINGS_STR_ENUM("phy", "1m,2m,coded,auto", "1m"),
+    SETTINGS_STR_ENUM("advertising", "legacy,extended,both", "legacy"),
 };
 
 static blm_config_t s_cfg EXT_RAM_BSS_ATTR;
@@ -90,14 +98,19 @@ static esp_err_t on_apply(const cJSON *settings)
     v = cJSON_GetObjectItemCaseSensitive(settings, "conn_profile");
     blm_ident_conn_window(cJSON_IsString(v) ? v->valuestring : NULL,
                           &s_cfg.conn_min_units, &s_cfg.conn_max_units);
+    v = cJSON_GetObjectItemCaseSensitive(settings, "phy");
+    s_cfg.phy_mask = blm_ident_phy_mask(cJSON_IsString(v) ? v->valuestring : NULL);
+    v = cJSON_GetObjectItemCaseSensitive(settings, "advertising");
+    s_cfg.adv_mode = blm_ident_adv_mode(cJSON_IsString(v) ? v->valuestring : NULL);
     s_configured = true;
     return ESP_OK;
 }
 
-/* v1 -> v2 added the `bonding` flag; the fill-missing default (true, =
-   the historic always-bond behaviour) covers it, so nothing to do here.
-   The hook must exist though: without it a version bump discards ALL
-   stored settings and resets to defaults (settings_manager_boot §2). */
+/* v1 -> v2 added the `bonding` flag, v3 `sc_only`, v4 `phy` +
+   `advertising`; every one is covered by its fill-missing default (the
+   historic behaviour), so nothing to do here. The hook must exist though:
+   without it a version bump discards ALL stored settings and resets to
+   defaults (settings_manager_boot §2). */
 static esp_err_t on_migrate(uint32_t from_version, cJSON *settings)
 {
     (void)from_version;
@@ -110,9 +123,9 @@ esp_err_t blm_settings_register(void)
     static const settings_descriptor_t DESC =
     {
         .name = "ble_manager",
-        .version = 3, /* v3: +sc_only (default true — SC-required);
-                         v2: +bonding toggle. fill-missing defaults cover
-                         both, so on_migrate stays a no-op */
+        .version = 4, /* v4: +phy, +advertising (BLE 5 as a choice, 4.2
+                         defaults); v3: +sc_only; v2: +bonding. fill-missing
+                         defaults cover all, so on_migrate stays a no-op */
         .fields = FIELDS,
         .field_count = sizeof(FIELDS) / sizeof(FIELDS[0]),
         .on_apply = on_apply,

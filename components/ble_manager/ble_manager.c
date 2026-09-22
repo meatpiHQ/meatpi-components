@@ -84,6 +84,10 @@ esp_err_t ble_manager_start(void)
 
     blm_ident_name(dev_status_manager_device_id(), name, sizeof(name));
 
+    /* the GATT table is built from the channel registry now: freeze it
+       (a late registrant would never get characteristics) */
+    blm_channel_lock();
+
     esp_err_t err = blm_gatt_stack_up(name);
 
     if (err != ESP_OK)

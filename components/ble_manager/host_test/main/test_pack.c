@@ -115,6 +115,49 @@ static void test_conn_profile_mapping(void)
     TEST_ASSERT_EQUAL_HEX16(0x10, mn);
 }
 
+static void test_phy_mask_mapping(void)
+{
+    /* the 4.2 default and every unknown value = 1M only */
+    TEST_ASSERT_EQUAL_HEX8(BLM_PHY_1M, blm_ident_phy_mask("1m"));
+    TEST_ASSERT_EQUAL_HEX8(BLM_PHY_1M, blm_ident_phy_mask(NULL));
+    TEST_ASSERT_EQUAL_HEX8(BLM_PHY_1M, blm_ident_phy_mask("3m"));
+    TEST_ASSERT_EQUAL_HEX8(BLM_PHY_2M, blm_ident_phy_mask("2m"));
+    TEST_ASSERT_EQUAL_HEX8(BLM_PHY_CODED, blm_ident_phy_mask("coded"));
+    TEST_ASSERT_EQUAL_HEX8(BLM_PHY_1M | BLM_PHY_2M, blm_ident_phy_mask("auto"));
+}
+
+static void test_adv_mode_mapping(void)
+{
+    TEST_ASSERT_EQUAL(BLM_ADV_LEGACY, blm_ident_adv_mode("legacy"));
+    TEST_ASSERT_EQUAL(BLM_ADV_LEGACY, blm_ident_adv_mode(NULL));
+    TEST_ASSERT_EQUAL(BLM_ADV_LEGACY, blm_ident_adv_mode("mesh"));
+    TEST_ASSERT_EQUAL(BLM_ADV_EXTENDED, blm_ident_adv_mode("extended"));
+    TEST_ASSERT_EQUAL(BLM_ADV_BOTH, blm_ident_adv_mode("both"));
+}
+
+static void test_channel_out_pick(void)
+{
+    /* an unsubscribed central gets indications on every channel */
+    TEST_ASSERT_EQUAL(BLE_MANAGER_CH_OUT_INDICATE, blm_channel_pick_out(0, false, false));
+    TEST_ASSERT_EQUAL(BLE_MANAGER_CH_OUT_INDICATE,
+                      blm_channel_pick_out(BLE_MANAGER_CH_OUT_NOTIFY | BLE_MANAGER_CH_OUT_INDICATE, false, false));
+    /* out_modes 0 = the old INDICATE-only contract: a notify CCCD is ignored */
+    TEST_ASSERT_EQUAL(BLE_MANAGER_CH_OUT_INDICATE, blm_channel_pick_out(0, true, false));
+    TEST_ASSERT_EQUAL(BLE_MANAGER_CH_OUT_INDICATE,
+                      blm_channel_pick_out(BLE_MANAGER_CH_OUT_INDICATE, true, false));
+    /* both allowed: the CCCD decides, notify wins a 0x0003 */
+    uint8_t both = BLE_MANAGER_CH_OUT_INDICATE | BLE_MANAGER_CH_OUT_NOTIFY;
+    TEST_ASSERT_EQUAL(BLE_MANAGER_CH_OUT_NOTIFY, blm_channel_pick_out(both, true, false));
+    TEST_ASSERT_EQUAL(BLE_MANAGER_CH_OUT_INDICATE, blm_channel_pick_out(both, false, true));
+    TEST_ASSERT_EQUAL(BLE_MANAGER_CH_OUT_NOTIFY, blm_channel_pick_out(both, true, true));
+    /* notify-only owner: an indicate CCCD falls back to indications (custom
+       indicate needs no CCCD) */
+    TEST_ASSERT_EQUAL(BLE_MANAGER_CH_OUT_INDICATE,
+                      blm_channel_pick_out(BLE_MANAGER_CH_OUT_NOTIFY, false, true));
+    TEST_ASSERT_EQUAL(BLE_MANAGER_CH_OUT_NOTIFY,
+                      blm_channel_pick_out(BLE_MANAGER_CH_OUT_NOTIFY, true, false));
+}
+
 void run_pack_tests(void)
 {
     RUN_TEST(test_packets_needed_rounds_up);
@@ -124,4 +167,7 @@ void run_pack_tests(void)
     RUN_TEST(test_serial_legacy_plus7);
     RUN_TEST(test_tx_power_clamp);
     RUN_TEST(test_conn_profile_mapping);
+    RUN_TEST(test_phy_mask_mapping);
+    RUN_TEST(test_adv_mode_mapping);
+    RUN_TEST(test_channel_out_pick);
 }

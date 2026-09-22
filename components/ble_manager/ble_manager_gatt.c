@@ -713,6 +713,41 @@ int blm_gatt_free_packets(void)
     return s_connected ? esp_ble_get_cur_sendable_packets_num(s_conn_id) : 0;
 }
 
+/* Stream channels (FFF3+) are implemented on the NimBLE backend only; the
+   Bluedroid A/B reference keeps the legacy four characteristics. */
+esp_err_t blm_gatt_notify_handle(uint16_t val_handle, const uint8_t *buf,
+                                 uint16_t len, uint32_t max_wait_ms)
+{
+    (void)val_handle;
+    (void)buf;
+    (void)len;
+    (void)max_wait_ms;
+    return ESP_ERR_NOT_SUPPORTED;
+}
+
+esp_err_t blm_gatt_indicate_handle(uint16_t val_handle, const uint8_t *buf,
+                                   uint16_t len, uint32_t max_wait_ms)
+{
+    (void)val_handle;
+    (void)buf;
+    (void)len;
+    (void)max_wait_ms;
+    return ESP_ERR_NOT_SUPPORTED;
+}
+
+uint16_t blm_gatt_channel_out_handle(int idx)
+{
+    (void)idx;
+    return 0;
+}
+
+void blm_gatt_phy(uint8_t *tx, uint8_t *rx)
+{
+    /* Bluedroid A/B backend: 4.2 legacy advertising, 1M only */
+    if (tx != NULL) *tx = s_connected ? 1 : 0;
+    if (rx != NULL) *rx = s_connected ? 1 : 0;
+}
+
 esp_err_t blm_gatt_notify_data(const uint8_t *buf, uint16_t len)
 {
     return esp_ble_gatts_send_indicate(s_gatts_if, s_conn_id,

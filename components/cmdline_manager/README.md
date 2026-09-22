@@ -46,6 +46,8 @@ additions are options too.
 | `destinations [-t <name>]` | data_destinations (self-registered on settings apply, §6b; bare = the destination table with its live counters/backoff/last error, `-t` = deliver one destination now and print the outcome) |
 | `espnetlink`, `espnetlink pair <ssid> <password>`, `espnetlink repair` | espnetlink_link (self-registered on settings apply, §6b; bare = pairing/uplink/GPS/dongle-health status; `pair` = manual pairing into a wifi_manager fallback slot, reboot-to-apply; `repair` = VBUS cycle so the dongle re-enumerates and its key is re-read) |
 | `usb`, `usb vbus <0\|1>`, `usb mux <0\|1>`, `usb suspend/resume` | usb_host_manager (bare = host/uplink status incl. VID/PID; `vbus` now goes through `usb_host_manager_set_vbus()`; the rest is bench debug) |
+| `j2534` | j2534_server (self-registered on settings apply, §6b; status: enabled / tcp port / listening / attached tester + its transport `tcp`/`serial`/`ble` / device_open / exclusive + autopid paused / channels / frame counters) |
+| `blehttp` | ble_http (self-registered on settings apply, §6b; the HTTP-over-BLE tunnel: enabled / registered / paired link / active request / requests, responses, last status / errors, aborts, timeouts, resync / bytes in and out) |
 | `eth`, `conn`, `wusb`, `ping` | **main_cli.c** pending stubs — no v6 backer yet; only the composition root knows what's missing |
 
 `help` output follows the legacy format (`Available commands:` +

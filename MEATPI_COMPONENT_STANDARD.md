@@ -1,4 +1,4 @@
-# MeatPi Firmware Component Coding Standard — rev 2.6
+# MeatPi Firmware Component Coding Standard — rev 2.8
 
 Applies to all firmware components across MeatPi products (WiCAN, ESPNetLink, the ECU simulator, and future devices) — the WiCAN Pro v6 tree is the reference implementation the examples cite. Written for both human and AI contributors. Keep it boring and consistent.
 
@@ -17,6 +17,8 @@ Applies to all firmware components across MeatPi products (WiCAN, ESPNetLink, th
 **Rev 2.5 changes:** the **field table is the only schema authoring format** for components — hand-written JSON Schema strings are retired (the table now expresses bounded arrays of objects via `SETTINGS_ARRAY`/`SETTINGS_ARRAY_ANY`, with JSON defaults written unescaped through `SETTINGS_JSON`). All settings code lives in a dedicated **`<comp>_settings.c`** (field table, descriptor, hooks, boot-applied config + getters), registered via `<prefix>_settings_register()` from `<comp>_init()` (§4.1).
 
 **Rev 2.6 changes (2026-07-19, after the every-boot-flash-rewrite bug):** flash-write discipline is normative — boot-path and periodic writes MUST be change-guarded (§11); bounded registries expose occupancy and the health surface (fault codes, flash counters, log counters) is a first-class contract (§12); `ESP_LOGE` is load-bearing — a clean boot and every positive-path test log ZERO errors, enforced by bench assertions and per-test error budgets (§7, §10); mode-gated chip-register writes require read-back verification (§3).
+
+**Rev 2.8 changes (2026-09-21, BLE as an app platform):** the BLE GATT surface is a documented contract like HTTP routes and CLI commands (§6c): `ble_manager/BLE_API.md` owns the services/characteristics table and the stream-channel registry; a component that registers a BLE channel or changes the bytes on one updates that table and its own protocol document in the same change, with byte-exact examples; characteristics are only ever appended within a service so bonded clients' cached handles stay valid.
 
 ## 1. Language & Style
 
@@ -327,6 +329,39 @@ components own their commands.**
 - Every command lands in `cmdline_manager/README.md`'s ownership table in
   the same change — the CLI analogue of the §6 HTTP-route rule.
 
+## 6c. BLE GATT surface (rev 2.8)
+
+Third-party apps are built against the device's BLE interface exactly as
+the web UI is built against `HTTP_API.md`, so the same-change rule
+applies:
+
+- **`components/ble_manager/BLE_API.md` is the on-air contract**: every
+  service, characteristic, UUID, property, security requirement, the MTU
+  and chunking rules, and the **stream-channel registry table** (which
+  16-bit UUID pair carries which protocol, and the setting that makes it
+  present).
+- `ble_manager` owns the GATT table and the transport (`ble_manager_channel_*`
+  API: pre-start registration, one RX StreamBuffer per channel, blocking
+  credit-waited notify writes); a component that carries a protocol over
+  a channel owns its **protocol document** (`<comp>/<NAME>_PROTOCOL.md`,
+  or its README for a trivial pipe) with the framing, every message, the
+  flow-control rule, the error vocabulary and byte-exact examples that
+  double as host-test vectors. `BLE_API.md` links to it.
+- Any change that adds, removes or re-orders a characteristic, changes a
+  UUID, a permission flag, an MTU/payload cap or the semantics of bytes on
+  an existing pipe updates `BLE_API.md` **in the same commit**; a channel
+  owner updates its protocol document likewise. An undocumented
+  characteristic does not exist as far as the product is concerned.
+- **Characteristics are only ever appended** within a service, never
+  inserted or re-ordered: bonded phones cache attribute handles, and an
+  append keeps the legacy handles valid (the doc records the consequence
+  for already-bonded clients: they must re-discover to see the additions).
+- Channel protocols are byte streams over a reliable in-order link:
+  frames MUST carry their own length, MAY span several ATT units, and a
+  receiver reassembles by that length, never by unit boundaries. The
+  channel registry is bounded (§12: `ble_manager_channel_capacity()` on
+  the `WICAN CAPS` line).
+
 ## 7. Testing
 
 **Every component ships tests.** Two layers, both required where they apply:
@@ -392,7 +427,7 @@ Rule: if a human or AI can't reproduce the bench from that README alone, it's in
 - Match this document over any habit or training default. If a change conflicts with it, the document wins.
 - New component → new directory containing: public header, `CMakeLists.txt`, `idf_component.yml`, `README.md` (§3 contents), lifecycle funcs (`init`/`start`/`stop` — no `_deinit`), settings in `<comp>_settings.c` if it has any (field-table schema + descriptor + hooks, §4.1), log descriptor (§9.2), CLI commands (if any) per §6b (`<comp>_cli.c`, self-registered on settings apply behind the `cli` bool, documented in cmdline_manager's ownership table), `Kconfig` if it has build-time options, host unit tests + a pytest test app built on the main firmware's partition table and sdkconfig (§7).
 - No new file over 700 lines. No non-Allman braces. No settings persistence outside the Settings Manager. No hand-written JSON Schema strings — field tables only, in `<comp>_settings.c` (§4.1). No log routing outside the Log Manager. No logging from ISRs.
-- No `ESP_ERROR_CHECK`/panic paths in components or `main` (§3) — log and degrade; test apps only. New/changed HTTP routes update `components/HTTP_API.md` + the component's endpoint reference in the same change (§6).
+- No `ESP_ERROR_CHECK`/panic paths in components or `main` (§3) — log and degrade; test apps only. New/changed HTTP routes update `components/HTTP_API.md` + the component's endpoint reference in the same change (§6). New/changed BLE characteristics or channel protocols update `ble_manager/BLE_API.md` + the owner's protocol document in the same change, appending characteristics only (§6c).
 - Default to static allocation in PSRAM. Internal RAM only for the cases in §2, justified by comment. No flash writes from PSRAM-stack tasks.
 - Public API or schema change → note it in the component header; if the persisted shape changed, bump `version` **and** extend `on_migrate` **and** add the migration unit test.
 

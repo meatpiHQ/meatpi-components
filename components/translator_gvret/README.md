@@ -3,7 +3,7 @@
 The **SavvyCAN GVRET** binary CAN codec, as a `bridge_manager` translator
 (`"gvret"`). Lets SavvyCAN connect to WiCAN's CAN bus over TCP/USB/WS.
 
-- `decode` (can→SavvyCAN): CAN-wire chunk → GVRET frame record
+- `decode` (can→SavvyCAN): CAN-wire chunk → GVRET frame record (ts = the frame's RX-interrupt time since 2026-09-21; the 1 ms synthetic clock only for frames without one)
   `F1 00 <ts:4> <id:4, bit31=ext> <dlc> <data> <xor-chk>`.
 - `encode` (SavvyCAN→can): the F1-prefixed command stream (reassembled in the
   ctx) → CAN TX frames (BUILD_CAN_FRAME) **plus handshake replies**

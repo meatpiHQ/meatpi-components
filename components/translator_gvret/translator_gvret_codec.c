@@ -113,8 +113,17 @@ static esp_err_t gvret_emit_one(gvret_ctx_t *c, const can_core_frame_t *fp,
 
     id = f.id;
     if (f.ext) id |= (1u << 31);
-    ts = c->ts;
-    c->ts += 1000; /* relative µs; SavvyCAN uses deltas */
+    if (f.ts_us != 0)
+    {
+        ts = f.ts_us;      /* the RX-interrupt time the frame carries */
+        c->ts = ts + 1000; /* keeps the synthetic clock plausible for the
+                              rare frame without one */
+    }
+    else
+    {
+        ts = c->ts;
+        c->ts += 1000;     /* relative µs; SavvyCAN uses deltas */
+    }
 
     buf[n++] = 0xF1;
     buf[n++] = 0x00;

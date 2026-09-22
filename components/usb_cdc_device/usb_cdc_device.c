@@ -45,6 +45,7 @@
 #include "usbd_core.h"
 #include "usbd_cdc_acm.h"
 
+#include "j2534_proto.h"   /* J2534_MAX_FRAME */
 #include "j2534_server.h"
 #include "usb_cdc_device.h"
 
@@ -56,16 +57,10 @@ static const char *TAG = "usb_cdc_device";
 #define UCD_MPS    64
 
 #define UCD_RX_DMA_CAP   512
-#define UCD_TX_DMA_CAP   (J2534_MAX_DATA_HINT)  /* one frame; see below */
+/* one whole wire frame (header + the largest PASSTHRU_MSG): the server
+ * hands header + payload over in ONE write since 2026-09-21 */
+#define UCD_TX_DMA_CAP   (J2534_MAX_FRAME)
 #define UCD_RX_SB_CAP    4096   /* StreamBuffer between the ISR and read() */
-
-/* A full wire frame is a 12-byte header + up to J2534_MAX_DATA payload.
- * j2534_server.h doesn't export the max, so size the TX DMA buffer for a
- * comfortable ceiling (a PASSTHRU_MSG + header); large multi-frame ISO-TP
- * is chunked by the caller. */
-#ifndef J2534_MAX_DATA_HINT
-#define J2534_MAX_DATA_HINT 4160
-#endif
 
 static usb_cdc_device_status_t s_st;
 static bool s_started;

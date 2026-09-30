@@ -1507,6 +1507,13 @@ PAGES.status=async(view)=>{
    socket_manager servers / websocket_manager channels: the user
    thinks in interfaces, not jack names. */
 const BR_IFACES=[["obd","OBD chip"],["can","CAN bus"],["cli","Console (CLI)"]];
+/* Interfaces whose provider fans RX out to every subscriber (bridge_endpoints.c
+   multi_consumer: obd, can) may be shared by any number of connections - the
+   factory defaults put the OBD chip on WebSocket + TCP + USB at once. Every
+   other jack (a server, a channel, ble, usb_obd, cli) feeds ONE connection,
+   the firmware's single-consumer rule (bridge_manager_config.c). */
+const BR_MULTI=new Set(["obd","can"]);
+const BR_MAX=6; /* BRIDGE_MANAGER_MAX_BRIDGES */
 const BR_CONNS=[["tcp","TCP server"],["udp","UDP server"],["ws","WebSocket"],["ble","Bluetooth (BLE)"],["usb","USB serial"]];
 const BR_PROTOS=["raw","slcan","gvret","realdash"];
 async function bridgesCard(){
@@ -1534,7 +1541,7 @@ async function bridgesCard(){
   function compile(){
     const srv=servers.map(s=>({...s})),chn=channels.map(c=>({...c}));
     const bridges=passthru.map(b=>({...b})),errs=[],used=new Map();
-    const claim=(jack,label,en)=>{if(!en)return;
+    const claim=(jack,label,en)=>{if(!en||BR_MULTI.has(jack))return;
       if(used.has(jack))errs.push(label+": "+jack+" is already used by "+used.get(jack)+": one connection per interface (disable one).");
       else used.set(jack,label);};
     for(const b of bridges){claim(b.a,b.name,b.enabled!==false);claim(b.b,b.name,b.enabled!==false);}
@@ -1560,16 +1567,16 @@ async function bridgesCard(){
         let c=chn.find(x=>x.path===path);
         if(!c){
           const name=("ws_"+path.slice(4).replace(/\W/g,"")).slice(0,15)||("wsbr"+(i+1));
-          if(chn.length<4)chn.push(c={name,path,mode:"binary",enabled:true});
+          if(chn.length<6)chn.push(c={name,path,mode:"binary",enabled:true}); /* WEBSOCKET_MANAGER_MAX_CHANNELS */
           else{c=chn.find(x=>x.enabled===false);
-            if(!c){errs.push(label+": no free WebSocket channel (max 4): remove one under All Settings → WebSocket channels.");return;}
+            if(!c){errs.push(label+": no free WebSocket channel (max 6): remove one under All Settings → WebSocket channels.");return;}
             c.name=name;c.path=path;c.mode="binary";}
         }
         c.enabled=c.enabled||r.enabled;jack=c.name;
       }else if(r.conn==="ble")jack="ble";
       else if(r.conn==="usb")jack="usb_obd";
       else{errs.push(label+": pick a connection type.");return;}
-      if(bridges.length>=4){errs.push(label+": max 4 connections.");return;}
+      if(bridges.length>=BR_MAX){errs.push(label+": max "+BR_MAX+" connections.");return;}
       const name=r.name||("br"+(i+1));
       const tr=r.iface==="can"?(r.translator||"raw"):"raw";
       claim(r.iface,name,r.enabled);claim(jack,name,r.enabled);
@@ -1621,10 +1628,10 @@ async function bridgesCard(){
   }
   refresh();
   const add=h("button",{class:"btn sm",type:"button",onclick:()=>{
-    if(rows.length+passthru.length>=4)return toast("Max 4 connections","err");
+    if(rows.length+passthru.length>=BR_MAX)return toast("Max "+BR_MAX+" connections","err");
     rows.push({iface:"obd",conn:"tcp",port:35000,translator:"raw",enabled:true});refresh();},},ic("plus"),"Add connection");
   return card("Connections","route",listEl,warnEl,h("div",{style:"margin-top:8px"},add),
-    note("","Each row wires a vehicle interface to a connection. TCP/UDP ports and WebSocket paths are created automatically. An interface can carry ONE enabled connection at a time; changes apply from the Submit button (device restarts)."));
+    note("","Each row wires a vehicle interface to a connection. TCP/UDP ports and WebSocket paths are created automatically. The OBD chip and the CAN bus can feed several connections at once (the factory setup puts the OBD chip on WebSocket, TCP and USB); a TCP/UDP server, WebSocket path, BLE or USB carries ONE enabled connection. Changes apply from the Submit button (device restarts)."));
 }
 
 /* Backup (fallback) STA networks: only populated slots render; Add

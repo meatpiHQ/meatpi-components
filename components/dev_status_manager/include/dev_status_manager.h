@@ -263,7 +263,8 @@ esp_err_t dev_status_manager_temperature(float *out_c);
 
 /** Called after any bit change: @p changed = XOR of old/new, @p now =
  *  the bits after. Runs in the SETTER's context — keep it non-blocking
- *  (queue sends only). ≤2 subscribers, registered for life. */
+ *  (queue sends only). ≤4 subscribers (event_manager glue and
+ *  mqtt_manager today), registered for life; ESP_ERR_NO_MEM when full. */
 typedef void (*dev_status_change_cb_t)(EventBits_t changed,
                                        EventBits_t now);
 esp_err_t dev_status_manager_subscribe_changes(dev_status_change_cb_t cb);

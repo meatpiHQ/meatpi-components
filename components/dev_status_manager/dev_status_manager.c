@@ -172,8 +172,10 @@ esp_err_t dev_status_manager_stop(void)
     return ESP_OK; /* passive: nothing to stop */
 }
 
-/* change subscribers (event_manager glue): setter-context, no blocking */
-static dev_status_change_cb_t s_change_cbs[2];
+/* change subscribers (event_manager glue, mqtt_manager's link task since
+   2026-10-01): setter-context, no blocking. Sized with headroom (§12): the
+   table sat at 2/2 the day the second registrant arrived */
+static dev_status_change_cb_t s_change_cbs[4];
 
 esp_err_t dev_status_manager_subscribe_changes(dev_status_change_cb_t cb)
 {

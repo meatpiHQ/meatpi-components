@@ -84,7 +84,7 @@ by the future button/input manager).
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| `mode` | enum `off/sta/ap/apsta` | `apsta` | |
+| `mode` | enum `off/sta/ap/apsta` | `apsta` | fresh default since 2026-10-01 (the code shipped `ap` from 2026-07-05 to then): the station interface exists from the first boot, so `GET /api/wifi/scan` needs no AP->APSTA mode flip (the flip re-initialises the soft-AP and drops the associated phone for a few seconds, which broke the Quick Setup wizard's scan step one time in three on the bench). With 0 station networks nothing connects: `select_and_connect()` returns at `sta_count == 0`, the reconnect task is not created, the UI shows "No network configured" |
 | `sta_ssid` / `sta_password` | string ≤32 / ≤64 | `""` | empty ssid = no STA network |
 | `fallback1..5_ssid` / `_password` | string | `""` | priority order; flat keys (schema subset has no arrays) |
 | `hostname` | string ≤32 | `""` | DHCP/DNS host name of the STA netif. Empty → `wican_<12-hex device id>` (the name `mdns_manager` advertises as `.local`), pushed with `esp_netif_set_hostname` before the DHCP client starts, so a router's client list shows it instead of lwIP's default `espressif` (2026-09-08; pure builder `wm_default_hostname`, host-tested) |

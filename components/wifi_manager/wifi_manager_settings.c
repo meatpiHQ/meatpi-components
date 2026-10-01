@@ -51,9 +51,14 @@ static bool s_boot_applied; /* on_validate refuses the factory AP password
 
 static const settings_field_t WM_FIELDS[] =
 {
-    /* shipping default = AP (meatpi 2026-07-05): a fresh device is an
-       access point for onboarding; STA comes from user configuration */
-    SETTINGS_STR_ENUM("mode",             "off,sta,ap,apsta", "ap"),
+    /* shipping default = AP + STATION (meatpi 2026-10-01, was AP-only since
+       2026-07-05): a fresh device is an access point for onboarding, and
+       the station interface exists from the first boot so a network scan
+       needs no AP->APSTA mode flip (that flip re-initialises the soft-AP
+       and drops the phone running Quick Setup for a few seconds). With no
+       station network configured nothing connects: select_and_connect()
+       returns at sta_count == 0 and the reconnect task is not created. */
+    SETTINGS_STR_ENUM("mode",             "off,sta,ap,apsta", "apsta"),
     SETTINGS_STR ("sta_ssid",           32, ""),
     SETTINGS_STR ("sta_password",       64, ""),
     /* v3: per-network trust — untrusted networks refuse ALL inbound

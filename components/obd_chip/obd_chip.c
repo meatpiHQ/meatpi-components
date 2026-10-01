@@ -530,6 +530,7 @@ esp_err_t obd_chip_get_stats(obd_chip_stats_t *out)
     out->client_idle_ms = obd_chip_client_idle_ms();
     out->guard_rewrites = s_guard_rewrites;
     out->guard_blocked = s_guard_blocked;
+    out->protocol_saves = obd_cmd_protocol_saves();
     obd_uart_get_stats(&out->tx_bytes, &out->rx_overflows,
                        &out->rx_buffered);
     return ESP_OK;

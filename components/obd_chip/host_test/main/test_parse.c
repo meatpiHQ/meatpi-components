@@ -205,6 +205,12 @@ void test_eeprom_guard(void)
     /* the Renault Zoe profile init, verbatim */
     expect_rewrite("ATE0;ATH1;ATSP7;ATS0;ATM0;ATAT1;ATFCSM1;ATCP18;",
                    "ATE0;ATH1;ATTP7;ATS0;ATM0;ATAT1;ATFCSM1;ATCP18;");
+    /* a MIXED-protocol profile (VW MEB family: standard PIDs on 11-bit,
+       UDS on 29-bit): BOTH the base and the per-PID ATSP7 become RAM-only
+       ATTP, headers/CRA untouched. The only real ATSP the chip ever sees
+       is obd_chip_protocol_save(), which bypasses this guard on purpose. */
+    expect_rewrite("ATSP6;ATSH7DF;ATCRA;ATSP7;ATSH17FC007B;ATCRA17FE007B",
+                   "ATTP6;ATSH7DF;ATCRA;ATTP7;ATSH17FC007B;ATCRA17FE007B");
 
     /* pass-throughs: the protective twins, monitors, headers, reads, data */
     const char *pass[] = { "ATM0", "ATTP6", "ATSH7E4", "ATSTFF", "ATST96",

@@ -159,6 +159,26 @@ uint32_t obd_chip_client_idle_ms(void);
 esp_err_t obd_chip_request(const char *cmd, char *resp, size_t resp_len,
                            TickType_t timeout);
 
+/**
+ * Teach the chip its BASE protocol once: a REAL `ATSP<proto>` (set AND
+ * save to EEPROM) on the same serialized transaction path as
+ * obd_chip_request(), bypassing the EEPROM guard that rewrites every
+ * other ATSP to ATTP (2026-10-01, TASK_quick_setup.md "Protocol policy").
+ * Why it exists: with the guard alone the chip would power up on
+ * whatever its EEPROM held from the factory or an old app and search
+ * every boot; one save after a successful vehicle detection makes the
+ * stored protocol the right one, while per-PID protocol switches in
+ * profile init chains stay RAM-only (ATTP). Who may call it: autopid's
+ * vehicle detection job ONLY, when the detected base protocol differs
+ * from the car record's `chip_protocol`. Rules enforced here: @p proto
+ * must be '1'..'9' or 'A'..'C' (ESP_ERR_INVALID_ARG; never ATSP0), at
+ * most ONE save per boot (ESP_ERR_INVALID_STATE afterwards), the chip
+ * must answer `OK` (ESP_FAIL otherwise; ESP_ERR_TIMEOUT on silence).
+ * Counted in obd_chip_stats_t.protocol_saves and `GET /api/obd_chip`
+ * `eeprom_guard.protocol_saves`.
+ */
+esp_err_t obd_chip_protocol_save(char proto);
+
 /* ---- arbitration ------------------------------------------------------------------- */
 
 /**
@@ -247,6 +267,8 @@ typedef struct
     uint32_t    client_idle_ms; /* obd_chip_client_idle_ms()              */
     uint32_t    guard_rewrites; /* EEPROM guard: ATSP->ATTP / ATM1->ATM0  */
     uint32_t    guard_blocked;  /* EEPROM guard: ATPP/ATSD/ATCV/STWBR refused */
+    uint32_t    protocol_saves; /* obd_chip_protocol_save(): real ATSP
+                                   writes this boot (0 or 1)             */
 } obd_chip_stats_t;
 
 typedef struct

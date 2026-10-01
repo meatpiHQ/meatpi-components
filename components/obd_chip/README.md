@@ -90,6 +90,7 @@ zero-copy only with numbers.
 | `obd_chip_get_stats()` / `obd_chip_get_subscribers()` / `obd_chip_register_http()` | Observability (2026-09-08): wire + fan-out counters (`rx_bytes/chunks/max_chunk`, `rx_overflows`, `rx_buffered`, `tx_bytes`, claim, client idle) and per-subscriber `dropped/queued/depth`, served as `GET /api/obd_chip` (`obd_chip_http.c`, hand-formatted JSON). The first hop of any "missed frames" investigation: compare with `/api/bridges` and `/api/sockets`. |
 | `obd_chip_client_touch()` / `obd_chip_client_idle_ms()` | The external-client activity clock (2026-09-08): the bridge glue's `obd` endpoint touches it on every app write (TCP/BLE/USB/WS), autopid reads the idle time and yields the chip while an app drives it (legacy `DEV_AUTOPID_ELM327_APP_BIT` parity, 10 s). NOT touched by `obd_chip_send` itself - autopid's own monitor sends go through that and would pause autopid against itself. `UINT32_MAX` = no client ever wrote. |
 | `obd_chip_request(cmd,resp,len,timeout)` | One transaction: claims COMMAND, collects to the `>` prompt, strips echo+prompt. Refuses monitor-class cmds (`ESP_ERR_NOT_SUPPORTED`). |
+| `obd_chip_protocol_save(proto)` | (2026-10-01) ONE real `ATSP<proto>` per boot on the request path, bypassing the EEPROM guard: the chip learns its base protocol once after a vehicle detection. Caller: autopid's detection job only. `'1'..'9'`/`'A'..'C'` else `ESP_ERR_INVALID_ARG`; a second call this boot `ESP_ERR_INVALID_STATE`; no `OK` = `ESP_FAIL`. Counted in `protocol_saves`. See "Protocol save" below. |
 | `obd_chip_claim/release(type,timeout)` | COMMAND / MONITOR / EXCLUSIVE arbitration. |
 | `obd_chip_is_monitor_cmd(cmd)` | Table-driven monitor-class test (pure). |
 | `obd_chip_monitor_stop()` | The stop byte: **SPACE, never CR** (CR = repeat-last-command → can re-enter ATMA). |
@@ -311,11 +312,14 @@ managers; `settings_manager_start()` before `obd_chip_start()`.
 
 ## Tests
 
-- **Host (`host_test/`, 10 tests):** pure framing — prompt splits at every
+- **Host (`host_test/`, 16 tests):** pure framing — prompt splits at every
   chunk boundary, echo strip, post-prompt bytes not consumed, noise
   interleave, **meatpi's real 36-line proprietary-PID log replayed at chunk
   sizes 1…4096**, overflow flagging, error/monitor classification, fw-file
-  iterator + FFF1 marker.
+  iterator + FFF1 marker, the EEPROM guard (rewrites, pass-throughs,
+  refusals, raw-chunk semantics, and since 2026-10-01 a mixed-protocol
+  profile chain `ATSP6;...;ATSP7;...` whose BOTH protocol switches come out
+  as `ATTP`), the STSLCS parser + provisioning policy.
 - **On-target (`test_apps/`, live bench):** all green 2026-07-03 — see
   `test_apps/README.md` for markers and the bench doc pointer.
 
@@ -338,12 +342,34 @@ the driver, on every TX path (`obd_chip_guard.h`, pure, host-tested in
 
 A token counts only at a command boundary (start, CR/LF/space/tab/';'), so
 `DATA`, the `ST` inside `ATSTFF` and hex payloads never match. Counters:
-`GET /api/obd_chip` -> `eeprom_guard.rewrites` / `.blocked`; refused commands
-log at W with the text. autopid's `ap_init_sanitize()` is a wrapper over this
-guard and its config parse refuses a refused command in `cmd`/`init`; the UDS
-AT transport sends `ATTP` itself. Exempt by construction: boot provisioning
-(`bare_probe`: STSL*, `ATPP 0E/0F`, `STWBR`, once, behind a matching check) and
-the firmware update flow, which write the UART directly.
+`GET /api/obd_chip` -> `eeprom_guard.rewrites` / `.blocked` /
+`.protocol_saves`; refused commands log at W with the text. autopid's
+`ap_init_sanitize()` is a wrapper over this guard and its config parse refuses
+a refused command in `cmd`/`init`; the UDS AT transport sends `ATTP` itself.
+Exempt by construction: boot provisioning (`bare_probe`: STSL*, `ATPP 0E/0F`,
+`STWBR`, once, behind a matching check) and the firmware update flow, which
+write the UART directly.
+
+### Protocol save (2026-10-01, TASK_quick_setup.md "Protocol policy")
+
+With the guard alone the chip would power up on whatever its EEPROM held
+from the factory or an old app, and search (`SEARCHING...`) at every boot.
+`obd_chip_protocol_save(proto)` is the ONE deliberate exception: a real
+`ATSP<proto>` (set AND save) through the same serialized transaction path
+as `obd_chip_request()` (COMMAND claim, obd_gate, the `>` prompt), with the
+guard switched off for that single command. Rules enforced in the driver,
+whatever the caller does: `proto` is `1`..`9` or `A`..`C` (never `ATSP0`,
+`ESP_ERR_INVALID_ARG`), at most ONE save per boot (`ESP_ERR_INVALID_STATE`
+afterwards, so a misbehaving caller cannot wear the EEPROM), the chip must
+answer `OK` (`ESP_FAIL` otherwise, `ESP_ERR_TIMEOUT` on silence). The only
+caller is autopid's vehicle detection job, after a successful detection,
+when the car record's `chip_protocol` differs from the detected base
+protocol; it then records `chip_protocol`. Everything else on the wire
+stays `ATTP`: autopid's baseline re-asserts the base RAM-only after an
+ELM app had the chip, and a mixed-protocol profile's per-PID `ATSP7` keeps
+being rewritten to `ATTP7` by the guard (host test: the MEB-style chain).
+Counted in `obd_chip_stats_t.protocol_saves` and `GET /api/obd_chip`
+`eeprom_guard.protocol_saves` (0 or 1 per boot); logged at I on success.
 
 ## Transaction hold (2026-09-16)
 

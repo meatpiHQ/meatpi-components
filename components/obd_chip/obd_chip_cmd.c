@@ -31,6 +31,8 @@
  */
 #include "obd_chip.h"
 
+#include <ctype.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "esp_attr.h"
@@ -51,6 +53,15 @@ static StaticQueue_t s_q_buf; /* internal: FreeRTOS object */
 static QueueHandle_t s_q;
 
 static obd_resp_acc_t s_acc EXT_RAM_BSS_ATTR; /* one in-flight transaction */
+
+/* obd_chip_protocol_save(): real ATSP writes this boot (stats
+   `protocol_saves`); the driver allows ONE per boot */
+static uint32_t s_protocol_saves;
+
+uint32_t obd_cmd_protocol_saves(void)
+{
+    return s_protocol_saves;
+}
 
 esp_err_t obd_cmd_engine_init(void)
 {
@@ -82,8 +93,10 @@ static void cmd_engine_done(void)
     obd_core_release();
 }
 
-esp_err_t obd_chip_request(const char *cmd, char *resp, size_t resp_len,
-                           TickType_t timeout)
+/** The transaction body shared by obd_chip_request() (guarded) and
+ *  obd_chip_protocol_save() (the one deliberate EEPROM write). */
+static esp_err_t request_run(const char *cmd, char *resp, size_t resp_len,
+                             TickType_t timeout, bool guard)
 {
     if (cmd == NULL || resp == NULL || resp_len == 0)
     {
@@ -113,7 +126,8 @@ esp_err_t obd_chip_request(const char *cmd, char *resp, size_t resp_len,
     memcpy(guarded, cmd, glen);
     guarded[glen] = '\0';
 
-    obd_guard_t gv = obd_chip_guard_cmd(guarded, glen);
+    obd_guard_t gv = guard ? obd_chip_guard_cmd(guarded, glen)
+                           : OBD_GUARD_PASS;
 
     if (gv != OBD_GUARD_PASS)
     {
@@ -220,6 +234,55 @@ esp_err_t obd_chip_request(const char *cmd, char *resp, size_t resp_len,
                  cmd, OBD_RESP_MAX);
     }
 
+    return ESP_OK;
+}
+
+esp_err_t obd_chip_request(const char *cmd, char *resp, size_t resp_len,
+                           TickType_t timeout)
+{
+    return request_run(cmd, resp, resp_len, timeout, true);
+}
+
+esp_err_t obd_chip_protocol_save(char proto)
+{
+    char p = (char)toupper((unsigned char)proto);
+
+    if (!((p >= '1' && p <= '9') || (p >= 'A' && p <= 'C')))
+    {
+        return ESP_ERR_INVALID_ARG;     /* never ATSP0 (auto) or junk     */
+    }
+
+    /* the ONE unguarded command path besides boot provisioning: at most
+       one real ATSP per boot, whatever the caller does (EEPROM budget) */
+    if (s_protocol_saves >= 1)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    char cmd[8];
+    char resp[64];
+
+    snprintf(cmd, sizeof(cmd), "ATSP%c", p);
+
+    esp_err_t err = request_run(cmd, resp, sizeof(resp),
+                                pdMS_TO_TICKS(2000), false);
+
+    if (err != ESP_OK)
+    {
+        ESP_LOGW(TAG, "%s (protocol save) failed: %s", cmd,
+                 esp_err_to_name(err));
+        return err;
+    }
+
+    if (strstr(resp, "OK") == NULL)
+    {
+        ESP_LOGW(TAG, "%s (protocol save) not accepted: '%.16s'", cmd, resp);
+        return ESP_FAIL;
+    }
+
+    s_protocol_saves++;
+    ESP_LOGI(TAG, "%s saved to the chip's EEPROM (base protocol learned "
+                  "once this boot)", cmd);
     return ESP_OK;
 }
 

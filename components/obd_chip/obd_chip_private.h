@@ -192,6 +192,7 @@ esp_err_t obd_settings_register(void);
 
 /* request engine (obd_chip_cmd.c) */
 esp_err_t obd_cmd_engine_init(void);
+uint32_t  obd_cmd_protocol_saves(void); /* obd_chip_protocol_save() count */
 
 /* fw update helper (obd_chip_fw.c): VTVERS with update-mode semantics */
 esp_err_t obd_chip_get_fw_version_raw(char *buf, size_t buf_len);

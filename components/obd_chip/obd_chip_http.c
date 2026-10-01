@@ -48,7 +48,7 @@ static esp_err_t obd_chip_get_handler(httpd_req_t *req)
 {
     obd_chip_stats_t st;
     obd_chip_sub_stats_t subs[OC_HTTP_SUBS];
-    char body[768];
+    char body[1024];
     size_t n = 0;
 
     obd_chip_get_stats(&st);
@@ -58,7 +58,8 @@ static esp_err_t obd_chip_get_handler(httpd_req_t *req)
     n += (size_t)snprintf(body + n, sizeof(body) - n,
                           "{\"ready\":%s,\"claim\":\"%s\","
                           "\"client_idle_ms\":%lu,"
-                          "\"eeprom_guard\":{\"rewrites\":%lu,\"blocked\":%lu},"
+                          "\"eeprom_guard\":{\"rewrites\":%lu,\"blocked\":%lu,"
+                          "\"protocol_saves\":%lu},"
                           "\"uart\":{\"rx_bytes\":%lu,\"rx_chunks\":%lu,"
                           "\"rx_max_chunk\":%u,\"rx_overflows\":%lu,"
                           "\"rx_buffered\":%lu,\"tx_bytes\":%lu},"
@@ -67,6 +68,7 @@ static esp_err_t obd_chip_get_handler(httpd_req_t *req)
                           (unsigned long)st.client_idle_ms,
                           (unsigned long)st.guard_rewrites,
                           (unsigned long)st.guard_blocked,
+                          (unsigned long)st.protocol_saves,
                           (unsigned long)st.rx_bytes,
                           (unsigned long)st.rx_chunks,
                           (unsigned)st.rx_max_chunk,

@@ -14,6 +14,11 @@
 #include "expression_parser.h"
 #include "obd2_standard_pids.h"   /* the vendored table, iterated below */
 
+/* test_vehicle.c: the vehicle identity core (TASK_quick_setup.md);
+   test_vehicle_index.c: the vehicle store index (second pass) */
+void run_vehicle_tests(void);
+void run_vehicle_index_tests(void);
+
 /* ---- helpers ----------------------------------------------------------------- */
 
 static ap_config_t s_cfg;
@@ -2038,6 +2043,9 @@ void app_main(void)
 
     RUN_TEST(test_client_hold_window);
     RUN_TEST(test_sched_group_set_restore);
+
+    run_vehicle_tests();
+    run_vehicle_index_tests();
 
     UNITY_END();
 }

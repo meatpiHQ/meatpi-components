@@ -246,6 +246,7 @@ int  ap_settings_pause_below_mv(void);      /* 0 = never pause           */
 bool ap_settings_pause_follow_sleep(void);  /* legacy parity: pause
                                                requests below sleep_mv   */
 const char *ap_core_std_protocol(void);     /* std_protocol setting      */
+const char *ap_core_specific_init_default(void); /* specific_init knob  */
 uint32_t ap_core_min_event_interval_ms(void);
 
 /* on_apply -> runtime state owned by autopid.c */
@@ -261,6 +262,8 @@ void ap_events_external(const char *name, const char *unit, double value,
                         bool changed);      /* injected value → sink+event */
 void ap_events_pid_failed(const char *name, uint16_t streak);
 void ap_events_scan_done(uint16_t found);
+void ap_events_vehicle_changed(const char *vin, const char *name, bool known);
+void ap_events_vehicle_evicted(const char *vin, const char *name); /* store */
 
 /* chip-facing runner (autopid_runner.c — poller-task context) */
 bool ap_runner_run(const ap_pid_t *pid, int pid_index,
@@ -295,7 +298,11 @@ cJSON *ap_std_scan_status_json(void);       /* {status,found,error,ts}   */
 const char *ap_std_prelude(void);           /* ATS1;ATH0;ATST96;ATTP<p>.. */
 cJSON *ap_std_table_json(void);             /* the full SAE table for UI */
 const char *autopid_std_scan_path(void);    /* /data/autopid/std_scan.json */
+bool ap_std_entry_to_json(cJSON *arr, uint8_t pid); /* one table row -> arr */
+
+/* runner-side identity hooks: see autopid_vehicle.h (included below) */
 #endif
+
 
 /* ---- pure: standard-PID helpers (autopid_std.c — host-tested) -------------
  * ap_std_expression maps a legacy table row (bit_start counts within the
@@ -683,6 +690,8 @@ void ap_events_dtc_scan(const ap_dtc_report_t *r, bool ok);
 void ap_events_dtc_clear(bool ok, bool cleared, uint8_t before,
                          uint8_t after);
 #endif
+
+#include "autopid_vehicle.h" /* vehicle identity: pure core + file owner */
 
 #ifdef __cplusplus
 }

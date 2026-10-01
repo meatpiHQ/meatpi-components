@@ -59,6 +59,27 @@ static int  s_last_type = -1;
 static int  s_last_pid = -1;
 static bool s_rxheader_set;
 
+/* per-boot first contact + stored-protocol fallback (TASK_quick_setup,
+   second pass): the boot prelude goes out once before the first poll;
+   after the first SUCCESSFUL poll one 0902 + a headers-on 0100 identify
+   the car against the vehicle store (same car / another stored car =
+   switch / unknown = detection job); the current car's protocol that
+   stays silent for the first AP_BOOT_SILENT_POLLS polls yields to the
+   chip search. With empty tables an idle probe (0100 every
+   AP_IDLE_PROBE_US) stands in for the poll. */
+#define AP_BOOT_SILENT_POLLS 3
+#define AP_IDENT_TRIES       3                   /* answers without an id */
+#define AP_IDENT_TIMEOUT     pdMS_TO_TICKS(6000) /* 0902 is multi-frame   */
+#define AP_IDLE_PROBE_US     (10 * 1000 * 1000)
+
+static bool    s_baseline_sent;    /* boot prelude went out              */
+static bool    s_ident_done;       /* the per-boot identity check ran    */
+static uint8_t s_ident_tries;      /* checks that found no identity      */
+static uint8_t s_boot_fail_streak; /* failed polls before the 1st success */
+static bool    s_proto_fallback;   /* stored protocol silent: ATTP0 now  */
+static int64_t s_probe_last_us;    /* idle probe pacing                  */
+static char    s_ident_resp[AP_RESP_MAX] EXT_RAM_BSS_ATTR; /* poller only */
+
 void ap_runner_set_type_init(int type, const char *init)
 {
     if (type >= 0 && type < 3)
@@ -272,9 +293,203 @@ const char *ap_runner_type_init(int type)
     return (type >= 0 && type < 3) ? s_type_init[type] : "";
 }
 
+/* ---- per-boot vehicle identity (poller-task context) ---------------------- */
+
+bool ap_runner_proto_fallback(void)
+{
+    return s_proto_fallback;
+}
+
+/** True while the chip prelude pins the protocol LEARNED into the store
+ *  (setting "0" + a current car with a protocol, not yet fallen back). */
+static bool stored_protocol_in_use(void)
+{
+    const char *setting = ap_core_std_protocol();
+    char s = (setting[0] != '\0') ? setting[0] : '0';
+
+    return s == '0' && autopid_vehicle_protocol()[0] != '\0' &&
+           !s_proto_fallback;
+}
+
+void ap_runner_rebaseline(void)
+{
+    s_baseline_sent = false;
+    s_proto_fallback = false;
+}
+
+/** First contact: one 0902 and a headers-on 0100 (the responder set
+ *  behind the fingerprint, kept for every car so the subset rule has
+ *  something to compare) through the poll transport, then the store
+ *  decides. Sends the prelude first so the reply set is deterministic
+ *  (functional header, CRA cleared, headers off) whatever the last PID
+ *  left behind; the next poll replays its inits (ap_runner_reset).
+ *  Never touches flash: the store hands every write to its worker. */
+static void identity_check(void)
+{
+    static ap_veh_seen_t seen EXT_RAM_BSS_ATTR; /* poller-task only      */
+
+    /* one chip job at a time: a std/DTC scan or test-a-PID that is just
+       starting wins; we retry on the next successful poll */
+    if (!ap_core_job_acquire())
+    {
+        return;
+    }
+
+    memset(&seen, 0, sizeof(seen));
+    send_init(ap_std_prelude());
+
+    if (s_proto_fallback &&
+        request_tr("ATDPN", s_ident_resp, sizeof(s_ident_resp),
+                   AP_INIT_TIMEOUT, NULL) == ESP_OK)
+    {
+        (void)ap_veh_parse_dpn(s_ident_resp, seen.protocol);
+    }
+
+    if (request_tr("0902", s_ident_resp, sizeof(s_ident_resp),
+                   AP_IDENT_TIMEOUT, NULL) == ESP_OK)
+    {
+        (void)ap_veh_parse_vin_0902(s_ident_resp, seen.vin);
+    }
+
+    if (request_tr("ATH1", s_ident_resp, sizeof(s_ident_resp),
+                   AP_INIT_TIMEOUT, NULL) == ESP_OK)
+    {
+        if (request_tr("0100", s_ident_resp, sizeof(s_ident_resp),
+                       AP_IDENT_TIMEOUT, NULL) == ESP_OK)
+        {
+            seen.n_ecus = (uint8_t)ap_veh_ecus_from_0100(
+                s_ident_resp, seen.ecus, AP_VEH_ECUS_MAX);
+        }
+
+        if (request_tr("ATH0", s_ident_resp, sizeof(s_ident_resp),
+                       AP_INIT_TIMEOUT, NULL) != ESP_OK)
+        {
+            send_init(ap_std_prelude()); /* headers MUST be off again */
+        }
+    }
+
+    ap_runner_reset();
+    ap_core_job_release();
+
+    ESP_LOGI(TAG, "vehicle identity: vin %s, %u ECUs%s",
+             seen.vin[0] ? seen.vin : "(none)", (unsigned)seen.n_ecus,
+             seen.protocol[0] ? " (protocol re-detected)" : "");
+
+    switch (autopid_vehicle_seen(&seen))
+    {
+        case AP_VEH_RES_NONE:
+            /* case D: the ECU answered a poll but not the identity
+               requests; try again on a later success, a few times */
+            if (++s_ident_tries >= AP_IDENT_TRIES)
+            {
+                s_ident_done = true;
+            }
+            break;
+
+        case AP_VEH_RES_SAME:
+            s_ident_done = true;
+
+            if (seen.protocol[0] != '\0')
+            {
+                /* the chip found the car on its own: the store holds
+                   THAT protocol now, let the baseline pin it */
+                s_proto_fallback = false;
+                ap_runner_restore_baseline();
+            }
+            break;
+
+        case AP_VEH_RES_SWITCHED:
+            /* the store set the other car current (its files follow on
+               the worker): pin that car's protocol from here on */
+            s_ident_done = true;
+            s_proto_fallback = false;
+            ap_runner_restore_baseline();
+            break;
+
+        case AP_VEH_RES_NEW:
+            /* unknown car: the detection job stores it (protocol, VIN,
+               standard PIDs) and pauses polling once; a job that cannot
+               start now (another chip job) is retried on the next poll */
+            s_ident_done = (autopid_std_scan_start() == ESP_OK);
+            break;
+    }
+}
+
+void ap_runner_idle(void)
+{
+    int64_t now = esp_timer_get_time();
+
+    if (s_ident_done || now - s_probe_last_us < AP_IDLE_PROBE_US)
+    {
+        return;
+    }
+
+    s_probe_last_us = now;
+
+    if (!s_baseline_sent)
+    {
+        send_init(ap_std_prelude());
+        s_baseline_sent = true;
+    }
+
+    /* the same question a poll asks, answered the same way: a parsable
+       0100 counts as a successful poll for the identity logic */
+    uint8_t payload[AP_PAYLOAD_MAX];
+    size_t n = 0;
+    bool ok = request_tr("0100", s_ident_resp, sizeof(s_ident_resp),
+                         AP_IDENT_TIMEOUT, NULL) == ESP_OK &&
+              ap_resp_to_payload(s_ident_resp, payload, sizeof(payload),
+                                 &n) == ESP_OK;
+
+    ap_runner_poll_result(ok);
+}
+
+void ap_runner_poll_result(bool ok)
+{
+    if (s_ident_done)
+    {
+        return;
+    }
+
+    if (!ok)
+    {
+        if (s_boot_fail_streak < UINT8_MAX)
+        {
+            s_boot_fail_streak++;
+        }
+
+        if (s_boot_fail_streak == AP_BOOT_SILENT_POLLS &&
+            stored_protocol_in_use())
+        {
+            /* another car, or a stale record: let the chip search for
+               the rest of this boot (first contact re-detects) */
+            s_proto_fallback = true;
+            ESP_LOGW(TAG, "stored protocol %s: no answer in %d polls, "
+                          "using the chip's protocol search this boot",
+                     autopid_vehicle_protocol(), AP_BOOT_SILENT_POLLS);
+            ap_runner_restore_baseline();
+        }
+
+        return;
+    }
+
+    identity_check();
+}
+
 bool ap_runner_run(const ap_pid_t *pid, int pid_index,
                    const ap_param_t *params)
 {
+    /* boot baseline, once: spaces/headers/timeout + the protocol the
+       setting (or the current car's record under "0") names, BEFORE any
+       user init so the inits still win. Without it the chip polled on
+       whatever its EEPROM held until the first ELM-app pause
+       (2026-10-01). Re-armed by ap_runner_rebaseline() on a car switch. */
+    if (!s_baseline_sent)
+    {
+        send_init(ap_std_prelude());
+        s_baseline_sent = true;
+    }
+
     /* type init once per type transition (legacy behavior kept) */
     if (pid->type != s_last_type)
     {

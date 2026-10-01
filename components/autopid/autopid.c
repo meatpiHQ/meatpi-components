@@ -262,6 +262,7 @@ static void poller_task(void *arg)
         if (i < 0)
         {
             s_stats.running = false;
+            ap_runner_idle(); /* first contact on empty tables (store) */
             dev_status_manager_set(DEV_STATUS_BIT_AUTOPID_IDLE);
             ulTaskNotifyTake(pdTRUE, AP_IDLE_WAIT);
             continue;
@@ -302,6 +303,12 @@ static void poller_task(void *arg)
             }
 
             s_stats.last_poll_us = esp_timer_get_time();
+
+            if (is_pid)
+            {
+                /* per-boot vehicle identity + stored-protocol fallback */
+                ap_runner_poll_result(ok);
+            }
         }
 
         char failed_name[AP_NAME_LEN + 12] = "";
@@ -400,6 +407,7 @@ esp_err_t autopid_init(void)
 
     /* main-task context: internal stack, file IO is safe here */
     (void)autopid_config_load(&s_cfg);
+    ap_vehicle_load();   /* /data/autopid/vehicles.json -> RAM copy */
     arm_scheduler();
 
     return ap_settings_register();

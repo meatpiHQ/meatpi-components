@@ -79,7 +79,13 @@ Decisions log there is authoritative; the big ones:
 | `autopid.c` | settings fields, poller task (PSRAM stack, notify-driven), battery-pause watch, core query surface |
 | `autopid_runner.c` | the chip-facing poll: type/per-PID init transitions, ATCRA rxheader, request → parse → guard → eval → cache |
 | `autopid_filter.c` | the ATMA filter window: MONITOR claim, header/CRA choreography, frame capture (`ap_filter_frame`, pure), retried stop |
-| `autopid_std.c` | standard PIDs: vendored SAE table (obd2_standard_pids.h), PURE bit_start→expression mapping + bitmap parser, the async support scan (`/data/autopid/std_scan.json`) |
+| `autopid_std.c` | standard PIDs: vendored SAE table (obd2_standard_pids.h, included ONLY here), PURE bit_start to expression mapping + bitmap parser, freeze-frame decode, the table JSON view |
+| `autopid_std_scan.c` | the vehicle DETECTION job (the async support scan, split out 2026-10-01): phases `protocol` (ATTP0, 0100, ATDPN when `std_protocol` is "0"), `vin` (0902, then 22F190 on the engine ECU, plus the responder set), `pids` (the bitmap walk); hands the result to the vehicle store (`autopid_vehicle_detected`), then writes `/data/autopid/std_scan.json`; started by the poller itself on an unknown car; owns `ap_std_prelude()` |
+| `autopid_vehicle_core.c` | PURE vehicle identity (TASK_quick_setup.md): ATDPN parse, VIN from 0902 / 22F190 replies, responder fingerprint (FNV-1a over sorted ECU id + 0100 bitmap pairs), effective-protocol + prelude selection, the first-pass vehicle.json reader (import); `autopid_vehicle.h` holds every vehicle contract |
+| `autopid_vehicle_index.c` | PURE store index (second pass): key derivation (`VIN` or `fp:<hash>`), find by key / VIN / fingerprint, the fingerprint SUBSET rule, `ap_vidx_match`, the LRU eviction pick, add/remove, the once-a-day `last_seen` touch |
+| `autopid_vehicle_codec.c` | PURE store codec: the responder set as text, one entry as JSON (API + file shape), `vehicles.json` round trip with bounds and sanitizing |
+| `autopid_vehicle.c` | the store: RAM index under one lock, load + the first-pass import, queries, edits (`update` / `activate` / `delete`), the `config.json` mirror, first contact (`autopid_vehicle_seen`), the one-shot internal-stack worker `apid_veh` that does the poller's file work |
+| `autopid_vehicle_switch.c` | the store's files: per-car tables copy/snapshot, the switch (snapshot, copy, live reload, SPECIFIC init, event), the new-car path with LRU eviction, the detection result (`autopid_vehicle_detected`) and the one-time `obd_chip_protocol_save()` |
 | `autopid_sched.c` | PURE scheduler: due times, group inheritance/override (`ap_sched_group_set`/`_restore`, 2026-09-17), fail backoff (×4 after 3), period-0 high-fidelity round-robin, stagger |
 | `autopid_group.c` | runtime group control: `autopid_group_set`/`_restore` (name lookup under the core lock + poller wake-up over the pure scheduler calls) and the group state JSON (split out of autopid.c 2026-09-17) |
 | `autopid_resp.c` | PURE ELM text → payload bytes (headers on/off, ISO-TP single/multi, lowest-responder rule, noise/error lines) + the cross-talk guard (`ap_payload_matches_cmd` — a second chip master's response can't be cached as ours) |
@@ -91,14 +97,17 @@ Decisions log there is authoritative; the big ones:
 | `autopid_dtc_db.c` | database store (/data/autopid/dtc_db) + PSRAM cache w/ binary search: upload/list/delete/search/lookup, report `desc` enrichment — lookups never touch flash |
 | `autopid_dbc_codec.c` | PURE DBC codec: BO_/SG_ parser + the signal→expression compiler (Intel/Motorola, signed via multiply-subtract, Motorola-aligned spans; host cross-checked vs a reference decoder) — [TASK_dbc.md](TASK_dbc.md) |
 | `autopid_dbc.c` | DBC store (/data/autopid/dbc) + PSRAM cache: upload/list/delete, signal browse/search, and the add-to-filters merge (dry-run validate → atomic save → LIVE reload) |
-| `autopid_http.c` | `/api/autopid[/data\|/config\|/dtc*]` (see `components/HTTP_API.md` §6e4/§6e4b) |
+| `autopid_http.c` | the route table + `/api/autopid[/data\|/config\|/std_scan*\|/test\|/group\|/std_table]` handlers and the shared response helpers (`ap_http_send_json/_error/_file`, exported through `autopid_http_private.h`); see `components/HTTP_API.md` 6e4 |
+| `autopid_http_dtc.c` | the DTC handlers (`/api/autopid/dtc*`, 6e4b) and `ap_http_query_param()`; split out 2026-10-01 to keep every file under the standard's 700 lines |
+| `autopid_http_dbc.c` | the DBC handlers (`/api/autopid/dbc*`, 6e4c); same split |
+| `autopid_http_vehicles.c` | the vehicle store handlers (`/api/autopid/vehicles*`, 6e4): one wildcard URI per method, `detect` / `<key>` / `<key>/activate` dispatched inside |
 | `autopid_cli.c` | `autopid [-l] [-d] [--dtc-scan]` console command (§6b self-registration) |
 
 ## Settings (`/api/settings/autopid`, reboot-to-apply)
 
 `enabled` (default **false**), `std_enabled`/`custom_enabled`/
 `specific_enabled`, `std_init`/`custom_init`/`specific_init`
-(';'-separated AT prelude per type), `std_protocol` (enum `0` chip-auto | `6` CAN 11-bit 500k | `7` CAN 29-bit 500k | `8` CAN 11-bit 250k | `9` CAN 29-bit 250k, default `6`; schema v7), `vehicle`,
+(';'-separated AT prelude per type; `specific_init` is the fallback for a current car without its own `specific_init` in the vehicle store), `std_protocol` (enum `0` Automatic | `6` CAN 11-bit 500k | `7` CAN 29-bit 500k | `8` CAN 11-bit 250k | `9` CAN 29-bit 250k, default `6`; schema v7; `0` = follow the vehicle store: the detection job learns the protocol per car and the chip prelude pins the current car's protocol instead of `ATTP0`, see "Vehicle store" below; a pinned 6..9 always wins over the store), `vehicle`,
 `pause_below_mv` (0 = no fixed threshold, else 1–14500 mV; resumes +0.3 V with 5 s hold),
 `pause_follow_sleep` (default **true** — legacy `disable_pid_requests`
 parity: requests pause below the sleep threshold via the battery
@@ -204,14 +213,165 @@ on the same frame evaluate normally.
 ## Standard PIDs: scan once, store
 
 `POST /api/autopid/std_scan` (UI button; prompt "ignition ON" first)
-walks the SAE support bitmaps against the configured `std_protocol`,
-maps hits to the built-in table and stores ready-made config rows —
-names, units, classes and **generated expressions** (`[B2:B3]*0.25`
-etc.) — at `/data/autopid/std_scan.json`. The UI copies entries from
-`GET /api/autopid/std_scan/result` (or the full catalog at
-`/api/autopid/std_table`) straight into the config PUT. Never
-auto-rescans. Polling pauses during the scan and resumes with its
-init state replayed.
+runs one chip job in three phases (`GET /api/autopid/std_scan` reports
+the current one as `phase`):
+
+1. `protocol` (only with `std_protocol` = "0"): prelude
+   `ATS1;ATH0;ATST96;ATTP0`, then `0100` with a long timeout (the chip
+   prints `SEARCHING...` while it tries the protocols), then `ATDPN`;
+   `A6` / `6` style replies give the protocol, which is pinned with its
+   `ATTP<n>` + functional header + `ATCRA` prelude for the rest of the
+   job. A pinned setting (6..9) skips the phase and uses its own prelude.
+2. `vin`: `0902` (ISO-TP joined by the chip, multi-ECU: the lowest
+   responder wins); when no VIN comes back, `ATSH7E0` (`ATSH18DA10F1` on
+   29-bit) + UDS `22F190`, header restored afterwards. Then one headers-on
+   `0100` collects the responding ECU ids + their support bitmaps for the
+   fingerprint (headers off again right after).
+3. `pids`: the SAE support bitmap walk `0100/0120/../01A0` (multi-ECU
+   OR-merged) mapped onto the built-in table into ready-made config rows
+   (names, units, classes, **generated expressions** such as
+   `[B2:B3]*0.25`).
+
+The result goes to the vehicle store first (`autopid_vehicle_detected`:
+a known car comes back with its own tables, an unknown car becomes a new
+entry whose tables are these rows, see "Vehicle store"), then the table
+to `/data/autopid/std_scan.json` (atomic). `GET /api/autopid/std_scan/result`
+carries the table plus `protocol_detected` (the detected char, or the
+pinned setting), `vin` ("" when none), `fingerprint` ("" when none) and,
+since the second pass, `key` / `known` / `name` of the store entry; the
+UI copies entries (or the full catalog at `/api/autopid/std_table`)
+straight into the config PUT. The poller starts the job by itself once
+per boot when first contact meets an unknown car; otherwise never without
+the button. Polling pauses during the scan and resumes with its init
+state replayed.
+
+## Vehicle store (Quick Setup, second pass, 2026-10-01)
+
+One record per car, under `/data/autopid/` (FILES, not settings: they
+describe cars, not the device):
+
+- `vehicles.json`, the index: `{"version":1,"current":"<key>",
+  "vehicles":[{"key","vin","fingerprint","name","protocol",
+  "chip_protocol","profile","specific_init","ecus","std_supported",
+  "pending_profile","first_seen","last_seen","scan_ts"}]}`, at most
+  **8** entries. The key is the VIN, or `fp:<8 hex>` for a car without a
+  readable VIN, and never changes once assigned (a `fp:` car whose VIN
+  answers later keeps its key and gains the `vin`). `ecus` is the
+  responder set behind the fingerprint (`7E8:BE7FB813,7E9:80000001`),
+  kept so the SUBSET rule below has something to compare.
+- `vehicles/<key>.json`, that car's PID tables in the `config.json`
+  shape.
+- `config.json` stays what the poller runs and every existing route
+  serves: it is a COPY of the current car's tables. `PUT
+  /api/autopid/config` (and the DBC add-to-filters merge) also lands in
+  the current car's file through `autopid_config_save()`,
+  change-guarded (identical bytes are not rewritten).
+
+A first-pass `vehicle.json` (one car) is imported as the first, current
+entry on the first boot and deleted; its tables are whatever `config.json`
+held.
+
+Pure, host-tested halves: `autopid_vehicle_core.c` (reply parsers,
+fingerprint, prelude), `autopid_vehicle_index.c` (keys, find, the subset
+rule, LRU, touch), `autopid_vehicle_codec.c` (the JSON). Target halves:
+`autopid_vehicle.c` (the RAM copy under one lock, load/import, queries,
+edits, first contact, the `apid_veh` worker) and
+`autopid_vehicle_switch.c` (the files: snapshot, copy, reload, new car,
+detection result, chip protocol save). Every file operation runs on an
+INTERNAL stack (standard §2): the httpd and scan tasks directly, the
+poller through the one-shot worker (6 KB internal stack, exists only while
+work is pending). Writes are event-driven only: a detection, a switch, an
+edit, an eviction, and the `last_seen` touch at most ONCE A DAY per car
+(`ap_vidx_touch`, nothing when the clock is unset). A steady-state boot
+with the same car writes nothing (§11).
+
+**Identity.** A VIN decides alone. Without a VIN the fingerprint (FNV-1a
+over the sorted responder ids + 0100 bitmaps) must match exactly, else the
+**subset rule**: the same car when the main ECU (lowest id) answers with
+the same bitmap on both sides and one responder set is a subset of the
+other (an EV in accessory mode shows fewer ECUs than when ready, case H
+of TASK_quick_setup.md). Behind a VIN match the stored responder set is
+refreshed when it changed.
+
+**First contact per boot** (the runner, after the first successful poll;
+with empty tables an idle probe sends one `0100` every 10 s until the
+check ran): the prelude, `0902`, `ATH1` + `0100` + `ATH0`, then
+`autopid_vehicle_seen()`:
+
+- the current car: `last_seen` touched (daily), a re-detected protocol
+  recorded (case I); nothing else happens;
+- another stored car: **switch** (below), event `autopid.vehicle_changed
+  {vin, name, known:true}`;
+- an unknown car: the detection job starts right there
+  (`autopid_std_scan_start()`, pauses polling once) and stores it;
+- nothing identifiable answered (a sleeping ECU behind a successful poll,
+  case D): no change, retried on later successes up to 3 times;
+- an ELM app holding the chip: the poller is not polling, so the check
+  waits for the yield to end (case M).
+
+**The switch** (automatic from first contact, by the detection job, or by
+hand through `POST /api/autopid/vehicles/<key>/activate`; one code path,
+`ap_veh_switch_files()`): (1) snapshot the live `config.json` into the
+PREVIOUS current car's file (change-guarded), (2) copy the new car's file
+over `config.json` (a missing file = the empty tables), (3) live reload
+through `autopid_reload_config()`, the same path `PUT /api/autopid/config`
+uses, (4) the runner's SPECIFIC type init becomes the car's
+`specific_init` (the `specific_init` setting when the car has none) and
+the boot prelude is re-armed so the next poll pins the car's protocol,
+(5) `current` + `vehicles.json` written, (6) the event. From the poller
+the RAM `current` flips at once and steps 1 to 6 run on the worker.
+
+**A new car** (the detection job meets an unknown car): an entry with the
+detected protocol, VIN or fingerprint, a default name (`"<WMI> <last 4 of
+the VIN>"` or `"Car <4 hex>"`), `pending_profile:true`; the previous car's
+tables are snapshotted and the new car's tables are ONLY the standard rows
+the scan found (type `std`, group `default`), written to `config.json` and
+its file, reloaded live; event `{known:false}`. When the store is full the
+least recently seen car that is not current goes first: one `W` line, its
+file deleted, event `autopid.vehicle_evicted {vin, name}` (case J).
+
+**Protocol policy.** `std_protocol` "0" = follow the store (the prelude
+pins the current car's `protocol`, `ATTP0` search when there is none or
+it stayed silent for 3 polls this boot); 6..9 = a manual pin that wins. The
+chip learns the BASE protocol once: after a successful detection the job
+calls `obd_chip_protocol_save(<detected>)` when the entry's
+`chip_protocol` differs, then records `chip_protocol`. That is a REAL
+`ATSP` on the driver's save path (the only command that bypasses the
+EEPROM guard; the driver allows one per boot). Everything else on the
+wire stays `ATTP`: the runner's baseline re-asserts the base RAM-only
+after an ELM app had the chip, and mixed-protocol profiles (per-PID
+`ATSP7` in init chains, the VW MEB family) keep being rewritten to `ATTP7`
+by the guard, unchanged.
+
+**Routes** (`components/HTTP_API.md` 6e4): `GET /api/autopid/vehicles`
+(the index, every entry plus `"current":bool`, top-level `"max":8`),
+`POST /api/autopid/vehicles/detect` (the detection job, 202 / 409; `POST
+/api/autopid/std_scan` is the same job, `GET /api/autopid/std_scan`
+reports `phase`, `/std_scan/result` carries `key`, `known`, `name`),
+`PUT /api/autopid/vehicles/<key>` `{"name"?,"profile"?,"specific_init"?}`
+(any subset; `profile` set clears `pending_profile`, `profile:""` = keep
+the car without a profile and also clears its `specific_init`; the init
+applies live when the car is current) returning the entry, `POST
+/api/autopid/vehicles/<key>/activate` (`{"ok":true}`), `DELETE
+/api/autopid/vehicles/<key>` (204; deleting the current car keeps
+`config.json` and clears `current`). The first-pass `/api/autopid/vehicle*`
+routes are gone.
+
+## Memory footprint (vehicle store, estimated)
+
+Internal RAM: the `apid_veh` worker stack 6144 B (was 4096: it now runs
+the tables copy + the config reload) + its TCB, static; the scan task's
+6144 B stack is unchanged (it gained the store update + reload: check its
+`std scan stack_hw` line on the bench). PSRAM `.bss`: the index copy
+(8 entries x ~300 B = ~2.4 KB), the 6 KB `vehicles.json` scratch, the
+runner's identity reply buffer `AP_RESP_MAX` = 1 KB and its 300 B
+`ap_veh_seen_t`, the scan job's 1 KB reply buffer + 300 B seen record.
+PSRAM heap, transient: one tables file (up to 256 KB) during a snapshot /
+copy. Flash: `autopid_vehicle_*.c` + `autopid_http_vehicles.c`, roughly
+12 KB of code. Flash writes: event-driven only (detection, switch, edit,
+eviction, the daily touch); a steady-state boot with the same car writes
+nothing. Measure with `idf.py size-components` and the `stack_hw` log lines
+(`std scan stack_hw`, `vehicle writer stack_hw`) before release.
 
 ## External values (GPS, and future non-PID samples)
 
@@ -307,7 +467,29 @@ and polls a 24-parameter PID on the simulator — the regression for the
 round-robin, backoff, stagger), response-parser vectors (single frame,
 SEARCHING noise, headers-on lowest responder, ISO-TP both header
 modes, error lines), config parse happy/invalid, the yield-to-app window
-predicate. Bench verification per TASK_autopid.md Phase 1.
+predicate, the vehicle identity core (`test_vehicle.c`, 11 cases):
+ATDPN shapes (`A6`, `6`, `A8\r>`, bare `A`, `?`, garbage), VIN from
+0902 (single line, headers-off ISO-TP rows, headers-on multi-frame, two
+responders, `NO DATA`, non-ASCII, excluded letters, the padded 15-char
+bench transcript, the ECU simulator's `1WCAN0FW0P0000001`) and from
+22F190 (incl. NRC 0x31), responder table + fingerprint determinism /
+order independence / duplicate merge / FNV-1a reference vector,
+effective protocol + prelude selection, the first-pass vehicle.json
+import, the guard rule that an `ATSP7` inside a profile init chain goes
+out as `ATTP7`; and the vehicle store index (`test_vehicle_index.c`, 10
+cases): key derivation + validity + default names, find by key / VIN /
+fingerprint, the SUBSET rule (accessory vs ready, another main ECU,
+headers-off prints), the match policy over the situations table (VIN
+decides, fp-only car adopted when its VIN appears, drift via subset,
+nothing = no match), LRU eviction (never the current car, tie-breaks,
+`current` re-indexed, a lone current car never evicted), the once-a-day
+touch guard (clock unset, same day, a day later, clock backwards), the
+responder-set text form, the `vehicles.json` round trip (escaping, the
+`current` key, no per-entry flag in the file), a full 8-car index fits the
+6 KB bound, and the bounds/sanitizing on load (no key, duplicate key,
+bad VIN/protocol, derived keys, out-of-range numbers, the 9th+ entry
+dropped). 80 tests in all. Bench verification per TASK_autopid.md Phase 1
+and TASK_quick_setup.md (vehicle_identity_bench.py, planned).
 
 **ELM app responsiveness bench (2026-09-08)** -
 `tools/testbench/obd/elm_app_bench.py [dut[:port]] [--dut-ip 10.42.1.194]`

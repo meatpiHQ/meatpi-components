@@ -548,7 +548,16 @@ esp_err_t autopid_config_load(ap_config_t *cfg)
 esp_err_t autopid_config_save(const char *json, size_t len)
 {
     /* filesystem_write is atomic (temp + rename) */
-    return filesystem_write(AP_CONFIG_PATH, json, len);
+    esp_err_t err = filesystem_write(AP_CONFIG_PATH, json, len);
+
+    if (err == ESP_OK)
+    {
+        /* the live tables belong to the current car: keep its file in
+           step (vehicle store; change-guarded, internal-stack caller) */
+        ap_vehicle_config_saved(json, len);
+    }
+
+    return err;
 }
 
 const char *autopid_config_path(void)

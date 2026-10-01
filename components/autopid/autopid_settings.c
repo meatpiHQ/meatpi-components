@@ -93,6 +93,7 @@ static const settings_field_t FIELDS[] =
 
 /* settings knobs (boot-applied) */
 static char  s_std_protocol[8];
+static char  s_specific_init[AP_INIT_LEN]; /* the per-car init's fallback */
 static uint32_t s_min_event_interval_ms = 1000;
 static int   s_pause_below_mv;
 static bool  s_pause_follow_sleep;
@@ -117,6 +118,11 @@ bool ap_settings_pause_follow_sleep(void)
 const char *ap_core_std_protocol(void)
 {
     return s_std_protocol;
+}
+
+const char *ap_core_specific_init_default(void)
+{
+    return s_specific_init;
 }
 
 uint32_t ap_core_min_event_interval_ms(void)
@@ -174,8 +180,11 @@ static esp_err_t on_apply(const cJSON *settings)
     ap_runner_set_type_init(AP_PID_STD, init);
     copy_setting(init, sizeof(init), settings, "custom_init");
     ap_runner_set_type_init(AP_PID_CUSTOM, init);
-    copy_setting(init, sizeof(init), settings, "specific_init");
-    ap_runner_set_type_init(AP_PID_SPECIFIC, init);
+    /* SPECIFIC: the current car's own init wins over this default
+       (vehicle store, TASK_quick_setup.md second pass) */
+    copy_setting(s_specific_init, sizeof(s_specific_init), settings,
+                 "specific_init");
+    ap_vehicle_apply_type_init();
     copy_setting(s_std_protocol, sizeof(s_std_protocol), settings,
                  "std_protocol");
 

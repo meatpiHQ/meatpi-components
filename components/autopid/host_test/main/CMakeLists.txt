@@ -9,10 +9,15 @@ set(oc_dir "${CMAKE_CURRENT_LIST_DIR}/../../../obd_chip")
 
 idf_component_register(
     SRCS "test_main.c"
+         "test_vehicle.c"
+         "test_vehicle_index.c"
          "${comp_dir}/autopid_sched.c"
          "${comp_dir}/autopid_resp.c"
          "${comp_dir}/autopid_config.c"
          "${comp_dir}/autopid_std.c"
+         "${comp_dir}/autopid_vehicle_core.c"
+         "${comp_dir}/autopid_vehicle_index.c"
+         "${comp_dir}/autopid_vehicle_codec.c"
          "${comp_dir}/autopid_dtc_codec.c"
          "${comp_dir}/autopid_dtc_db_codec.c"
          "${comp_dir}/autopid_dbc_codec.c"

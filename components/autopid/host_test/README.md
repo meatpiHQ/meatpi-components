@@ -1,10 +1,13 @@
 # autopid — host unit tests
 
 Pure modules only (`autopid_sched.c`, `autopid_resp.c`, the parse half
-of `autopid_config.c`, compiled with `AUTOPID_HOST_TEST` — no chip, no
+of `autopid_config.c`, `autopid_std.c`, the codecs,
+`autopid_vehicle_core.c` with its own `test_vehicle.c` and the vehicle
+store's `autopid_vehicle_index.c` + `autopid_vehicle_codec.c` with
+`test_vehicle_index.c`, compiled with `AUTOPID_HOST_TEST`: no chip, no
 filesystem). Run via `.\test.ps1 host autopid`.
 
-## What is covered (29 tests)
+## What is covered (80 tests, 2026-10-01)
 
 | Case | What it proves |
 |---|---|
@@ -37,10 +40,29 @@ filesystem). Run via `.\test.ps1 host autopid`.
 | bad expression rejected | `[B3:B0]` fails validation; tables wiped on failure |
 | unknown group + duplicate params rejected | referential integrity + cache keying |
 | empty + garbage | `{}` = valid empty tables; non-object JSON = INVALID_ARG |
+| **vehicle: ATDPN shapes** | `A6`/`6`/`A8\r>`/`a9`/`AA` accepted; bare `A`, `?`, `0`, `D`, garbage, trailing junk rejected (test_vehicle.c) |
+| vehicle: VIN validity | 17 chars A-Z0-9 without I/O/Q; length, case and punctuation rejected |
+| vehicle: VIN from 0902 | single line, SEARCHING noise, headers-off ISO-TP rows, headers-on multi-frame, two responders (lowest wins); `NO DATA`/`UNABLE TO CONNECT`/`?`, the padded 15-char bench transcript, non-ASCII, an excluded letter, a 0100 echo and a short reply rejected |
+| vehicle: VIN from 22F190 | `62 F1 90` + 17 (single and ISO-TP rows); NRC `7F 22 31`, `NO DATA`, cross-service shapes rejected |
+| vehicle: responders from 0100 | headers-on 11-bit and 29-bit ids with their bitmaps, headers-off rows OR-merged into one entry, noise = 0 |
+| vehicle: fingerprint | deterministic, order independent, duplicate ids merged, 8 lowercase hex, one bit / one ECU difference changes it, empty = "", FNV-1a reference vector |
+| vehicle: protocol + prelude | pinned setting wins, "0" uses the current car's char unless the fallback flag, the legacy ATTP map for 6..9 and protocol-only preludes, 29-bit classification, `ap_veh_proto_valid` |
+| vehicle: first-pass import | the first-pass vehicle.json reads back (import once into the store); empty doc, garbage / array / no version / version 2 rejected, bad VIN or protocol dropped |
+| vehicle: ATSP in a profile chain | `ap_init_sanitize` turns `ATSP7` / `atsp 7` / `ATM1` inside an init chain into `ATTP7` / `ATM0`; the std prelude passes untouched (the chip's base protocol is learned only through `obd_chip_protocol_save`) |
+| **store: keys + names** | key = VIN, else `fp:<8 hex>`, else ""; key validity (what a route / file name may carry: no `../`, no upper-case hex); default names `"<WMI> <last 4>"` / `"Car <4 hex>"` (test_vehicle_index.c) |
+| store: find | by key / VIN / fingerprint, "" never matches, duplicate key refused by add |
+| store: subset rule | accessory (2 ECUs) vs ready (3 ECUs) = same car both ways; another main-ECU bitmap or a differing secondary = not; headers-off prints compare as sets; empty sets never match |
+| store: match policy | the situations table: a VIN decides alone (even on another car's responders), another VIN = new car, exact fingerprint, drift found by the subset rule (`exact=false`), nothing = no match, a `fp:` car adopted when its VIN appears but never a VIN car |
+| store: LRU eviction | the oldest `last_seen` goes, never the current car; tie = older `first_seen`; the 9th car evicts and `current` is re-indexed; remove shifts `current`; a lone current car cannot be evicted |
+| store: touch guard | clock unset = no write; first touch stamps both; same day = no write; a day later = one write; clock backwards = no write |
+| store: responder text | `7E8:BE7FB813,7E9:80000001` both ways, `*` for headers-off ids, 29-bit ids, junk tokens skipped, the cap honoured, a too-small buffer |
+| store: vehicles.json round trip | every field survives (escaped name, `current` as a key, no per-entry `current` flag in the file), an empty index, a too-small buffer |
+| store: full index fits | 8 cars with every string at its cap and 8 responders each fit `AP_VEH_INDEX_JSON_MAX` (prints the size) |
+| store: load bounds | garbage / array / no version / version 2 / NULL rejected; no `vehicles` = empty; entries without a key dropped, duplicates dropped, keys derived or re-derived, bad VIN/protocol sanitized (`a` upcased), out-of-range numbers zeroed, the 9th+ entry dropped |
 
 ## Expected result
 
 ```
-29 Tests 0 Failures 0 Ignored
+80 Tests 0 Failures 0 Ignored
 OK
 ```

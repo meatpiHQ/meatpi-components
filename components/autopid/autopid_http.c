@@ -30,7 +30,11 @@
  * GET  /api/autopid/config   — the PID/filter tables file, verbatim
  * PUT  /api/autopid/config   — validate -> atomic save -> LIVE reload
  *                              (the config FILE applies live; settings
- *                              knobs stay reboot-to-apply)
+ *                              knobs stay reboot-to-apply; the save also
+ *                              lands in the current car's tables file)
+ * The vehicle store routes (/api/autopid/vehicles*) live in
+ * autopid_http_vehicles.c, DTC in autopid_http_dtc.c, DBC in
+ * autopid_http_dbc.c; this file keeps the route table.
  */
 #include <stdlib.h>
 #include <string.h>
@@ -48,12 +52,13 @@
 
 #include "autopid.h"
 #include "autopid_private.h"
+#include "autopid_http_private.h"
 
 static const char *TAG = "autopid";
 
 #define AP_HTTP_BODY_MAX (256 * 1024)
 
-static esp_err_t send_json(httpd_req_t *req, cJSON *obj)
+esp_err_t ap_http_send_json(httpd_req_t *req, cJSON *obj)
 {
     char *body = cJSON_PrintUnformatted(obj);
 
@@ -73,14 +78,14 @@ static esp_err_t send_json(httpd_req_t *req, cJSON *obj)
     return err;
 }
 
-static esp_err_t send_error(httpd_req_t *req, const char *status,
+esp_err_t ap_http_send_error(httpd_req_t *req, const char *status,
                             const char *msg)
 {
     cJSON *o = cJSON_CreateObject();
 
     httpd_resp_set_status(req, status);
     cJSON_AddStringToObject(o, "error", msg);
-    return send_json(req, o);
+    return ap_http_send_json(req, o);
 }
 
 static esp_err_t autopid_get_handler(httpd_req_t *req)
@@ -113,7 +118,7 @@ static esp_err_t autopid_get_handler(httpd_req_t *req)
     cJSON_AddNumberToObject(stats, "now_us",
                             (double)esp_timer_get_time());
 
-    return send_json(req, o);
+    return ap_http_send_json(req, o);
 }
 
 static esp_err_t autopid_data_handler(httpd_req_t *req)
@@ -122,18 +127,18 @@ static esp_err_t autopid_data_handler(httpd_req_t *req)
 
     if (autopid_snapshot(&snap) != ESP_OK)
     {
-        return send_error(req, "500 Internal Server Error", "oom");
+        return ap_http_send_error(req, "500 Internal Server Error", "oom");
     }
 
-    return send_json(req, snap);
+    return ap_http_send_json(req, snap);
 }
 
-static esp_err_t send_file_or_default(httpd_req_t *req, const char *path,
+esp_err_t ap_http_send_file(httpd_req_t *req, const char *path,
                                       const char *dflt);
 
 static esp_err_t config_get_handler(httpd_req_t *req)
 {
-    return send_file_or_default(req, autopid_config_path(),
+    return ap_http_send_file(req, autopid_config_path(),
                                 "{\"groups\":[],\"pids\":[],"
                                 "\"filters\":[]}");
 }
@@ -144,7 +149,7 @@ static esp_err_t config_put_handler(httpd_req_t *req)
 
     if (len == 0 || len > AP_HTTP_BODY_MAX)
     {
-        return send_error(req, "400 Bad Request", "missing/oversized body");
+        return ap_http_send_error(req, "400 Bad Request", "missing/oversized body");
     }
 
     char *body = heap_caps_malloc(len + 1,
@@ -152,7 +157,7 @@ static esp_err_t config_put_handler(httpd_req_t *req)
 
     if (body == NULL)
     {
-        return send_error(req, "500 Internal Server Error", "oom");
+        return ap_http_send_error(req, "500 Internal Server Error", "oom");
     }
 
     size_t got = 0;
@@ -164,7 +169,7 @@ static esp_err_t config_put_handler(httpd_req_t *req)
         if (r <= 0)
         {
             free(body);
-            return send_error(req, "400 Bad Request", "body read failed");
+            return ap_http_send_error(req, "400 Bad Request", "body read failed");
         }
 
         got += (size_t)r;
@@ -179,7 +184,7 @@ static esp_err_t config_put_handler(httpd_req_t *req)
     if (ap_config_parse(body, &s_probe, perr, sizeof(perr)) != ESP_OK)
     {
         free(body);
-        return send_error(req, "400 Bad Request", perr);
+        return ap_http_send_error(req, "400 Bad Request", perr);
     }
 
     esp_err_t err = autopid_config_save(body, len);
@@ -188,7 +193,7 @@ static esp_err_t config_put_handler(httpd_req_t *req)
 
     if (err != ESP_OK)
     {
-        return send_error(req, "500 Internal Server Error", "save failed");
+        return ap_http_send_error(req, "500 Internal Server Error", "save failed");
     }
 
     /* the config file applies LIVE (httpd task = internal stack: the
@@ -197,7 +202,7 @@ static esp_err_t config_put_handler(httpd_req_t *req)
 
     if (err != ESP_OK)
     {
-        return send_error(req, "500 Internal Server Error",
+        return ap_http_send_error(req, "500 Internal Server Error",
                           "reload failed");
     }
 
@@ -209,10 +214,10 @@ static esp_err_t config_put_handler(httpd_req_t *req)
     cJSON_AddBoolToObject(o, "ok", true);
     cJSON_AddNumberToObject(o, "pids", s_probe.n_pids);
     cJSON_AddNumberToObject(o, "params", s_probe.n_params);
-    return send_json(req, o);
+    return ap_http_send_json(req, o);
 }
 
-static esp_err_t send_file_or_default(httpd_req_t *req, const char *path,
+esp_err_t ap_http_send_file(httpd_req_t *req, const char *path,
                                       const char *dflt) /* fwd-declared */
 {
     size_t size = 0;
@@ -228,7 +233,7 @@ static esp_err_t send_file_or_default(httpd_req_t *req, const char *path,
 
     if (buf == NULL)
     {
-        return send_error(req, "500 Internal Server Error", "oom");
+        return ap_http_send_error(req, "500 Internal Server Error", "oom");
     }
 
     size_t got = 0;
@@ -236,7 +241,7 @@ static esp_err_t send_file_or_default(httpd_req_t *req, const char *path,
     if (filesystem_read(path, buf, size, &got) != ESP_OK)
     {
         free(buf);
-        return send_error(req, "500 Internal Server Error", "read failed");
+        return ap_http_send_error(req, "500 Internal Server Error", "read failed");
     }
 
     buf[got] = '\0';
@@ -254,12 +259,12 @@ static esp_err_t std_scan_post_handler(httpd_req_t *req)
 
     if (err == ESP_ERR_INVALID_STATE)
     {
-        return send_error(req, "409 Conflict", "scan already running");
+        return ap_http_send_error(req, "409 Conflict", "scan already running");
     }
 
     if (err != ESP_OK)
     {
-        return send_error(req, "500 Internal Server Error",
+        return ap_http_send_error(req, "500 Internal Server Error",
                           "scan start failed");
     }
 
@@ -268,7 +273,7 @@ static esp_err_t std_scan_post_handler(httpd_req_t *req)
     cJSON *o = cJSON_CreateObject();
 
     cJSON_AddBoolToObject(o, "started", true);
-    return send_json(req, o);
+    return ap_http_send_json(req, o);
 }
 
 static esp_err_t std_scan_get_handler(httpd_req_t *req)
@@ -277,15 +282,15 @@ static esp_err_t std_scan_get_handler(httpd_req_t *req)
 
     if (o == NULL)
     {
-        return send_error(req, "500 Internal Server Error", "oom");
+        return ap_http_send_error(req, "500 Internal Server Error", "oom");
     }
 
-    return send_json(req, o);
+    return ap_http_send_json(req, o);
 }
 
 static esp_err_t std_scan_result_handler(httpd_req_t *req)
 {
-    return send_file_or_default(req, autopid_std_scan_path(),
+    return ap_http_send_file(req, autopid_std_scan_path(),
                                 "{\"supported\":[],\"found\":0}");
 }
 
@@ -295,10 +300,10 @@ static esp_err_t std_table_handler(httpd_req_t *req)
 
     if (arr == NULL)
     {
-        return send_error(req, "500 Internal Server Error", "oom");
+        return ap_http_send_error(req, "500 Internal Server Error", "oom");
     }
 
-    return send_json(req, arr);
+    return ap_http_send_json(req, arr);
 }
 
 /* test-a-PID (§11): one-shot through the REAL runner path — the ws
@@ -317,7 +322,7 @@ static esp_err_t test_post_handler(httpd_req_t *req)
 
     if (len <= 0)
     {
-        return send_error(req, "400 Bad Request", "missing body");
+        return ap_http_send_error(req, "400 Bad Request", "missing body");
     }
 
     s_body[len] = '\0';
@@ -340,7 +345,7 @@ static esp_err_t test_post_handler(httpd_req_t *req)
         (cJSON_IsString(rxh) && strlen(rxh->valuestring) >= AP_HDR_LEN))
     {
         cJSON_Delete(root);
-        return send_error(req, "400 Bad Request",
+        return ap_http_send_error(req, "400 Bad Request",
                           "cmd required (init/rxheader length caps)");
     }
 
@@ -351,7 +356,7 @@ static esp_err_t test_post_handler(httpd_req_t *req)
                                 sizeof(eerr)) != ESP_OK)
     {
         cJSON_Delete(root);
-        return send_error(req, "400 Bad Request", "bad expression");
+        return ap_http_send_error(req, "400 Bad Request", "bad expression");
     }
 
     /* "expressions": decode the ONE reply with every parameter of the
@@ -361,7 +366,7 @@ static esp_err_t test_post_handler(httpd_req_t *req)
         if (cJSON_GetArraySize(exprs) > AP_PARAMS_PER)
         {
             cJSON_Delete(root);
-            return send_error(req, "400 Bad Request",
+            return ap_http_send_error(req, "400 Bad Request",
                               "too many expressions");
         }
 
@@ -374,7 +379,7 @@ static esp_err_t test_post_handler(httpd_req_t *req)
                                         sizeof(eerr)) != ESP_OK)
             {
                 cJSON_Delete(root);
-                return send_error(req, "400 Bad Request",
+                return ap_http_send_error(req, "400 Bad Request",
                                   "bad expression in expressions[]");
             }
         }
@@ -397,7 +402,7 @@ static esp_err_t test_post_handler(httpd_req_t *req)
     if (!ap_core_job_acquire())  /* vs std scan / dtc jobs / other tests */
     {
         cJSON_Delete(root);
-        return send_error(req, "409 Conflict", "another chip job runs");
+        return ap_http_send_error(req, "409 Conflict", "another chip job runs");
     }
 
     ap_core_scan_pause(true);   /* park the poller around the one-shot */
@@ -498,544 +503,16 @@ static esp_err_t test_post_handler(httpd_req_t *req)
 
     ap_core_job_release();
     cJSON_Delete(root);
-    return send_json(req, o);
+    return ap_http_send_json(req, o);
 }
 
-/* ---- DTC (TASK_dtc.md §8; HTTP_API.md §6e4b) ---------------------------- */
-
-static esp_err_t dtc_get_handler(httpd_req_t *req)
-{
-    cJSON *o = cJSON_CreateObject();
-    cJSON *report = ap_dtc_report_json();
-
-    if (o == NULL || report == NULL)
-    {
-        cJSON_Delete(o);
-        cJSON_Delete(report);
-        return send_error(req, "500 Internal Server Error", "oom");
-    }
-
-    /* database enrichment: {"desc":{"P0420":"Catalyst …"}} for every
-     * report code with a hit (arrays stay untouched — no breakage) */
-    {
-        ap_dtc_report_t r;
-
-        if (ap_dtc_report_get(&r) == ESP_OK && r.valid)
-        {
-            ap_dtc_db_desc_map(report, "desc", &r);
-        }
-    }
-
-    cJSON_AddBoolToObject(o, "enabled", ap_dtc_enabled());
-    cJSON_AddBoolToObject(o, "allow_clear", ap_dtc_clear_gate_open());
-    cJSON_AddBoolToObject(o, "scanning", ap_dtc_busy());
-    cJSON_AddItemToObject(o, "report", report);
-    return send_json(req, o);
-}
-
-/* ---- DTC databases (TASK_dtc_db.md §4) ---------------------------------- */
-
-/** ?key=value from the query string into @p out; false when absent. */
-static bool query_param(httpd_req_t *req, const char *key, char *out,
-                        size_t out_cap)
-{
-    char qs[160];
-
-    out[0] = '\0';
-
-    if (httpd_req_get_url_query_str(req, qs, sizeof(qs)) != ESP_OK)
-    {
-        return false;
-    }
-
-    return httpd_query_key_value(qs, key, out, out_cap) == ESP_OK;
-}
-
-static esp_err_t dtc_db_get_handler(httpd_req_t *req)
-{
-    cJSON *o = ap_dtc_db_list_json();
-
-    if (o == NULL)
-    {
-        return send_error(req, "500 Internal Server Error", "oom");
-    }
-
-    return send_json(req, o);
-}
-
-static esp_err_t dtc_db_post_handler(httpd_req_t *req)
-{
-    char name[AP_DTC_DB_NAME_LEN];
-
-    if (!query_param(req, "name", name, sizeof(name)))
-    {
-        return send_error(req, "400 Bad Request", "?name=<db> required");
-    }
-
-    size_t len = req->content_len;
-
-    if (len == 0 || len > AP_DTC_DB_FILE_MAX)
-    {
-        return send_error(req, "400 Bad Request",
-                          "body 1..1048576 bytes (raw database file)");
-    }
-
-    char *raw = heap_caps_malloc(len, MALLOC_CAP_SPIRAM);
-
-    if (raw == NULL)
-    {
-        return send_error(req, "500 Internal Server Error", "oom");
-    }
-
-    size_t got = 0;
-
-    while (got < len)
-    {
-        int r = httpd_req_recv(req, raw + got, len - got);
-
-        if (r <= 0)
-        {
-            heap_caps_free(raw);
-            return send_error(req, "400 Bad Request", "body read failed");
-        }
-
-        got += (size_t)r;
-    }
-
-    int entries = 0;
-    char fmt[12] = "";
-    char err_text[96] = "";
-    esp_err_t err = ap_dtc_db_store(name, raw, len, &entries, fmt,
-                                    err_text, sizeof(err_text));
-
-    heap_caps_free(raw);
-
-    if (err == ESP_ERR_NO_MEM && err_text[0] == 'a')  /* slots full */
-    {
-        return send_error(req, "409 Conflict", err_text);
-    }
-
-    if (err != ESP_OK)
-    {
-        return send_error(req, "400 Bad Request",
-                          err_text[0] ? err_text : "import failed");
-    }
-
-    cJSON *o = cJSON_CreateObject();
-
-    cJSON_AddBoolToObject(o, "ok", true);
-    cJSON_AddStringToObject(o, "name", name);
-    cJSON_AddNumberToObject(o, "entries", entries);
-    cJSON_AddStringToObject(o, "format", fmt);
-    ESP_LOGI(TAG, "dtc db '%s' uploaded: %d entries (%s)", name, entries,
-             fmt);
-    return send_json(req, o);
-}
-
-static esp_err_t dtc_db_delete_handler(httpd_req_t *req)
-{
-    char name[AP_DTC_DB_NAME_LEN];
-
-    if (!query_param(req, "name", name, sizeof(name)))
-    {
-        return send_error(req, "400 Bad Request", "?name=<db> required");
-    }
-
-    if (ap_dtc_db_delete(name) != ESP_OK)
-    {
-        return send_error(req, "404 Not Found", "no such database");
-    }
-
-    cJSON *o = cJSON_CreateObject();
-
-    cJSON_AddBoolToObject(o, "ok", true);
-    return send_json(req, o);
-}
-
-static esp_err_t dtc_db_search_handler(httpd_req_t *req)
-{
-    char q[64] = "", db[AP_DTC_DB_NAME_LEN] = "", num[12];
-    int offset = 0, limit = 50;
-
-    (void)query_param(req, "q", q, sizeof(q));
-    (void)query_param(req, "db", db, sizeof(db));
-
-    if (query_param(req, "offset", num, sizeof(num)))
-    {
-        offset = atoi(num);
-    }
-
-    if (query_param(req, "limit", num, sizeof(num)))
-    {
-        limit = atoi(num);
-    }
-
-    if (offset < 0 || limit < 1 || limit > 100)
-    {
-        return send_error(req, "400 Bad Request",
-                          "offset>=0, 1<=limit<=100");
-    }
-
-    cJSON *o = ap_dtc_db_search_json(q, db, offset, limit);
-
-    if (o == NULL)
-    {
-        return send_error(req, "500 Internal Server Error", "oom");
-    }
-
-    return send_json(req, o);
-}
-
-static esp_err_t dtc_lookup_handler(httpd_req_t *req)
-{
-    char codes[192];
-
-    if (!query_param(req, "codes", codes, sizeof(codes)))
-    {
-        return send_error(req, "400 Bad Request",
-                          "?codes=P0420,P0171 required");
-    }
-
-    cJSON *o = cJSON_CreateObject();
-    char *p = codes;
-
-    while (*p != '\0' && o != NULL)
-    {
-        char *sep = strchr(p, ',');
-
-        if (sep != NULL)
-        {
-            *sep = '\0';
-        }
-
-        if (*p != '\0')
-        {
-            char desc[AP_DTC_DESC_MAX + 1];
-
-            if (autopid_dtc_desc(p, desc, sizeof(desc)) == ESP_OK)
-            {
-                cJSON_AddStringToObject(o, p, desc);
-            }
-            else
-            {
-                cJSON_AddNullToObject(o, p);
-            }
-        }
-
-        p = (sep != NULL) ? sep + 1 : p + strlen(p);
-    }
-
-    return send_json(req, o);
-}
-
-static esp_err_t dtc_scan_post_handler(httpd_req_t *req)
-{
-    esp_err_t err = ap_dtc_scan_start();
-
-    if (err == ESP_ERR_NOT_ALLOWED)
-    {
-        return send_error(req, "403 Forbidden", "dtc_enabled is off");
-    }
-
-    if (err == ESP_ERR_INVALID_STATE)
-    {
-        return send_error(req, "409 Conflict", "another chip job runs");
-    }
-
-    if (err != ESP_OK)
-    {
-        return send_error(req, "500 Internal Server Error",
-                          "scan start failed");
-    }
-
-    httpd_resp_set_status(req, "202 Accepted");
-
-    cJSON *o = cJSON_CreateObject();
-
-    cJSON_AddBoolToObject(o, "started", true);
-    return send_json(req, o);
-}
-
-static esp_err_t dtc_clear_post_handler(httpd_req_t *req)
-{
-    char body[512];
-    int len = httpd_req_recv(req, body, sizeof(body) - 1);
-
-    if (len <= 0)
-    {
-        return send_error(req, "400 Bad Request", "missing body");
-    }
-
-    body[len] = '\0';
-
-    cJSON *root = cJSON_Parse(body);
-    const cJSON *confirm = cJSON_GetObjectItemCaseSensitive(root,
-                                                            "confirm");
-    const cJSON *codes = cJSON_GetObjectItemCaseSensitive(root, "codes");
-    const cJSON *mode = cJSON_GetObjectItemCaseSensitive(root, "mode");
-
-    if (!cJSON_IsTrue(confirm))
-    {
-        cJSON_Delete(root);
-        return send_error(req, "400 Bad Request",
-                          "confirm:true required — mode 04 clears ALL "
-                          "codes + readiness monitors");
-    }
-
-    bool cleared = false;
-    uint8_t before = 0, after = 0;
-    char err_text[48] = "";
-    esp_err_t err = ap_dtc_clear(
-        cJSON_IsString(codes) ? codes->valuestring : NULL,
-        cJSON_IsString(mode) ? mode->valuestring : NULL, &cleared,
-        &before, &after, err_text, sizeof(err_text));
-
-    cJSON_Delete(root);
-
-    if (err == ESP_ERR_NOT_ALLOWED)
-    {
-        return send_error(req, "403 Forbidden", err_text);
-    }
-
-    if (err == ESP_ERR_INVALID_ARG)
-    {
-        return send_error(req, "400 Bad Request", err_text);
-    }
-
-    if (err == ESP_ERR_INVALID_STATE)
-    {
-        return send_error(req, "409 Conflict", err_text);
-    }
-
-    cJSON *o = cJSON_CreateObject();
-
-    cJSON_AddBoolToObject(o, "ok", err == ESP_OK);
-    cJSON_AddBoolToObject(o, "cleared", cleared);
-    cJSON_AddNumberToObject(o, "before", before);
-    cJSON_AddNumberToObject(o, "after", after);
-
-    if (err != ESP_OK && err_text[0] != '\0')
-    {
-        cJSON_AddStringToObject(o, "error", err_text);
-    }
-
-    return send_json(req, o);
-}
-
-/* ---- DBC files (TASK_dbc.md §5; HTTP_API.md §6e4c) ----------------------- */
-
-static esp_err_t dbc_get_handler(httpd_req_t *req)
-{
-    cJSON *o = ap_dbc_list_json();
-
-    return (o != NULL) ? send_json(req, o)
-                       : send_error(req, "500 Internal Server Error",
-                                    "oom");
-}
-
-static esp_err_t dbc_post_handler(httpd_req_t *req)
-{
-    char name[AP_DTC_DB_NAME_LEN];
-
-    if (!query_param(req, "name", name, sizeof(name)))
-    {
-        return send_error(req, "400 Bad Request", "?name=<db> required");
-    }
-
-    size_t len = req->content_len;
-
-    if (len == 0 || len > AP_DBC_FILE_MAX)
-    {
-        return send_error(req, "400 Bad Request",
-                          "body 1..1048576 bytes (raw .dbc)");
-    }
-
-    char *raw = heap_caps_malloc(len + 1, MALLOC_CAP_SPIRAM);
-
-    if (raw == NULL)
-    {
-        return send_error(req, "500 Internal Server Error", "oom");
-    }
-
-    size_t got = 0;
-
-    while (got < len)
-    {
-        int r = httpd_req_recv(req, raw + got, len - got);
-
-        if (r <= 0)
-        {
-            heap_caps_free(raw);
-            return send_error(req, "400 Bad Request", "body read failed");
-        }
-
-        got += (size_t)r;
-    }
-
-    raw[len] = '\0';
-
-    int n_msgs = 0, n_sigs = 0;
-    char err_text[96] = "";
-    esp_err_t err = ap_dbc_store(name, raw, len, &n_msgs, &n_sigs,
-                                 err_text, sizeof(err_text));
-
-    heap_caps_free(raw);
-
-    if (err == ESP_ERR_NO_MEM && err_text[0] == 'a')  /* slots full */
-    {
-        return send_error(req, "409 Conflict", err_text);
-    }
-
-    if (err != ESP_OK)
-    {
-        return send_error(req, "400 Bad Request",
-                          err_text[0] ? err_text : "import failed");
-    }
-
-    cJSON *o = cJSON_CreateObject();
-
-    cJSON_AddBoolToObject(o, "ok", true);
-    cJSON_AddStringToObject(o, "name", name);
-    cJSON_AddNumberToObject(o, "messages", n_msgs);
-    cJSON_AddNumberToObject(o, "signals", n_sigs);
-    ESP_LOGI(TAG, "dbc '%s' uploaded: %d msgs / %d signals", name,
-             n_msgs, n_sigs);
-    return send_json(req, o);
-}
-
-static esp_err_t dbc_delete_handler(httpd_req_t *req)
-{
-    char name[AP_DTC_DB_NAME_LEN];
-
-    if (!query_param(req, "name", name, sizeof(name)))
-    {
-        return send_error(req, "400 Bad Request", "?name=<db> required");
-    }
-
-    if (ap_dbc_delete(name) != ESP_OK)
-    {
-        return send_error(req, "404 Not Found", "no such DBC");
-    }
-
-    cJSON *o = cJSON_CreateObject();
-
-    cJSON_AddBoolToObject(o, "ok", true);
-    return send_json(req, o);
-}
-
-static esp_err_t dbc_signals_handler(httpd_req_t *req)
-{
-    char q[64] = "", db[AP_DTC_DB_NAME_LEN] = "", num[12];
-    int offset = 0, limit = 50;
-
-    (void)query_param(req, "q", q, sizeof(q));
-    (void)query_param(req, "db", db, sizeof(db));
-
-    if (query_param(req, "offset", num, sizeof(num)))
-    {
-        offset = atoi(num);
-    }
-
-    if (query_param(req, "limit", num, sizeof(num)))
-    {
-        limit = atoi(num);
-    }
-
-    if (offset < 0 || limit < 1 || limit > 100)
-    {
-        return send_error(req, "400 Bad Request",
-                          "offset>=0, 1<=limit<=100");
-    }
-
-    cJSON *o = ap_dbc_signals_json(db, q, offset, limit);
-
-    return (o != NULL) ? send_json(req, o)
-                       : send_error(req, "500 Internal Server Error",
-                                    "oom");
-}
-
-static esp_err_t dbc_add_handler(httpd_req_t *req)
-{
-    /* heap, not stack: 2 KB of locals on the httpd task is how the
-     * 2026-07-08 heap-corruption hunt started */
-    char *body = heap_caps_malloc(2048, MALLOC_CAP_SPIRAM);
-
-    if (body == NULL)
-    {
-        return send_error(req, "500 Internal Server Error", "oom");
-    }
-
-    int len = httpd_req_recv(req, body, 2047);
-
-    if (len <= 0)
-    {
-        heap_caps_free(body);
-        return send_error(req, "400 Bad Request", "missing body");
-    }
-
-    body[len] = '\0';
-
-    cJSON *root = cJSON_Parse(body);
-
-    heap_caps_free(body);
-    const cJSON *db = cJSON_GetObjectItemCaseSensitive(root, "db");
-    const cJSON *signals = cJSON_GetObjectItemCaseSensitive(root,
-                                                            "signals");
-    const cJSON *group = cJSON_GetObjectItemCaseSensitive(root, "group");
-    const cJSON *mon = cJSON_GetObjectItemCaseSensitive(root,
-                                                        "monitor_ms");
-    const cJSON *per = cJSON_GetObjectItemCaseSensitive(root,
-                                                        "period_ms");
-
-    if (!cJSON_IsString(db) || !cJSON_IsArray(signals) ||
-        cJSON_GetArraySize(signals) == 0)
-    {
-        cJSON_Delete(root);
-        return send_error(req, "400 Bad Request",
-                          "need \"db\" + non-empty \"signals\" array");
-    }
-
-    cJSON *result = NULL;
-    char err_text[128] = "";
-    esp_err_t err = ap_dbc_add(
-        db->valuestring, signals,
-        cJSON_IsString(group) ? group->valuestring : NULL,
-        cJSON_IsNumber(mon) ? mon->valueint : 0,
-        cJSON_IsNumber(per) ? per->valueint : 0, &result, err_text,
-        sizeof(err_text));
-
-    cJSON_Delete(root);
-
-    if (err == ESP_ERR_NOT_FOUND)
-    {
-        return send_error(req, "404 Not Found", err_text);
-    }
-
-    if (err == ESP_ERR_INVALID_ARG)
-    {
-        return send_error(req, "400 Bad Request", err_text);
-    }
-
-    if (err != ESP_OK)
-    {
-        return send_error(req, "500 Internal Server Error",
-                          err_text[0] ? err_text : "add failed");
-    }
-
-    return send_json(req, result);
-}
-
-/* POST /api/autopid/group {"name":"...","enabled":bool[,"period_ms":N]}
- * Runtime (non-persisted) group toggle — the HTTP twin of the
- * `autopid.group` event action (API-first §1b: anything a rule can do,
- * a client can do). Used by the bench to claim OBD exclusivity. */
 static esp_err_t group_post_handler(httpd_req_t *req)
 {
     size_t len = req->content_len;
 
     if (len == 0 || len > 256)
     {
-        return send_error(req, "400 Bad Request", "missing/oversized body");
+        return ap_http_send_error(req, "400 Bad Request", "missing/oversized body");
     }
 
     char body[257];
@@ -1047,7 +524,7 @@ static esp_err_t group_post_handler(httpd_req_t *req)
 
         if (r <= 0)
         {
-            return send_error(req, "400 Bad Request", "body read failed");
+            return ap_http_send_error(req, "400 Bad Request", "body read failed");
         }
 
         got += (size_t)r;
@@ -1059,7 +536,7 @@ static esp_err_t group_post_handler(httpd_req_t *req)
 
     if (root == NULL)
     {
-        return send_error(req, "400 Bad Request", "invalid json");
+        return ap_http_send_error(req, "400 Bad Request", "invalid json");
     }
 
     const cJSON *name = cJSON_GetObjectItem(root, "name");
@@ -1069,7 +546,7 @@ static esp_err_t group_post_handler(httpd_req_t *req)
     if (!cJSON_IsString(name) || !cJSON_IsBool(enabled))
     {
         cJSON_Delete(root);
-        return send_error(req, "400 Bad Request",
+        return ap_http_send_error(req, "400 Bad Request",
                           "need string 'name' + bool 'enabled'");
     }
 
@@ -1086,12 +563,12 @@ static esp_err_t group_post_handler(httpd_req_t *req)
 
     if (err == ESP_ERR_NOT_FOUND)
     {
-        return send_error(req, "404 Not Found", "no such group");
+        return ap_http_send_error(req, "404 Not Found", "no such group");
     }
 
     cJSON *o = cJSON_CreateObject();
     cJSON_AddBoolToObject(o, "ok", err == ESP_OK);
-    return send_json(req, o);
+    return ap_http_send_json(req, o);
 }
 
 esp_err_t autopid_register_http(void)
@@ -1112,6 +589,16 @@ esp_err_t autopid_register_http(void)
           .handler = std_scan_get_handler },
         { .uri = "/api/autopid/std_scan/result", .method = HTTP_GET,
           .handler = std_scan_result_handler },
+        /* the vehicle store (autopid_http_vehicles.c): one wildcard per
+           method, `detect` / `<key>` / `<key>/activate` dispatched inside */
+        { .uri = "/api/autopid/vehicles", .method = HTTP_GET,
+          .handler = vehicles_get_handler },
+        { .uri = "/api/autopid/vehicles/*", .method = HTTP_POST,
+          .handler = vehicles_post_handler },
+        { .uri = "/api/autopid/vehicles/*", .method = HTTP_PUT,
+          .handler = vehicles_put_handler },
+        { .uri = "/api/autopid/vehicles/*", .method = HTTP_DELETE,
+          .handler = vehicles_delete_handler },
         { .uri = "/api/autopid/std_table", .method = HTTP_GET,
           .handler = std_table_handler },
         { .uri = "/api/autopid/test", .method = HTTP_POST,

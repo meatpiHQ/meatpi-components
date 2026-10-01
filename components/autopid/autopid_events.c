@@ -163,6 +163,35 @@ void ap_events_scan_done(uint16_t found)
     (void)event_manager_publish(&ev);
 }
 
+void ap_events_vehicle_changed(const char *vin, const char *name,
+                               bool known)
+{
+    /* the current car changed: first contact or a detection switched to
+       a stored car (known) or created a new entry (TASK_quick_setup.md
+       second pass); vin "" = none readable */
+    em_event_t ev = { 0 };
+
+    snprintf(ev.source, sizeof(ev.source), "autopid");
+    snprintf(ev.name, sizeof(ev.name), "vehicle_changed");
+    ev.kv[0] = em_kv_str("vin", (vin != NULL) ? vin : "");
+    ev.kv[1] = em_kv_str("name", (name != NULL) ? name : "");
+    ev.kv[2] = em_kv_bool("known", known);
+    ev.n = 3;
+    (void)event_manager_publish(&ev);
+}
+
+void ap_events_vehicle_evicted(const char *vin, const char *name)
+{
+    em_event_t ev = { 0 };
+
+    snprintf(ev.source, sizeof(ev.source), "autopid");
+    snprintf(ev.name, sizeof(ev.name), "vehicle_evicted");
+    ev.kv[0] = em_kv_str("vin", (vin != NULL) ? vin : "");
+    ev.kv[1] = em_kv_str("name", (name != NULL) ? name : "");
+    ev.n = 2;
+    (void)event_manager_publish(&ev);
+}
+
 /* ---- the autopid.group action (§5b: rules switch polling contexts) ------------ */
 
 static esp_err_t act_group(const cJSON *with, const em_event_t *trigger)
@@ -421,6 +450,32 @@ void ap_events_register(void)
         .description = "the standard-PID support scan finished",
         .keys = SCAN_KEYS, .n_keys = 1,
     };
+    static const em_key_decl_t VEHICLE_KEYS[] =
+    {
+        { "vin", EM_VAL_STR },
+        { "name", EM_VAL_STR },
+        { "known", EM_VAL_BOOL },
+    };
+    static const em_source_decl_t VEHICLE =
+    {
+        .source = "autopid", .name = "vehicle_changed",
+        .description = "the current car changed (known = a stored car came "
+                       "back, false = a new car was added; vin empty = "
+                       "none readable)",
+        .keys = VEHICLE_KEYS, .n_keys = 3,
+    };
+    static const em_key_decl_t EVICTED_KEYS[] =
+    {
+        { "vin", EM_VAL_STR },
+        { "name", EM_VAL_STR },
+    };
+    static const em_source_decl_t EVICTED =
+    {
+        .source = "autopid", .name = "vehicle_evicted",
+        .description = "the vehicle store was full: the least recently seen "
+                       "car was forgotten",
+        .keys = EVICTED_KEYS, .n_keys = 2,
+    };
     static const em_action_t GROUP =
     {
         .name = "autopid.group",
@@ -498,6 +553,8 @@ void ap_events_register(void)
     (void)event_manager_declare_source(&PARAM);
     (void)event_manager_declare_source(&FAILED);
     (void)event_manager_declare_source(&SCAN);
+    (void)event_manager_declare_source(&VEHICLE);
+    (void)event_manager_declare_source(&EVICTED);
     (void)event_manager_declare_source(&DTC);
     (void)event_manager_declare_source(&DTC_SCAN);
     (void)event_manager_declare_source(&DTC_CLEAR);

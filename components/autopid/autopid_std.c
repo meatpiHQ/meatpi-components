@@ -24,15 +24,11 @@
  * @file autopid_std.c
  * @brief Standard (SAE mode-01) PIDs: the vendored legacy table as data,
  *        the PURE bit_start->expression mapping + scan-response parser
- *        (host-tested), and the target-only async support scan
- *        ("scan once, store" — TASK_autopid.md §7).
- *
- * Scan flow: POST /api/autopid/std_scan spawns a short-lived task
- * (INTERNAL stack — it writes /data at the end, §2) that pauses the
- * poller, sets the configured protocol, walks the 0100/0120/../01A0
- * support bitmaps (multi-ECU responses OR-merged), maps bits to table
- * entries and stores /data/autopid/std_scan.json atomically. No
- * automatic rescan ever — the UI owns the button.
+ *        (host-tested), the mode-02 freeze-frame decode and the table's
+ *        JSON view. The async support scan itself lives in
+ *        autopid_std_scan.c (split 2026-10-01, vehicle identity phases).
+ *        This is the ONE file that includes obd2_standard_pids.h (the
+ *        header has no include guard and carries the 84 KB table).
  */
 #include "autopid_private.h"
 
@@ -43,16 +39,7 @@
 #include <string.h>
 
 #ifndef AUTOPID_HOST_TEST
-#include <time.h>
-
-#include "esp_attr.h"
-#include "esp_log.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-
 #include "cJSON.h"
-#include "filesystem.h"
-#include "obd_chip.h"
 #endif
 
 #include "obd2_standard_pids.h"
@@ -321,38 +308,12 @@ int ap_frz_decode(const uint8_t *payload, size_t len, ap_frz_val_t *out,
     return n;
 }
 
-/* ---- target half: table JSON + the async scan job ------------------------------ */
+/* ---- target half: table JSON (the scan job: autopid_std_scan.c) ---------------- */
 
 #ifndef AUTOPID_HOST_TEST
 
-static const char *TAG = "autopid";
-
-#define AP_STD_SCAN_PATH "/data/autopid/std_scan.json"
-#define AP_SCAN_REQ_TIMEOUT pdMS_TO_TICKS(10000) /* SEARCHING can be slow */
-
-typedef enum
-{
-    SCAN_IDLE = 0,
-    SCAN_RUNNING,
-    SCAN_DONE,
-    SCAN_FAILED,
-} scan_state_t;
-
-static volatile scan_state_t s_scan_state;
-static uint16_t s_scan_found;
-static char     s_scan_err[64];
-static int64_t  s_scan_ts;      /* epoch seconds of last completed scan */
-
-static StaticTask_t s_scan_tcb;                    /* internal object    */
-static StackType_t  s_scan_stack[6144];            /* INTERNAL: fs write */
-
-const char *autopid_std_scan_path(void)
-{
-    return AP_STD_SCAN_PATH;
-}
-
 /** Append one table entry (with generated expressions) to @p arr. */
-static bool std_entry_to_json(cJSON *arr, uint8_t pid)
+bool ap_std_entry_to_json(cJSON *arr, uint8_t pid)
 {
     const std_pid_t *info = get_pid(pid);
 
@@ -427,227 +388,10 @@ cJSON *ap_std_table_json(void)
 
     for (int pid = 1; pid < 256; pid++)
     {
-        (void)std_entry_to_json(arr, (uint8_t)pid);
+        (void)ap_std_entry_to_json(arr, (uint8_t)pid);
     }
 
     return arr;
-}
-
-/** The protocol prelude, legacy map: ATTP + header/mask for 6..9. */
-static const char *scan_prelude(void)
-{
-    const char *proto = ap_core_std_protocol();
-
-    switch (proto[0] != '\0' ? proto[0] : '0')
-    {
-        case '6': return "ATS1;ATH0;ATST96;ATTP6;ATSH7DF;ATCRA";
-        case '7': return "ATS1;ATH0;ATST96;ATTP7;ATSH18DB33F1;ATCRA";
-        case '8': return "ATS1;ATH0;ATST96;ATTP8;ATSH7DF;ATCRA";
-        case '9': return "ATS1;ATH0;ATST96;ATTP9;ATSH18DB33F1;ATCRA";
-        default:  return "ATS1;ATH0;ATST96;ATTP0";
-    }
-}
-
-const char *ap_std_prelude(void)
-{
-    /* also the poller's chip baseline after an external ELM app had the
-       chip (spaces/headers/protocol/header/mask are whatever the app
-       left - bench 2026-09-08: Car Scanner's ATS0 made every resumed
-       poll fail to parse until the next reboot) */
-    return scan_prelude();
-}
-
-static void scan_task(void *arg)
-{
-    static char resp[AP_RESP_MAX] EXT_RAM_BSS_ATTR; /* scan task only */
-
-    ap_core_scan_pause(true);
-
-    /* prelude: one command at a time (';'-separated) */
-    {
-        const char *p = scan_prelude();
-
-        while (*p != '\0')
-        {
-            const char *sep = strchr(p, ';');
-            size_t len = (sep != NULL) ? (size_t)(sep - p) : strlen(p);
-            char one[24];
-
-            if (len > 0 && len < sizeof(one))
-            {
-                memcpy(one, p, len);
-                one[len] = '\0';
-                (void)obd_chip_request(one, resp, sizeof(resp),
-                                       pdMS_TO_TICKS(2000));
-            }
-
-            p += len + ((sep != NULL) ? 1 : 0);
-        }
-    }
-
-    cJSON *root = cJSON_CreateObject();
-    cJSON *supported = NULL;
-    uint16_t found = 0;
-    bool any_response = false;
-
-    if (root != NULL)
-    {
-        cJSON_AddNumberToObject(root, "version", 1);
-        cJSON_AddStringToObject(root, "protocol", ap_core_std_protocol());
-        supported = cJSON_AddArrayToObject(root, "supported");
-    }
-
-    for (int range = 0; range < 6 && supported != NULL; range++)
-    {
-        uint8_t base = (uint8_t)(range * 0x20);
-        char cmd[8];
-
-        snprintf(cmd, sizeof(cmd), "01%02X", base);
-
-        if (obd_chip_request(cmd, resp, sizeof(resp),
-                             AP_SCAN_REQ_TIMEOUT) != ESP_OK)
-        {
-            break;
-        }
-
-        uint32_t bitmap = 0;
-
-        if (!ap_std_scan_parse(resp, base, &bitmap))
-        {
-            break;      /* NO DATA / noise — range unsupported */
-        }
-
-        any_response = true;
-
-        for (int bit = 0; bit < 31; bit++)  /* bit 31 = next-range flag */
-        {
-            if (bitmap & (1u << (31 - bit)))
-            {
-                uint8_t pid = (uint8_t)(base + bit + 1);
-
-                if (std_entry_to_json(supported, pid))
-                {
-                    found++;
-                }
-            }
-        }
-
-        if ((bitmap & 1u) == 0)
-        {
-            break;      /* next range not supported */
-        }
-    }
-
-    esp_err_t err = ESP_FAIL;
-
-    if (!any_response || root == NULL)
-    {
-        snprintf(s_scan_err, sizeof(s_scan_err),
-                 (root == NULL) ? "out of memory"
-                                : "no ECU response (ignition on?)");
-    }
-    else
-    {
-        cJSON_AddNumberToObject(root, "found", found);
-        cJSON_AddNumberToObject(root, "ts", (double)time(NULL));
-
-        char *body = cJSON_PrintUnformatted(root);
-
-        if (body != NULL)
-        {
-            err = filesystem_write(AP_STD_SCAN_PATH, body, strlen(body));
-            free(body);
-        }
-
-        if (err != ESP_OK)
-        {
-            snprintf(s_scan_err, sizeof(s_scan_err), "store failed");
-        }
-    }
-
-    cJSON_Delete(root);
-    ap_core_scan_pause(false);
-
-    s_scan_found = found;
-    s_scan_ts = (int64_t)time(NULL);
-    s_scan_state = (err == ESP_OK) ? SCAN_DONE : SCAN_FAILED;
-    ap_core_job_release();
-    ap_events_scan_done(found);
-    ESP_LOGI(TAG, "std scan %s: %u PIDs",
-             (err == ESP_OK) ? "done" : "FAILED", found);
-
-    /* ephemeral tasks escape System Monitor — surface the watermark
-       for the stack-audit bench (same net as the dtc job task) */
-    ESP_LOGI(TAG, "std scan stack_hw=%u B",
-             (unsigned)uxTaskGetStackHighWaterMark(NULL));
-    vTaskDelete(NULL);
-}
-
-esp_err_t autopid_std_scan_start(void)
-{
-    if (s_scan_state == SCAN_RUNNING)
-    {
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    /* one chip job at a time (test-a-PID / dtc scan / dtc clear) */
-    if (!ap_core_job_acquire())
-    {
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    s_scan_state = SCAN_RUNNING;
-    s_scan_found = 0;
-    s_scan_err[0] = '\0';
-
-    /* INTERNAL stack: the job ends in a /data write (§2) */
-    if (xTaskCreateStatic(scan_task, "apid_scan",
-                          sizeof(s_scan_stack) / sizeof(StackType_t),
-                          NULL, 5, s_scan_stack, &s_scan_tcb) == NULL)
-    {
-        s_scan_state = SCAN_FAILED;
-        snprintf(s_scan_err, sizeof(s_scan_err), "task create failed");
-        ap_core_job_release();
-        return ESP_ERR_NO_MEM;
-    }
-
-    return ESP_OK;
-}
-
-cJSON *ap_std_scan_status_json(void)
-{
-    static const char *const NAMES[] =
-    {
-        "idle", "running", "done", "failed",
-    };
-
-    cJSON *o = cJSON_CreateObject();
-
-    if (o == NULL)
-    {
-        return NULL;
-    }
-
-    cJSON_AddStringToObject(o, "status", NAMES[s_scan_state]);
-    cJSON_AddNumberToObject(o, "found", s_scan_found);
-
-    if (s_scan_err[0] != '\0')
-    {
-        cJSON_AddStringToObject(o, "error", s_scan_err);
-    }
-
-    if (s_scan_ts != 0)
-    {
-        cJSON_AddNumberToObject(o, "ts", (double)s_scan_ts);
-    }
-
-    size_t size = 0;
-
-    cJSON_AddBoolToObject(o, "stored",
-                          filesystem_size(AP_STD_SCAN_PATH, &size)
-                                  == ESP_OK &&
-                              size > 0);
-    return o;
 }
 
 #endif /* !AUTOPID_HOST_TEST */

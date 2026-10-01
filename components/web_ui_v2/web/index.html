@@ -105,6 +105,9 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--primary);outline-of
 /* ================= 3. SHELL ================= */
 #app{display:grid;height:100%;grid-template-columns:238px 1fr;
   grid-template-rows:58px 1fr;grid-template-areas:"mast mast" "menu content"}
+/* Quick Setup runs without the sidebar (focused layout, 2026-10-01) */
+#app.setup-focus{grid-template-columns:1fr;grid-template-areas:"mast" "content"}
+#app.setup-focus .app-nav{display:none}
 .app-header{grid-area:mast;display:flex;align-items:center;gap:16px;padding:0 18px;
   background:var(--surface);border-bottom:1px solid var(--border);z-index:30}
 .logo{display:flex;align-items:center;gap:11px;color:var(--logo-text)}
@@ -706,6 +709,7 @@ const IC={
   x:'<path d="M18 6 6 18M6 6l12 12"/>',
   save:'<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/>',
   stop:'<rect x="6" y="6" width="12" height="12" rx="1"/>',
+  sparkles:'<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/>',
 };
 function svg(n){return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${IC[n]||""}</svg>`;}
 function ic(n){const s=document.createElementNS("http://www.w3.org/2000/svg","svg");
@@ -752,6 +756,8 @@ function sleepWillBeEnabled(){
    the header while it is in place; the firmware refuses a WiFi save that
    keeps it, and store.apply() explains that before trying */
 function apDefaultPassword(){return !!(conn.wifi&&conn.wifi.ap_default_password);}
+/* Quick Setup's "Skip setup for now": per browser session, never persisted */
+function setupSkipped(){try{return sessionStorage.getItem("wican-setup-skip")==="1";}catch(_){return false;}}
 function paintApWarn(){const el=$("#apwarn");if(!el)return;const on=apDefaultPassword();
   if(on&&!el.childElementCount)el.append(ic("lock"),h("span",{},"Factory AP password: change it"));
   el.hidden=!on;}
@@ -802,6 +808,17 @@ const store={
   count(){return this.dirty.size;},
   summary(){return[...this.dirty].map(niceName).join(", ");},
   revert(){this.pending.clear();this.dirty.clear();renderSubmit();route();},
+  /* Quick Setup's save (2026-10-01): the same PUT loop + submit as apply(),
+     without the confirm modal (the wizard has its own review screen and
+     enforces the AP password rule on its own step). Throws on a refused PUT
+     so the caller can show the firmware's reason where the user is. */
+  async commit(reason){
+    for(const[c,v]of this.pending)await api("/api/settings/"+c,{method:"PUT",body:v});
+    const r=await api("/api/settings/submit",{method:"POST"});
+    this.pending.clear();this.dirty.clear();renderSubmit();
+    if(r&&r.reboot)expectReboot(reason||"Applying settings");else{toast("Saved","ok");refreshSleep();}
+    return r;
+  },
   async apply(){
     if(!this.count())return;
     const wf=this.pending.get("wifi_manager");
@@ -962,7 +979,7 @@ const LABELS={
   "can_manager.baud":"Bit rate (kbit/s)",silent:"Listen-only (silent) mode",
   /* mqtt_manager */
   "mqtt_manager.url":"Broker URL",username:"Username",broker_password:"Password",client_id:"Client ID",topic_prefix:"Topic prefix",
-  ca_file:"CA file",cert_set:"Certificate set",keepalive_s:"Keep-alive (s)",
+  ca_file:"CA file",cert_set:"Certificate set",keepalive_s:"Keep-alive (s)",connect_on:"Connect when",
   /* autopid */
   std_enabled:"Poll standard PIDs",custom_enabled:"Poll custom PIDs",specific_enabled:"Poll vehicle-specific PIDs",
   std_init:"Standard PID init commands",custom_init:"Custom PID init commands",specific_init:"Vehicle init commands",std_protocol:"OBD protocol",
@@ -1078,6 +1095,7 @@ const HELP={
   ap_ble_exclusive:"The access point and Bluetooth both advertise while idle: whichever a phone connects to wins, and the other comes back when it disconnects.",
   auth_enabled:"Ask for a password before the web UI and API can be used.",
   ntp_server:"Blank = pool.ntp.org.",
+  connect_on:"The broker connection follows this link: it starts when the link comes up and stops when it goes, so WiCAN never keeps retrying a broker it cannot reach. A broker on your home network wants the WiFi station.",
   sntp:"Set the clock from the internet whenever an uplink is available.",
   tx_power_dbm:"Lower values save power and shorten range.",
   conn_profile:"Connection timing tuned for the phone platform.",
@@ -1096,6 +1114,7 @@ const ENUMS={
   device_class:{ncm:"CDC-NCM (Linux / macOS / Windows 11)",rndis:"RNDIS (older Windows)",cdc:"CDC serial"},
   conn_profile:{ios:"iOS",android_fast:"Android (fast)"},pause_mode:{all:"Pause everything",requests_only:"Pause requests only"},
   "uds_manager.backend":{auto:"Automatic",obd_chip:"OBD chip",isotp:"ISO-TP"},
+  "mqtt_manager.connect_on":{wifi:"The WiFi station is connected (home network)",any:"Any network (WiFi, USB Ethernet, dongle)"},
   data_mode:{changed:"Changed values only",full:"All values"},autopid_log:{off:"Off",changed:"When a value changes",all:"Every poll"},
   "data_logger.format":{sqlite:"SQLite (.db)",csv:"CSV (.csv)",binary:"Binary (.wdl)",jsonl:"JSON lines (.jsonl)"},
   can_format:{binary:"Binary (.wdl), fastest",csv:"CSV (.csv)",sqlite:"SQLite (.db), slow",mf4:"MDF4 (.mf4)",blf:"Vector BLF (.blf)",candump:"candump (.log)",asc:"Vector ASC (.asc)",jsonl:"JSON lines (.jsonl)"},
@@ -1328,6 +1347,7 @@ function importWgConf(text,vals){
 /* ============================================================ NAV + ROUTER */
 const NAV=[
   {g:"DEVICE"},
+  {r:"setup",t:"Quick Setup",i:"sparkles"},
   {r:"status",t:"Status",i:"signal"},
   {r:"settings",t:"Settings",i:"settings",sub:[{id:"wifi",t:"WiFi"},{id:"bluetooth",t:"Bluetooth"},{id:"can",t:"CAN bus"},{id:"connections",t:"Connections"},{id:"mqtt",t:"MQTT"}]},
   {r:"automate",t:"Automate",i:"zap",sub:[{id:"settings",t:"Settings"},{id:"parameters",t:"Parameters"},{id:"destinations",t:"Data destinations"},{id:"homeassistant",t:"Home Assistant"}]},
@@ -1413,6 +1433,11 @@ async function route(){
   const parts=location.hash.replace(/^#\/?/,"").split("/");
   let section=parts[0]||"status";const sub=parts[1]||null;
   if(!PAGES[section])section="status";
+  /* first visit (Quick Setup, 2026-10-01): while the access point still has
+     the factory password, the default route opens the wizard; "Skip setup
+     for now" parks that for this browser session */
+  if(!parts[0]&&apDefaultPassword()&&!setupSkipped())section="setup";
+  $("#app").classList.toggle("setup-focus",section==="setup");
   if(curSection&&curSection!==section&&store.count()){
     const stay=await new Promise(res=>modal({title:"Unsaved changes",
       body:"You have "+store.count()+" unsaved change(s). Submit them, discard, or stay on this page?",
@@ -1430,6 +1455,117 @@ async function route(){
 window.addEventListener("hashchange",route);
 function page(view,crumb,title,desc,tools){const p=h("div",{class:"page"});view.replaceChildren(p);
   p.append(pageHead(crumb,title,desc,tools));return p;}
+
+/* ============================================================ VEHICLE PROFILES (shared by Automate > Parameters and Quick Setup, 2026-10-01) */
+const PROFILES_URL="https://raw.githubusercontent.com/meatpiHQ/wican-fw/main/vehicle_profiles.json";
+/* Turns a published profile into vehicle-specific PID rows. Published
+   profiles index the frame WITH its PCI byte; the v6 payload starts at the
+   service echo, so every B<n>/S<n> index shifts DOWN BY ONE (autopid README
+   importer rule 1). The published file carries a latin-1 degree sign that
+   decodes to U+FFFD: units are normalised (meatpi 2026-09-06). Profiles are
+   community data and the firmware keys its value cache by parameter name,
+   so a repeated name is refused whole ("duplicate parameter name"; the
+   HV_C_V_168 typo, 2026-09-16): repeats are renamed (_2, _3, ...) against
+   everything in keepPids and reported. Returns {pids, renamed}. */
+function profileToPids(car,keepPids){
+  const shiftExpr=x=>String(x||"").replace(/([BS])(\d+)/g,(m,l,n)=>l+Math.max(0,Number(n)-1));
+  const fixUnit=u=>typeof u==="string"?u.replace(/�/g,"°"):u;
+  const taken=new Set((keepPids||[]).flatMap(pd=>(pd.parameters||[]).map(pr=>pr.name)));
+  const renamed=[],pids=[];
+  const uniq=n=>{if(!n||!taken.has(n)){taken.add(n);return n;}
+    let k=2;while(taken.has(n+"_"+k))k++;taken.add(n+"_"+k);renamed.push(n+" to "+n+"_"+k);return n+"_"+k;};
+  for(const pp of((car&&car.pids)||[])){
+    const prm=(pp.parameters||[]).map(x=>({...x,name:uniq(String(x.name||"")),unit:fixUnit(x.unit),expression:shiftExpr(x.expression)}));
+    pids.push({name:(prm.length===1&&prm[0].name)||pp.pid,cmd:pp.pid,init:pp.pid_init||"",group:"default",period_ms:0,type:"specific",parameters:prm});
+  }
+  return{pids,renamed};
+}
+/* The make-then-model picker dialog over the published list (meatpi
+   2026-09-17, "Option A"): makes left, the chosen make's models right, one
+   search over both (typing kona lands on Hyundai > Kona), no PID or
+   parameter counts. Arrow keys move through the models, Left/Right through
+   the makes, Enter uses, Esc closes. opts.current() = the profile name on
+   the device (preselected when listed); opts.onPick(car) gets the chosen
+   entry. Returns {open, state}; state {cars, source} is shared so a dropped
+   profile file can fill the list before opening. */
+function vehicleProfilePicker(opts){
+  const state={cars:null,source:null};
+  const fetchList=async fresh=>{
+    const res=await fetch(fresh?PROFILES_URL+"?t="+Date.now():PROFILES_URL,fresh?{cache:"no-store"}:undefined);
+    if(!res.ok)throw new Error("HTTP "+res.status);
+    const j=await res.json();const cars=(j&&j.cars)||[];
+    if(!cars.length)throw new Error("no cars in profile file");
+    state.cars=cars;state.source="fetched "+new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});};
+  const splitName=full=>{const s=String(full||"").trim();const i=s.indexOf(":");
+    if(i>0)return{make:s.slice(0,i).trim(),model:s.slice(i+1).trim()||s};
+    const w=s.split(/\s+/);return{make:w[0]||"",model:w.slice(1).join(" ")||w[0]||""};};
+  const open=async()=>{
+    let sel=null,mk=null,q="",shownMk=[],shownM=[],okBtn=null;
+    const status=h("span",{class:"help",style:"font-size:12.5px"});
+    const colM=h("div",{class:"vp-col"}),colD=h("div",{class:"vp-col"});
+    const foot=h("span",{class:"help"});
+    const input=h("input",{placeholder:"Search make or model",oninput:e=>{q=e.target.value.trim().toLowerCase();render();}});
+    const hl=s=>{const i=q?s.toLowerCase().indexOf(q):-1;return i<0?[s]:[s.slice(0,i),h("mark",{},s.slice(i,i+q.length)),s.slice(i+q.length)];};
+    const hit=s=>!q||String(s).toLowerCase().includes(q);
+    const groups=()=>{const g=new Map();
+      for(const c of(state.cars||[])){const p=splitName(c.car_model);c._make=p.make;c._model=p.model;
+        if(!g.has(p.make))g.set(p.make,[]);g.get(p.make).push(c);}
+      return[...g.entries()].sort((a,b)=>a[0].localeCompare(b[0],undefined,{sensitivity:"base"}));};
+    const render=()=>{
+      const all=groups();
+      const makes=all.filter(([m,cars])=>hit(m)||cars.some(c=>hit(c._model)));
+      shownMk=makes.map(([m])=>m);
+      if(mk&&!shownMk.includes(mk))mk=null;
+      if(!mk&&q&&makes.length)mk=makes[0][0];
+      const cur=makes.find(([m])=>m===mk);
+      shownM=cur?cur[1].filter(c=>hit(mk)||hit(c._model)):[];
+      if(sel&&!shownM.includes(sel))sel=null;
+      if(!sel&&q&&shownM.length===1)sel=shownM[0];
+      colM.replaceChildren(h("div",{class:"vp-colhead"},"Make · "+all.length),
+        ...makes.map(([m,cars])=>h("div",{class:"vp-make"+(m===mk?" sel":""),title:m,onclick:()=>{mk=m;sel=null;render();}},
+          h("span",{class:"nm"},...hl(m)),h("span",{class:"cnt"},String(cars.length)))),
+        makes.length?null:h("div",{class:"empty"},(state.cars||[]).length?"No make or model matches":"No profiles loaded"));
+      colD.replaceChildren(h("div",{class:"vp-colhead"},mk?mk+" · "+(cur?cur[1].length:0)+(cur&&cur[1].length===1?" profile":" profiles"):"Model"),
+        ...shownM.map(c=>{const on=sel===c;const t=on?ic("check"):h("span",{});if(on)t.classList.add("tick");
+          return h("div",{class:"vp-row"+(on?" sel":""),title:c.car_model,onclick:()=>{sel=c;render();},ondblclick:()=>{sel=c;use();}},t,h("span",{class:"nm"},...hl(c._model)));}),
+        mk?(shownM.length?null:h("div",{class:"empty"},"No model matches")):h("div",{class:"empty"},"Pick a make"));
+      const n=(state.cars||[]).length;
+      foot.textContent=!n?"":q?makes.reduce((a,[m,cars])=>a+(hit(m)?cars.length:cars.filter(c=>hit(c._model)).length),0)+" of "+n+" profiles match."
+        :mk?(cur?cur[1].length:0)+" "+mk+" profile"+(cur&&cur[1].length===1?".":"s."):n+" profiles in "+all.length+" makes.";
+      if(okBtn)okBtn.disabled=!sel;
+      for(const el of[colM.querySelector(".vp-make.sel"),colD.querySelector(".vp-row.sel")])if(el&&el.scrollIntoView)el.scrollIntoView({block:"nearest"});};
+    const move=d=>{if(!shownM.length)return;let i=shownM.indexOf(sel);i=Math.min(shownM.length-1,Math.max(0,i+d));sel=shownM[i];render();};
+    const moveMake=d=>{if(!shownMk.length)return;let i=shownMk.indexOf(mk);i=Math.min(shownMk.length-1,Math.max(0,i+d));mk=shownMk[i];sel=null;render();};
+    const fetchBtn=h("button",{class:"btn sm gh",type:"button",title:"Re-read the published vehicle_profiles.json",onclick:()=>load(true)},ic("refresh"),"Fetch latest");
+    const load=async fresh=>{
+      fetchBtn.disabled=true;status.textContent="Fetching the published list…";
+      try{await fetchList(fresh);status.textContent="From the published list: "+state.cars.length+" profiles, "+state.source+".";}
+      catch(e){status.textContent="Could not fetch the published list ("+e.message+"). Drop a profile file on the page instead.";}
+      fetchBtn.disabled=false;preselect();render();};
+    const cur=(opts&&opts.current&&opts.current())||"";
+    /* open on the car the device runs now, when it is in the list */
+    const preselect=()=>{if(sel||q||!cur)return;const c=(state.cars||[]).find(x=>x.car_model===cur);if(c){mk=splitName(c.car_model).make;sel=c;}};
+    const pick=car=>{if(car&&opts&&opts.onPick)opts.onPick(car);};
+    const body=h("div",{},
+      h("div",{class:"rowflex",style:"gap:8px;margin-bottom:12px;flex-wrap:wrap"},status,h("span",{class:"grow"}),fetchBtn),
+      h("div",{class:"vp-search"},ic("search"),input),
+      h("div",{class:"vp-cols"},colM,colD),
+      h("div",{class:"vp-foot"},foot,h("span",{class:"grow"}),cur?h("span",{class:"help"},"On this device now: ",h("b",{style:"color:var(--text-2)"},cur)):null));
+    const close=modal({title:"Choose a vehicle profile",body,actions:[{label:"Cancel"},{label:"Use this profile",kind:"pri",fn:()=>pick(sel)}]});
+    const m=$("#modal-root .modal");if(m)m.classList.add("wide");
+    okBtn=$("#modal-root .acts button.pri");
+    const use=()=>{if(!sel)return;close();pick(sel);};
+    body.onkeydown=e=>{if(e.key==="ArrowDown"){e.preventDefault();move(1);}else if(e.key==="ArrowUp"){e.preventDefault();move(-1);}
+      else if(e.key==="ArrowRight"){e.preventDefault();moveMake(1);}else if(e.key==="ArrowLeft"){e.preventDefault();moveMake(-1);}
+      else if(e.key==="Enter"){e.preventDefault();use();}else if(e.key==="Escape"){e.preventDefault();close();}};
+    if(state.cars){status.textContent=(state.source?"From the published list: ":"From the loaded file: ")+state.cars.length+" profiles"+(state.source?", "+state.source:"")+".";preselect();render();}
+    else await load(false);
+    setTimeout(()=>input.focus(),30);};
+  /* the list without the dialog (Quick Setup suggests profiles by the VIN's
+     manufacturer): null when the published file cannot be fetched */
+  const load=async()=>{if(!state.cars){try{await fetchList(false);}catch(_){return null;}}return state.cars;};
+  return{open,state,load,splitName};
+}
 
 /* ============================================================ PAGES */
 const PAGES={};
@@ -1456,7 +1592,8 @@ PAGES.status=async(view)=>{
   const p=page(view,null,"Status","Live overview of the device and CAN interface.");
   const cardsEl=h("div",{class:"tiles"});
   const colsEl=h("div",{class:"cols2"});
-  p.append(cardsEl,colsEl);
+  const hintEl=h("div",{}); /* Quick Setup pointer while vehicle data is off */
+  p.append(cardsEl,hintEl,colsEl);
   /* this boot's cause is fixed for the whole boot — fetched once, not every refresh */
   const hist=await tryGet("/api/restart/history");
   const recs=(hist&&hist.records)||[];
@@ -1464,6 +1601,16 @@ PAGES.status=async(view)=>{
   async function refresh(){
     const st=conn.status||await tryGet("/api/status");if(!st)return;
     const b=st.bits||{};
+    /* the vehicle store (2026-10-01 second pass): a car that answered but has
+       no profile yet is the one thing worth a banner here */
+    const vs=await tryGet("/api/autopid/vehicles");
+    const pend=vs&&Array.isArray(vs.vehicles)?vs.vehicles.find(v=>v.pending_profile):null;
+    const curV=vs&&Array.isArray(vs.vehicles)?vs.vehicles.find(v=>v.current):null;
+    hintEl.replaceChildren(pend?banner("info","car",h("b",{},"New vehicle detected: "+(pend.name||pend.vin||"no VIN")+". "),
+        "Standard values are live; choose a profile for the vehicle-specific ones. ",h("a",{href:"#/setup/vehicle"},"Choose a profile"))
+      :b.autopid_enabled?null:banner("info","sparkles",h("b",{},"Vehicle data is off. "),
+      "Quick Setup walks you through WiFi, Home Assistant or MQTT, and your vehicle. ",h("a",{href:"#/setup"},"Open Quick Setup")));
+    conn.vehicleName=curV?(curV.name||curV.vin||""):"";
     const[w,batt,can,vpn,rtc,imu]=await Promise.all(["/api/wifi/status","/api/battery","/api/can","/api/vpn","/api/rtc","/api/imu"].map(tryGet));
     const v=batt&&batt.voltage;
     const mode=b.sta_connected?(w&&w.ap_started?"AP+STA":"STA"):(w&&w.ap_started?"AP":"—");
@@ -1706,7 +1853,9 @@ PAGES.settings=async(view,sub)=>{
       const tbl=dataTable([
         {label:"Network",get:n=>h("a",{href:"#",style:"font-weight:600",onclick:e=>{e.preventDefault();if(n.ssid&&pickSsid){pickSsid(n.ssid);close();toast("Station network set to "+n.ssid+": enter the password, then Submit","ok");}}},n.ssid||"(hidden)")},
         {label:"Signal",get:n=>{const bars=n.rssi>-55?4:n.rssi>-67?3:n.rssi>-78?2:1;return h("span",{class:"mono",style:"color:var(--primary)"},"▂▄▆█".slice(0,bars).padEnd(4,"·"));}},
-        {label:"Security",get:n=>n.auth&&n.auth!=="OPEN"?chip(n.auth,""):chip("open","warn")},
+        /* the firmware key is auth_mode (wifi_manager_status.c); `auth` was
+           never sent, so every network showed as open (fixed 2026-10-01) */
+        {label:"Security",get:n=>{const a=String(n.auth_mode||n.auth||"").toUpperCase();return a&&a!=="OPEN"?chip(a,""):chip("open","warn");}},
         {label:"RSSI",align:"right",mono:true,get:n=>(n.rssi||"?")+" dBm"},
       ],nets,{empty:"No networks found: try again in a few seconds (the radio may be busy)"});
       body.replaceChildren(tbl);
@@ -1738,6 +1887,9 @@ PAGES.settings=async(view,sub)=>{
       if(w.ap_started)reChip(apChip,(w.clients||0)+" client"+(w.clients===1?"":"s")+" · "+(w.ap_ip||""),"ok");
       else reChip(apChip,"Off","");
       if(b.sta_connected)reChip(staChip,"Connected · "+(w.ip||""),"ok");
+      /* fresh devices ship as AP + Station with no network yet (2026-10-01):
+         that is not a failure, so no warning until a network is named */
+      else if(mode.includes("sta")&&!wifiVals.sta_ssid)reChip(staChip,"No network configured","");
       else reChip(staChip,mode.includes("sta")?"Not connected":"Off",mode.includes("sta")?"warn":"");};
     /* the mode selector */
     const MODES=[
@@ -2383,34 +2535,14 @@ PAGES.automate=async(view,sub)=>{
           h("span",{class:"grow"}),applyBtn),
         note("","Command is the raw OBD/UDS request (e.g. 010C1 or 22F1901); expand a PID (▸) to edit the parameters decoding its reply bytes (B0…Bn). Passive CAN filters: Raw Config."));
     }
-    /* published profiles index the frame WITH its PCI byte; the v6
-       payload starts at the service echo -> shift every B<n>/S<n>
-       index DOWN BY ONE (autopid/README.md importer rule 1). */
-    const shiftExpr=x=>String(x||"").replace(/([BS])(\d+)/g,(m,l,n)=>l+Math.max(0,Number(n)-1));
-    const PROFILES_URL="https://raw.githubusercontent.com/meatpiHQ/wican-fw/main/vehicle_profiles.json";
-    /* the published profiles carry a latin-1 degree sign that decodes to
-       U+FFFD ("�C"): normalise units on import (meatpi 2026-09-06) */
-    const fixUnit=u=>typeof u==="string"?u.replace(/\uFFFD/g,"°"):u;
-    /* profiles are community data and the firmware keys its value cache by
-       parameter name, so a table with a repeated name is refused whole
-       ("duplicate parameter name"). A single typo in the published file
-       (Ioniq5/6 + EV6: cell 158 labelled HV_C_V_168 twice, 2026-09-16)
-       blocked the entire import: rename repeats (_2, _3 …) against
-       everything already in the table and report them instead. Returns
-       the list of renames for the toast. */
+    /* shared helpers since 2026-10-01: profileToPids / vehicleProfilePicker
+       (top level) serve this page and Quick Setup */
     function importProfile(car){
       /* replace the vehicle-specific PID set; std/custom stay */
       cfg.pids=cfg.pids.filter(pd=>pidType(pd)!=="specific");
-      const taken=new Set(cfg.pids.flatMap(pd=>(pd.parameters||[]).map(pr=>pr.name)));
-      const renamed=[];
-      const uniq=n=>{if(!n||!taken.has(n)){taken.add(n);return n;}
-        let k=2;while(taken.has(n+"_"+k))k++;taken.add(n+"_"+k);renamed.push(n+" to "+n+"_"+k);return n+"_"+k;};
-      for(const pp of(car.pids||[])){
-        const prm=(pp.parameters||[]).map(x=>({...x,name:uniq(String(x.name||"")),unit:fixUnit(x.unit),expression:shiftExpr(x.expression)}));
-        cfg.pids.push({name:(prm.length===1&&prm[0].name)||pp.pid,cmd:pp.pid,
-          init:pp.pid_init||"",group:"default",period_ms:0,type:"specific",parameters:prm});
-      }
-      return renamed;
+      const r=profileToPids(car,cfg.pids);
+      cfg.pids.push(...r.pids);
+      return r.renamed;
     }
     const renameNote=renamed=>{if(renamed.length)toast(renamed.length+" duplicate parameter name"+(renamed.length>1?"s":"")+" in this profile renamed: "+renamed.slice(0,3).join(", ")+(renamed.length>3?" and more":""),"");};
     /* Vehicle Specific (meatpi 2026-09-17): ONE "Vehicle profile" row (the
@@ -2423,7 +2555,9 @@ PAGES.automate=async(view,sub)=>{
        dropdown PUT the config the moment it changed). */
     function vehPane(){
       const tbl=pidTable("specific","No vehicle profile loaded: choose a profile above, or add PIDs by hand");
-      const state={cars:null,source:null};
+      const picker=vehicleProfilePicker({current:()=>(av&&av.vehicle)||"",onPick:car=>stageProfile(car)});
+      const state=picker.state;
+      const openPicker=()=>picker.open();
       const maxName=(sch&&sch.properties&&sch.properties.vehicle&&sch.properties.vehicle.maxLength)||63;
       const rows=groupRows.specific||null;
       const vehRow=rows?rows.find(r=>r.dataset&&r.dataset.key==="vehicle"):null;
@@ -2464,84 +2598,6 @@ PAGES.automate=async(view,sub)=>{
           if(rows)rows.load();}
         staged=null;paintBanner(false);markDirty(s.dirty);tbl.rebuild();
         toast("Profile discarded","");};
-      /* ---- the picker dialog ---- */
-      const nParams=c=>(c.pids||[]).reduce((a,p)=>a+((p.parameters||[]).length||0),0);
-      const fetchList=async fresh=>{
-        const res=await fetch(fresh?PROFILES_URL+"?t="+Date.now():PROFILES_URL,fresh?{cache:"no-store"}:undefined);
-        if(!res.ok)throw new Error("HTTP "+res.status);
-        const j=await res.json();const cars=(j&&j.cars)||[];
-        if(!cars.length)throw new Error("no cars in profile file");
-        state.cars=cars;state.source="fetched "+new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});};
-      /* the picker (meatpi 2026-09-17, "Option A"): the published names follow
-         "Make: Model" (first word when there is no colon), so the dialog shows
-         the makes on the left and the chosen make's models on the right, with
-         one search over both (typing kona lands on Hyundai > Kona). No PID or
-         parameter counts (Ali). Arrow keys move through the models, Left/Right
-         through the makes, Enter uses, Esc closes. */
-      const splitName=full=>{const s=String(full||"").trim();const i=s.indexOf(":");
-        if(i>0)return{make:s.slice(0,i).trim(),model:s.slice(i+1).trim()||s};
-        const w=s.split(/\s+/);return{make:w[0]||"",model:w.slice(1).join(" ")||w[0]||""};};
-      const openPicker=async()=>{
-        let sel=null,mk=null,q="",shownMk=[],shownM=[],okBtn=null;
-        const status=h("span",{class:"help",style:"font-size:12.5px"});
-        const colM=h("div",{class:"vp-col"}),colD=h("div",{class:"vp-col"});
-        const foot=h("span",{class:"help"});
-        const input=h("input",{placeholder:"Search make or model",oninput:e=>{q=e.target.value.trim().toLowerCase();render();}});
-        const hl=s=>{const i=q?s.toLowerCase().indexOf(q):-1;return i<0?[s]:[s.slice(0,i),h("mark",{},s.slice(i,i+q.length)),s.slice(i+q.length)];};
-        const hit=s=>!q||String(s).toLowerCase().includes(q);
-        const groups=()=>{const g=new Map();
-          for(const c of(state.cars||[])){const p=splitName(c.car_model);c._make=p.make;c._model=p.model;
-            if(!g.has(p.make))g.set(p.make,[]);g.get(p.make).push(c);}
-          return[...g.entries()].sort((a,b)=>a[0].localeCompare(b[0],undefined,{sensitivity:"base"}));};
-        const render=()=>{
-          const all=groups();
-          const makes=all.filter(([m,cars])=>hit(m)||cars.some(c=>hit(c._model)));
-          shownMk=makes.map(([m])=>m);
-          if(mk&&!shownMk.includes(mk))mk=null;
-          if(!mk&&q&&makes.length)mk=makes[0][0];
-          const cur=makes.find(([m])=>m===mk);
-          shownM=cur?cur[1].filter(c=>hit(mk)||hit(c._model)):[];
-          if(sel&&!shownM.includes(sel))sel=null;
-          if(!sel&&q&&shownM.length===1)sel=shownM[0];
-          colM.replaceChildren(h("div",{class:"vp-colhead"},"Make · "+all.length),
-            ...makes.map(([m,cars])=>h("div",{class:"vp-make"+(m===mk?" sel":""),title:m,onclick:()=>{mk=m;sel=null;render();}},
-              h("span",{class:"nm"},...hl(m)),h("span",{class:"cnt"},String(cars.length)))),
-            makes.length?null:h("div",{class:"empty"},(state.cars||[]).length?"No make or model matches":"No profiles loaded"));
-          colD.replaceChildren(h("div",{class:"vp-colhead"},mk?mk+" · "+(cur?cur[1].length:0)+(cur&&cur[1].length===1?" profile":" profiles"):"Model"),
-            ...shownM.map(c=>{const on=sel===c;const t=on?ic("check"):h("span",{});if(on)t.classList.add("tick");
-              return h("div",{class:"vp-row"+(on?" sel":""),title:c.car_model,onclick:()=>{sel=c;render();},ondblclick:()=>{sel=c;use();}},t,h("span",{class:"nm"},...hl(c._model)));}),
-            mk?(shownM.length?null:h("div",{class:"empty"},"No model matches")):h("div",{class:"empty"},"Pick a make"));
-          const n=(state.cars||[]).length;
-          foot.textContent=!n?"":q?makes.reduce((a,[m,cars])=>a+(hit(m)?cars.length:cars.filter(c=>hit(c._model)).length),0)+" of "+n+" profiles match."
-            :mk?(cur?cur[1].length:0)+" "+mk+" profile"+(cur&&cur[1].length===1?".":"s."):n+" profiles in "+all.length+" makes.";
-          if(okBtn)okBtn.disabled=!sel;
-          for(const el of[colM.querySelector(".vp-make.sel"),colD.querySelector(".vp-row.sel")])if(el&&el.scrollIntoView)el.scrollIntoView({block:"nearest"});};
-        const move=d=>{if(!shownM.length)return;let i=shownM.indexOf(sel);i=Math.min(shownM.length-1,Math.max(0,i+d));sel=shownM[i];render();};
-        const moveMake=d=>{if(!shownMk.length)return;let i=shownMk.indexOf(mk);i=Math.min(shownMk.length-1,Math.max(0,i+d));mk=shownMk[i];sel=null;render();};
-        const fetchBtn=h("button",{class:"btn sm gh",type:"button",title:"Re-read the published vehicle_profiles.json",onclick:()=>load(true)},ic("refresh"),"Fetch latest");
-        const load=async fresh=>{
-          fetchBtn.disabled=true;status.textContent="Fetching the published list…";
-          try{await fetchList(fresh);status.textContent="From the published list: "+state.cars.length+" profiles, "+state.source+".";}
-          catch(e){status.textContent="Could not fetch the published list ("+e.message+"). Drop a profile file on the page instead.";}
-          fetchBtn.disabled=false;preselect();render();};
-        const cur=(av&&av.vehicle)||"";
-        /* open on the car the device runs now, when it is in the list */
-        const preselect=()=>{if(sel||q||!cur)return;const c=(state.cars||[]).find(x=>x.car_model===cur);if(c){mk=splitName(c.car_model).make;sel=c;}};
-        const body=h("div",{},
-          h("div",{class:"rowflex",style:"gap:8px;margin-bottom:12px;flex-wrap:wrap"},status,h("span",{class:"grow"}),fetchBtn),
-          h("div",{class:"vp-search"},ic("search"),input),
-          h("div",{class:"vp-cols"},colM,colD),
-          h("div",{class:"vp-foot"},foot,h("span",{class:"grow"}),cur?h("span",{class:"help"},"On this device now: ",h("b",{style:"color:var(--text-2)"},cur)):null));
-        const close=modal({title:"Choose a vehicle profile",body,actions:[{label:"Cancel"},{label:"Use this profile",kind:"pri",fn:()=>stageProfile(sel)}]});
-        const m=$("#modal-root .modal");if(m)m.classList.add("wide");
-        okBtn=$("#modal-root .acts button.pri");
-        const use=()=>{if(!sel)return;close();stageProfile(sel);};
-        body.onkeydown=e=>{if(e.key==="ArrowDown"){e.preventDefault();move(1);}else if(e.key==="ArrowUp"){e.preventDefault();move(-1);}
-          else if(e.key==="ArrowRight"){e.preventDefault();moveMake(1);}else if(e.key==="ArrowLeft"){e.preventDefault();moveMake(-1);}
-          else if(e.key==="Enter"){e.preventDefault();use();}else if(e.key==="Escape"){e.preventDefault();close();}};
-        if(state.cars){status.textContent=(state.source?"From the published list: ":"From the loaded file: ")+state.cars.length+" profiles"+(state.source?", "+state.source:"")+".";preselect();render();}
-        else await load(false);
-        setTimeout(()=>input.focus(),30);};
       /* the Choose profile button rides on the settings row's control (the
          rows are built once and moved between pane rebuilds: wrap once,
          re-point the handler every time) */
@@ -3874,6 +3930,7 @@ PAGES.system=async(view,sub)=>{
             toast("Restored","ok");if(r&&r.reboot!==false)expectReboot("Applying backup");}
           catch(err){toast("Restore failed: "+err.message,"err");}e.target.value="";}})),
       histBtn,
+      h("button",{class:"btn sm",title:"Start over with the first-run wizard: nothing is deleted by itself",onclick:()=>{location.hash="#/setup";}},ic("sparkles"),"Run Quick Setup again"),
       h("button",{class:"btn sm danger",onclick:async()=>{
         const c=await promptModal('Type "factory-reset" to confirm: wipes ALL settings to defaults (files and SD kept)');
         if(c!=="factory-reset")return;
@@ -4491,6 +4548,13 @@ PAGES.events=async(view,sub)=>{
    and embedded next to this page (served at /ui/scripts.js), so the main
    page stays under the "no bigger web UI" rule; it is fetched the first
    time the page opens (the preview inlines it). */
+/* ---- Quick Setup (on-demand chunk web/setup.js, 2026-10-01) ---- */
+PAGES.setup=async(view,sub)=>{
+  if(!PAGES.__setup)await loadScript("/ui/setup.js");
+  if(!PAGES.__setup){const p=page(view,null,"Quick Setup","First-run setup wizard");p.append(banner("crit","alert","Quick Setup could not be loaded (/ui/setup.js). Reload the page, or update the firmware."));return null;}
+  return PAGES.__setup(view,sub);
+};
+
 PAGES.scripts=async(view,sub)=>{
   if(!PAGES.__scripts)await loadScript("/ui/scripts.js");
   if(!PAGES.__scripts){const p=page(view,null,"Scripts","Berry scripts on the WiCAN");p.append(banner("crit","alert","The Scripts page could not be loaded (/ui/scripts.js). Reload the page, or update the firmware."));return null;}

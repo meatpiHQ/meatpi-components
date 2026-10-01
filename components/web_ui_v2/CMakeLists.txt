@@ -56,8 +56,19 @@ if(CONFIG_WICAN_WEBUI_V2)
                 "${CMAKE_CURRENT_LIST_DIR}/tools/rjsmin.py"
         COMMENT "Minifying + gzipping web_ui_v2 monitor.js chunk for embedding"
         VERBATIM)
-    add_custom_target(web_ui_v2_gz DEPENDS "${gz_html}" "${gz_js}" "${gz_files_js}" "${gz_monitor_js}")
-    set(embeds "${gz_html}" "${gz_js}" "${gz_files_js}" "${gz_monitor_js}")
+    # fourth chunk (2026-10-01): the Quick Setup wizard
+    set(src_setup_js "${CMAKE_CURRENT_LIST_DIR}/web/setup.js")
+    set(gz_setup_js  "${CMAKE_CURRENT_BINARY_DIR}/setup.js.gz")
+    add_custom_command(
+        OUTPUT "${gz_setup_js}"
+        COMMAND "${python}" "${CMAKE_CURRENT_LIST_DIR}/gzip_asset.py"
+                "${src_setup_js}" "${gz_setup_js}"
+        DEPENDS "${src_setup_js}" "${CMAKE_CURRENT_LIST_DIR}/gzip_asset.py"
+                "${CMAKE_CURRENT_LIST_DIR}/tools/rjsmin.py"
+        COMMENT "Minifying + gzipping web_ui_v2 setup.js chunk for embedding"
+        VERBATIM)
+    add_custom_target(web_ui_v2_gz DEPENDS "${gz_html}" "${gz_js}" "${gz_files_js}" "${gz_monitor_js}" "${gz_setup_js}")
+    set(embeds "${gz_html}" "${gz_js}" "${gz_files_js}" "${gz_monitor_js}" "${gz_setup_js}")
 endif()
 
 idf_component_register(

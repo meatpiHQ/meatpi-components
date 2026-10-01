@@ -448,11 +448,55 @@ chunk: a `web/<name>.js` that sets `PAGES.__<name>`, a stub in
 `index.html`, one more custom command + embed in `CMakeLists.txt`, one
 more asset row in `web_ui_v2.c`, and its name in `make_preview.py`'s
 chunk list. Chunks today: `scripts.js` (Scripts), `files.js` (File
-Manager) and `monitor.js` (CAN Monitor, 2026-09-07).
+Manager) and `monitor.js` (CAN Monitor, 2026-09-07) and `setup.js` (Quick Setup, 2026-10-01).
 
 ## Pages
 
-DEVICE: Status (stat cards + network/system tables) · Settings (WiFi/AP
+DEVICE: **Quick Setup** (2026-10-01, chunk `web/setup.js`, `TASK_quick_setup.md` in the
+app repo): the first-run wizard. Opens by itself while the access point still has the
+factory password (`route()` sends an empty hash to `#/setup`; "Skip setup for now" is a
+sessionStorage flag), later from the first sidebar entry or System > Maintenance; the
+sidebar hides while it runs (`#app.setup-focus`). Ten screens on a step rail in two
+halves: safety rules (three acknowledgements), use case (Home Assistant, own MQTT
+broker, WiFi only; OBD apps / ABRP / logger greyed as later work), details (the HACS
+install steps for the WiCAN integration, or the broker form), AP password (8 to 63,
+never `@meatpi#`; a device with its own password may keep it), home WiFi (scan via
+`/api/wifi/scan`, one row per SSID with the strongest signal, `auth_mode`, OPEN networks
+cannot be chosen, blank password keeps the stored one for the same SSID), Review and
+restart (`store.commit()`: PUT wifi_manager apsta + station + `sta_trusted` + AP password,
+optionally mqtt_manager + a data_destinations `~/autopid` row, one submit); then, from the
+mDNS link `http://wican_<id>.local/#/setup/checks` on the home network: Reconnect (link,
+copy, AP fallback, live join status while still reachable), Checks (WiFi / AP / Home
+Assistant via `GET /api/webhook` / MQTT via `bits.mqtt_connected`, polled every 3 s, Fix
+links back into the earlier steps), Vehicle (second pass, 2026-10-01 evening: DETECT
+first, profile last. "Detect my vehicle" = `POST /api/autopid/vehicles/detect` (falls back to
+`POST /api/autopid/std_scan` on older firmware), the phases protocol / vin / pids from
+`GET /api/autopid/std_scan`, then the result card from `/std_scan/result` + the store
+`GET /api/autopid/vehicles` (VIN or "identified by its ECUs", detected protocol, PID
+count, a name field defaulting to the VIN's manufacturer + last 4), a "Welcome back" card
+for a known car; profile suggestions filtered by the VIN's manufacturer code (the `WMI`
+table in setup.js), the shared `vehicleProfilePicker()` for the rest, "keep it without a
+profile", a protocol-mismatch warning when the profile's init names another protocol than
+the detected one, and **Test profile**: one `POST /api/autopid/test` per profile PID
+(init chain, type specific, the shifted expressions) shown in a modal, one row per
+parameter with value / unit / request, a summary chip, Use this profile. The store list
+("Vehicles this WiCAN knows") with Current / Profile pending chips and Forget
+(`DELETE /api/autopid/vehicles/<key>`). Finish = `PUT /api/autopid/vehicles/<key>` {name,
+profile, specific_init} (empty profile = standard PIDs only), `PUT /api/autopid/config`
+with the profile's rows via `profileToPids()`, staged autopid {enabled, std_protocol "0",
+vehicle, specific_init} through `store.commit()`), Reading the car (2026-10-01 night: the
+autopid polling rules in plain words, prefilled from the device: poll rate 1/2/5/10/custom s
+= the default group's `period_ms` in the live config with the rows on the old default
+inheriting it (a fresh device gets the recommended 5 s, a device already polling keeps
+its rate), `min_event_interval_ms` as "report a change at most every N s", when the car is
+off = pause with Power Saving (`pause_follow_sleep`, the sleep voltage quoted from
+`/api/settings/sleep_manager`) / below a chosen voltage (`pause_below_mv`, 12 to 14.5 V) /
+never (battery warning), `pause_mode` as "while paused, also stop listening", the three
+PID-type switches (vehicle-specific greyed without a profile), trouble codes
+(`dtc_enabled` + `dtc_scan_period_min`); Finish lives here now and stages it all),
+Done (addresses, states, the reading rules, the sleep-off note, where to go next). Wizard state lives in the
+chunk; the second half rebuilds from device state. Probe: `probe_setup.mjs`.
+· Status (stat cards + network/system tables; a Quick Setup pointer while AutoPID is off) · Settings (WiFi/AP
 · Station & Bluetooth w/ scan · CAN · MQTT) · Automate (autopid
 polling switch + pause rules · PID groups with their own
 switch/init/protocol · Home Assistant webhook · Data destinations (the `data_destinations` table: MQTT / HTTP / HTTPS + cert set / ABRP rows with auth, live counters from `/api/destinations`, Test per row, one-time import of the older timer-rule destinations; 2026-09-19) · PID

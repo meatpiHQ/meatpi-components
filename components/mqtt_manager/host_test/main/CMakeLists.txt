@@ -5,6 +5,7 @@ idf_component_register(
     SRCS "test_main.c"
          "${comp_dir}/mqtt_manager_match.c"
          "${comp_dir}/mqtt_manager_item.c"
+         "${comp_dir}/mqtt_manager_policy.c"
     INCLUDE_DIRS "${comp_dir}/include" "${comp_dir}"
     REQUIRES unity
 )

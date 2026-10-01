@@ -3,6 +3,7 @@ idf_component_register(
          "mqtt_manager_settings.c"
          "mqtt_manager_match.c"
          "mqtt_manager_item.c"
+         "mqtt_manager_policy.c"
          "mqtt_manager_events.c"
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "."

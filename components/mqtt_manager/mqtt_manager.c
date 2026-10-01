@@ -23,9 +23,10 @@
 /**
  * @file mqtt_manager.c
  * @brief Lifecycle, the esp-mqtt client glue (events, LWT, TLS), the
- *        handler registry, and the network-gated starter task (see
- *        include/mqtt_manager.h for the model). Settings live in
- *        mqtt_manager_settings.c (standard §4.1).
+ *        handler registry, and the link-following task that starts the
+ *        client when the chosen uplink comes up and STOPS it when the
+ *        uplink goes (see include/mqtt_manager.h for the model). Settings
+ *        live in mqtt_manager_settings.c (standard §4.1).
  */
 #include "mqtt_manager.h"
 
@@ -61,6 +62,8 @@ _Static_assert(sizeof(((mm_config_t *)0)->cert_set) ==
 
 #define MM_RX_BUF      4096
 #define MM_OUT_BUF     4096
+#define MM_RECONNECT_MS 5000       /* esp-mqtt retry while the uplink is up */
+#define MM_LINK_POLL_MS 5000       /* link task safety-net wake             */
 #define MM_CA_PEM_MAX  8192
 #define MM_RING_BYTES  (32 * 1024) /* async publish elasticity (PSRAM)  */
 
@@ -77,9 +80,12 @@ static SemaphoreHandle_t s_lock;
 static StaticSemaphore_t s_lock_buf; /* internal: FreeRTOS object */
 static volatile bool s_connected;
 static uint32_t s_frag_drops;
-static bool s_started;
+static volatile bool s_started;
+static bool s_outage_logged; /* one W per broker outage, not per retry  */
+static bool s_subscribed;    /* dev_status change hook, registered once */
 
-/* starter task (PSRAM stack: network only, no flash writes) */
+/* link task (PSRAM stack: network only, no flash writes): starts the
+   client when the chosen uplink is up, stops it when the uplink goes */
 static TaskHandle_t s_task;
 static StaticTask_t s_tcb;                            /* internal: FreeRTOS */
 static StackType_t s_stack[3072] EXT_RAM_BSS_ATTR;
@@ -165,6 +171,7 @@ static void mqtt_event(void *arg, esp_event_base_t base, int32_t id,
     {
         case MQTT_EVENT_CONNECTED:
             s_connected = true;
+            s_outage_logged = false;
             dev_status_manager_set(DEV_STATUS_BIT_MQTT_CONNECTED);
             esp_mqtt_client_publish(s_client, s_status_topic,
                                     MM_STATUS_ONLINE, 0, 0, 1);
@@ -199,8 +206,26 @@ static void mqtt_event(void *arg, esp_event_base_t base, int32_t id,
             break;
 
         case MQTT_EVENT_ERROR:
-            /* retry chatter stays at DEBUG (standard §10) */
-            ESP_LOGD(TAG, "transport error (reconnect pending)");
+            /* one W per outage (standard §10: handled failures at W, no
+               per-retry chatter): the broker is unreachable while the
+               uplink is up, e.g. a LAN broker while the station sits on
+               the dongle's AP. esp-mqtt keeps retrying and prints its own
+               E line per attempt (bench whitelist). */
+            if (!s_outage_logged && evt->error_handle != NULL &&
+                evt->error_handle->error_type ==
+                    MQTT_ERROR_TYPE_TCP_TRANSPORT)
+            {
+                s_outage_logged = true;
+                ESP_LOGW(TAG, "broker unreachable (%s, errno %d): retrying "
+                              "every %d s while the uplink is up",
+                         mm_settings_config()->url,
+                         evt->error_handle->esp_transport_sock_errno,
+                         MM_RECONNECT_MS / 1000);
+            }
+            else
+            {
+                ESP_LOGD(TAG, "transport error (reconnect pending)");
+            }
             break;
 
         default:
@@ -208,14 +233,69 @@ static void mqtt_event(void *arg, esp_event_base_t base, int32_t id,
     }
 }
 
-/* ---- network-gated starter ----------------------------------------------------- */
+/* ---- link-following starter ------------------------------------------------- */
 
-static void starter_task(void *arg)
+/** The policy input: is the uplink the setting names up right now? */
+static bool link_up(void)
 {
+    EventBits_t bits = dev_status_manager_get();
+
+    return mm_link_wanted(mm_settings_config()->connect_on,
+                          (bits & DEV_STATUS_BIT_STA_CONNECTED) != 0,
+                          (bits & DEV_STATUS_BIT_ETH_CONNECTED) != 0);
+}
+
+/** dev_status hook (the SETTER's context: a notify, nothing else). */
+static void on_status_change(EventBits_t changed, EventBits_t now)
+{
+    (void)now;
+
+    if ((changed & DEV_STATUS_NETWORK_CONNECTED_MASK) != 0 &&
+        s_task != NULL)
+    {
+        xTaskNotifyGive(s_task);
+    }
+}
+
+/** Starts the client when the uplink comes up and stops it when the
+ *  uplink goes, so a device with no link never retries a broker it
+ *  cannot reach (the pre-2026-10-01 one-shot starter left esp-mqtt
+ *  retrying every few seconds after the station left the network, one
+ *  E line per attempt). Woken by on_status_change(); the timed wait is
+ *  the safety net for a missed edge. Exits with the manager. */
+static void link_task(void *arg)
+{
+    bool running = false;
+
     (void)arg;
-    dev_status_manager_wait_any(DEV_STATUS_NETWORK_CONNECTED_MASK,
-                                portMAX_DELAY);
-    esp_mqtt_client_start(s_client); /* reconnects handled by esp-mqtt */
+
+    while (s_started)
+    {
+        bool want = link_up();
+
+        if (want && !running)
+        {
+            if (esp_mqtt_client_start(s_client) == ESP_OK)
+            {
+                running = true;
+                ESP_LOGI(TAG, "uplink up: connecting to %s",
+                         mm_settings_config()->url);
+            }
+        }
+        else if (!want && running)
+        {
+            esp_mqtt_client_stop(s_client);
+            running = false;
+            s_connected = false;
+            s_outage_logged = false;
+            dev_status_manager_clear(DEV_STATUS_BIT_MQTT_CONNECTED);
+            ESP_LOGI(TAG, "uplink down: client stopped until it returns");
+        }
+
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MM_LINK_POLL_MS));
+    }
+
+    s_task = NULL;
     vTaskDelete(NULL);
 }
 
@@ -395,7 +475,7 @@ esp_err_t mqtt_manager_start(void)
     {
         .broker.address.uri = mc->url,
         .credentials.client_id = s_client_id,
-        .network.reconnect_timeout_ms = 5000,
+        .network.reconnect_timeout_ms = MM_RECONNECT_MS,
         .session.keepalive = (int)mc->keepalive_s,
         .session.last_will =
         {
@@ -443,20 +523,37 @@ esp_err_t mqtt_manager_start(void)
         return ESP_ERR_NO_MEM;
     }
 
+    /* esp-mqtt prints its own E line per failed connect (a library log
+       level cannot demote an ERROR); the manager adds ONE W per outage
+       (MQTT_EVENT_ERROR) and the link task stops the client when there is
+       no uplink, so those lines only appear while a reachable-looking
+       broker refuses, and the benches whitelist them like esp-tls's */
+    if (!s_subscribed)
+    {
+        s_subscribed = dev_status_manager_subscribe_changes(
+                           on_status_change) == ESP_OK;
+
+        if (!s_subscribed)
+        {
+            ESP_LOGW(TAG, "no status hook: the link task polls every %d s",
+                     MM_LINK_POLL_MS / 1000);
+        }
+    }
+
     s_pub_task = xTaskCreateStatic(publisher_task, "mqtt_pub",
                                    sizeof(s_pub_stack) /
                                        sizeof(s_pub_stack[0]),
                                    NULL, 5, s_pub_stack, &s_pub_tcb);
-    s_task = xTaskCreateStatic(starter_task, "mqtt_start",
+    s_started = true; /* before the link task runs: its loop condition */
+    s_task = xTaskCreateStatic(link_task, "mqtt_link",
                                sizeof(s_stack) / sizeof(s_stack[0]),
                                NULL, 4, s_stack, &s_tcb);
 
     if (s_task == NULL || s_pub_task == NULL)
     {
+        s_started = false;
         return ESP_FAIL;
     }
-
-    s_started = true;
     mm_events_start(); /* subscribe the rules' mqtt.rx topics */
     ESP_LOGI(TAG, "started (%s, id %s, prefix %s, keepalive %lus)",
              mc->url, s_client_id, s_prefix,
@@ -468,10 +565,16 @@ esp_err_t mqtt_manager_stop(void)
 {
     if (s_started && s_client != NULL)
     {
+        s_started = false; /* the link task exits on its next wake */
+
+        if (s_task != NULL)
+        {
+            xTaskNotifyGive(s_task);
+        }
+
         esp_mqtt_client_stop(s_client);
         s_connected = false;
         dev_status_manager_clear(DEV_STATUS_BIT_MQTT_CONNECTED);
-        s_started = false;
     }
 
     return ESP_OK;

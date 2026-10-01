@@ -24,7 +24,7 @@ registry as the `espressif/mqtt` managed component (`idf_component.yml`).
 | Call | Behavior |
 |---|---|
 | `mqtt_manager_init()` | Settings + log descriptors. No network. |
-| `mqtt_manager_start()` | Builds the client; a starter task waits for `DEV_STATUS_NETWORK_CONNECTED` then connects (esp-mqtt owns reconnects). No-op when disabled. |
+| `mqtt_manager_start()` | Builds the client; the link task (`mqtt_link`, the former starter's PSRAM stack) starts it when the uplink named by `connect_on` is up and stops it when that uplink goes, driven by `dev_status_manager_subscribe_changes()` (esp-mqtt owns the reconnects in between). No-op when disabled. |
 | `mqtt_manager_stop()` | Disconnect + clear the bit. |
 | `mqtt_manager_connected()` | Broker session up (mirrors `DEV_STATUS_BIT_MQTT_CONNECTED`). |
 | `mqtt_manager_topic_prefix()` | The resolved prefix — consumers build topics on it. |
@@ -58,7 +58,7 @@ events glue → `publish_async` → mosquitto
 (`{"event":"battery_below","voltage":11.51,"ts":"…"}` on
 `<prefix>/events`).
 
-## Settings (`"mqtt_manager"`, version 1, field table)
+## Settings (`"mqtt_manager"`, version 2, field table)
 
 `enabled` (false) · `url` (`mqtt://host[:port]` or `mqtts://…`, validated)
 · `username` · `broker_password` (the `_password` suffix auto-redacts it
@@ -67,16 +67,41 @@ derived) · `cert_set` ("" = none; a cert_manager set name — its CA
 verifies the broker, and client cert+key when present = **mutual TLS**;
 live-verified against the bench TLS broker) · `ca_file` ("" = built-in
 certificate bundle; a raw PEM path — `cert_set` wins over it) ·
-`keepalive_s` (5..600, 30). TLS priority: `cert_set` > `ca_file` >
+`keepalive_s` (5..600, 30) · `connect_on` (v2, 2026-10-01: `wifi` |
+`any`, fresh default `wifi`). TLS priority: `cert_set` > `ca_file` >
 bundle.
+
+### The client follows the uplink (v2, 2026-10-01)
+
+The v1 starter waited once for `DEV_STATUS_NETWORK_CONNECTED` and then
+left esp-mqtt to its own reconnects, so a device whose station had left
+the network (or parked on the dongle's AP, where a LAN broker is
+unreachable) printed one library E line per retry for as long as it
+stayed away (Quick Setup bench, 2026-10-01). Now a link task starts the
+client when the uplink named by `connect_on` is up and STOPS it when the
+uplink goes: `wifi` follows `DEV_STATUS_BIT_STA_CONNECTED` only (a broker
+on the home network, Ali's default for new devices), `any` follows the
+STA or USB-Ethernet bit (the v1 behaviour; `on_migrate` writes it into
+documents older than v2 so nothing changes for existing devices). The
+task is woken by `dev_status_manager_subscribe_changes()` and polls every
+5 s as a safety net; the policy itself is the pure `mm_link_wanted()` in
+the private header (host test `test_link_wanted_policy`). While the
+uplink is up but the broker refuses, the manager logs ONE W per outage
+(`broker unreachable (<url>, errno N)`) and esp-mqtt retries every 5 s.
+The library still prints its own `mqtt_client` E line per failed attempt
+(an ERROR cannot be demoted by tag level); benches whitelist those the
+way they whitelist esp-tls / HTTP_CLIENT connect failures.
 
 ## Files
 
 - `mqtt_manager.c` — lifecycle, settings, client glue, handler registry,
-  the async ring + publisher task, network-gated starter.
+  the async ring + publisher task, the link-following task (starts and
+  stops the client with the uplink named by `connect_on`).
 - `mqtt_manager_match.c` — PURE topic-filter matcher + URL validation
   (host-tested).
 - `mqtt_manager_item.c` — PURE ring-item codec (host-tested).
+- `mqtt_manager_policy.c` — PURE settings policy: the `connect_on` parse
+  and the v1 -> v2 migration rule (host-tested).
 
 ## Memory
 

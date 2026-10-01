@@ -30,6 +30,7 @@
  *        device-id defaults in place.
  */
 #include <stdio.h>
+#include <string.h>
 
 #include "settings_manager.h"
 
@@ -46,6 +47,11 @@ static const settings_field_t FIELDS[] =
     SETTINGS_STR("ca_file", 127, ""),         /* "" = built-in bundle     */
     SETTINGS_STR("cert_set", 24, ""),         /* cert_manager set; wins   */
     SETTINGS_INT("keepalive_s", 5, 600, 30),
+    /* v2 (2026-10-01): the client follows the uplink instead of retrying
+       into the void. "wifi" = run only while the WiFi station is connected
+       (fresh default, Ali); "any" = any uplink incl. USB Ethernet (the v1
+       behaviour, kept for migrated documents) */
+    SETTINGS_STR_ENUM("connect_on", "wifi,any", "wifi"),
 };
 
 /* boot-applied settings (buffers outlive the client) */
@@ -109,7 +115,27 @@ static esp_err_t on_apply(const cJSON *settings)
     item = cJSON_GetObjectItemCaseSensitive(settings, "keepalive_s");
     s_cfg.keepalive_s =
         (uint32_t)(cJSON_IsNumber(item) ? item->valueint : 30);
+    item = cJSON_GetObjectItemCaseSensitive(settings, "connect_on");
+    s_cfg.connect_on = mm_parse_connect_on(
+        cJSON_IsString(item) ? item->valuestring : NULL);
     s_configured = true;
+    return ESP_OK;
+}
+
+/* v1 -> v2 (the rule itself is the pure mm_migrated_connect_on, host-tested):
+   a document written before connect_on existed keeps the v1 behaviour
+   (any uplink); only fresh devices get the wifi default */
+static esp_err_t on_migrate(uint32_t from_version, cJSON *settings)
+{
+    const char *add = mm_migrated_connect_on(
+        from_version,
+        cJSON_GetObjectItemCaseSensitive(settings, "connect_on") != NULL);
+
+    if (add != NULL)
+    {
+        cJSON_AddStringToObject(settings, "connect_on", add);
+    }
+
     return ESP_OK;
 }
 
@@ -118,11 +144,12 @@ esp_err_t mm_settings_register(void)
     static const settings_descriptor_t DESC =
     {
         .name        = "mqtt_manager",
-        .version     = 1,
+        .version     = 2,
         .fields      = FIELDS,
         .field_count = sizeof(FIELDS) / sizeof(FIELDS[0]),
         .on_apply    = on_apply,
         .on_validate = on_validate,
+        .on_migrate  = on_migrate,
     };
 
     return settings_manager_register(&DESC);

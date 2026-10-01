@@ -38,10 +38,14 @@
  *  - default prefix `wican/<device_id>`; keepalive 30 s; auto-reconnect
  *    every 5 s.
  *
- * Connection is network-gated (waits for DEV_STATUS_NETWORK_CONNECTED)
- * and publishes DEV_STATUS_BIT_MQTT_CONNECTED. TLS: `mqtts://` URLs use
- * the built-in certificate bundle, or a CA file from the filesystem
- * (`ca_file` setting) for private brokers.
+ * The connection FOLLOWS the uplink (settings v2, 2026-10-01): a link
+ * task starts the client when the uplink named by `connect_on` is up
+ * (`wifi` = DEV_STATUS_BIT_STA_CONNECTED, the fresh default; `any` = the
+ * NETWORK_CONNECTED mask, kept for documents migrated from v1) and stops
+ * it when that uplink goes, so no retries run against a broker the
+ * device cannot reach. It publishes DEV_STATUS_BIT_MQTT_CONNECTED. TLS:
+ * `mqtts://` URLs use the built-in certificate bundle, or a CA file from
+ * the filesystem (`ca_file` setting) for private brokers.
  */
 #pragma once
 
@@ -70,7 +74,8 @@ typedef void (*mqtt_manager_msg_cb_t)(const char *topic,
 /** Register settings ("mqtt_manager") + log descriptors. No network. */
 esp_err_t mqtt_manager_init(void);
 
-/** Start the network-gated connection (no-op when disabled in settings).
+/** Build the client and start the link task that connects while the
+ *  configured uplink is up (no-op when disabled in settings).
  *  ESP_ERR_INVALID_STATE when unconfigured (§4.3 step 5). */
 esp_err_t mqtt_manager_start(void);
 esp_err_t mqtt_manager_stop(void);

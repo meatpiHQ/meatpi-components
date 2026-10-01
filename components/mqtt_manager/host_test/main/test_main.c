@@ -19,6 +19,34 @@ void tearDown(void)
 {
 }
 
+/* connect_on (v2, 2026-10-01): "wifi" follows the station only, "any"
+   follows either uplink; with nothing up the client must never run */
+static void test_link_wanted_policy(void)
+{
+    TEST_ASSERT_FALSE(mm_link_wanted(MM_CONNECT_WIFI, false, false));
+    TEST_ASSERT_FALSE(mm_link_wanted(MM_CONNECT_ANY, false, false));
+    TEST_ASSERT_TRUE(mm_link_wanted(MM_CONNECT_WIFI, true, false));
+    TEST_ASSERT_TRUE(mm_link_wanted(MM_CONNECT_WIFI, true, true));
+    TEST_ASSERT_FALSE(mm_link_wanted(MM_CONNECT_WIFI, false, true));
+    TEST_ASSERT_TRUE(mm_link_wanted(MM_CONNECT_ANY, false, true));
+    TEST_ASSERT_TRUE(mm_link_wanted(MM_CONNECT_ANY, true, false));
+}
+
+/* settings v1 -> v2: an old document gains connect_on "any" (unchanged
+   behaviour), a document that has the key is left alone, v2+ never
+   migrates; the parser maps "any" and defaults everything else to wifi */
+static void test_connect_on_migration_and_parse(void)
+{
+    TEST_ASSERT_EQUAL_STRING("any", mm_migrated_connect_on(1, false));
+    TEST_ASSERT_NULL(mm_migrated_connect_on(1, true));
+    TEST_ASSERT_NULL(mm_migrated_connect_on(2, false));
+    TEST_ASSERT_NULL(mm_migrated_connect_on(3, false));
+    TEST_ASSERT_EQUAL(MM_CONNECT_ANY, mm_parse_connect_on("any"));
+    TEST_ASSERT_EQUAL(MM_CONNECT_WIFI, mm_parse_connect_on("wifi"));
+    TEST_ASSERT_EQUAL(MM_CONNECT_WIFI, mm_parse_connect_on("garbage"));
+    TEST_ASSERT_EQUAL(MM_CONNECT_WIFI, mm_parse_connect_on(NULL));
+}
+
 static void test_exact_match(void)
 {
     TEST_ASSERT_TRUE(mm_topic_matches("wican/abc/status",
@@ -167,5 +195,7 @@ void app_main(void)
     RUN_TEST(test_item_roundtrip);
     RUN_TEST(test_item_bounds);
     RUN_TEST(test_item_unpack_rejects_corrupt);
+    RUN_TEST(test_link_wanted_policy);
+    RUN_TEST(test_connect_on_migration_and_parse);
     UNITY_END();
 }

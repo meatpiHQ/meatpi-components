@@ -79,6 +79,16 @@ void mm_events_start(void);
 
 #include "esp_err.h"
 
+/** Which uplink the client follows (setting `connect_on`, 2026-10-01):
+ *  `wifi` = only while the WiFi STATION is connected (the home network,
+ *  or the dongle's AP), the fresh default; `any` = any uplink, including
+ *  USB Ethernet (the behaviour before v2; migrated documents keep it). */
+typedef enum
+{
+    MM_CONNECT_WIFI = 0,
+    MM_CONNECT_ANY,
+} mm_connect_on_t;
+
 typedef struct
 {
     bool     enabled;
@@ -90,7 +100,27 @@ typedef struct
                                   mqtt_manager.c — no cert_manager.h here:
                                   the host suite includes this header)    */
     uint32_t keepalive_s;
+    mm_connect_on_t connect_on;
 } mm_config_t;
+
+/** PURE link policy: should the client be running right now? The client
+ *  is started when this turns true and STOPPED when it turns false, so a
+ *  device with no uplink never retries a broker it cannot reach. */
+static inline bool mm_link_wanted(mm_connect_on_t on, bool sta_up,
+                                  bool eth_up)
+{
+    return (on == MM_CONNECT_ANY) ? (sta_up || eth_up) : sta_up;
+}
+
+/* ---- PURE settings policy (mqtt_manager_policy.c, host-tested) -------------- */
+
+/** "any" -> MM_CONNECT_ANY; anything else (incl. NULL) -> MM_CONNECT_WIFI. */
+mm_connect_on_t mm_parse_connect_on(const char *value);
+
+/** The v1 -> v2 migration rule for `connect_on`: the value to ADD to a
+ *  stored document (from_version < 2 without the key keeps the v1
+ *  behaviour, "any"), or NULL when the document is left as it is. */
+const char *mm_migrated_connect_on(uint32_t from_version, bool present);
 
 /** Register the "mqtt_manager" descriptor with settings_manager. */
 esp_err_t mm_settings_register(void);

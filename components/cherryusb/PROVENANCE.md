@@ -114,3 +114,17 @@ usbh_*_run/stop/eth_input symbols would bypass our netif glue.
   uses the +1-pad-byte variant, valid because RNDIS frames carry their
   own MessageLength; device-side usbd_cdc_ecm/ncm/rndis all ZLP
   correctly.)
+
+- `class/hub/usbh_hub.c` `usbh_hub_deinitialize()` (2026-10-01): the
+  `usb_osal_enter_critical_section()` around `usb_hc_deinit()` is gone.
+  On this port that is `taskENTER_CRITICAL()` (interrupts off) and
+  `usb_hc_deinit()` blocks inside it (`usb_osal_msleep(200)`, then
+  `esp_intr_free()` in `usb_hc_low_level_deinit()` which waits on a
+  cross-core IPC semaphore); blocking with interrupts masked corrupted
+  the FreeRTOS task lists and every `usbh_deinitialize()` ended in an
+  "Interrupt wdt timeout on CPU1" panic (hit on the sleep bench: the
+  sleep prepare sequence stops the USB host; a physical unplug takes the
+  same path). `usb_hc_deinit()` masks the controller's global interrupt
+  as its first instruction, so nothing races it. Reproduce with the
+  bench CLI `sleep test 20` with a device on the connector.
+

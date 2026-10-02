@@ -717,11 +717,19 @@ int usbh_hub_deinitialize(struct usbh_bus *bus)
         usbh_hubport_release(hport);
     }
 
-    flags = usb_osal_enter_critical_section();
+    /* MeatPi (2026-10-01): NOT inside usb_osal_enter_critical_section().
+     * On the ESP port that is taskENTER_CRITICAL() (interrupts off), and
+     * usb_hc_deinit() blocks inside it: usb_osal_msleep(200) and, in
+     * usb_hc_low_level_deinit(), esp_intr_free() which waits on a
+     * cross-core IPC semaphore. Blocking with interrupts masked corrupts
+     * the FreeRTOS task lists and ends in "Interrupt wdt timeout" every
+     * time usbh_deinitialize() runs (sleep entry with the host active, a
+     * physical unplug). usb_hc_deinit() masks the controller's global
+     * interrupt (GAHBCFG.GINT) as its first instruction, so nothing races
+     * it; the critical section bought nothing on an RTOS port. */
+    (void)flags;
 
     usb_hc_deinit(bus);
-
-    usb_osal_leave_critical_section(flags);
 
     usb_osal_mq_delete(bus->hub_mq);
     usb_osal_thread_delete(bus->hub_thread);

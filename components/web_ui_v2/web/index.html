@@ -998,7 +998,7 @@ const LABELS={
   stationary_s:"Stationary after (s)",
   sta_ble_handover:"Pause the station while a phone is connected over Bluetooth",ap_ble_exclusive:"Pause the access point while a phone is connected over Bluetooth",
   /* sleep_manager */
-  sleep_mv:"Sleep voltage (V)",sleep_delay_min:"Sleep delay (min)",periodic_wakeup:"Periodic wake-up",wakeup_interval_min:"Wake up every (min)",
+  sleep_mv:"Sleep voltage (V)",wake_mv:"Wake-up voltage (V)",wake_delay_ms:"Wake up after (s)",sleep_delay_min:"Sleep after (min)",periodic_wakeup:"Periodic wake-up",wakeup_interval_min:"Wake up every (min)",
   /* data_logger */
   "data_logger.format":"File format",max_file_mb:"Max file size (MB)",max_files:"Files kept",batch_rows:"Rows per batch",
   flush_ms:"Flush interval (ms)",autopid_log:"Record parameters",can_log:"Record CAN frames",can_format:"File format",
@@ -1057,10 +1057,12 @@ const HELP={
   wifi_ram_profile:"Lean frees ~14 KB of internal RAM at no measured throughput cost: recommended when WiFi and Bluetooth run together.",
   passkey:"The 6-digit code a phone must enter when pairing.",
   sleep_mv:"The device sleeps once the battery stays below this voltage for the sleep delay.",
+  wake_mv:"The device wakes once the battery has stayed above this voltage for the wake-up delay. Keep it above the sleep voltage; a wider gap stops a battery that only rests high from waking it. Quick Setup measures both on your car.",
+  wake_delay_ms:"How long the battery must stay above the wake-up voltage before the device wakes: 0.1 to 5 s. Longer ignores short spikes such as a door light or a remote unlock; shorter wakes faster.",
   sleep_delay_min:"How long the voltage must stay below the threshold before the device sleeps.",
   periodic_wakeup:"Wake briefly at a fixed interval while sleeping (for example to report position).",
   pause_below_mv:"Polling stops below this battery voltage and resumes 0.3 V above it. 0 = no fixed threshold.",
-  pause_follow_sleep:"With no fixed threshold, pause PID requests whenever the battery is below the Power Saving sleep voltage.",
+  pause_follow_sleep:"With no fixed threshold, pause PID requests whenever the battery is below the Power Saving sleep voltage; they resume above its wake-up voltage.",
   std_init:"AT command chain sent once before standard-PID polling starts: optional, ';'-separated.",
   custom_init:"AT command chain sent once before custom-PID polling starts: optional, ';'-separated.",
   specific_init:"AT command chain sent once before vehicle-specific polling starts, ahead of the per-PID inits: optional, ';'-separated.",
@@ -1181,11 +1183,15 @@ function wantsSlider(key,spec){
   if(spec.minimum==null||spec.maximum==null)return false;
   return(spec.maximum-spec.minimum)<=1500;
 }
+const SEC_MS_KEYS=new Set(["sleep_manager.wake_delay_ms"]);
 function formRow(key,spec,state,onDirty,comp){
   const set=v=>{state[key]=v;onDirty();};const cur=state[key];let ctl;
   /* firmware stores voltages in MILLIVOLTS (any *_mv / *_voltage_mv
      field): users think in VOLTS: render/edit as V, store mV */
   const mvKey=/_mv$/.test(key)&&(spec.type==="integer"||spec.type==="number");
+  /* a short millisecond window the user thinks of in seconds (sleep_manager
+     wake_delay_ms, 0.1 to 5 s): render/edit as s, store ms (2026-10-01) */
+  const secKey=SEC_MS_KEYS.has(comp+"."+key)&&(spec.type==="integer"||spec.type==="number");
   if(spec.type==="boolean"){
     ctl=switchCtl(!!cur,v=>set(v),{yes:"Enabled",no:"Disabled"});
   }else if(spec.enum){
@@ -1193,6 +1199,10 @@ function formRow(key,spec,state,onDirty,comp){
   }else if(mvKey){
     const mn=spec.minimum!=null?spec.minimum/1000:0,mx=spec.maximum!=null?spec.maximum/1000:30;
     ctl=sliderCtl({min:mn,max:mx,step:0.1,value:cur==null?null:cur/1000,unit:"V",decimals:1,
+      onchange:v=>set(Math.round(v*1000))});
+  }else if(secKey){
+    const mn=spec.minimum!=null?spec.minimum/1000:0.1,mx=spec.maximum!=null?spec.maximum/1000:5;
+    ctl=sliderCtl({min:mn,max:mx,step:0.1,value:cur==null?null:cur/1000,unit:"s",decimals:1,
       onchange:v=>set(Math.round(v*1000))});
   }else if(wantsSlider(key,spec)){
     ctl=sliderCtl({min:spec.minimum,max:spec.maximum,step:1,value:cur,unit:(UNIT_SUFFIX[key.split("_").pop()]||null),
@@ -2665,10 +2675,10 @@ PAGES.power=async(view)=>{
   const p=page(view,null,"Power Saving","Sleep behaviour to protect the vehicle battery.");
   const wrap=h("div",{});p.append(wrap);
   try{const rows=await settingsForm("sleep_manager",null,
-      {advancedExcept:["enabled","sleep_mv","sleep_delay_min","periodic_wakeup","wakeup_interval_min"],
+      {advancedExcept:["enabled","sleep_mv","wake_mv","wake_delay_ms","sleep_delay_min","periodic_wakeup","wakeup_interval_min"],
        /* progressive disclosure: nothing but the switch while sleep is off;
           the wake-up interval only once periodic wake-up is on */
-       visible:st=>!st.enabled?["enabled"]:(st.periodic_wakeup?null:["enabled","sleep_mv","sleep_delay_min","periodic_wakeup","cli"])});
+       visible:st=>!st.enabled?["enabled"]:(st.periodic_wakeup?null:["enabled","sleep_mv","wake_mv","wake_delay_ms","sleep_delay_min","periodic_wakeup","cli"])});
     const st=await tryGet("/api/sleep");
     /* meatpi 2026-09-07: anything motion/wake related must be visible here. "Wake on
        motion" (the IMU's bump detector) ships off; when it is on, say so: and say what
@@ -2681,9 +2691,9 @@ PAGES.power=async(view)=>{
     wrap.append(cardTools("Sleep Mode","battery",[],
       st?h("div",{class:"rowflex",style:"gap:8px;margin-bottom:10px;flex-wrap:wrap"},
         chip(st.state||"normal",st.state==="normal"?"ok":"warn"),
-        st.voltage!=null?chip(st.voltage.toFixed(2)+" V","info"):null):null,
+        st.voltage!=null?chip(st.voltage.toFixed(1)+" V","info"):null):null,
       ...rows,
-      note("warn","Disabling sleep continuously drains the vehicle battery when the engine is off. Only disable for testing.")));
+      note("warn","Disabling sleep continuously drains the vehicle battery when the engine is off. Only disable for testing. One guard stays on regardless: a battery under 11.9 V for 2 minutes puts the device to sleep anyway.")));
   }catch(e){wrap.append(banner("crit","alert",e.message));}
   return null;
 };

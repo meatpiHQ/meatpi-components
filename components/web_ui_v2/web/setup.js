@@ -23,6 +23,7 @@ const STEPS=[
   {id:"reconnect",t:"Reconnect",g:"After the restart"},
   {id:"checks",t:"Checks"},
   {id:"vehicle",t:"Your vehicle"},
+  {id:"power",t:"Battery and sleep"},
   {id:"polling",t:"Reading the car"},
   {id:"done",t:"Done"},
 ];
@@ -41,9 +42,11 @@ const W={cur:null,use:"ha",agree:[false,false,false],haInstalled:false,
   car:null,noProfile:false,proto:"0",plugged:false,ignition:false,
   scan:"idle",scanStatus:null,scanResult:null,stdSel:new Set(),
   vehPhase:null,veh:null,vehName:"",profChoice:null,profCar:null,profList:undefined,
-  poll:{rate:5,rateCustom:3,minEvent:1,pause:"sleep",pauseV:12.5,pauseAll:false,std:true,specific:true,custom:true,dtc:false,dtcMin:60},pollSeeded:false};
+  poll:{rate:5,rateCustom:3,minEvent:1,pause:"sleep",pauseV:12.5,pauseAll:false,std:true,specific:true,custom:true,dtc:false,dtcMin:60},pollSeeded:false,
+  /* step 10, battery and sleep: the live trace, the two readings, the chosen pair */
+  pwr:{phase:"idle",trace:[],base:null,charging:null,resting:null,tC:0,tD:0,tR:0,sleep:13.1,wake:13.2,touched:false,narrow:false,measured:false,skipped:false,misses:0}};
 /* device documents fetched while the wizard is open */
-const D={wifi:null,mqtt:null,dest:null,autopid:null,autopidSchema:null,cfg:null,vehicle:null,vehicles:null,webhook:null,wifiStatus:null,sleep:undefined};
+const D={wifi:null,mqtt:null,dest:null,autopid:null,autopidSchema:null,cfg:null,vehicle:null,vehicles:null,webhook:null,wifiStatus:null,sleep:undefined,sleepSchema:undefined};
 
 const CSS=`
 .qs{display:grid;grid-template-columns:232px minmax(0,1fr);background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);overflow:hidden;min-height:560px}
@@ -143,8 +146,34 @@ const CSS=`
 .qs-next a b{color:var(--primary)}
 .qs-next a span{font-size:12.5px;color:var(--text-2)}
 .qs-inline{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:12.5px;color:var(--text-3)}
+/* step 10: the live battery card, its trace and the two threshold rows */
+.qs-live{display:grid;grid-template-columns:minmax(150px,auto) minmax(0,1fr);gap:14px 22px;align-items:start;padding:14px 16px;border:1px solid var(--border);border-radius:12px;background:var(--surface-2)}
+.qs-live .big{font-family:var(--mono);font-size:34px;font-weight:600;line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.qs-live .big small{font-size:15px;color:var(--text-3);margin-left:4px;font-weight:500}
+.qs-live .lbl{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);margin-bottom:6px}
+.qs-live .st{margin-top:8px}
+.qs-trace svg{width:100%;height:auto;display:block}
+.qs-trace .g{stroke:var(--border);stroke-width:1}
+.qs-trace .l{fill:none;stroke:var(--primary);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.qs-trace .f{fill:var(--primary);opacity:.08}
+.qs-trace .t{stroke-dasharray:4 4;stroke-width:1.5}
+.qs-trace .t.sleep{stroke:var(--warning)}
+.qs-trace .t.wake{stroke:var(--success)}
+.qs-trace text{font-family:var(--mono);font-size:10.5px;fill:var(--text-3)}
+.qs-trace text.sleep{fill:var(--warning)}
+.qs-trace text.wake{fill:var(--success)}
+.qs-trace .m{fill:var(--surface);stroke:var(--primary);stroke-width:2}
+.qs-trace .m.e{fill:var(--primary)}
+.qs-thr{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.qs-thr-row{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--surface)}
+.qs-thr-row>b{display:flex;align-items:center;gap:8px;font-size:13.5px}
+.qs-thr-row>b i{width:10px;height:3px;border-radius:2px;display:inline-block}
+.qs-thr-row .val{font-family:var(--mono);font-size:22px;font-weight:600;font-variant-numeric:tabular-nums}
+.qs-thr-row input[type=range]{width:100%;max-width:none;padding:0;border:0;background:none;accent-color:var(--primary)}
+.qs-thr-row>span{color:var(--text-2);font-size:12.5px;line-height:1.45}
 @media (max-width:860px){
   .qs{grid-template-columns:1fr}
+  .qs-live,.qs-thr{grid-template-columns:1fr}
   .qs-rail{flex-direction:row;flex-wrap:wrap;border-right:0;border-bottom:1px solid var(--border);padding:12px}
   .qs-rail .grp,.qs-rail .div,.qs-rail .restart{display:none}
   .qs-step{grid-template-columns:22px auto;padding:5px 8px}
@@ -552,7 +581,7 @@ SCREENS.vehicle=async()=>{
   const maxName=(D.autopidSchema&&D.autopidSchema.properties&&D.autopidSchema.properties.vehicle&&D.autopidSchema.properties.vehicle.maxLength)||63;
   const err=h("div",{});
   const body=h("div",{class:"qs-body"});
-  const finish=btn("Continue",()=>go("polling"),"pri");
+  const finish=btn("Continue",()=>go("power"),"pri");
   const picker=vehicleProfilePicker({current:()=>W.profCar?W.profCar.car_model:(W.veh&&W.veh.profile)||"",onPick:car=>{W.profCar=car;W.profChoice="car";render();}});
   const entries=()=>(D.vehicles&&Array.isArray(D.vehicles.vehicles))?D.vehicles.vehicles:[];
   const protoName=p=>PROTO[String(p)]||(String(p)==="0"||!p?"Automatic":"protocol "+p);
@@ -721,7 +750,202 @@ function profileProtocol(car){
   return "";
 }
 
-/* ---- step 10: how WiCAN reads the car (the autopid polling rules, 2026-10-01) ----
+/* ---- step 10: battery and sleep (2026-10-01, Ali) ----
+   Two readings from the car make the Power Saving pair: the charging voltage
+   with the engine running and the resting voltage after key-off. The wake
+   voltage is a setting of its own since sleep_manager v3 (wake_mv). Every
+   voltage shows ONE decimal (Ali). The capture machine (pwrStep) and the
+   rule (pwrRecommend) are pure; the screen polls GET /api/battery once a
+   second (the sampler refreshes every poll_s from an 8-sample burst). */
+const r1=x=>Math.round(x*10+1e-6)/10;
+const fmtV=v=>(v==null||!isFinite(v))?"--.-":Number(v).toFixed(1);
+const pwrLast=(p,k)=>p.trace.slice(-k).map(x=>x.v);
+const mean=a=>a.reduce((x,y)=>x+y,0)/a.length;
+const spread=a=>Math.max(...a)-Math.min(...a);
+/* one reading in; returns true when the phase changed */
+function pwrStep(p,v,now){
+  if(v==null||!isFinite(v)){p.misses=(p.misses||0)+1;if(p.misses>=5&&!p.trace.length&&p.phase==="running"){p.phase="nobatt";return true;}return false;}
+  p.misses=0;
+  p.trace.push({t:now,v});if(p.trace.length>90)p.trace.shift();
+  if(p.base==null&&p.trace.length>=3)p.base=mean(pwrLast(p,3));
+  if(p.phase==="nobatt"){if(v>=11){p.phase="running";p.trace=[{t:now,v}];p.base=null;return true;}return false;}
+  if(p.phase==="running"){
+    if(p.trace.length>=3&&mean(pwrLast(p,3))<9){p.phase="nobatt";return true;}
+    if(p.trace.length>=6){const a=pwrLast(p,6);
+      /* charging = stable and clearly above a resting battery; a smart alternator
+         charges lower: a climb of 0.4 V from the first readings, then 12 s stable */
+      const lowCharge=p.trace.length>=12&&p.base!=null&&spread(pwrLast(p,12))<0.1&&mean(a)>=p.base+0.4&&mean(a)>=12.6;
+      if((spread(a)<0.15&&mean(a)>=13.3)||lowCharge){p.charging=mean(a);p.tC=now;p.phase="charged";return true;}}
+    return false;
+  }
+  if(p.phase==="charged"){
+    const a=pwrLast(p,2);
+    if(a.length===2&&Math.max(...a)<p.charging-0.5){p.phase="dropping";p.tD=now;return true;}
+    return false;
+  }
+  if(p.phase==="dropping"){
+    const a=pwrLast(p,10);
+    if(a.length===10&&((spread(a)<0.04&&mean(a)<p.charging-0.4)||now-p.tD>=60000)){p.resting=mean(pwrLast(p,5));p.tR=now;p.phase="rested";return true;}
+    return false;
+  }
+  return false;
+}
+/* a little above resting for sleep, a little above sleep but well below
+   charging for wake; narrow margins are flagged, never hidden */
+function pwrRecommend(p,rng){
+  const gap=p.charging-p.resting;
+  let sleep=r1(p.resting+(gap<0.5?0.2:0.3));
+  let wake=gap<0.5?r1(sleep+0.1):Math.min(r1(sleep+0.2),r1(p.charging-0.4));
+  if(wake<sleep+0.1)wake=r1(sleep+0.1);
+  sleep=Math.min(rng.sMax,Math.max(rng.sMin,sleep));wake=Math.min(rng.wMax,Math.max(rng.wMin,wake));
+  if(wake<sleep+0.1)wake=r1(sleep+0.1);
+  p.sleep=sleep;p.wake=wake;p.touched=false;p.narrow=pwrNarrow(p);
+}
+const pwrNarrow=p=>p.charging!=null&&p.resting!=null&&(r1(p.charging-p.wake)<=0.3||r1(p.sleep-p.resting)<0.2);
+function pwrChip(p){
+  if(p.phase==="nobatt")return chip("No battery","warn");
+  if(p.phase==="running")return chip("Waiting for the engine","");
+  if(p.phase==="charged")return chip("Charging","ok");
+  if(p.phase==="dropping")return chip("Dropping","warn");
+  return chip("Resting","ok");
+}
+/* the live trace: the last 90 readings, grid at whole volts, the two
+   thresholds dashed with labels, the captured readings marked */
+function pwrSvg(p){
+  const W=600,H=150,L=34,R=92,T=12,B=138;
+  const usb=p.phase==="nobatt";const lo=usb?0:11.5,hi=15;
+  const y=v=>B-(Math.min(hi,Math.max(lo,v))-lo)/(hi-lo)*(B-T);
+  const n=90,x=i=>L+(i/(n-1))*(W-L-R),off=n-p.trace.length;
+  let s='<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Battery voltage, last 90 seconds">';
+  for(const g of(usb?[0,5,10,15]:[12,13,14,15]))s+='<line class="g" x1="'+L+'" x2="'+(W-R)+'" y1="'+y(g).toFixed(1)+'" y2="'+y(g).toFixed(1)+'"/><text x="'+(L-6)+'" y="'+(y(g)+3.5).toFixed(1)+'" text-anchor="end">'+g+' V</text>';
+  if(p.trace.length>1){const pts=p.trace.map((r,i)=>x(off+i).toFixed(1)+","+y(r.v).toFixed(1));
+    s+='<polygon class="f" points="'+x(off).toFixed(1)+','+B+' '+pts.join(" ")+' '+x(n-1).toFixed(1)+','+B+'"/><polyline class="l" points="'+pts.join(" ")+'"/>';}
+  const mark=(t,v)=>{const i=p.trace.findIndex(r=>r.t===t);return i>=0?'<circle class="m" cx="'+x(off+i).toFixed(1)+'" cy="'+y(v).toFixed(1)+'" r="4"/>':"";};
+  if(p.charging!=null&&p.phase!=="running")s+=mark(p.tC,p.charging);
+  if(p.phase==="rested"){s+=mark(p.tR,p.resting);
+    for(const [k,v] of [["sleep",p.sleep],["wake",p.wake]]){const yy=y(v).toFixed(1);
+      s+='<line class="t '+k+'" x1="'+L+'" x2="'+(W-R)+'" y1="'+yy+'" y2="'+yy+'"/><text class="'+k+'" x="'+(W-R+6)+'" y="'+(Number(yy)+(k==="sleep"?10:-3)).toFixed(1)+'">'+k+' '+fmtV(v)+' V</text>';}}
+  if(p.trace.length){const r=p.trace[p.trace.length-1];s+='<circle class="m e" cx="'+x(n-1).toFixed(1)+'" cy="'+y(r.v).toFixed(1)+'" r="3.5"/>';}
+  return s+'</svg>';
+}
+function pwrWarn(p){
+  if(p.phase!=="rested")return null;
+  /* a slider dragged into a mistake is named first; the car's own small margins after */
+  if(p.touched&&p.wake>p.charging-0.2)return banner("warn","alert",h("b",{},"Wake is above your charging voltage. "),"WiCAN would never wake up while you drive. Keep it at least 0.3 V under "+fmtV(p.charging)+" V.");
+  if(p.touched&&p.sleep<=p.resting)return banner("warn","alert",h("b",{},"Sleep is below your resting voltage. "),"Parked, the battery stays above "+fmtV(p.sleep)+" V and WiCAN would never sleep.");
+  if(p.narrow)return banner("warn","alert",h("b",{},"Small margins on this car. "),"It charges at only "+fmtV(p.charging)+" V, close to its resting "+fmtV(p.resting)+" V; a smart alternator does this once the battery is full. WiCAN can still tell parked from driving with these values, but keep the sleep delay at 5 minutes or more. If WiCAN ever falls asleep while you drive, lower both voltages a little; if it never sleeps, raise the sleep voltage.");
+  return null;
+}
+SCREENS.power=async()=>{
+  if(D.sleep===undefined)D.sleep=await tryGet("/api/settings/sleep_manager");
+  if(D.sleepSchema===undefined)D.sleepSchema=await tryGet("/api/settings/sleep_manager/schema");
+  const props=(D.sleepSchema&&D.sleepSchema.properties)||{};
+  const lim=(k,dmin,dmax)=>{const q=props[k]||{};return [q.minimum!=null?q.minimum/1000:dmin,q.maximum!=null?q.maximum/1000:dmax];};
+  const [sMin,sMax]=lim("sleep_mv",12,14),[wMin,wMax]=lim("wake_mv",12.1,15);
+  const rng={sMin,sMax,wMin,wMax};
+  const hasWake=!!props.wake_mv; /* older firmware derives wake = sleep + 0.1 V */
+  const devSleep=D.sleep&&D.sleep.sleep_mv>0?D.sleep.sleep_mv/1000:13.1;
+  const devWake=D.sleep&&D.sleep.wake_mv>0?D.sleep.wake_mv/1000:r1(devSleep+0.1);
+  const delayMin=(D.sleep&&D.sleep.sleep_delay_min>0)?D.sleep.sleep_delay_min:5;
+  const holdTxt=((D.sleep&&D.sleep.wake_delay_ms>0?D.sleep.wake_delay_ms:500)/1000).toFixed(1).replace(/\.0$/,"")+" s";
+  const p=W.pwr;
+  if(p.phase==="idle"){p.phase="running";p.trace=[];p.base=null;p.charging=null;p.resting=null;p.sleep=devSleep;p.wake=devWake;p.touched=false;p.narrow=false;}
+  const body=h("div",{class:"qs-body"});
+  let bigEl,chipEl,traceEl,sleepVal,wakeVal,sleepIn,wakeIn,sumEl,warnEl,recoEl;
+  const summary=()=>["WiCAN sleeps once the battery has stayed below ",h("b",{},fmtV(p.sleep)+" V")," for "+delayMin+" minute"+(delayMin===1?"":"s")+" and wakes as soon as it rises above ",h("b",{},fmtV(p.wake)+" V"),". Margins on your car: "+fmtV(p.sleep-p.resting)+" V above resting, "+fmtV(p.charging-p.wake)+" V below charging."];
+  const slide=(k,val)=>{
+    p.touched=true;
+    if(k==="sleep"){p.sleep=r1(val);if(p.wake<p.sleep+0.1)p.wake=r1(p.sleep+0.1);}
+    else p.wake=Math.max(r1(val),r1(p.sleep+0.1));
+    p.narrow=pwrNarrow(p);paintLive();
+    if(recoEl&&!recoEl.querySelector("button"))recoEl.replaceChildren(btn("Back to the recommendation",()=>{pwrRecommend(p,rng);render();},"sm"));
+  };
+  const paintLive=()=>{
+    const v=p.trace.length?p.trace[p.trace.length-1].v:null;
+    if(bigEl)bigEl.replaceChildren(fmtV(v),h("small",{},"V"));
+    if(chipEl)chipEl.replaceChildren(pwrChip(p));
+    if(traceEl)traceEl.innerHTML=pwrSvg(p);
+    if(sleepVal)sleepVal.textContent=fmtV(p.sleep)+" V";
+    if(wakeVal)wakeVal.textContent=fmtV(p.wake)+" V";
+    if(sleepIn&&Number(sleepIn.value)!==p.sleep)sleepIn.value=p.sleep;
+    if(wakeIn&&Number(wakeIn.value)!==p.wake)wakeIn.value=p.wake;
+    if(sumEl&&p.phase==="rested")sumEl.replaceChildren(...summary());
+    if(warnEl){const w=pwrWarn(p);warnEl.replaceChildren(w||"");}
+  };
+  const useNow=()=>{
+    if(p.trace.length<3)return;
+    const now=Date.now();
+    if(p.phase==="running"){p.charging=mean(pwrLast(p,3));p.tC=now;p.phase="charged";}
+    else if(p.phase==="charged"){p.phase="dropping";p.tD=now;}
+    else if(p.phase==="dropping"){p.resting=mean(pwrLast(p,3));p.tR=now;p.phase="rested";pwrRecommend(p,rng);}
+    render();
+  };
+  const right=(...els)=>h("div",{style:"display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end"},...els);
+  const useBtn=()=>{const b=btn("Use the current reading",useNow,"sm");b.id="qs-pwr-use";return b;};
+  const render=()=>{
+    const out=[];
+    const v=p.trace.length?p.trace[p.trace.length-1].v:null;
+    bigEl=h("div",{class:"big",id:"qs-pwr-big"},fmtV(v),h("small",{},"V"));
+    chipEl=h("div",{class:"st",id:"qs-pwr-state"},pwrChip(p));
+    traceEl=h("div",{class:"qs-trace",id:"qs-pwr-trace"});traceEl.innerHTML=pwrSvg(p);
+    out.push(h("div",{class:"qs-live"},h("div",{},h("div",{class:"lbl"},"Battery now"),bigEl,chipEl,h("div",{class:"help",style:"font-size:11.5px;margin-top:10px;color:var(--text-3)"},"One reading a second, the last 90 s shown.")),traceEl));
+    if(p.phase==="nobatt"){
+      out.push(banner("info","info",h("b",{},"WiCAN is not seeing a car battery"),v==null?" (no reading yet)":" ("+fmtV(v)+" V)",". It is probably powered over USB on a desk. Keep the current values for now (sleep below "+fmtV(devSleep)+" V, wake above "+fmtV(devWake)+" V) and run Quick Setup again once it is in the car: this step takes about a minute there."));
+    }else{
+      const stA=p.phase==="running"?"run":"ok";
+      const stB=p.phase==="running"?"":p.phase==="rested"?"ok":"run";
+      out.push(sub("1. Engine running"));
+      out.push(check(stA,"check","Start the engine",["Or put an EV or hybrid in Ready. WiCAN waits for the charging voltage to settle; most cars charge the 12 V battery at 13.8 to 14.8 V. If yours charges lower (a smart alternator), press ",h("strong",{},"Use the current reading")," once the engine runs."],
+        stA==="ok"?chip(fmtV(p.charging)+" V charging","ok"):right(chip(p.base!=null&&v!=null&&v>p.base+0.3?"Settling":"Waiting for the engine",""),useBtn())));
+      out.push(sub("2. Engine off"));
+      const rowB=check(stB,"info","Turn the engine off and wait about half a minute","Leave the doors closed and everything switched off. The voltage drops at once, then settles as the battery rests. WiCAN notices the drop by itself.",
+        stB==="ok"?chip(fmtV(p.resting)+" V resting","ok"):stB==="run"?right(chip(p.phase==="dropping"?"Dropping":"Waiting for the engine to stop",""),useBtn()):h("span",{}));
+      if(stB==="")rowB.style.opacity=".55";
+      out.push(rowB);
+      if(p.phase==="rested"){
+        out.push(sub("3. The two voltages"));
+        warnEl=h("div",{id:"qs-pwr-warn"});const w=pwrWarn(p);if(w)warnEl.append(w);out.push(warnEl);
+        sleepVal=h("span",{class:"val",id:"qs-pwr-sleep-val"},fmtV(p.sleep)+" V");
+        sleepIn=h("input",{type:"range",id:"qs-pwr-sleep",min:sMin,max:sMax,step:0.1,value:p.sleep,"aria-label":"Sleep voltage",oninput:e=>slide("sleep",Number(e.target.value))});
+        wakeVal=h("span",{class:"val",id:"qs-pwr-wake-val"},fmtV(p.wake)+" V");
+        wakeIn=h("input",{type:"range",id:"qs-pwr-wake",min:wMin,max:wMax,step:0.1,value:p.wake,disabled:!hasWake,"aria-label":"Wake voltage",oninput:e=>slide("wake",Number(e.target.value))});
+        out.push(h("div",{class:"qs-thr"},
+          h("div",{class:"qs-thr-row"},h("b",{},h("i",{style:"background:var(--warning)"}),"Sleep below"),sleepVal,sleepIn,
+            h("span",{},"Parked, the battery rests at about ",h("b",{},fmtV(p.resting)+" V")," on your car. Once it has stayed below this voltage for "+delayMin+" minute"+(delayMin===1?"":"s")+", WiCAN sleeps.")),
+          h("div",{class:"qs-thr-row"},h("b",{},h("i",{style:"background:var(--success)"}),"Wake above"),wakeVal,wakeIn,
+            h("span",{},hasWake?["Driving, the engine charges at about ",h("b",{},fmtV(p.charging)+" V"),". Above this voltage for "+holdTxt+", WiCAN wakes up and starts polling again."]:"This firmware derives the wake voltage: 0.1 V above sleep."))));
+        sumEl=h("p",{class:"qs-lead",id:"qs-pwr-sum",style:"font-size:13px"},...summary());out.push(sumEl);
+        recoEl=h("div",{id:"qs-pwr-reco",style:"display:flex;gap:8px;align-items:center;flex-wrap:wrap"},
+          p.touched?btn("Back to the recommendation",()=>{pwrRecommend(p,rng);render();},"sm"):h("span",{class:"help",style:"font-size:12.5px"},"Recommended from your two readings: a little above resting for sleep, well below charging for wake. Drag either slider to change it."));
+        out.push(recoEl);
+        out.push(note("","Both voltages and the "+delayMin+" minute delay live under Power Saving afterwards. Power Saving is switched on when you continue. WiCAN only reads the voltage; it never switches anything in the car off."));
+      }else{
+        out.push(note("","Why measure: with the wrong voltages WiCAN either never sleeps and slowly drains the 12 V battery, or falls asleep while you drive and your data stops. One minute here settles both."));
+      }
+    }
+    body.replaceChildren(...out);
+  };
+  const tick=async()=>{
+    const b=await tryGet("/api/battery");
+    const v=b&&typeof b.voltage==="number"?b.voltage:null;
+    if(!body.isConnected)return;
+    if(pwrStep(p,v,Date.now())){if(p.phase==="rested")pwrRecommend(p,rng);render();}
+    else paintLive();
+  };
+  render();
+  await tick();
+  every(1000,tick);
+  const keepLabel=p.phase==="nobatt"?"Continue with the current values":"Keep the current values ("+fmtV(devSleep)+" / "+fmtV(devWake)+" V)";
+  const keep=btn(keepLabel,()=>{p.skipped=true;p.measured=false;go("polling");},p.phase==="nobatt"?"pri":"gh sm");keep.id="qs-pwr-keep";
+  const cont=p.phase==="nobatt"?null:btn("Continue",()=>{p.measured=true;p.skipped=false;go("polling");},"pri",{disabled:p.phase!=="rested"});if(cont)cont.id="qs-pwr-continue";
+  /* the footer follows the phase (Continue unlocks once both readings are in) */
+  const refreshFoot=()=>{if(cont)cont.disabled=p.phase!=="rested";};
+  every(1000,refreshFoot);
+  return screen("When should WiCAN sleep?","WiCAN watches your car's 12 V battery. With the engine running the battery is being charged and its voltage is high; parked, it rests lower. WiCAN sleeps once the voltage has stayed below the sleep voltage for "+delayMin+" minute"+(delayMin===1?"":"s")+", and wakes when it rises above the wake voltage. Measure both on your car in about a minute.",
+    [body],[back("vehicle"),grow(),keep,cont]);
+};
+
+/* ---- step 11: how WiCAN reads the car (the autopid polling rules, 2026-10-01) ----
    Plain-language versions of the Automate settings that decide how much data
    the user gets and what happens when the car is parked. Prefilled from the
    device; staged with the vehicle step's Finish (one restart). The poll rate
@@ -751,7 +975,9 @@ SCREENS.polling=async()=>{
     W.pollSeeded=true;
   }
   const p=W.poll;
-  const sleepV=D.sleep&&D.sleep.sleep_mv>0?(D.sleep.sleep_mv/1000).toFixed(1)+" V":"13.1 V";
+  const devSleepV=D.sleep&&D.sleep.sleep_mv>0?D.sleep.sleep_mv/1000:13.1;
+  const sleepV=fmtV(W.pwr.measured?W.pwr.sleep:devSleepV)+" V";
+  const wakeV=fmtV(W.pwr.measured?W.pwr.wake:(D.sleep&&D.sleep.wake_mv>0?D.sleep.wake_mv/1000:r1(devSleepV+0.1)))+" V";
   const hasProfile=!!(W.profChoice==="car"&&W.profCar)||!!(W.veh&&W.veh.known&&W.veh.profile&&W.profChoice!=="none");
   const err=h("div",{});
   const body=h("div",{class:"qs-body"});
@@ -776,7 +1002,7 @@ SCREENS.polling=async()=>{
       h("div",{class:"help"},"Limits how fast value changes are pushed to Home Assistant, MQTT and the rules. Slower than the poll rate it never does anything.")));
     out.push(sub("2. When the car is off"));
     const pauseBox=h("div",{class:"qs-radios",style:"gap:8px"});
-    pauseBox.append(radio("qs-pause","qs-pause-sleep",p.pause==="sleep","Pause with Power Saving (recommended)","Requests stop when the 12 V battery drops below the Power Saving voltage ("+sleepV+": engine off) and resume when it comes back. The car's modules can sleep and the battery stays charged.",()=>{p.pause="sleep";render();}));
+    pauseBox.append(radio("qs-pause","qs-pause-sleep",p.pause==="sleep","Pause with Power Saving (recommended)","Requests stop when the 12 V battery drops below the Power Saving sleep voltage ("+sleepV+(W.pwr.measured?", measured on your car":"")+": engine off) and resume above the wake-up voltage ("+wakeV+"). The car's modules can sleep and the battery stays charged.",()=>{p.pause="sleep";render();}));
     const slider=h("input",{type:"range",min:12,max:14.5,step:0.1,value:p.pauseV,style:"width:260px;max-width:100%;vertical-align:middle",oninput:e=>{p.pauseV=Number(e.target.value);vLbl.textContent=p.pauseV.toFixed(1)+" V";},onchange:()=>{p.pause="custom";render();}});
     const vLbl=h("span",{class:"mono"},p.pauseV.toFixed(1)+" V");
     pauseBox.append(radio("qs-pause","qs-pause-custom",p.pause==="custom","Pause below a voltage I choose",["Stops below the voltage you set, resumes 0.3 V above it. ",h("br"),slider," ",vLbl],()=>{p.pause="custom";render();}));
@@ -798,7 +1024,7 @@ SCREENS.polling=async()=>{
   };
   render();
   return screen("How WiCAN reads the car","These rules decide how much data you get and what happens when the car is parked. The defaults suit Home Assistant and MQTT; change them if you know what you want. Everything here can be changed later under Automate.",
-    [body],[back("vehicle"),grow(),finish]);
+    [body],[back("power"),grow(),finish]);
 };
 
 async function finishVehicle(finishBtn,errEl,maxName){
@@ -853,12 +1079,20 @@ async function finishVehicle(finishBtn,errEl,maxName){
     av.dtc_enabled=!!p.dtc;
     av.dtc_scan_period_min=p.dtc?Math.max(5,p.dtcMin):0;
     store.stage("autopid",av);
+    /* 4. the Battery and sleep step: the measured pair switches Power Saving on (wake_mv only
+       when this firmware has it; an older one derives wake = sleep + 0.1 V) */
+    if(W.pwr.measured){
+      const sm=strip(D.sleep||await api("/api/settings/sleep_manager"));
+      sm.enabled=true;sm.sleep_mv=Math.round(W.pwr.sleep*1000);
+      if(D.sleepSchema&&D.sleepSchema.properties&&D.sleepSchema.properties.wake_mv)sm.wake_mv=Math.round(W.pwr.wake*1000);
+      store.stage("sleep_manager",sm);
+    }
     W.noVeh=false;W.cur="done";
     try{history.replaceState(null,"","#/setup/done");}catch(_){}
     paint();
     await store.commit("Quick Setup: applying vehicle settings");
   }catch(e){
-    store.unstage("autopid");finishBtn.disabled=false;
+    store.unstage("autopid");store.unstage("sleep_manager");finishBtn.disabled=false;
     errEl.replaceChildren(banner("crit","alert",h("b",{},"WiCAN did not accept the vehicle setup: "),e.message||String(e)));
   }
 }
@@ -884,8 +1118,12 @@ SCREENS.done=async()=>{
     if(vehOn&&!W.noVeh){const pp=W.poll;const rate=pp.rate==="custom"?pp.rateCustom:pp.rate;
       const pauseTxt=pp.pause==="sleep"?"pauses with Power Saving":pp.pause==="custom"?"pauses below "+pp.pauseV.toFixed(1)+" V":"never pauses";
       kv.push(h("dt",{},"Reading the car"),h("dd",{},h("span",{},"every "+rate+" s, "+pauseTxt+(pp.dtc?", trouble codes every "+pp.dtcMin+" min":""))));}
+    if(vehOn&&!W.noVeh&&W.pwr.measured){const dm=(D.sleep&&D.sleep.sleep_delay_min>0)?D.sleep.sleep_delay_min:5;
+      kv.push(h("dt",{},"Battery and sleep"),h("dd",{},h("span",{},"sleeps after "+dm+" min below ",h("b",{},fmtV(W.pwr.sleep)+" V"),", wakes above ",h("b",{},fmtV(W.pwr.wake)+" V")),chip("Measured on your car","ok")));}
     out.push(h("dl",{class:"qs-kv"},...kv));
-    if(conn.sleepEnabled===false)out.push(banner("warn","alert",h("b",{},"Power saving is off. "),"WiCAN stays awake and can drain the vehicle battery when the car is parked for days. Turn on sleep under Power Saving when you are happy with the setup."));
+    if(W.pwr.skipped&&!W.noVeh){const sl=await tryGet("/api/sleep");
+      out.push(note("",["Power Saving keeps its current values"+(sl&&sl.sleep_v?" (sleep below "+fmtV(sl.sleep_v)+" V, wake above "+fmtV(sl.wake_v)+" V)":"")+". If WiCAN sleeps while you drive or never sleeps when parked, run Quick Setup again and measure your car on the Battery and sleep step."]));}
+    if(conn.sleepEnabled===false&&!W.pwr.measured)out.push(banner("warn","alert",h("b",{},"Power saving is off. "),"WiCAN stays awake and can drain the vehicle battery when the car is parked for days. Turn on sleep under Power Saving when you are happy with the setup."));
     out.push(sub("Where to go next"));
     out.push(h("div",{class:"qs-next"},
       h("a",{href:"#/dashboard"},h("b",{},"Dashboard"),h("span",{},"Live values, one tile per parameter.")),
@@ -903,7 +1141,7 @@ SCREENS.done=async()=>{
 /* ---------- the page ---------- */
 PAGES.__setup=async(view,subId)=>{
   if(!document.getElementById("qs-css"))document.head.append(h("style",{id:"qs-css"},CSS));
-  const p=page(view,null,"Quick Setup","Gets a new WiCAN onto your home WiFi, talking to Home Assistant or your MQTT broker, and reading your vehicle. About five minutes.",
+  const p=page(view,null,"Quick Setup","Gets a new WiCAN onto your home WiFi, talking to Home Assistant or your MQTT broker, reading your vehicle and sleeping when the car is parked. About six minutes.",
     [h("button",{class:"btn sm gh",type:"button",onclick:()=>{location.hash="#/status";}},"Exit setup")]);
   railEl=h("aside",{class:"qs-rail","aria-label":"Setup steps"});
   scrEl=h("section",{class:"qs-screen","aria-live":"polite"});

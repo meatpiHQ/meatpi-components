@@ -484,7 +484,18 @@ parameter with value / unit / request, a summary chip, Use this profile. The sto
 (`DELETE /api/autopid/vehicles/<key>`). Finish = `PUT /api/autopid/vehicles/<key>` {name,
 profile, specific_init} (empty profile = standard PIDs only), `PUT /api/autopid/config`
 with the profile's rows via `profileToPids()`, staged autopid {enabled, std_protocol "0",
-vehicle, specific_init} through `store.commit()`), Reading the car (2026-10-01 night: the
+vehicle, specific_init} through `store.commit()`), Battery and sleep (2026-10-01 night, Ali:
+the Power Saving pair measured on the car. `GET /api/battery` once a second into a 90 s SVG
+trace; the charging voltage is captured by itself from six stable readings at or above
+13.3 V (a smart alternator: a 0.4 V climb then 12 s stable, or "Use the current reading"),
+key-off is noticed as two readings 0.5 V under it and the rest is taken once ten readings
+sit within 0.04 V (60 s cap); the pure `pwrRecommend()` makes sleep = resting + 0.3 V and
+wake = sleep + 0.2 V capped at charging minus 0.4 V, two range sliders keep a 0.1 V band,
+warnings for a wake above charging / a sleep under resting / small margins; under 9 V = a
+desk on USB, the step explains and keeps the current pair. Finish stages `sleep_manager`
+{enabled, sleep_mv, wake_mv} (wake_mv only when the schema has it: sleep_manager v3).
+Every battery voltage shows ONE decimal (Ali). The Reading the car step quotes the
+measured pair; Done lists it), Reading the car (2026-10-01 night: the
 autopid polling rules in plain words, prefilled from the device: poll rate 1/2/5/10/custom s
 = the default group's `period_ms` in the live config with the rows on the old default
 inheriting it (a fresh device gets the recommended 5 s, a device already polling keeps

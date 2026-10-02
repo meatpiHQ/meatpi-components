@@ -27,7 +27,7 @@ not event-driven.
 |---|---|
 | `usb_host_manager_init()` | Settings/log/event descriptors. No hardware. |
 | `usb_host_manager_start()` | Pins + presence task when enabled (host or device role). |
-| `usb_host_manager_stop()` | Tear the host stack down, mux back to the CH342 (also the sleep path). |
+| `usb_host_manager_stop()` | Tear the host stack down, mux back to the CH342 (also the sleep path). Since 2026-10-01 it WAITS (bounded, 3 s) for the presence task's teardown instead of returning at once: the sleep prepare sequence powers the USB rail down and light-sleeps right after, and the async teardown (CherryUSB deinit, its 200 ms settle, the interrupt free over IPC) raced that. |
 | `usb_host_manager_status(out)` | `enabled, device_present, host_active, eth_connected, driver, ip, attaches, vid, pid, vbus_on` — `vid`/`pid` (2026-08-24) = the enumerated device behind the active USB-Ethernet driver (0 when none; the ESPNetLink is `303A:4007`), cleared when the IP is lost. |
 | `usb_host_manager_set_vbus(on)` | Drive the connector's VBUS rail while host mode is active (open-drain, board pull-up: power-on default ON; off→on reboots the attached device). `ESP_ERR_INVALID_STATE` when the host is down. The dongle re-pair lever; also `usb vbus <0\|1>`. |
 | `usb_host_manager_register_http()` | `GET /api/usb` (`components/HTTP_API.md` §6e9). |

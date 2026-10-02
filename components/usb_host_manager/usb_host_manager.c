@@ -342,6 +342,23 @@ esp_err_t usb_host_manager_start(void)
 esp_err_t usb_host_manager_stop(void)
 {
     s_run = false; /* the presence task tears down on its next lap */
+
+    /* Bounded wait for that lap (2026-10-01): the sleep prepare sequence
+     * calls this and then powers the USB rail down and light-sleeps; an
+     * async teardown raced that (the CherryUSB deinit, its 200 ms settle
+     * and the interrupt free over IPC). The presence task polls every
+     * UHM_POLL_MS, host_down() takes ~0.3 s; 3 s is generous. Only waits
+     * when a host was actually up. */
+    for (int i = 0; i < 60 && s_task != NULL && s_status.host_active; i++)
+    {
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+
+    if (s_status.host_active)
+    {
+        ESP_LOGW(TAG, "stop: host teardown still running after 3 s");
+    }
+
     return ESP_OK;
 }
 

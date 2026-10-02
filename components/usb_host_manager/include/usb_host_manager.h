@@ -78,7 +78,8 @@ esp_err_t usb_host_manager_init(void);
 esp_err_t usb_host_manager_start(void);
 
 /** Tear the host stack down and return the mux to the CH342 (also the
- *  sleep path — wired into main's prepare callback). */
+ *  sleep path — wired into main's prepare callback). Waits, bounded to
+ *  3 s, for the presence task to finish the teardown (2026-10-01). */
 esp_err_t usb_host_manager_stop(void);
 
 esp_err_t usb_host_manager_status(usb_host_manager_status_t *out);

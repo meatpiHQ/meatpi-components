@@ -134,6 +134,15 @@ static void *cjson_psram_malloc(size_t size) {
 #define ML_PSRAM_TASKS 3
 static StaticTask_t s_ml_tcb[ML_PSRAM_TASKS];   /* internal: FreeRTOS TCB */
 static StackType_t *s_ml_stack[ML_PSRAM_TASKS]; /* PSRAM stack buffers    */
+/* WiCAN (2026-10-02): the stacks may only be freed after a REAL join of the
+ * tasks that run on them (see microlink_stop). A fixed 3 s wait was not one:
+ * a task blocked in getaddrinfo() (lwIP retries an unanswered DNS query for
+ * about 10 s) was still alive when microlink_destroy() freed its stack, and
+ * the DNS timer then wrote the lookup result into the freed memory
+ * (Cache-error panic in lwip_netconn_do_dns_found <- dns_tmr, about 90 s
+ * after every Tailscale restart against an unreachable control server). */
+static bool s_ml_tasks_joined;
+#define ML_STOP_JOIN_MS 30000u
 
 static bool ml_start_psram_task(TaskFunction_t fn, const char *name,
                                 uint32_t stack_bytes, void *arg,
@@ -159,11 +168,48 @@ static bool ml_start_psram_task(TaskFunction_t fn, const char *name,
 }
 
 static void ml_free_psram_task_stacks(void) {
+    if (!s_ml_tasks_joined) {
+        /* a task may still run on one of these: leaking beats a write into
+         * freed memory from the lwIP DNS timer */
+        ESP_LOGW(TAG, "tasks not joined; keeping the PSRAM task stacks");
+        return;
+    }
     for (int i = 0; i < ML_PSRAM_TASKS; i++) {
         if (s_ml_stack[i] != NULL) {
             heap_caps_free(s_ml_stack[i]);
             s_ml_stack[i] = NULL;
         }
+    }
+}
+
+/* Wait until the three static (PSRAM-stack) tasks have self-deleted. Their
+ * TCBs are ours (static), so eTaskGetState() stays valid after the delete.
+ * Bounded: a task stuck longer than the worst blocking call we know of (a
+ * failing DNS lookup) is reported and its stack is kept. */
+static bool ml_join_static_tasks(microlink_t *ml) {
+    TaskHandle_t tasks[ML_PSRAM_TASKS] = { ml->net_io_task, ml->derp_tx_task, ml->coord_task };
+    uint32_t waited_ms = 0;
+
+    for (;;) {
+        bool all_gone = true;
+        for (int i = 0; i < ML_PSRAM_TASKS; i++) {
+            if (tasks[i] != NULL && eTaskGetState(tasks[i]) != eDeleted) {
+                all_gone = false;
+            }
+        }
+        if (all_gone) {
+            if (waited_ms > 3000) {
+                ESP_LOGI(TAG, "tasks joined after %lu ms", (unsigned long)waited_ms);
+            }
+            return true;
+        }
+        if (waited_ms >= ML_STOP_JOIN_MS) {
+            ESP_LOGW(TAG, "a task is still running %lu ms after the stop request",
+                     (unsigned long)waited_ms);
+            return false;
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));
+        waited_ms += 100;
     }
 }
 
@@ -495,9 +541,11 @@ esp_err_t microlink_stop(microlink_t *ml) {
     /* Wait for tasks to exit (they check ML_EVT_SHUTDOWN_REQUEST).
      * Tasks call vTaskDelete(NULL) to self-delete, so we must NOT call
      * vTaskDelete() on them again — that causes a crash in uxListRemove
-     * because the task's list node is already invalid. Just wait and
-     * NULL the handles. */
-    vTaskDelay(pdMS_TO_TICKS(3000));
+     * because the task's list node is already invalid. WiCAN (2026-10-02):
+     * a REAL join of the static tasks (their stacks are freed by destroy),
+     * then a moment for the idle task to reap the dynamic wg_mgr task. */
+    s_ml_tasks_joined = ml_join_static_tasks(ml);
+    vTaskDelay(pdMS_TO_TICKS(300));
 
     ml->net_io_task = NULL;
     ml->derp_tx_task = NULL;

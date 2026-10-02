@@ -108,7 +108,7 @@ Decisions log there is authoritative; the big ones:
 `enabled` (default **false**), `std_enabled`/`custom_enabled`/
 `specific_enabled`, `std_init`/`custom_init`/`specific_init`
 (';'-separated AT prelude per type; `specific_init` is the fallback for a current car without its own `specific_init` in the vehicle store), `std_protocol` (enum `0` Automatic | `6` CAN 11-bit 500k | `7` CAN 29-bit 500k | `8` CAN 11-bit 250k | `9` CAN 29-bit 250k, default `6`; schema v7; `0` = follow the vehicle store: the detection job learns the protocol per car and the chip prelude pins the current car's protocol instead of `ATTP0`, see "Vehicle store" below; a pinned 6..9 always wins over the store), `vehicle`,
-`pause_below_mv` (0 = no fixed threshold, else 1–14500 mV; resumes +0.3 V with 5 s hold),
+`pause_below_mv` (0 = no fixed threshold, else 1–14500 mV; resumes +0.3 V with 5 s hold; with `pause_follow_sleep` the threshold is the Power Saving sleep voltage and polling resumes at its wake voltage, sleep_manager v3, 2026-10-01),
 `pause_follow_sleep` (default **true** — legacy `disable_pid_requests`
 parity: requests pause below the sleep threshold via the battery
 watch; explicit `pause_below_mv` overrides), `pause_mode`

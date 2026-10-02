@@ -426,18 +426,22 @@ esp_err_t autopid_start(void)
     }
 
     int pause_below_mv = ap_settings_pause_below_mv();
+    float resume_v = 0.0f; /* 0 = the fixed threshold's + 0.3 V rule */
 
     if (pause_below_mv == 0 && ap_settings_pause_follow_sleep())
     {
         /* legacy disable_pid_requests parity: follow the sleep
-         * threshold so a parked car's ECU is never polled awake */
+         * threshold so a parked car's ECU is never polled awake; since
+         * sleep_manager v3 (2026-10-01) polling resumes at the user's
+         * wake voltage, so one pair of numbers rules both */
         sleep_manager_status_t sst;
 
         if (sleep_manager_status(&sst) == ESP_OK && sst.sleep_v > 1.0f)
         {
             pause_below_mv = (int)(sst.sleep_v * 1000.0f);
+            resume_v = sst.wake_v;
             ESP_LOGI(TAG, "request pause follows sleep voltage "
-                     "(%.2f V)", sst.sleep_v);
+                     "(%.2f V, resumes at %.2f V)", sst.sleep_v, sst.wake_v);
         }
     }
 
@@ -453,7 +457,8 @@ esp_err_t autopid_start(void)
         battery_monitor_watch_cfg_t w =
         {
             .below_v = (float)pause_below_mv / 1000.0f,
-            .above_v = (float)pause_below_mv / 1000.0f + 0.3f,
+            .above_v = resume_v > 0.0f ? resume_v
+                                       : (float)pause_below_mv / 1000.0f + 0.3f,
             .hold_ms = 5000,
         };
 

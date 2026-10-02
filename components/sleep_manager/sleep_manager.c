@@ -53,6 +53,7 @@ static const char *TAG = "sleep_manager";
 #define SM_USB_PWR_GPIO   CONFIG_WICAN_SLEEP_USB_PWR_GPIO
 
 static sm_policy_t s_policy;
+static sm_critical_t s_crit;  /* the critical battery floor tracker */
 static sleep_manager_prepare_cb_t s_prepare_cb;
 static volatile bool s_run;
 static volatile uint32_t s_test_wake_s; /* !=0: forced bench sleep */
@@ -205,8 +206,10 @@ static void state_task(void *arg)
     /* meatpi bench rule: a bootloop must leave a flash window */
     vTaskDelay(pdMS_TO_TICKS(SM_BOOT_GRACE_MS));
     sm_policy_init(&s_policy);
-    ESP_LOGI(TAG, "armed (sleep %.2f V, wake %.2f V, delay %lu min, "
-             "periodic %s/%lu min)", cfg->sleep_v, cfg->wake_v,
+    sm_critical_init(&s_crit);
+    ESP_LOGI(TAG, "armed (sleep %.2f V, wake %.2f V, wake after %lu ms, "
+             "delay %lu min, periodic %s/%lu min)", cfg->sleep_v, cfg->wake_v,
+             (unsigned long)cfg->wake_hold_ms,
              (unsigned long)(cfg->delay_ms / 60000),
              cfg->periodic ? "on" : "off",
              (unsigned long)(cfg->interval_ms / 60000));
@@ -275,6 +278,26 @@ static void state_task(void *arg)
             s_policy.state = SLEEP_MANAGER_SLEEPING;
             s_policy.t_periodic = now + cfg->interval_ms;
             s_run = true; /* wake machinery runs even if sleep disabled */
+        }
+
+        /* CRITICAL FLOOR (Ali, 2026-10-01): a battery under SM_CRITICAL_V
+         * for SM_CRITICAL_DELAY_MS sleeps whatever the setting says and
+         * without waiting out the user's delay. Awake states only; the
+         * ladder's SLEEPING/WAKE_PENDING rules (wake voltage + hold, no
+         * periodic check-in under the floor) take over after the trip. */
+        if (have_v && !in_sleep_states &&
+            sm_critical_eval(&s_crit, volts, now))
+        {
+            ESP_LOGW(TAG, "critical battery: %.2f V under %.2f V for %u s; "
+                     "sleeping regardless of the setting", volts,
+                     SM_CRITICAL_V, SM_CRITICAL_DELAY_MS / 1000u);
+            enter_sleep_sequence(volts);
+            s_policy.state = SLEEP_MANAGER_SLEEPING;
+            s_policy.t_periodic = now + cfg->interval_ms;
+            s_status.state = SLEEP_MANAGER_SLEEPING;
+            sm_events_state(state_name(s_policy.state), volts);
+            s_run = true; /* wake machinery runs even if sleep disabled */
+            continue;
         }
 
         if (!s_run || !have_v)

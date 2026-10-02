@@ -44,12 +44,21 @@
  *
  * Boot-loop guard (legacy parity): ≥3 unexpected resets while the
  * battery reads below the error threshold forces sleep instead of
- * another crash lap.
+ * another crash lap. Critical floor (2026-10-01): a battery under
+ * 11.90 V for 120 s sleeps regardless of the `enabled` setting and of
+ * the sleep delay; the normal wake rules apply afterwards.
  *
  * Bench-safety (meatpi 2026-07-07): the state task arms only after a
  * 15 s boot grace period (a bootloop still leaves a flash window),
  * and all sleeping is timer-woken light sleep — no deep sleep, no
  * wake source that can silently never fire.
+ *
+ * Settings schema v3 (2026-10-01): `wake_mv` is a setting of its own
+ * (12100..15000, default 13200; documents from v2 get sleep + 100 mV).
+ * The applied wake threshold is never under sleep + 0.1 V.
+ * Schema v4 (2026-10-01): `wake_delay_ms` (100..5000, default 500) is how
+ * long the battery must stay above the wake voltage before the wake
+ * reboot (was a fixed 1 s); older documents get the default.
  */
 #pragma once
 
@@ -76,7 +85,7 @@ typedef struct
     sleep_manager_state_t state;
     float                 voltage;      /**< latest battery reading   */
     float                 sleep_v;      /**< boot-applied threshold   */
-    float                 wake_v;       /**< sleep_v + 0.1 (legacy)   */
+    float                 wake_v;       /**< boot-applied wake (v3 setting, >= sleep + 0.1) */
     uint32_t              naps;         /**< light-sleep cycles       */
     uint32_t              chip_resleeps;/**< OBD re-sleep retries     */
 } sleep_manager_status_t;

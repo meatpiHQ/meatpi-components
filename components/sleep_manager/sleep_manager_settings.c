@@ -29,10 +29,17 @@
  * Symbol note: the getters use a `sleep_` prefix, not the component's
  * usual `sm_` — socket_manager already links sm_settings_*.
  */
+#include "esp_log.h"
+
 #include "settings_manager.h"
 
 #include "sleep_manager.h" /* sleep_manager_register_cli (settings-gated) */
 #include "sleep_manager_private.h"
+
+static const char *TAG = "sleep_manager";
+
+#define SLEEP_WAKE_MV_MIN 12100
+#define SLEEP_WAKE_MV_MAX 15000
 
 static const settings_field_t FIELDS[] =
 {
@@ -45,6 +52,21 @@ static const settings_field_t FIELDS[] =
        sleep delay beyond 30 min only drains the battery; a periodic
        check-in faster than 5 min is a wake-up storm */
     SETTINGS_INT("sleep_mv", 12000, 14000, 13100),
+    /* v3 (2026-10-01, Quick Setup's Battery and sleep step): the wake
+       voltage is the user's own number instead of sleep + 0.1 V. A wider
+       band than the old derived 0.1 V stops a battery resting just above
+       the sleep voltage from never sleeping, and surface charge after
+       key-off from waking the device. Ceiling 15 V: above 14 V (the sleep
+       maximum) a wake voltage only makes sense under the charging voltage
+       of the car. The resolver pulls it to at least sleep + 0.1 V.
+       Literal bounds: the web preview's schema extractor reads this table
+       (SLEEP_WAKE_MV_MIN/MAX above carry the same numbers for the migration). */
+    SETTINGS_INT("wake_mv", 12100, 15000, 13200),
+    /* v4 (2026-10-01, Ali): "wake up after": how long the battery must stay
+       above the wake voltage before the wake reboot. Replaces the fixed 1 s
+       window; 0.1 to 5 s, default 0.5 s. Longer ignores short spikes (a door
+       light, a remote unlock), shorter wakes faster. */
+    SETTINGS_INT("wake_delay_ms", 100, 5000, 500),
     SETTINGS_INT("sleep_delay_min", 1, 30, 5),
     SETTINGS_BOOL("periodic_wakeup", false),
     SETTINGS_INT("wakeup_interval_min", 5, 1440, 30),
@@ -77,9 +99,22 @@ static esp_err_t on_apply(const cJSON *settings)
     s_enabled = cJSON_IsTrue(
         cJSON_GetObjectItemCaseSensitive(settings, "enabled"));
     item = cJSON_GetObjectItemCaseSensitive(settings, "sleep_mv");
-    s_cfg.sleep_v = (cJSON_IsNumber(item) ? item->valueint : 13100)
-                    / 1000.0f;
-    s_cfg.wake_v = s_cfg.sleep_v + SM_WAKE_DELTA_V;
+
+    int sleep_mv = cJSON_IsNumber(item) ? item->valueint : 13100;
+
+    item = cJSON_GetObjectItemCaseSensitive(settings, "wake_mv");
+
+    int wake_mv = cJSON_IsNumber(item) ? item->valueint : sleep_mv + 100;
+
+    if (sm_resolve_thresholds(sleep_mv, wake_mv, &s_cfg.sleep_v,
+                              &s_cfg.wake_v))
+    {
+        ESP_LOGW(TAG, "wake_mv %d is not above sleep_mv %d; waking at "
+                 "%.2f V", wake_mv, sleep_mv, s_cfg.wake_v);
+    }
+    item = cJSON_GetObjectItemCaseSensitive(settings, "wake_delay_ms");
+    s_cfg.wake_hold_ms = (uint32_t)(cJSON_IsNumber(item) ? item->valueint
+                                                        : (int)SM_WAKE_DELAY_MS);
     item = cJSON_GetObjectItemCaseSensitive(settings, "sleep_delay_min");
     s_cfg.delay_ms = 60000u *
         (uint32_t)(cJSON_IsNumber(item) ? item->valueint : 5);
@@ -127,6 +162,35 @@ static esp_err_t sleep_settings_migrate(uint32_t from_version, cJSON *settings)
         clamp_int(settings, "wakeup_interval_min", 5, 1440);
     }
 
+    /* v2 -> v3 (2026-10-01): wake_mv becomes a setting; a document without
+       one keeps the band it had (sleep + 100 mV, the pure rule above) so
+       nothing changes for a configured device */
+    if (from_version < 3 && settings != NULL &&
+        cJSON_GetObjectItemCaseSensitive(settings, "wake_mv") == NULL)
+    {
+        cJSON *sleep = cJSON_GetObjectItemCaseSensitive(settings, "sleep_mv");
+        int sleep_mv = cJSON_IsNumber(sleep) ? sleep->valueint : 13100;
+
+        cJSON_AddNumberToObject(settings, "wake_mv",
+                                sm_migrated_wake_mv(sleep_mv,
+                                                    SLEEP_WAKE_MV_MIN,
+                                                    SLEEP_WAKE_MV_MAX));
+    }
+
+    /* v3 -> v4 (2026-10-01): wake_delay_ms becomes a setting (the pure rule
+       says what a document without one gets) */
+    if (settings != NULL)
+    {
+        int add = sm_migrated_wake_delay_ms(
+            from_version,
+            cJSON_GetObjectItemCaseSensitive(settings, "wake_delay_ms") != NULL);
+
+        if (add > 0)
+        {
+            cJSON_AddNumberToObject(settings, "wake_delay_ms", add);
+        }
+    }
+
     return ESP_OK;
 }
 
@@ -135,7 +199,7 @@ esp_err_t sleep_settings_register(void)
     static const settings_descriptor_t DESC =
     {
         .name = "sleep_manager",
-        .version = 2, /* v2: sane ranges (2026-09-06) */
+        .version = 4, /* v2: sane ranges (2026-09-06); v3: wake_mv; v4: wake_delay_ms (2026-10-01) */
         .fields = FIELDS,
         .field_count = sizeof(FIELDS) / sizeof(FIELDS[0]),
         .on_apply = on_apply,

@@ -25,12 +25,83 @@
  * @brief The pure voltage ladder (legacy sleep_mode.c semantics,
  *        host-tested; no esp deps). Wrap-safe deadline math: deadlines
  *        are stored as absolute ms and compared by signed subtraction.
+ *        Also the pure settings rules of v3: the sleep/wake pair
+ *        resolver and the v2 -> v3 wake_mv migration value, and the
+ *        critical battery floor tracker (2026-10-01).
  */
 #include "sleep_manager_private.h"
+
+bool sm_resolve_thresholds(int sleep_mv, int wake_mv,
+                           float *sleep_v, float *wake_v)
+{
+    bool clamped = false;
+    int min_wake_mv = sleep_mv + 100; /* SM_WAKE_DELTA_V in mV */
+
+    if (wake_mv < min_wake_mv)
+    {
+        wake_mv = min_wake_mv;
+        clamped = true;
+    }
+
+    *sleep_v = (float)sleep_mv / 1000.0f;
+    *wake_v = (float)wake_mv / 1000.0f;
+    return clamped;
+}
+
+int sm_migrated_wake_delay_ms(uint32_t from_version, bool present)
+{
+    return (from_version < 4 && !present) ? (int)SM_WAKE_DELAY_MS : 0;
+}
+
+int sm_migrated_wake_mv(int sleep_mv, int lo, int hi)
+{
+    int wake_mv = sleep_mv + 100;
+
+    if (wake_mv < lo)
+    {
+        return lo;
+    }
+
+    return (wake_mv > hi) ? hi : wake_mv;
+}
 
 static bool reached(uint32_t deadline, uint32_t now)
 {
     return (int32_t)(now - deadline) >= 0;
+}
+
+void sm_critical_init(sm_critical_t *c)
+{
+    c->armed = false;
+    c->t_trip = 0;
+}
+
+bool sm_critical_eval(sm_critical_t *c, float volts, uint32_t now_ms)
+{
+    if (volts >= SM_CRITICAL_V + SM_CRITICAL_HYST_V)
+    {
+        c->armed = false; /* recovered: the timer starts over next time */
+        return false;
+    }
+
+    if (!c->armed)
+    {
+        if (volts < SM_CRITICAL_V)
+        {
+            c->armed = true;
+            c->t_trip = now_ms + SM_CRITICAL_DELAY_MS;
+        }
+
+        return false; /* the hysteresis band alone never arms it */
+    }
+
+    if (reached(c->t_trip, now_ms))
+    {
+        c->armed = false;
+        return true;
+    }
+
+    return false;
 }
 
 void sm_policy_init(sm_policy_t *p)
@@ -73,7 +144,7 @@ sm_action_t sm_policy_eval(sm_policy_t *p, const sm_cfg_t *cfg,
             if (volts >= cfg->wake_v)
             {
                 p->state = SLEEP_MANAGER_WAKE_PENDING;
-                p->t_stable = now_ms + SM_WAKE_STABLE_MS;
+                p->t_stable = now_ms + cfg->wake_hold_ms;
             }
             else if (cfg->periodic && volts > SM_CRITICAL_V &&
                      reached(p->t_periodic, now_ms))

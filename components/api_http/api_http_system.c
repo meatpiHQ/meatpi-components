@@ -99,10 +99,22 @@ static esp_err_t status_handler(httpd_req_t *req)
     cJSON_AddNumberToObject(resp, "unexpected_resets", unexpected);
 
     /* memory health (Architecture §12b): internal is the scarce heap;
-       largest_block vs free is THE fragmentation signal */
+       largest_block vs free is THE fragmentation signal. This route is
+       polled (the web UI: every 3 s), so the PSRAM heap is not walked for
+       its largest block: that is 3 to 4 ms with interrupts off, and a busy
+       CAN bus paid for every poll in frames (2026-10-03). `?deep=1` asks
+       for it. */
     dev_status_memory_t mem;
+    char query[24];
+    char deep[4] = "";
+    bool want_deep =
+        httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK &&
+        httpd_query_key_value(query, "deep", deep, sizeof(deep)) == ESP_OK &&
+        deep[0] == '1';
+    esp_err_t mem_err = want_deep ? dev_status_manager_memory_deep(&mem)
+                                  : dev_status_manager_memory(&mem);
 
-    if (dev_status_manager_memory(&mem) == ESP_OK)
+    if (mem_err == ESP_OK)
     {
         cJSON *m = cJSON_AddObjectToObject(resp, "memory");
         const struct
@@ -119,8 +131,12 @@ static esp_err_t status_handler(httpd_req_t *req)
             cJSON_AddNumberToObject(h, "total", heaps[i].h->total);
             cJSON_AddNumberToObject(h, "free", heaps[i].h->free);
             cJSON_AddNumberToObject(h, "min_free", heaps[i].h->min_free);
-            cJSON_AddNumberToObject(h, "largest_block",
-                                    heaps[i].h->largest_block);
+
+            if (heaps[i].h->largest_block != 0) /* 0 = not measured */
+            {
+                cJSON_AddNumberToObject(h, "largest_block",
+                                        heaps[i].h->largest_block);
+            }
         }
     }
 
@@ -188,6 +204,13 @@ static esp_err_t status_handler(httpd_req_t *req)
     /* BLE stream channels (ble_http, ble_j2534; standard §12, 2026-09-21) */
     ble_manager_channel_capacity(&used, &cap);
     c = cJSON_AddObjectToObject(caps, "ble_ch");
+    cJSON_AddNumberToObject(c, "used", used);
+    cJSON_AddNumberToObject(c, "cap", cap);
+
+    /* the HTTP route table (it overflowed twice before it could be seen:
+       2026-07-08 and 2026-09-07; standard §12, 2026-10-03) */
+    http_server_manager_capacity(&used, &cap);
+    c = cJSON_AddObjectToObject(caps, "http_routes");
     cJSON_AddNumberToObject(c, "used", used);
     cJSON_AddNumberToObject(c, "cap", cap);
 

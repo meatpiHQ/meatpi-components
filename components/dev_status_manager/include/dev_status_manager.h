@@ -140,7 +140,9 @@ typedef struct
     uint32_t total;         /* capability heap size at boot                */
     uint32_t free;          /* free bytes right now                        */
     uint32_t min_free;      /* lowest free ever (high-water mark)          */
-    uint32_t largest_block; /* biggest single allocation possible now      */
+    uint32_t largest_block; /* biggest single allocation possible now;
+                               0 = not measured (the PSRAM heap in the
+                               routine snapshot, see below)                */
 } dev_status_heap_t;
 
 typedef struct
@@ -159,8 +161,26 @@ esp_err_t dev_status_manager_register_cli(void);
  *  (the log_manager_register_settings pattern). */
 esp_err_t dev_status_manager_register_settings(void);
 
-/** Snapshot both heaps. Cheap; poll-friendly. */
+/**
+ * Snapshot both heaps, poll-friendly: nothing in here keeps interrupts off
+ * for longer than about 0.15 ms.
+ *
+ * `largest_block` needs a walk of the whole heap inside the heap's critical
+ * section. For the internal heap (some 600 blocks) that is 0.14 ms and it is
+ * measured. For the PSRAM heap (6000 blocks, slow memory) it is 3 to 4 ms
+ * with interrupts off, which a busy CAN bus pays for in frames (the
+ * controller's FIFO holds four: 74 frames lost in 30 s at five requests a
+ * second, bench 2026-10-03). So psram.largest_block is 0 here.
+ */
 esp_err_t dev_status_manager_memory(dev_status_memory_t *out);
+
+/**
+ * The same, with the PSRAM heap's `largest_block`: 3 to 4 ms with interrupts
+ * off. For a boot report or for something a person asked for (console
+ * `system -m`, `GET /api/status?deep=1`). Never on a timer, never from a
+ * route a page polls.
+ */
+esp_err_t dev_status_manager_memory_deep(dev_status_memory_t *out);
 
 /* Internal-RAM guard (2026-09-22, TASK_internal_ram.md): a 10 s esp_timer
  * latches the fault `internal_ram_low` (once per boot, W log) when the
@@ -239,6 +259,14 @@ typedef struct
 } dev_status_task_t;
 
 /**
+ * Poll-friendly since 2026-10-03: the tasks are listed with the scheduler
+ * of the calling core suspended (interrupts stay on), and the unused bytes
+ * of each stack are counted afterwards in plain task context. The kernel's
+ * own uxTaskGetSystemState() counts them inside its critical section: 6 ms
+ * with interrupts off for 47 tasks (478 CAN frames lost in 30 s at five
+ * requests a second). A task that ends between the two passes may show a
+ * meaningless `stack_hw` once.
+ *
  * Snapshot every task into @p out (capacity @p cap): fills @p out_count
  * and @p out_total_us (scheduler time since boot, PER CORE — multiply by
  * core count for the CPU% denominator; both nullable). Sorted by

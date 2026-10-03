@@ -44,7 +44,9 @@
 #include "esp_timer.h"
 #include "sdkconfig.h"
 #include "driver/temperature_sensor.h"
+#include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/freertos_debug.h" /* xTaskGetNext, vTaskGetSnapshot */
 
 #include "log_manager.h"
 
@@ -304,12 +306,17 @@ const char *dev_status_manager_partition_label(void)
     return (s_running_partition != NULL) ? s_running_partition->label : "";
 }
 
-static void fill_heap(uint32_t caps, dev_status_heap_t *h)
+/** @p walk: also find the largest free block. That walks the whole heap
+ *  inside its critical section (interrupts off): 0.14 ms for the internal
+ *  heap, 3 to 4 ms for the PSRAM heap (see dev_status_manager_memory). */
+static void fill_heap(uint32_t caps, bool walk, dev_status_heap_t *h)
 {
     h->total = (uint32_t)heap_caps_get_total_size(caps);
     h->free = (uint32_t)heap_caps_get_free_size(caps);
     h->min_free = (uint32_t)heap_caps_get_minimum_free_size(caps);
-    h->largest_block = (uint32_t)heap_caps_get_largest_free_block(caps);
+    h->largest_block = walk
+                           ? (uint32_t)heap_caps_get_largest_free_block(caps)
+                           : 0;
 }
 
 esp_err_t dev_status_manager_memory(dev_status_memory_t *out)
@@ -319,8 +326,20 @@ esp_err_t dev_status_manager_memory(dev_status_memory_t *out)
         return ESP_ERR_INVALID_ARG;
     }
 
-    fill_heap(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT, &out->internal);
-    fill_heap(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT, &out->psram);
+    fill_heap(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT, true, &out->internal);
+    fill_heap(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT, false, &out->psram);
+    return ESP_OK;
+}
+
+esp_err_t dev_status_manager_memory_deep(dev_status_memory_t *out)
+{
+    if (out == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    fill_heap(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT, true, &out->internal);
+    fill_heap(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT, true, &out->psram);
     return ESP_OK;
 }
 
@@ -359,13 +378,55 @@ static char task_state_char(eTaskState st)
     }
 }
 
+/* One task between the two passes of dev_status_manager_task_stats().
+ * `row` comes first: the array is sorted and copied out by rows. */
+typedef struct
+{
+    dev_status_task_t row;
+    TaskHandle_t      handle;
+    const uint8_t    *stack_base; /* lowest address: unused stack starts here */
+    const uint8_t    *stack_end;  /* highest valid address                    */
+} task_scratch_t;
+
+#define DS_STACK_FILL 0xA5u            /* what the kernel fills a new stack
+                                          with (tasks.c tskSTACK_FILL_BYTE)  */
+#define DS_STACK_MAX  (256u * 1024u)   /* larger than any stack: the bound of
+                                          a count whose task is gone         */
+
 static int task_cmp_runtime_desc(const void *a, const void *b)
 {
-    const dev_status_task_t *ta = a;
-    const dev_status_task_t *tb = b;
+    const task_scratch_t *ta = a;
+    const task_scratch_t *tb = b;
 
-    return (tb->runtime_us > ta->runtime_us) -
-           (tb->runtime_us < ta->runtime_us);
+    return (tb->row.runtime_us > ta->row.runtime_us) -
+           (tb->row.runtime_us < ta->row.runtime_us);
+}
+
+static bool ram_ptr(const void *p)
+{
+    return esp_ptr_in_dram(p) || esp_ptr_external_ram(p);
+}
+
+/** Bytes of a stack that were never written: the fill pattern, counted from
+ *  the stack's base. What uxTaskGetStackHighWaterMark() returns, but from
+ *  addresses taken while the task was known to exist, and only ever reading
+ *  RAM: the task may have ended since, its control block may be gone. */
+static uint32_t stack_never_used(const uint8_t *base, const uint8_t *end)
+{
+    if (!ram_ptr(base) || end <= base || !ram_ptr(end) ||
+        (size_t)(end - base) > DS_STACK_MAX)
+    {
+        return 0;
+    }
+
+    const uint8_t *p = base;
+
+    while (p < end && *p == DS_STACK_FILL)
+    {
+        p++;
+    }
+
+    return (uint32_t)(p - base);
 }
 #endif
 
@@ -381,59 +442,103 @@ esp_err_t dev_status_manager_task_stats(dev_status_task_t *out, size_t cap,
 
     /* +4: tasks can spawn between the count and the snapshot */
     UBaseType_t slots = uxTaskGetNumberOfTasks() + 4;
-    /* transient scratch; PSRAM heap keeps internal RAM untouched */
-    TaskStatus_t *tasks = heap_caps_malloc(slots * sizeof(TaskStatus_t),
+    /* transient scratch (also the sort space, so a too-small @p cap keeps
+       the BUSIEST tasks); PSRAM heap keeps internal RAM untouched */
+    task_scratch_t *all = heap_caps_calloc(slots, sizeof(*all),
                                            MALLOC_CAP_SPIRAM |
                                                MALLOC_CAP_8BIT);
 
-    if (tasks == NULL)
+    if (all == NULL)
     {
         return ESP_ERR_NO_MEM;
     }
 
     configRUN_TIME_COUNTER_TYPE total = 0;
-    UBaseType_t count = uxTaskGetSystemState(tasks, slots, &total);
-    /* sort in a full-size scratch so a too-small @p cap keeps the
-       BUSIEST tasks, not an arbitrary prefix */
-    dev_status_task_t *all = heap_caps_calloc(count, sizeof(*all),
-                                              MALLOC_CAP_SPIRAM |
-                                                  MALLOC_CAP_8BIT);
+    UBaseType_t count = 0;
+    TaskIterator_t it = { 0 };
 
-    if (all == NULL)
+    /* Pass 1, who exists: the task lists are walked with this core's
+       scheduler suspended (the IDF's condition for xTaskGetNext) and
+       interrupts ON. No stack is looked at here: tens of microseconds.
+       The other core keeps running, so a list may change under the walk:
+       the iterator only ever follows pointers into RAM, the walk is
+       bounded, and a task seen twice is kept once. */
+    vTaskSuspendAll();
+
+    for (UBaseType_t step = 0; step < slots * 2u && count < slots; step++)
     {
-        heap_caps_free(tasks);
-        return ESP_ERR_NO_MEM;
-    }
+        TaskStatus_t st;
+        TaskSnapshot_t snap;
+        bool seen = false;
 
-    for (UBaseType_t i = 0; i < count; i++)
-    {
-        dev_status_task_t *t = &all[i];
+        if (xTaskGetNext(&it) == -1)
+        {
+            break;
+        }
 
-        strlcpy(t->name, tasks[i].pcTaskName, sizeof(t->name));
-        t->state = task_state_char(tasks[i].eCurrentState);
-        t->prio = (uint8_t)tasks[i].uxCurrentPriority;
-        t->stack_hw = (uint32_t)tasks[i].usStackHighWaterMark *
-                      sizeof(StackType_t);
-        t->stack_ext = esp_ptr_external_ram(tasks[i].pxStackBase);
+        if (it.pxTaskHandle == NULL ||
+            vTaskGetSnapshot(it.pxTaskHandle, &snap) != pdTRUE)
+        {
+            continue;
+        }
+
+        for (UBaseType_t k = 0; k < count && !seen; k++)
+        {
+            seen = (all[k].handle == it.pxTaskHandle);
+        }
+
+        if (seen)
+        {
+            continue;
+        }
+
+        /* no stack count (pdFALSE), no state lookup (a state is given) */
+        vTaskGetInfo(it.pxTaskHandle, &st, pdFALSE, eReady);
+
+        task_scratch_t *t = &all[count++];
+
+        t->handle = it.pxTaskHandle;
+        t->stack_base = (const uint8_t *)st.pxStackBase;
+        t->stack_end = (const uint8_t *)snap.pxEndOfStack;
+        strlcpy(t->row.name, st.pcTaskName, sizeof(t->row.name));
+        t->row.prio = (uint8_t)st.uxCurrentPriority;
+        t->row.stack_ext = esp_ptr_external_ram(st.pxStackBase);
 #if configGENERATE_RUN_TIME_STATS == 1
-        t->runtime_us = (uint64_t)tasks[i].ulRunTimeCounter;
+        t->row.runtime_us = (uint64_t)st.ulRunTimeCounter;
 #endif
 #if configTASKLIST_INCLUDE_COREID == 1
-        t->core = (tasks[i].xCoreID == tskNO_AFFINITY)
-                      ? -1
-                      : (int8_t)tasks[i].xCoreID;
+        t->row.core = (st.xCoreID == tskNO_AFFINITY) ? -1
+                                                     : (int8_t)st.xCoreID;
 #else
-        t->core = -1;
+        t->row.core = -1;
 #endif
+    }
+
+#if configGENERATE_RUN_TIME_STATS == 1
+    total = portGET_RUN_TIME_COUNTER_VALUE();
+#endif
+    (void)xTaskResumeAll();
+
+    /* Pass 2, in plain task context: the state (a short kernel lock per
+       task) and the unused stack (no lock at all: this is the part that
+       takes milliseconds). */
+    for (UBaseType_t i = 0; i < count; i++)
+    {
+        all[i].row.state = task_state_char(eTaskGetState(all[i].handle));
+        all[i].row.stack_hw = stack_never_used(all[i].stack_base,
+                                               all[i].stack_end);
     }
 
     qsort(all, count, sizeof(*all), task_cmp_runtime_desc);
 
     size_t n = (count < cap) ? count : cap;
 
-    memcpy(out, all, n * sizeof(*out));
+    for (size_t i = 0; i < n; i++)
+    {
+        out[i] = all[i].row;
+    }
+
     heap_caps_free(all);
-    heap_caps_free(tasks);
 
     if (out_count != NULL)
     {

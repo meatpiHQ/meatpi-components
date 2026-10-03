@@ -25,12 +25,40 @@ they reset on reboot and are **not** settings.
 | `dev_status_manager_format_uptime(buf,len)` | "HH:MM:SS" / "Nd HH:MM:SS". |
 | `dev_status_manager_app_version()` / `_partition_label()` | Running-image identity for status transports. |
 | `dev_status_manager_device_id()` | THE device identity: 12 hex chars of the SoftAP MAC (legacy `hw_config_get_device_id`) — BLE name (`WiCAN_<id>`), AP SSID and STA hostname all derive from it; no component reads the MAC for naming itself. |
-| `dev_status_manager_memory(*out)` | Both heaps (internal + PSRAM): total/free/min_free/**largest_block** — the fragmentation signal (Architecture §12b). |
-| `dev_status_manager_task_stats(out,cap,*n,*total_us)` | Task monitor snapshot (2026-07-08): per-task name/state/core/prio/stack high-water/cumulative runtime, busiest first + per-core scheduler time. CPU% = deltas between two snapshots ÷ (total-delta × cores). Needs `CONFIG_FREERTOS_USE_TRACE_FACILITY` (+ `_GENERATE_RUN_TIME_STATS`, u64 counter — both in sdkconfig.defaults). |
+| `dev_status_manager_memory(*out)` | Both heaps (internal + PSRAM): total/free/min_free, and **largest_block** (the fragmentation signal, Architecture §12b) for the INTERNAL heap only. Poll-friendly: nothing in it keeps interrupts off for longer than ~0.15 ms (see "Interrupts and the status routes" below). `psram.largest_block` is 0 = not measured. |
+| `dev_status_manager_memory_deep(*out)` | The same with the PSRAM heap's `largest_block`: a walk of ~6000 blocks with interrupts off, 3 to 4 ms. For the boot report (`WICAN MEM`), the console (`system -m`) and `GET /api/status?deep=1`: something a person asked for, never a timer, never a polled route. |
+| `dev_status_manager_task_stats(out,cap,*n,*total_us)` | Task monitor snapshot (2026-07-08): per-task name/state/core/prio/stack high-water/cumulative runtime, busiest first + per-core scheduler time. CPU% = deltas between two snapshots ÷ (total-delta × cores). Needs `CONFIG_FREERTOS_USE_TRACE_FACILITY` (+ `_GENERATE_RUN_TIME_STATS`, u64 counter — both in sdkconfig.defaults). Poll-friendly since 2026-10-03: the task lists are walked with this core's scheduler suspended (`xTaskGetNext`, interrupts on, microseconds) and the unused stack bytes are counted afterwards in task context; the kernel's own `uxTaskGetSystemState()` did that inside its critical section, 6 ms with interrupts off for 47 tasks. A task that ends between the two passes may show a meaningless `stack_hw` once. |
 | RAM guard (2026-09-22, `TASK_internal_ram.md`) | a 10 s esp_timer started by `dev_status_manager_start()` latches the fault `internal_ram_low` (once per boot, W log with free/min/largest) when the internal heap's free size drops under `DEV_STATUS_RAM_LOW_FREE` (8 KB) or its lifetime minimum under `DEV_STATUS_RAM_LOW_MIN` (4 KB): below ~5 KB the default event loop stops taking the web server's events, BLE does not restart after an AP station leaves and the BT controller drops PDUs silently, all without an E line of their own. `dev_status_task_t.stack_ext` says whether a task's stack lives in PSRAM (`system -t` prints it). |
 | `dev_status_manager_temperature(*c)` | Die temperature, °C (ESP32-S3 internal sensor, lazy install). |
 
 `DEV_STATUS_NETWORK_CONNECTED_MASK` = STA | ETH ("any upstream path").
+
+## Interrupts and the status routes (2026-10-03)
+
+Found by `can_manager`'s new `rx_overrun` counter and the J1939 conservation
+bench (TASK_j1939_wwh.md phase 4): a CAN controller's receive FIFO holds
+four frames, so anything that keeps interrupts off for longer than four
+frame times (2.8 ms at 250 kbit/s and 80 % load, 1.1 ms at 500 kbit/s line
+rate) loses frames. Two things did, in routes the web UI polls every few
+seconds:
+
+| Call | Interrupts off | Frames lost at 250k, 80 % load, 5 requests/s |
+|---|---|---|
+| `heap_caps_get_largest_free_block()` on the PSRAM heap (6100 blocks, slow memory; `multi_heap_get_info_impl` walks the pool inside the heap's lock) | 3.1 to 4.0 ms | 74 in 30 s (`GET /api/status`) |
+| `heap_caps_get_largest_free_block()` on the internal heap (560 blocks) | 0.14 ms | none |
+| `uxTaskGetSystemState()` (47 tasks; the kernel counts every stack's unused bytes inside `xKernelLock`) | 5.9 to 6.1 ms | 478 in 30 s (`GET /api/status/tasks`) |
+
+Hence the routine / deep split of the memory snapshot and the two-pass task
+snapshot above. After the change: 0 frames lost over 260 000 frames with
+every status route polled five times a second (the bench's `while_polled`
+leg guards this from now on, together with a `while_flash` leg: flash writes
+cost no frame either, the TWAI interrupt is cache-safe).
+
+Rule of thumb for any status surface: no heap walk (`heap_caps_get_info`,
+`heap_caps_get_largest_free_block`, `heap_caps_print_heap_info`,
+`heap_caps_check_integrity*`), no `uxTaskGetSystemState` / `vTaskList` /
+`vTaskGetRunTimeStats`, nothing else that holds a critical section for
+longer than a frame, in a path a page or a timer can reach.
 
 ## Dependencies
 

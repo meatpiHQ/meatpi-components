@@ -141,7 +141,15 @@ const CSS=`/* CAN Monitor (2026-09-07, after the "WiCAN PRO Monitor" design) */
 @media(max-width:900px){.pm-decode{width:230px}}`;
 document.head.append(h("style",{},CSS));
 
-const BAUDS=[["33","33 kbit/s"],["83","83 kbit/s"],["95","95 kbit/s"],["100","100 kbit/s"],["125","125 kbit/s"],["250","250 kbit/s"],["500","500 kbit/s"],["1000","1 Mbit/s"]];
+/* /api/can: the node listens before it talks (state detecting | listening |
+   mismatch until its verdict; listen_only = what it may do right now) */
+const canRate=c=>c.baud_auto&&!c.verified?"auto":(c.baud_kbps>=1000?(c.baud_kbps/1000)+"M":c.baud_kbps+"k");
+const canNote=c=>c.state==="detecting"?" · detecting":c.state==="mismatch"?" · other bit rate":c.state==="listening"?" · listening":c.listen_only||c.silent?" · listen-only":"";
+const canWhyNoTx=c=>c.silent?"The bus is in listen-only mode: nothing is sent"
+  :c.state==="mismatch"?"The bus runs at another bit rate than the one set here: nothing is sent"
+  :c.state==="detecting"?"No bit rate detected yet: nothing is sent until the bus shows traffic"
+  :"The CAN node is still listening before it talks: nothing is sent yet";
+const BAUDS=[["auto","Automatic"],["33","33 kbit/s"],["83","83 kbit/s"],["95","95 kbit/s"],["100","100 kbit/s"],["125","125 kbit/s"],["250","250 kbit/s"],["500","500 kbit/s"],["1000","1 Mbit/s"]];
 const PREF_KEY="wican.canmon.v1";
 const TRACE_LIMITS=[300,1000,3000];
 const COLW={rx:[96,88,40,300,120,72,64],tx:[34,96,80,38,210,80,52,68,130,104],tr:[90,52,110,90,40,400]};
@@ -216,7 +224,7 @@ PAGES.__monitor=async(view,sub)=>{
   function paintStatus(){
     const c=S.can,on=S.connected;
     sbDot.classList.toggle("on",on);sbConn.textContent=on?(S.paused?"paused":"connected"):"offline";
-    sbBus.textContent=c&&c.enabled?"CAN "+(c.baud_kbps>=1000?(c.baud_kbps/1000)+"M":c.baud_kbps+"k")+(c.silent?" · silent":""):"CAN off";
+    sbBus.textContent=c&&c.enabled?"CAN "+canRate(c)+canNote(c):"CAN off";
     const rate=S.rateWin.length,kbps=c&&c.baud_kbps?c.baud_kbps:500;
     S.stats.rxps=rate;S.stats.load=Math.min(99,Math.round(rate*111/(kbps*10)));
     sbLoadBar.style.width=S.stats.load+"%";sbLoad.textContent=S.stats.load+"%";
@@ -417,7 +425,7 @@ PAGES.__monitor=async(view,sub)=>{
       h("div",{},h("span",{},"IP address"),h("span",{class:"mono"},w.ip||location.hostname)),
       h("div",{},h("span",{},"WiFi mode"),h("span",{},mode)),
       h("div",{},h("span",{},"Uptime"),h("span",{class:"mono"},st.uptime||"?")),
-      h("div",{},h("span",{},"Bus"),h("span",{class:"mono"},S.can&&S.can.enabled?S.can.state+" · "+S.can.baud_kbps+" kbit/s":"disabled")));
+      h("div",{},h("span",{},"Bus"),h("span",{class:"mono"},S.can&&S.can.enabled?S.can.state+" · "+(S.can.baud_auto&&!S.can.verified?"automatic":S.can.baud_kbps+" kbit/s")+(S.can.listen_only?" · listen-only":""):"disabled")));
   }
   function paintDbcCard(){
     const msgs=S.dbcs.reduce((a,d)=>a+(d.messages||0),0);
@@ -562,7 +570,7 @@ PAGES.__monitor=async(view,sub)=>{
   function sendRow(i,quiet){
     const r=S.tx[i];if(!r)return false;
     if(!S.ws||S.ws.readyState!==1){if(!quiet)toast("Not connected to the CAN bus","err");return false;}
-    if(S.can&&S.can.silent){if(!quiet)toast("The bus is in listen-only mode: nothing is sent","err");return false;}
+    if(S.can&&(S.can.listen_only||S.can.silent)){if(!quiet)toast(canWhyNoTx(S.can),"err");return false;}
     S.ws.send(encode(r));r.count++;r._last=performance.now();S.stats.total++;
     if(txCells[i])txCells[i].textContent=String(r.count);
     const idn=parseInt(r.id,16),ext=r.ext||idn>0x7FF;

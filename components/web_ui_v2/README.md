@@ -427,6 +427,85 @@ green afterwards). What changed, and what to keep doing:
 
 The three PID tables (Standard / Vehicle Specific / Custom) were a fixed-width spreadsheet of inline inputs: a hard 890-960 px grid that clipped the delete button even at 1440 px and hid half the columns behind an unsignposted scroll at the 1024 px phone layout, parameter sub-rows with no headers that did not line up with the PID columns, every single-value PID shown twice, group/init/cycle repeated on every row, thirteen primary Test buttons, and no live values. `pidTable()` now renders a list: one row per PID = enable switch (the firmware's `enabled`, default true), name + request (+ RX ID on std/custom), the live value(s) the poller holds, a ghost Test and delete (the Vehicle Specific list heads with its enable switch, the Vehicle profile row with the Choose profile dialog, and the init chain). Expanding a row (the `▸ n parameters` caret, `Expand all` / `Collapse all` in the toolbar) shows the details panel: group / cycle / PID init (the cycle field is empty with the group's rate as its placeholder while the PID inherits it, `period_ms` 0, so an imported profile never reads as "cycle 0"; 2026-09-17), then the parameter table WITH headers: per-parameter switch, name, expression (red border while empty), unit, live value, delete, `Add parameter`. Live values: `GET /api/autopid` every 2.5 s while the page is open, written into the cells in place (`liveCell()`), so typing is never interrupted; the toolbar counts `N PIDs · M parameters`, filters by name / request / parameter name, and shows an `Unsaved edits` chip until Apply; a rejected Apply prints the firmware's reason under the list as well as in the toast. Layout is CSS grid with `--pidcols` per list (no min-width), flex-wrapping under 860 px; phones at 1024 CSS px fit without horizontal scroll (verified with Playwright against the bench DUT at 1440 and 1024). Kept on purpose: std names/commands read-only, the live-apply model (Apply Configuration + the Submit-staged vehicle name/init), the `▸` caret text the probes key on. The Test button fires ONE shot per PID (`type` + `expressions[]`, no longer one request per parameter) and the modal shows the firmware's transcript (`> sent` / `< received` for the type init, PID init, ATCRA, request, ATCRA off), the payload and every decoded parameter (meatpi 2026-09-16: "show what is being sent and what is received"). `probe_automate.mjs` covers the rows; the profile import is bench-proven by `tools/testbench/obd/autopid_profile_bench.py`.
 
+### CAN link states and the bus guard (2026-10-03)
+
+The native CAN node listens before it talks and `/api/can` says where it is,
+so three places changed wording (no layout change): the Status tile
+(`canRateText` / `canStateText` in index.html: `Auto` until a bit rate is
+proven, `Listening for the bit rate`, `Listening · no traffic yet`, `Bus runs
+at another bit rate · listen-only` in the warn colour, then `Normal · active`
+/ `Listen-only · active` from `listen_only`, not from the `silent` setting),
+the CAN Monitor (`canRate` / `canNote` / `canWhyNoTx` in monitor.js: the bit
+rate select gains `Automatic`, the status bar and Device card show the link
+state, Send explains WHY nothing goes out) and the `can_manager.baud` field
+(label `Bit rate`, `Automatic (from the bus traffic)`, a help line).
+Automate: when the firmware's bus guard parks the poller
+(`stats.paused_bus`) the dashboard chip reads `Paused: nothing is sent to
+this bus` and a warn banner above the tiles prints the firmware's own
+sentence (`bus_guard.reason`) with a link to Automate settings; the chip
+jobs' HTTP 409 carries the same sentence, which `api()` already shows as
+the error. The `std_protocol` help says what Automatic does and that a fixed
+protocol pauses instead of transmitting onto another bit rate.
+
+### J1939 vehicles on the pages (2026-10-03, TASK_j1939_wwh.md phase 5)
+
+- **Quick Setup, vehicle step** (`setup.js`): a fourth detection phase,
+  `network` ("Listening to the vehicle network"); a J1939-only result reads
+  "J1939 vehicle" with the network row (`SAE J1939, 250 kbit/s`, chip
+  "Heard"), "identified by its controllers" without a VIN, no profile step
+  (profiles carry OBD requests), Continue enabled without a profile choice;
+  a result with `j1939_listening:false` announces "One more restart for the
+  J1939 listener" and the Reading-the-car Finish stages `can_manager`
+  (`enabled`, `silent`, `baud` = the measured bitrate) and `j1939`
+  (`enabled`) beside `autopid` in the one restart; an EU truck (OBD dialect +
+  `j1939`) gets a "J1939 network as well" note and chip. The store list and
+  the Done screen say "SAE J1939".
+- **Automate > Parameters** (`index.html`): a row whose command is `PGN:…`
+  shows a "J1939" tag where the RX ID would be, no init field (the expanded
+  row explains the group instead), Test decodes it from the listener's store;
+  "Add PGN" on the Custom tab adds `PGN:F004` / EngineSpeed; a J1939 listener
+  line over the standard table (state, bitrate, groups, sources, VIN) when
+  PGN rows exist or the listener is up; the notes explain the grammar and
+  little-endian words.
+- **Trouble Codes**: path chip "J1939, heard (DM1)", the four lamp chips
+  (MIL, Stop, Warning, Protect) when the report carries `lamps`, DM1 items
+  as `active` with `SA n` in the ECU column and a Count column, SPN-FMI
+  explained, and no clear section on a J1939-only vehicle ("WiCAN only
+  listens on this vehicle").
+- Mock: presets `detect:"j1939"` (+ `j1939Listening`), `dtc:"j1939"`,
+  `autopidCfg`, `GET /api/j1939`, `window.__mockSettings`; probe
+  `tools/webui_preview/probe_j1939.mjs` (`J1939 PROBE PASS`, 40 checks, plain
+  and minified).
+
+### OBD dialects on the pages (2026-10-03)
+
+A vehicle that speaks OBD over UDS (ISO 27145 / SAE J1979-2, the vehicle
+store's `dialect: "uds"`) needs no page of its own; three places learned
+about it (TASK_j1939_wwh.md phase 3):
+
+- **Trouble Codes** (`PAGES.dtc`): the table is built from the report's
+  `items` (one row per code, category and ECU; an `ECU` column appears when
+  the firmware names it), a line under it says which ECUs ask for the lamp
+  when more than one answered, a chip names the path (`OBD on UDS (ISO
+  27145)`), and the clear section is worded for the path the firmware
+  reports in `path`: mode 04 on an OBD-II car, "This clears ALL emission
+  codes of every ECU" (service 14, group FFFF33) on a `wwh` path, the
+  per-code clear on `uds`. Older firmware (no `items`, no `path`) renders as
+  before.
+- **Automate > Parameters**: "Add selected" in the scan results keeps a
+  row's `init` (and `rxheader`). A scanned row of such a vehicle carries the
+  address of the ECU that owns the value; dropped, the row would be asked of
+  every ECU at once. The results list and the Standard table show that ECU
+  beside the request (`22F40C · ECU 58`; `rowEcu()` reads it from the init).
+- **Quick Setup** (`setup.js`): the detection steps say what is asked
+  (`0100`, then `22 F400`), the result and the store's list name the dialect
+  beside the protocol (`CAN 29-bit 500 kbit/s, OBD on UDS (ISO 27145)`); an
+  OBD-II car reads as before.
+
+Preview: `mock_api.js` serves the real `/api/autopid/dtc` shape (presets
+`window.__mockPreset.dtc = "obd" | "wwh"`) and an ISO 27145 van for the
+detection (`detect: "wwh"`). Probe: `probe_wwh.mjs` (38 checks).
+
 ## On-demand page chunks (2026-09-07)
 
 The main page must not grow (meatpi: "we cannot increase the size of the

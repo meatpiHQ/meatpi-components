@@ -29,6 +29,9 @@ const STEPS=[
 ];
 const IDS=STEPS.map(s=>s.id);
 const PROTO={"6":"CAN 11-bit 500 kbit/s","7":"CAN 29-bit 500 kbit/s","8":"CAN 11-bit 250 kbit/s","9":"CAN 29-bit 250 kbit/s"};
+/* how a car wants its legislated data asked (the vehicle store's `dialect`):
+   only the newer one is worth a word, OBD-II is what everybody expects */
+const DIALECT={uds:"OBD on UDS (ISO 27145)",j1939:"J1939"};
 const HA_REPO="https://github.com/jay-oswald/ha-wican";
 const SKIP_KEY="wican-setup-skip";
 
@@ -602,25 +605,35 @@ SCREENS.vehicle=async()=>{
       if(!D.vehicles)out.push(note("","This firmware keeps one vehicle only (no vehicle store): the result is stored, but moving WiCAN between cars needs a new scan each time."));
     }else if(phase==="detecting"){
       out.push(sub("1. Detecting the vehicle"));
-      const phases=[["protocol","Detecting the OBD protocol","The chip tries the CAN protocols in turn, then 0100 and ATDPN tell which one answered. Up to 20 s on some cars."],["vin","Reading the VIN","Mode 09 PID 02, then UDS 22 F190. Without either, the car is identified by the set of ECUs that answered."],["pids","Finding the standard PIDs","Support bitmaps 0100, 0120, 0140 and up, every ECU that answers. Stored under this vehicle."]];
+      const phases=[["protocol","Detecting the OBD protocol","WiCAN asks on each CAN protocol in turn, first the OBD-II way (0100), then the way of newer vans and trucks (ISO 27145: 22 F400). A few seconds."],["vin","Reading the VIN","Mode 09 PID 02, then UDS 22 F190 (22 F802 on an ISO 27145 vehicle). Without either, the car is identified by the set of ECUs that answered."],["pids","Finding the standard PIDs","The support bitmaps of every ECU that answers (0100, 0120 and up, or 22 F400 and up). Stored under this vehicle."],["network","Listening to the vehicle network","Is this a J1939 network (trucks, buses, agricultural machines)? WiCAN only listens here: the controllers that broadcast, the groups they send, the VIN when one is broadcast."]];
       const ph=W.scanStatus&&W.scanStatus.phase;const idx=Math.max(0,phases.findIndex(p=>p[0]===ph));
       phases.forEach((p,i)=>out.push(check(i<idx?"ok":i===idx?"run":"","info",p[1],p[2],i<idx?chip("Done","ok"):i===idx?chip("Working",""):null)));
     }else{
       /* result */
       out.push(sub("1. Vehicle detected"));
       const known=!!(v.known&&v.profile);
+      const j1939Only=v.dialect==="j1939";
       if(known)out.push(banner("ok","check",h("b",{},"Welcome back: "+(v.name||defaultName(v))+". "),"WiCAN set this car up before and already switched to its profile, PIDs and protocol. Nothing to do here unless you want to change something."));
+      else if(j1939Only)out.push(banner("ok","check",h("b",{},"J1939 vehicle. "),"This vehicle speaks SAE J1939, the network of trucks, buses and agricultural machines. Its controllers broadcast their values; WiCAN listens and never asks. "+(v.std_supported||0)+" standard parameters were heard and stored under this vehicle."+(v.vin?"":" No VIN was broadcast: it is remembered by the set of controllers on its network.")));
       else if(!v.vin)out.push(banner("info","info",h("b",{},"New vehicle. "),"This car gave no VIN, so WiCAN remembers it by the set of ECUs that answered (that works for one car; two identical models would look the same). Give it a name below."));
       else out.push(banner("ok","check",h("b",{},v.known?"Vehicle recognised. ":"New vehicle. "),"WiCAN stored the protocol, VIN and "+(v.std_supported||0)+" standard PIDs under this car. Pick a profile below so it can read the vehicle-specific values too."));
+      if(v.j1939&&!v.j1939Listening)out.push(banner("warn","alert",h("b",{},"One more restart for the J1939 listener. "),"The J1939 network is read by WiCAN's own CAN controller, which is off on a new device. Finish turns it on in listen-only mode (it never transmits) together with the J1939 listener; the values arrive after that restart."));
+      else if(v.j1939&&!j1939Only)out.push(banner("info","info",h("b",{},"A J1939 network as well. "),"This vehicle answers OBD requests and broadcasts J1939 groups. Both sets of parameters are stored under it."));
       const nameInp=h("input",{id:"qs-veh-name",value:W.vehName,placeholder:"e.g. Family car",style:"max-width:260px",oninput:e=>{W.vehName=e.target.value;}});
       out.push(h("dl",{class:"qs-kv"},
-        h("dt",{},"VIN"),h("dd",{},v.vin?[h("code",{},v.vin),chip("Read from the car","ok")]:[chip("VIN not available","warn"),h("span",{},"identified by its ECUs"+(v.fingerprint?" ("+v.fingerprint+")":""))]),
-        h("dt",{},"OBD protocol"),h("dd",{},protoName(v.protocol),PROTO[String(v.protocol)]?chip("Detected","ok"):chip("Automatic","")),
-        h("dt",{},"Standard PIDs"),h("dd",{},(v.std_supported||0)+" supported",chip("Stored","ok")),
+        h("dt",{},"VIN"),h("dd",{},v.vin?[h("code",{},v.vin),chip(j1939Only?"Broadcast by the vehicle":"Read from the car","ok")]:[chip("VIN not available","warn"),h("span",{},(j1939Only?"identified by its controllers":"identified by its ECUs")+(v.fingerprint?" ("+v.fingerprint+")":""))]),
+        h("dt",{},j1939Only?"Network":"OBD protocol"),h("dd",{},j1939Only?[h("span",{id:"qs-veh-dialect"},"SAE J1939"+(v.busKbps?", "+v.busKbps+" kbit/s":"")),chip("Heard","ok")]:[protoName(v.protocol),DIALECT[v.dialect]?h("span",{id:"qs-veh-dialect"},DIALECT[v.dialect]):null,PROTO[String(v.protocol)]?chip("Detected","ok"):chip("Automatic",""),v.j1939?chip("J1939 network","ok"):null]),
+        h("dt",{},j1939Only?"Standard parameters":"Standard PIDs"),h("dd",{},(v.std_supported||0)+(j1939Only?" heard":" supported"),chip("Stored","ok")),
         h("dt",{},"Name"),h("dd",{},nameInp,h("span",{class:"help",style:"font-size:12px"},"shown on the Status page and in Home Assistant"))));
-      /* 2. profile */
-      out.push(sub("2. Vehicle profile"));
+      /* 2. profile (a J1939-only vehicle has no OBD requests for a profile to add) */
+      if(j1939Only&&!known){
+        if(W.profChoice===null){W.profChoice="none";W.profCar=null;}
+        out.push(sub("2. Vehicle profile"));
+        out.push(note("","Profiles carry OBD requests, which a J1939 vehicle does not answer. The standard J1939 parameters are stored already; more groups can be added as PGN rows under Automate > Parameters."));
+      }
       const chosen=W.profChoice==="car"?W.profCar:null;
+      if(!(j1939Only&&!known)){
+      out.push(sub("2. Vehicle profile"));
       const testBtn=btn("Test profile",()=>testProfile(chosen||(known?{car_model:v.profile,fromStore:true}:null)),"sm",{icon:"refresh",disabled:!(chosen||known)});
       if(known&&W.profChoice===null){
         out.push(h("div",{class:"qs-pick"},h("span",{class:"sel"},ic("car"),v.profile),btn("Change profile",()=>picker.open(),"sm",{icon:"search"}),testBtn,btn("Scan again",startDetect,"sm",{icon:"refresh"})));
@@ -643,6 +656,7 @@ SCREENS.vehicle=async()=>{
         if(chosen){const pm=profileProtocol(chosen);if(pm&&PROTO[String(v.protocol)]&&pm!==String(v.protocol))out.push(banner("warn","alert",h("b",{},"Protocol mismatch. "),"This profile expects "+protoName(pm)+" but the car answered on "+protoName(v.protocol)+". It may still work for some requests; test it first."));}
         out.push(note("","A profile adds the values the standard PIDs do not carry (battery state of charge, charging power). It is saved under this car: WiCAN applies it again whenever this car answers, and never to another car."));
       }
+      }
     }
     /* the store */
     const list=entries();
@@ -650,7 +664,7 @@ SCREENS.vehicle=async()=>{
       out.push(sub("Vehicles this WiCAN knows"));
       if(list.length){
         out.push(h("div",{class:"qs-nets"},...list.map(e=>h("div",{class:"qs-net",style:"grid-template-columns:1fr auto auto;cursor:default"},
-          h("span",{},h("b",{},e.name||defaultName(e)||"Unnamed vehicle"),h("br"),h("span",{class:"help"},(e.vin||("no VIN, ECU set "+(e.fingerprint||"")))+" · "+protoName(e.protocol)+" · "+(e.profile||"no profile")+" · "+(e.std_supported||0)+" std PIDs"+(e.last_seen?" · seen "+fmtAge(e.last_seen):""))),
+          h("span",{},h("b",{},e.name||defaultName(e)||"Unnamed vehicle"),h("br"),h("span",{class:"help"},(e.vin||("no VIN, "+(e.dialect==="j1939"?"controller set ":"ECU set ")+(e.fingerprint||"")))+" · "+(e.dialect==="j1939"?"SAE J1939":protoName(e.protocol)+(DIALECT[e.dialect]?", "+DIALECT[e.dialect]:"")+(e.j1939?", J1939 network":""))+" · "+(e.profile||"no profile")+" · "+(e.std_supported||0)+(e.dialect==="j1939"?" std parameters":" std PIDs")+(e.last_seen?" · seen "+fmtAge(e.last_seen):""))),
           e.current?chip("Current","pri"):e.pending_profile?chip("Profile pending","warn"):h("span",{}),
           btn("Forget",async()=>{if(!await confirmModal("Forget "+(e.name||e.vin||"this vehicle")+" and its PIDs?","Forget vehicle"))return;
             try{await api("/api/autopid/vehicles/"+encodeURIComponent(e.key),{method:"DELETE"});toast("Forgotten","ok");D.vehicles=await tryGet("/api/autopid/vehicles");render();}catch(ex){toast(ex.message,"err");}},"sm gh")))));
@@ -681,12 +695,13 @@ SCREENS.vehicle=async()=>{
         clearInterval(t);
         const r=await tryGet("/api/autopid/std_scan/result");
         D.vehicles=await tryGet("/api/autopid/vehicles");
-        if(!s||s.status==="failed"||!r||(!(r.supported||[]).length&&!r.vin&&!r.protocol_detected)){W.vehPhase="noanswer";render();return;}
+        if(!s||s.status==="failed"||!r||(!(r.supported||[]).length&&!r.vin&&!r.protocol_detected&&!r.j1939)){W.vehPhase="noanswer";render();return;}
         const list=entries();
         const key=r.key||r.vin||(r.fingerprint?"fp:"+r.fingerprint:"");
         const e=list.find(x=>x.key===key)||list.find(x=>x.current)||{};
-        W.veh={key:e.key||key,vin:r.vin||e.vin||"",fingerprint:r.fingerprint||e.fingerprint||"",protocol:r.protocol_detected||e.protocol||r.protocol||"",
-          std_supported:(r.supported||[]).length||e.std_supported||0,known:!!(r.known||e.profile),name:r.name||e.name||"",profile:e.profile||"",specific_init:e.specific_init||"",pending_profile:e.pending_profile};
+        W.veh={key:e.key||key,vin:r.vin||e.vin||"",fingerprint:r.fingerprint||e.fingerprint||"",protocol:r.protocol_detected||e.protocol||r.protocol||"",dialect:r.dialect||e.dialect||"obd2",
+          std_supported:(r.supported||[]).length||e.std_supported||0,known:!!(r.known||e.profile),name:r.name||e.name||"",profile:e.profile||"",specific_init:e.specific_init||"",pending_profile:e.pending_profile,
+          j1939:!!(r.j1939||e.j1939),j1939Listening:r.j1939_listening!==false,busKbps:r.bus_kbps||0};
         W.scanResult=r;W.vehName=W.veh.name||defaultName(W.veh);
         await loadProfiles();
         W.vehPhase="result";render();
@@ -1009,7 +1024,7 @@ SCREENS.polling=async()=>{
     pauseBox.append(radio("qs-pause","qs-pause-never",p.pause==="never","Never pause","WiCAN keeps asking while the car is parked.",()=>{p.pause="never";render();}));
     out.push(pauseBox);
     if(p.pause==="never")out.push(banner("warn","alert",h("b",{},"This keeps the car's modules awake. "),"With the engine off for days it can drain the 12 V battery. Pick this only for a bench or a car on a charger."));
-    out.push(sw("qs-pauseall","While paused, also stop listening","Off: passive CAN listening and the filters keep running while requests are paused. On: the OBD chip is left completely alone.",p.pauseAll,false,v=>{p.pauseAll=v;render();}));
+    out.push(sw("qs-pauseall","While paused, also stop listening","Off: the J1939 rows, which are read from WiCAN's own CAN listener and transmit nothing, keep running while requests are paused. On: they stop too and nothing is read at all.",p.pauseAll,false,v=>{p.pauseAll=v;render();}));
     out.push(sub("3. What to read"));
     const nStd=(W.veh&&W.veh.std_supported)||0;
     out.push(sw("qs-std","Standard PIDs","Speed, RPM, coolant, fuel level and the other values every car reports."+(nStd?" The scan found "+nStd+" of them on this car.":""),p.std,false,v=>{p.std=v;render();}));
@@ -1079,6 +1094,19 @@ async function finishVehicle(finishBtn,errEl,maxName){
     av.dtc_enabled=!!p.dtc;
     av.dtc_scan_period_min=p.dtc?Math.max(5,p.dtcMin):0;
     store.stage("autopid",av);
+    /* 3b. a J1939 network heard with the listener off: the native CAN controller
+       listen-only (it never transmits) at the bitrate the detection measured, and
+       the J1939 listener, in the same restart */
+    if(v.j1939&&!v.j1939Listening){
+      const cm=strip(await api("/api/settings/can_manager"));
+      cm.enabled=true;cm.silent=true;
+      const kb=String(v.busKbps||"");
+      cm.baud=(cm.baud==="auto"||!kb)?"auto":kb;
+      store.stage("can_manager",cm);
+      const jl=strip(await api("/api/settings/j1939"));
+      jl.enabled=true;
+      store.stage("j1939",jl);
+    }
     /* 4. the Battery and sleep step: the measured pair switches Power Saving on (wake_mv only
        when this firmware has it; an older one derives wake = sleep + 0.1 V) */
     if(W.pwr.measured){
@@ -1092,7 +1120,7 @@ async function finishVehicle(finishBtn,errEl,maxName){
     paint();
     await store.commit("Quick Setup: applying vehicle settings");
   }catch(e){
-    store.unstage("autopid");store.unstage("sleep_manager");finishBtn.disabled=false;
+    store.unstage("autopid");store.unstage("sleep_manager");store.unstage("can_manager");store.unstage("j1939");finishBtn.disabled=false;
     errEl.replaceChildren(banner("crit","alert",h("b",{},"WiCAN did not accept the vehicle setup: "),e.message||String(e)));
   }
 }
@@ -1113,7 +1141,7 @@ SCREENS.done=async()=>{
     else if(W.use!=="wifi"){const wh=await tryGet("/api/webhook");kv.push(h("dt",{},"Home Assistant"),h("dd",{},chip(wh&&wh.url?"Connected":"Waiting for discovery",wh&&wh.url?"ok":"warn")));}
     const vehOn=ap&&ap.enabled;
     kv.push(h("dt",{},"Vehicle"),h("dd",{},!vehOn?chip("Not set up",""):[v&&v.name?h("b",{},v.name):null,(v&&v.profile)||ap.vehicle?h("code",{},(v&&v.profile)||ap.vehicle):chip("Standard PIDs only",""),
-      v&&v.vin?h("span",{},"VIN ",h("code",{},v.vin)):null,v&&PROTO[String(v.protocol)]?h("span",{},PROTO[String(v.protocol)]):(ap.std_protocol==="0"?chip("Protocol: follows the car",""):null),
+      v&&v.vin?h("span",{},"VIN ",h("code",{},v.vin)):null,v&&v.dialect==="j1939"?h("span",{},"SAE J1939, listening"):v&&PROTO[String(v.protocol)]?h("span",{},PROTO[String(v.protocol)]+(DIALECT[v.dialect]?", "+DIALECT[v.dialect]:"")+(v.j1939?", J1939 network":"")):(ap.std_protocol==="0"?chip("Protocol: follows the car",""):null),
       v&&v.pending_profile?chip("Profile pending","warn"):null]));
     if(vehOn&&!W.noVeh){const pp=W.poll;const rate=pp.rate==="custom"?pp.rateCustom:pp.rate;
       const pauseTxt=pp.pause==="sleep"?"pauses with Power Saving":pp.pause==="custom"?"pauses below "+pp.pauseV.toFixed(1)+" V":"never pauses";

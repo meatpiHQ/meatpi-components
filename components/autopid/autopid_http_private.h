@@ -46,12 +46,18 @@ esp_err_t ap_http_send_json(httpd_req_t *req, cJSON *obj);
 /** `{"error": msg}` with the given status line. */
 esp_err_t ap_http_send_error(httpd_req_t *req, const char *status,
                              const char *msg);
+/** 409 with the bus guard's own sentence: a chip job it refused. */
+esp_err_t ap_http_send_guard_error(httpd_req_t *req);
 /** The file at @p path verbatim, or @p dflt when it is missing or empty. */
 esp_err_t ap_http_send_file(httpd_req_t *req, const char *path,
                             const char *dflt);
 /** One query-string value (autopid_http_dtc.c). */
 bool ap_http_query_param(httpd_req_t *req, const char *key, char *out,
                         size_t out_cap);
+
+/* ---- test-a-PID (autopid_http_test.c, HTTP_API.md 6e4): one shot through
+ * the runner, or the J1939 store for a PGN: command ----------------------- */
+esp_err_t test_post_handler(httpd_req_t *req);
 
 /* ---- DTC routes (autopid_http_dtc.c, HTTP_API.md 6e4b) ---------------------- */
 esp_err_t dtc_clear_post_handler(httpd_req_t *req);

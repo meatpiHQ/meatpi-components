@@ -133,6 +133,21 @@ int64_t ap_sched_period_us(const ap_sched_t *st, const ap_config_t *cfg,
         period_ms = backed * AP_SCHED_BACKOFF_MULT;
     }
 
+    /* a PGN row at max rate reads a store, not a bus: look every
+       AP_PASSIVE_FLOOR_MS instead of spinning on the lock (it publishes
+       only what is newer than its last look anyway); a `?` row asks the
+       network at every look, so its floor is a second (J1939 etiquette) */
+    ap_row_class_t cls = ap_sched_entry_class(cfg, i);
+
+    if (cls == AP_CLASS_BUS_TX && period_ms < AP_BUS_TX_FLOOR_MS)
+    {
+        period_ms = AP_BUS_TX_FLOOR_MS;
+    }
+    else if (period_ms == 0 && cls != AP_CLASS_CHIP)
+    {
+        period_ms = AP_PASSIVE_FLOOR_MS;
+    }
+
     return period_ms * 1000;
 }
 
@@ -153,14 +168,20 @@ void ap_sched_group_restore(ap_sched_t *st, const ap_config_t *cfg, int g)
     st->group_period_override[g] = -1;
 }
 
-int ap_sched_next(const ap_sched_t *st, const ap_config_t *cfg,
-                  int64_t *due_us)
+ap_row_class_t ap_sched_entry_class(const ap_config_t *cfg, int i)
+{
+    return (i < cfg->n_pids) ? ap_row_class(&cfg->pids[i]) : AP_CLASS_CHIP;
+}
+
+int ap_sched_next_of(const ap_sched_t *st, const ap_config_t *cfg,
+                     unsigned classes, int64_t *due_us)
 {
     int best = -1;
 
     for (int i = 0; i < entry_count(cfg); i++)
     {
-        if (!ap_sched_entry_enabled(st, cfg, i))
+        if (!ap_sched_entry_enabled(st, cfg, i) ||
+            (classes & AP_CLASS_BIT(ap_sched_entry_class(cfg, i))) == 0)
         {
             continue;
         }
@@ -180,6 +201,12 @@ int ap_sched_next(const ap_sched_t *st, const ap_config_t *cfg,
     }
 
     return best;
+}
+
+int ap_sched_next(const ap_sched_t *st, const ap_config_t *cfg,
+                  int64_t *due_us)
+{
+    return ap_sched_next_of(st, cfg, AP_CLASS_ALL, due_us);
 }
 
 void ap_sched_ran(ap_sched_t *st, const ap_config_t *cfg, int i,

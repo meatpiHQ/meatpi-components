@@ -47,6 +47,7 @@
 #include "battery_monitor.h"
 #include "filesystem.h"
 #include "http_server_manager.h"
+#include "j1939.h" /* j1939_active: the `?` rows' requests go out */
 
 #include "expression_parser.h"
 
@@ -88,6 +89,15 @@ esp_err_t ap_http_send_error(httpd_req_t *req, const char *status,
     return ap_http_send_json(req, o);
 }
 
+esp_err_t ap_http_send_guard_error(httpd_req_t *req)
+{
+    char reason[176];
+
+    /* a chip job was refused by the bus guard: say why, in its words */
+    ap_guard_last_reason(reason, sizeof(reason));
+    return ap_http_send_error(req, "409 Conflict", reason);
+}
+
 static esp_err_t autopid_get_handler(httpd_req_t *req)
 {
     autopid_stats_t st;
@@ -106,8 +116,24 @@ static esp_err_t autopid_get_handler(httpd_req_t *req)
     cJSON_AddBoolToObject(stats, "paused_voltage", st.paused_voltage);
     cJSON_AddBoolToObject(stats, "paused_client", st.paused_client);
     cJSON_AddBoolToObject(stats, "paused_diag", st.paused_diag);
+    cJSON_AddBoolToObject(stats, "paused_bus", st.paused_bus);
+    ap_guard_status_json(o);
     cJSON_AddNumberToObject(stats, "polls_ok", st.polls_ok);
     cJSON_AddNumberToObject(stats, "polls_failed", st.polls_failed);
+    /* the J1939 rows (autopid_j1939.h): looks into the listener's store,
+       and how many of them published a message not published before */
+    cJSON_AddNumberToObject(stats, "passive_ok", st.passive_ok);
+    cJSON_AddNumberToObject(stats, "passive_failed", st.passive_failed);
+
+    uint32_t published = 0, requested = 0, refused = 0;
+
+    ap_runner_j1939_stats(&published, NULL);
+    ap_runner_j1939_tx_stats(&requested, &refused);
+    cJSON_AddNumberToObject(stats, "passive_published", published);
+    cJSON_AddNumberToObject(stats, "passive_requested", requested);
+    cJSON_AddNumberToObject(stats, "passive_refused", refused);
+    cJSON_AddBoolToObject(stats, "j1939_listening", ap_j1939_listening());
+    cJSON_AddBoolToObject(stats, "j1939_active", j1939_active());
     cJSON_AddNumberToObject(stats, "pids", st.pids_loaded);
     cJSON_AddNumberToObject(stats, "filters", st.filters_loaded);
     /* Phase 1b: ~53 ms/request measured floor; sub-floor periods are
@@ -262,6 +288,11 @@ static esp_err_t std_scan_post_handler(httpd_req_t *req)
         return ap_http_send_error(req, "409 Conflict", "scan already running");
     }
 
+    if (err == ESP_ERR_NOT_SUPPORTED)
+    {
+        return ap_http_send_guard_error(req);
+    }
+
     if (err != ESP_OK)
     {
         return ap_http_send_error(req, "500 Internal Server Error",
@@ -304,206 +335,6 @@ static esp_err_t std_table_handler(httpd_req_t *req)
     }
 
     return ap_http_send_json(req, arr);
-}
-
-/* test-a-PID (§11): one-shot through the REAL runner path — the ws
-   console can't reproduce init/rxheader/expression handling */
-static esp_err_t test_post_handler(httpd_req_t *req)
-{
-    /* PSRAM buffers: an "expressions" list for a 32-parameter DID does
-       not fit a 512 B stack body, and the transcript is ~1 KB. Handlers
-       run on the one httpd task, so plain statics are safe; the chip
-       itself is guarded by the job lock below. */
-    static char s_body[2048] EXT_RAM_BSS_ATTR;
-    static char s_raw[AP_RESP_MAX] EXT_RAM_BSS_ATTR;
-    static char s_tr[1536] EXT_RAM_BSS_ATTR;
-
-    int len = httpd_req_recv(req, s_body, sizeof(s_body) - 1);
-
-    if (len <= 0)
-    {
-        return ap_http_send_error(req, "400 Bad Request", "missing body");
-    }
-
-    s_body[len] = '\0';
-
-    cJSON *root = cJSON_Parse(s_body);
-    const cJSON *cmd = cJSON_GetObjectItemCaseSensitive(root, "cmd");
-    const cJSON *init = cJSON_GetObjectItemCaseSensitive(root, "init");
-    const cJSON *rxh = cJSON_GetObjectItemCaseSensitive(root,
-                                                        "rxheader");
-    const cJSON *expr = cJSON_GetObjectItemCaseSensitive(root,
-                                                         "expression");
-    const cJSON *exprs = cJSON_GetObjectItemCaseSensitive(root,
-                                                          "expressions");
-    const cJSON *type = cJSON_GetObjectItemCaseSensitive(root, "type");
-
-    if (!cJSON_IsString(cmd) || cmd->valuestring[0] == '\0' ||
-        strlen(cmd->valuestring) >= AP_CMD_LEN ||
-        (cJSON_IsString(init) &&
-         strlen(init->valuestring) >= AP_INIT_LEN) ||
-        (cJSON_IsString(rxh) && strlen(rxh->valuestring) >= AP_HDR_LEN))
-    {
-        cJSON_Delete(root);
-        return ap_http_send_error(req, "400 Bad Request",
-                          "cmd required (init/rxheader length caps)");
-    }
-
-    char eerr[64];
-
-    if (cJSON_IsString(expr) && expr->valuestring[0] != '\0' &&
-        expression_parser_check(expr->valuestring, NULL, eerr,
-                                sizeof(eerr)) != ESP_OK)
-    {
-        cJSON_Delete(root);
-        return ap_http_send_error(req, "400 Bad Request", "bad expression");
-    }
-
-    /* "expressions": decode the ONE reply with every parameter of the
-       PID (the UI used to fire one request per parameter) */
-    if (cJSON_IsArray(exprs))
-    {
-        if (cJSON_GetArraySize(exprs) > AP_PARAMS_PER)
-        {
-            cJSON_Delete(root);
-            return ap_http_send_error(req, "400 Bad Request",
-                              "too many expressions");
-        }
-
-        const cJSON *e = NULL;
-
-        cJSON_ArrayForEach(e, exprs)
-        {
-            if (!cJSON_IsString(e) || e->valuestring[0] == '\0' ||
-                expression_parser_check(e->valuestring, NULL, eerr,
-                                        sizeof(eerr)) != ESP_OK)
-            {
-                cJSON_Delete(root);
-                return ap_http_send_error(req, "400 Bad Request",
-                                  "bad expression in expressions[]");
-            }
-        }
-    }
-
-    /* "type": prepend the type init chain the poller sends when it
-       switches to this PID's type — the shot then IS a poll of that PID */
-    int tidx = -1;
-
-    if (cJSON_IsString(type))
-    {
-        const char *t = type->valuestring;
-
-        tidx = (strcmp(t, "std") == 0)      ? AP_PID_STD
-             : (strcmp(t, "custom") == 0)   ? AP_PID_CUSTOM
-             : (strcmp(t, "specific") == 0) ? AP_PID_SPECIFIC
-                                            : -1;
-    }
-
-    if (!ap_core_job_acquire())  /* vs std scan / dtc jobs / other tests */
-    {
-        cJSON_Delete(root);
-        return ap_http_send_error(req, "409 Conflict", "another chip job runs");
-    }
-
-    ap_core_scan_pause(true);   /* park the poller around the one-shot */
-
-    int64_t elapsed_us = 0;
-    esp_err_t err = ap_runner_test(
-        (tidx >= 0) ? ap_runner_type_init(tidx) : NULL,
-        cJSON_IsString(init) ? init->valuestring : NULL,
-        cJSON_IsString(rxh) ? rxh->valuestring : NULL, cmd->valuestring,
-        s_raw, sizeof(s_raw), &elapsed_us, s_tr, sizeof(s_tr));
-
-    ap_core_scan_pause(false);
-
-    cJSON *o = cJSON_CreateObject();
-
-    cJSON_AddBoolToObject(o, "ok", err == ESP_OK);
-    cJSON_AddNumberToObject(o, "elapsed_ms",
-                            (double)elapsed_us / 1000.0);
-
-    if (err != ESP_OK)
-    {
-        cJSON_AddStringToObject(o, "error",
-                                (err == ESP_ERR_INVALID_STATE)
-                                    ? "chip busy (monitor/update)"
-                                    : "request failed/timeout");
-        s_raw[0] = '\0';
-    }
-
-    cJSON_AddStringToObject(o, "raw", s_raw);
-    cJSON_AddStringToObject(o, "transcript", s_tr);
-
-    uint8_t payload[AP_PAYLOAD_MAX];
-    size_t n = 0;
-    bool have_payload =
-        err == ESP_OK &&
-        ap_resp_to_payload(s_raw, payload, sizeof(payload), &n) == ESP_OK;
-
-    if (have_payload)
-    {
-        char hex[AP_PAYLOAD_MAX * 3 + 1];
-        size_t w = 0;
-
-        for (size_t i = 0; i < n; i++)
-        {
-            w += snprintf(hex + w, sizeof(hex) - w, "%02X%s", payload[i],
-                          (i + 1 < n) ? " " : "");
-        }
-
-        cJSON_AddStringToObject(o, "payload", hex);
-    }
-    else if (err == ESP_OK)
-    {
-        cJSON_AddStringToObject(o, "error", "no payload in response");
-    }
-
-    float volts = 0;
-
-    (void)battery_monitor_voltage(&volts);
-
-    if (have_payload && cJSON_IsString(expr) && expr->valuestring[0] != '\0')
-    {
-        double value = 0;
-
-        if (expression_parser_eval(expr->valuestring, payload, n,
-                                   (double)volts, &value) == ESP_OK)
-        {
-            cJSON_AddNumberToObject(o, "value", value);
-        }
-        else
-        {
-            cJSON_AddStringToObject(o, "error",
-                                    "expression failed on payload");
-        }
-    }
-
-    if (cJSON_IsArray(exprs))
-    {
-        /* one entry per expression, null where the reply gave nothing */
-        cJSON *vals = cJSON_AddArrayToObject(o, "values");
-        const cJSON *e = NULL;
-
-        cJSON_ArrayForEach(e, exprs)
-        {
-            double value = 0;
-
-            if (have_payload &&
-                expression_parser_eval(e->valuestring, payload, n,
-                                       (double)volts, &value) == ESP_OK)
-            {
-                cJSON_AddItemToArray(vals, cJSON_CreateNumber(value));
-            }
-            else
-            {
-                cJSON_AddItemToArray(vals, cJSON_CreateNull());
-            }
-        }
-    }
-
-    ap_core_job_release();
-    cJSON_Delete(root);
-    return ap_http_send_json(req, o);
 }
 
 static esp_err_t group_post_handler(httpd_req_t *req)

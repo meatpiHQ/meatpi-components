@@ -98,7 +98,27 @@ typedef struct
     bool          enabled;
     uint16_t      param_start;            /* slice of the param pool        */
     uint16_t      param_count;
+    /* a J1939 parameter group (autopid_j1939.h): cmd "PGN:..", read at
+       config load; served from the listener's store, never the chip */
+    bool          j1939;
+    bool          j1939_request;          /* '?': sent on request (phase 6) */
+    int16_t       j1939_sa;               /* pinned source, -1 = the pick   */
+    uint32_t      pgn;
 } ap_pid_t;
+
+/** The scheduling class of a row (autopid_j1939.h has the words). */
+typedef enum
+{
+    AP_CLASS_CHIP = 0,     /* a request through the OBD chip (filters too) */
+    AP_CLASS_PASSIVE,      /* a PGN row: read from the listener's store    */
+    AP_CLASS_BUS_TX,       /* a PGN row with '?': a request on the native
+                              bus (phase 6; read like passive until then)  */
+} ap_row_class_t;
+
+#define AP_CLASS_BIT(c)   (1u << (c))
+#define AP_CLASS_ALL      (AP_CLASS_BIT(AP_CLASS_CHIP) | \
+                           AP_CLASS_BIT(AP_CLASS_PASSIVE) | \
+                           AP_CLASS_BIT(AP_CLASS_BUS_TX))
 
 typedef struct
 {
@@ -188,6 +208,16 @@ int64_t ap_sched_period_us(const ap_sched_t *st, const ap_config_t *cfg,
 int ap_sched_next(const ap_sched_t *st, const ap_config_t *cfg,
                   int64_t *due_us);
 
+/** ap_sched_next over the entries of the given classes only (a bit set
+ *  of AP_CLASS_BIT(ap_row_class_t); autopid_j1939.h): the poller asks for
+ *  the chip's rows only while it may use the chip, for the passive rows
+ *  always. */
+int ap_sched_next_of(const ap_sched_t *st, const ap_config_t *cfg,
+                     unsigned classes, int64_t *due_us);
+
+/** The scheduling class of entry @p i (filters are chip rows). */
+ap_row_class_t ap_sched_entry_class(const ap_config_t *cfg, int i);
+
 /** Record a run of entry @p i: reschedule + fail-streak bookkeeping. */
 /** Runtime group control (pure): set = the §5b override (period < 0 keeps
  *  the current override), restore = back to the configured defaults (the
@@ -245,6 +275,9 @@ bool ap_settings_is_configured(void);       /* boot apply ran (§4.3)     */
 int  ap_settings_pause_below_mv(void);      /* 0 = never pause           */
 bool ap_settings_pause_follow_sleep(void);  /* legacy parity: pause
                                                requests below sleep_mv   */
+bool ap_settings_pause_all(void);           /* pause_mode "all": the
+                                               voltage pause stops the
+                                               J1939 rows too            */
 const char *ap_core_std_protocol(void);     /* std_protocol setting      */
 const char *ap_core_specific_init_default(void); /* specific_init knob  */
 uint32_t ap_core_min_event_interval_ms(void);
@@ -268,6 +301,15 @@ void ap_events_vehicle_evicted(const char *vin, const char *name); /* store */
 /* chip-facing runner (autopid_runner.c — poller-task context) */
 bool ap_runner_run(const ap_pid_t *pid, int pid_index,
                    const ap_param_t *params);
+/** The publish half of a poll, shared with the J1939 runner: every enabled
+ *  parameter of @p pid evaluated over @p payload (mux precondition,
+ *  expression, plausibility clamp) into the cache and the events, stamped
+ *  @p ts_us (the reply's time: now for a chip answer, the message's own
+ *  time for a J1939 group read from the store).
+ *  @return true when at least one value was published. */
+bool ap_runner_publish(const ap_pid_t *pid, const ap_param_t *params,
+                       const uint8_t *payload, size_t payload_len,
+                       int64_t ts_us);
 void ap_runner_set_type_init(int type, const char *init);
 void ap_runner_reset(void);        /* replay inits on the next poll     */
 /** After an external ELM app had the chip: re-send the protocol prelude
@@ -275,19 +317,51 @@ void ap_runner_reset(void);        /* replay inits on the next poll     */
  *  every type/PID init on the next poll. Poller-task context. */
 void ap_runner_restore_baseline(void);
 
+/** The bus guard found the stored protocol at the wrong bitrate for this
+ *  bus: the prelude uses the chip's search (ATTP0) for the rest of the
+ *  boot, exactly like the silent-protocol fallback. Any task. */
+void ap_runner_force_search(void);
+
+/* bus guard glue (autopid_guard.c): what the native controller heard on
+   the bus decides whether the chip may be pinned to a CAN protocol */
+void ap_guard_init(void);
+/** Poller, before every transmission: may the chip be used now? Final
+ *  once the bus named its bitrate or an ECU answered; until then a
+ *  listen-only watch stays on the bus (the first call waits 400 ms). */
+bool ap_guard_poll_ok(void);
+/** Poller: an ECU answered on the protocol in effect (its bitrate is the
+ *  bus's): the verdict is final, the watch is let go. */
+void ap_guard_proven(void);
+/** A one-shot chip job is about to start (detection, DTC scan / clear,
+ *  test-a-PID): false = nothing may be transmitted; @p reason says why. */
+bool ap_guard_job_ok(char *reason, size_t cap);
+void ap_guard_rearm(void);              /* the protocol in effect changed  */
+bool ap_guard_parked(void);
+void ap_guard_last_reason(char *out, size_t cap); /* the last sentence */
+void ap_guard_status_json(cJSON *obj);  /* adds "bus_guard": {...}         */
+
 /* ATMA filter window (autopid_filter.c — poller-task context) */
 bool ap_runner_run_filter(const ap_filter_t *f, const ap_param_t *params);
 
 /** One-shot test-a-PID through the real runner choreography (§11):
  *  type init chain, per-PID init, ATCRA, request, ATCRA off — exactly
- *  what a poll of that PID sends. Caller pauses the poller around it
+ *  what a poll of that PID sends (@p type: AP_PID_*, -1 = unknown; it
+ *  decides the borrowed-header rule). Caller pauses the poller around it
  *  (ap_core_scan_pause). `transcript` (may be NULL) receives one line
  *  per exchange, "> cmd" then "< reply", so the UI can show what went
  *  out and what came back (2026-09-16). */
-esp_err_t ap_runner_test(const char *type_init, const char *init,
+esp_err_t ap_runner_test(int type, const char *type_init, const char *init,
                          const char *rxheader, const char *cmd, char *raw,
                          size_t raw_len, int64_t *elapsed_us,
                          char *transcript, size_t transcript_len);
+
+/* chip-state memory shared with first contact (autopid_contact.c,
+   poller-task context) */
+void ap_runner_send_init(const char *init);      /* a ';'-separated chain  */
+void ap_runner_send_prelude(const char *prelude); /* ... that resets the
+                                                    header: nothing borrowed */
+void ap_runner_baseline_ensure(void);            /* the boot prelude, once */
+void ap_runner_baseline_invalidate(void);        /* ... is due again       */
 /** The init chain the poller sends when it switches to this PID type
  *  (what autopid_settings composed from the protocol + *_init). */
 const char *ap_runner_type_init(int type);
@@ -298,7 +372,7 @@ cJSON *ap_std_scan_status_json(void);       /* {status,found,error,ts}   */
 const char *ap_std_prelude(void);           /* ATS1;ATH0;ATST96;ATTP<p>.. */
 cJSON *ap_std_table_json(void);             /* the full SAE table for UI */
 const char *autopid_std_scan_path(void);    /* /data/autopid/std_scan.json */
-bool ap_std_entry_to_json(cJSON *arr, uint8_t pid); /* one table row -> arr */
+/* one table row -> a config row: ap_std_entry_to_json(), autopid_dialect.h */
 
 /* runner-side identity hooks: see autopid_vehicle.h (included below) */
 #endif
@@ -312,6 +386,12 @@ bool ap_std_entry_to_json(cJSON *arr, uint8_t pid); /* one table row -> arr */
 esp_err_t ap_std_expression(uint8_t bit_start, uint8_t bit_length,
                             double scale, double offset, char *buf,
                             size_t buf_len);
+
+/** The same mapping for a dialect whose data sits @p shift bytes further
+ *  into the payload (ap_dialect_data_shift: `62 F4 0C A B`). */
+esp_err_t ap_std_expression_shift(uint8_t bit_start, uint8_t bit_length,
+                                  double scale, double offset, int shift,
+                                  char *buf, size_t buf_len);
 
 /** OR-merge every "41 <pid> A B C D" line of @p resp (headers on or off,
  *  multi-ECU) into @p bitmap. True when at least one row matched. PURE. */
@@ -332,6 +412,50 @@ esp_err_t ap_config_parse(const char *json, ap_config_t *cfg, char *err,
  *  driver's guard (obd_chip_guard.h), which also names the commands
  *  with no RAM twin (ATPP/ATSD/ATCV/STWBR): config parse refuses those. */
 void ap_init_sanitize(char *str);
+
+/* ---- pure: bus guard (autopid_bus_guard.c — host-tested) -------------------
+ * May the OBD chip transmit on a protocol, given what the native
+ * controller heard on the bus (can_manager_probe)? A request on a pinned
+ * CAN protocol at the wrong bitrate destroys the bus traffic; the chip's
+ * own search does not. */
+typedef enum
+{
+    AP_BUS_UNKNOWN = 0,   /* not probed, or the probe was not possible      */
+    AP_BUS_SILENT,        /* nothing on the bus (a gatewayed OBD port)      */
+    AP_BUS_LIVE,          /* frames read at `kbps`                          */
+    AP_BUS_UNREADABLE,    /* traffic that neither 250 nor 500 kbit/s reads  */
+} ap_bus_kind_t;
+
+typedef struct
+{
+    ap_bus_kind_t kind;
+    uint16_t      kbps;   /* AP_BUS_LIVE only */
+} ap_bus_t;
+
+typedef enum
+{
+    AP_GUARD_ALLOW = 0,   /* send on the protocol asked for                 */
+    AP_GUARD_SEARCH,      /* not on that one: the chip's search (ATTP0)     */
+    AP_GUARD_PARK,        /* nothing is transmitted                         */
+} ap_guard_verdict_t;
+
+/** kbit/s the chip transmits at on CAN protocol @p proto ('6'..'9', 'A');
+ *  0 = not judged (the search '0', K-line / J1850, user CAN B and C). */
+uint16_t ap_guard_proto_kbps(char proto);
+
+/** The decision. @p proto = the protocol the prelude would pin ('0' = the
+ *  search); @p pinned = the `std_protocol` SETTING names it (the user's
+ *  word), not the vehicle store (ours, which may give way to the search). */
+ap_guard_verdict_t ap_guard_decide(const ap_bus_t *bus, char proto,
+                                   bool pinned);
+
+const char *ap_guard_verdict_name(ap_guard_verdict_t verdict);
+const char *ap_bus_kind_name(ap_bus_kind_t kind);
+
+/** One sentence for the log and the status: what the bus is and what that
+ *  means for @p proto. @return its length (0 on a NULL / empty buffer). */
+size_t ap_guard_reason(const ap_bus_t *bus, char proto, bool pinned,
+                       char *out, size_t cap);
 
 /* ---- pure: ELM response text -> payload bytes (autopid_resp.c) ------------
  * Handles: echo/blank/SEARCHING lines, error markers (NO DATA, ERROR,
@@ -398,301 +522,29 @@ bool ap_flt_stream_feed_ex(ap_flt_stream_t *st, const uint8_t *bytes,
 /** True when @p payload plausibly answers @p cmd: hex service commands
  *  must echo (service | 0x40) + the identifier byte. Rejects cross-talk
  *  when another chip master's response lands in our request window
- *  (bench-proven under WS-OBD contention, Phase 1b). AT/ST/VT commands
- *  return true (nothing to verify). PURE. */
+ *  (bench-proven under WS-OBD contention, Phase 1b). Service 22 echoes
+ *  both identifier bytes, and both are compared: `62 F4 0D` does not
+ *  answer `22F40C` (an ECU's late answer to the previous request, bench
+ *  2026-10-03). AT/ST/VT commands return true (nothing to verify). PURE. */
 bool ap_payload_matches_cmd(const char *cmd, const uint8_t *payload,
                             size_t payload_len);
 
-/* ---- pure: DTC codec (autopid_dtc_codec.c — host-tested; TASK_dtc.md §4) --
- * Mode 04 clears EVERYTHING (codes + readiness + MIL) — OBD2 has no
- * per-code clear, so "clear specific DTCs" is a CONDITION on the whole
- * present set (always / if_any / if_only).                              */
-
-#define AP_DTC_MAX       32     /* codes kept per category               */
-#define AP_DTC_CODE_LEN  10     /* "P0420-08" + NUL — UDS failure-type
-                                   suffix (TASK_dtc §12; was 6/"P0420"
-                                   until 2026-07-22; FTB 0 omits the
-                                   suffix so OBD- and UDS-sourced codes
-                                   stay string-identical)               */
-
-typedef enum
-{
-    AP_DTC_CLEAR_INVALID = 0,
-    AP_DTC_CLEAR_ALWAYS,
-    AP_DTC_CLEAR_IF_ANY,        /* >=1 listed code present               */
-    AP_DTC_CLEAR_IF_ONLY,       /* every present code is listed          */
-} ap_dtc_clear_mode_t;
-
-/** 2-byte DTC -> "P0420" (bits 15-14 letter, 13-12 first digit). */
-void ap_dtc_format(uint8_t hi, uint8_t lo, char out[AP_DTC_CODE_LEN]);
-
-/** "P0420" -> 2 bytes; false on malformed input. Case-insensitive. */
-bool ap_dtc_unformat(const char *code, uint8_t *hi, uint8_t *lo);
-
-/** Parse a 43/47/4A payload (ap_resp_to_payload output, service echo
- *  first) into formatted codes. Skips 0x0000 padding pairs, tolerates a
- *  stripped count byte, keeps what fits in @p out_max.
- *  @return code count, or -1 when the service byte doesn't match. */
-int ap_dtc_parse_codes(const uint8_t *payload, size_t len,
-                       uint8_t service_resp,
-                       char out[][AP_DTC_CODE_LEN], size_t out_max);
-
-/** Union-merge @p src into @p dst (skip duplicates, keep order).
- *  @return the new dst count (<= dst_max). */
-uint8_t ap_dtc_merge_codes(char dst[][AP_DTC_CODE_LEN], uint8_t n_dst,
-                           size_t dst_max,
-                           const char src[][AP_DTC_CODE_LEN],
-                           uint8_t n_src);
-
-/** Parse "41 01 AA .." -> MIL bit (A7) + stored count (A6..A0). */
-bool ap_dtc_parse_mil(const uint8_t *payload, size_t len, bool *mil,
-                      uint8_t *count);
-
-/** Map a mode string (+ code list, for the default) to the enum;
- *  NULL/"" mode = always without codes, if_any with them. */
-ap_dtc_clear_mode_t ap_dtc_clear_mode_parse(const char *mode,
-                                            const char *codes);
-
-/** Evaluate the clear condition against the present stored codes. */
-bool ap_dtc_clear_allowed(const char present[][AP_DTC_CODE_LEN],
-                          size_t n_present, const char *codes,
-                          ap_dtc_clear_mode_t mode);
-
-/* ---- pure: freeze-frame codec (TASK_dtc §14 — OBD mode 02, frame 0) ------
- * Payload shapes are ap_resp_to_payloads output with the echo kept:
- * `42 <pid> <frame> <data…>`. Decode rides the standard-PID table
- * (autopid_std.c), byte semantics identical to the mode-01 expressions. */
-
-#define AP_FRZ_MAX      24      /* decoded values kept per report        */
-#define AP_FRZ_NAME_LEN 40      /* std-table param names                 */
-
-typedef struct
-{
-    char  name[AP_FRZ_NAME_LEN];
-    char  unit[AP_UNIT_LEN];
-    float value;
-} ap_frz_val_t;
-
-/** Parse a `42 02 <frame> hi lo` payload -> the DTC that froze the frame
- *  (DTCFRZF). @return true only for a non-zero DTC (0x0000 = no frame
- *  stored — some ECUs answer zeros instead of NO DATA). */
-bool ap_frz_dtc(const uint8_t *payload, size_t len,
-                char out[AP_DTC_CODE_LEN]);
-
-/** Parse a `42 <base> <frame> b0..b3` supported-PID bitmap payload for
- *  bitmap base @p pid (0x00/0x20/0x40…). MSB of b0 = PID base+1. */
-bool ap_frz_bitmap(const uint8_t *payload, size_t len, uint8_t pid,
-                   uint32_t *bitmap);
-
-/** Decode a mode-02 value payload `[0x42, pid, frame, A, B, …]` via the
- *  standard-PID table (autopid_std.c owns the table; same byte indexing
- *  as ap_std_expression, value = raw*scale+offset). Appends decoded
- *  params to @p out starting at @p n. @return the new count (<= max). */
-int ap_frz_decode(const uint8_t *payload, size_t len, ap_frz_val_t *out,
-                  int n, int max);
-
-/* ---- pure: DTC-database importer (autopid_dtc_db_codec.c — host-tested;
- * TASK_dtc_db.md §2). Canonical stored form: "#dtcdb1 <n>\n" then sorted
- * "CODE\tDESC\n" lines.                                                 */
-
-#define AP_DTC_DB_MAX        8      /* databases                        */
-#define AP_DTC_DB_NAME_LEN   25     /* cert-set-style names             */
-#define AP_DTC_DB_FILE_MAX   (1024 * 1024)  /* upload cap               */
-#define AP_DTC_DB_ENTRIES_MAX 20000
-#define AP_DTC_DESC_MAX      95     /* description chars kept           */
-
-typedef struct
-{
-    char     code[AP_DTC_CODE_LEN];
-    uint32_t off;                   /* desc offset into scratch/buffer  */
-    uint32_t seq;                   /* original order (dedup tiebreak)  */
-    uint16_t len;                   /* desc length                      */
-} ap_dtc_db_item_t;
-
-/** Sniff + parse @p in (CSV/TSV/;-CSV/JSON-map/JSON-array/plain text)
- *  into scratch + a SORTED deduped item index (last duplicate wins).
- *  CONTRACT: @p scratch_cap must be >= in_len + AP_DTC_DESC_MAX + 16 —
- *  the emitter checks per-entry headroom BEFORE writing (a smaller cap
- *  silently rejects the tail; bench-bitten 2026-07-08).
- *  @return entry count, or -1 (err filled; fmt_out = sniffed format). */
-int ap_dtc_db_import(const char *in, size_t in_len, char *scratch,
-                     size_t scratch_cap, ap_dtc_db_item_t *items,
-                     size_t items_cap, char fmt_out[12], char *err,
-                     size_t err_len);
-
-/** Emit the canonical form. @return bytes written, 0 = out too small. */
-size_t ap_dtc_db_serialize(const char *scratch,
-                           const ap_dtc_db_item_t *items, int n,
-                           char *out, size_t out_cap);
-
-/** Index a canonical buffer (validates header + count).
- *  @return entry count or -1. Items' off/len point into @p buf. */
-int ap_dtc_db_index(const char *buf, size_t len,
-                    ap_dtc_db_item_t *items, size_t items_cap);
-
-/** Picker query: code-prefix OR description-substring, both
- *  case-insensitive; empty/NULL q matches everything. */
-bool ap_dtc_db_match(const char *code, const char *desc, size_t desc_len,
-                     const char *q);
-
-/* ---- pure: DBC codec (autopid_dbc_codec.c — host-tested; TASK_dbc.md) ----
- * Parse the BO_/SG_/SIG_VALTYPE_ subset; compile signals into
- * expression_parser expressions over filter payloads (B0 = first frame
- * data byte). Unsupported signals stay LISTED with a reason.           */
-
-#define AP_DBC_MAX        4     /* stored .dbc files                    */
-#define AP_DBC_NAME_LEN   33    /* message/signal identifiers           */
-#define AP_DBC_FILE_MAX   (1024 * 1024)
-#define AP_DBC_MSGS_MAX   400   /* per file                             */
-#define AP_DBC_SIGS_MAX   3000  /* per file                             */
-
-typedef struct
-{
-    uint32_t id;                /* 29-bit masked                        */
-    bool     ext;
-    bool     mux_complex;       /* extended multiplexing (SG_MUL_VAL_,
-                                   m<N>M, or >1 switch) — unsupported   */
-    uint8_t  dlc;
-    char     name[AP_DBC_NAME_LEN];
-} ap_dbc_msg_t;
-
-typedef struct
-{
-    uint16_t msg;               /* index into the message table         */
-    uint16_t start;             /* DBC start bit (raw numbering)        */
-    uint8_t  len;
-    bool     intel;             /* @1 = little endian                   */
-    bool     is_signed;
-    uint8_t  mux;               /* 0 plain, 1 m<N>, 2 M switch, 3 ext   */
-    uint8_t  valtype;           /* 0 int, 1 float, 2 double             */
-    uint16_t mux_val;           /* the N of m<N> (mux == 1)             */
-    double   factor, offset, min, max;
-    char     name[AP_DBC_NAME_LEN];
-    char     unit[AP_UNIT_LEN];
-} ap_dbc_sig_t;
-
-/** Parse @p text. @return signal count (>=1) or -1 (err filled).
- *  Over-cap messages/signals are dropped silently (keep what fits). */
-int ap_dbc_parse(const char *text, size_t len, ap_dbc_msg_t *msgs,
-                 size_t msgs_cap, int *n_msgs, ap_dbc_sig_t *sigs,
-                 size_t sigs_cap, char *err, size_t err_len);
-
-/** Compile @p s into an expression (<= AP_EXPR_LEN incl. NUL).
- *  ESP_ERR_NOT_SUPPORTED sets @p reason (static string). */
-esp_err_t ap_dbc_expr(const ap_dbc_sig_t *s, char *out, size_t out_cap,
-                      const char **reason);
-
-/** Multiplex precondition for @p s. Plain / M-switch signals: ESP_OK
- *  with expr_out = "" (no condition). m<N> signals: compiles the
- *  message's M switch as a RAW unsigned slice into @p expr_out and sets
- *  @p val_out = N — the runner evaluates the slice per frame and only
- *  applies the signal expression when it equals N. Extended
- *  multiplexing (mux 3 / msg.mux_complex) and switchless m<N> signals
- *  are ESP_ERR_NOT_SUPPORTED with @p reason set. */
-esp_err_t ap_dbc_mux_cond(const ap_dbc_sig_t *s, const ap_dbc_msg_t *msgs,
-                          const ap_dbc_sig_t *sigs, int n_sigs,
-                          char *expr_out, size_t expr_cap,
-                          float *val_out, const char **reason);
-
-/** Reference decoder — host cross-check ONLY. */
-double ap_dbc_decode_ref(const ap_dbc_sig_t *s, const uint8_t data[8]);
-
-/** The scan report (RAM-only; guarded by the dtc module's own lock). */
-typedef struct
-{
-    int64_t  ts_us;             /* completion time (esp_timer clock)     */
-    int64_t  ts_epoch;          /* wall clock, 0 when time isn't valid   */
-    bool     valid;
-    bool     mil;
-    uint8_t  mil_count;         /* summed across responding ECUs         */
-    uint8_t  n_ecus;            /* 0101 responders (1 when headers off)  */
-    char     protocol[5];       /* "obd" | "uds" — which path answered   */
-    uint8_t  n_stored, n_pending, n_permanent, n_new;
-    char     stored[AP_DTC_MAX][AP_DTC_CODE_LEN];
-    char     pending[AP_DTC_MAX][AP_DTC_CODE_LEN];
-    char     permanent[AP_DTC_MAX][AP_DTC_CODE_LEN];
-    char     new_codes[AP_DTC_MAX][AP_DTC_CODE_LEN];
-    /* freeze frame (mode 02 frame 0, OBD scans only — TASK_dtc §14) */
-    bool     frz_present;
-    char     frz_dtc[AP_DTC_CODE_LEN];  /* DTCFRZF                       */
-    uint32_t frz_ecu;           /* responder CAN id; UINT32_MAX = hdr off */
-    uint8_t  n_frz;
-    ap_frz_val_t frz[AP_FRZ_MAX];
-    char     error[48];         /* last scan error, "" = ok              */
-} ap_dtc_report_t;
+#include "autopid_dtc_private.h" /* DTC codecs, report, engine, database */
+#include "autopid_dbc_private.h" /* DBC codec + store                    */
 
 #ifndef AUTOPID_HOST_TEST
-/* DTC engine (autopid_dtc.c — target half; TASK_dtc.md §5) */
-void ap_dtc_init(void);                      /* autopid_init context     */
-void ap_dtc_apply_settings(const cJSON *settings); /* on_apply context   */
-bool ap_dtc_enabled(void);
-bool ap_dtc_clear_gate_open(void);           /* dtc_allow_clear          */
-bool ap_dtc_busy(void);
-esp_err_t ap_dtc_scan_start(void);           /* 409-equiv INVALID_STATE  */
-void ap_dtc_periodic_check(void);            /* poller loop: start scan
-                                                when the period is due   */
-esp_err_t ap_dtc_report_get(ap_dtc_report_t *out);
-cJSON *ap_dtc_report_json(void);             /* the §8 GET "report" obj  */
-
-/** Conditional clear (sync, seconds of bus I/O — NEVER the event
- *  dispatcher; HTTP/CLI/scan-job/script contexts only). Re-reads mode 03
- *  first, evaluates, sends 04, confirms with a second 03.
- *  @param[out] cleared condition held + 44 confirmed
- *  @param[out] before/after stored-code counts around the clear. */
-esp_err_t ap_dtc_clear(const char *codes, const char *mode, bool *cleared,
-                       uint8_t *before, uint8_t *after, char *err,
-                       size_t err_len);
-
-/** Fire-and-forget clear for the event action (dispatcher context must
- *  not block on the bus) — spawns the job task, result travels by the
- *  autopid.dtc_clear event. */
-esp_err_t ap_dtc_clear_queue(const char *codes, const char *mode);
-
 /** One-shot chip-job serialization (std scan / test-a-PID / dtc jobs
  *  never interleave; each still pauses the poller via
  *  ap_core_scan_pause). autopid.c owns the flag. */
 bool ap_core_job_acquire(void);
 void ap_core_job_release(void);
-
-/* DTC-database store + PSRAM cache (autopid_dtc_db.c — TASK_dtc_db §3) */
-void ap_dtc_db_init(void);                   /* autopid_init context     */
-void ap_dtc_db_load_all(void);               /* internal-stack ONLY (fs) */
-esp_err_t ap_dtc_db_store(const char *name, const char *raw,
-                          size_t raw_len, int *entries_out,
-                          char fmt_out[12], char *err, size_t err_len);
-esp_err_t ap_dtc_db_delete(const char *name);
-bool ap_dtc_db_lookup(const char *code, char *out, size_t out_cap);
-cJSON *ap_dtc_db_list_json(void);
-cJSON *ap_dtc_db_search_json(const char *q, const char *db_name,
-                             int offset, int limit);
-void ap_dtc_db_desc_map(cJSON *parent, const char *key,
-                        const ap_dtc_report_t *r);
-
-/* DBC store + cache + add-to-filters (autopid_dbc.c — TASK_dbc.md §4-5) */
-void ap_dbc_init(void);                      /* autopid_init context     */
-void ap_dbc_load_all(void);                  /* internal-stack ONLY (fs) */
-esp_err_t ap_dbc_store(const char *name, const char *raw, size_t raw_len,
-                       int *msgs_out, int *sigs_out, char *err,
-                       size_t err_len);
-esp_err_t ap_dbc_delete(const char *name);
-cJSON *ap_dbc_list_json(void);
-cJSON *ap_dbc_signals_json(const char *db, const char *q, int offset,
-                           int limit);
-esp_err_t ap_dbc_add(const char *db, const cJSON *signals,
-                     const char *group, int monitor_ms, int period_ms,
-                     cJSON **result, char *err, size_t err_len);
-
-/* DTC event glue (autopid_events.c) */
-void ap_events_dtc_register(void);           /* sources+actions+values   */
-void ap_events_dtc_new_code(const char *code, const char *status,
-                            bool mil);
-void ap_events_dtc_scan(const ap_dtc_report_t *r, bool ok);
-void ap_events_dtc_clear(bool ok, bool cleared, uint8_t before,
-                         uint8_t after);
 #endif
 
 #include "autopid_vehicle.h" /* vehicle identity: pure core + file owner */
+#include "autopid_dialect.h" /* OBD dialects: requests, parsers, addressing */
+#include "autopid_j1939.h"   /* J1939 rows: grammar, classes, the std table */
 
 #ifdef __cplusplus
 }
 #endif
+

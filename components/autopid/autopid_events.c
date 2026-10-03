@@ -323,38 +323,26 @@ static esp_err_t dtc_value_read(const char *key, char *out, size_t out_len)
                                                : ESP_ERR_INVALID_SIZE;
     }
 
-    ap_dtc_report_t r;
-
-    if (ap_dtc_report_get(&r) != ESP_OK)
-    {
-        return ESP_FAIL;
-    }
-
     if (strcmp(key, "dtc_codes") == 0)
     {
-        size_t w = 0;
-
-        out[0] = '\0';
-
-        for (uint8_t i = 0; i < r.n_stored && w + AP_DTC_CODE_LEN + 1 <
-                                                  out_len; i++)
-        {
-            w += (size_t)snprintf(out + w, out_len - w, "%s%s",
-                                  (i > 0) ? "," : "", r.stored[i]);
-        }
-
+        ap_dtc_report_stored_csv(out, out_len);
         return ESP_OK;
     }
 
+    bool mil = false;
+    uint8_t n_stored = 0;
+
+    ap_dtc_report_brief(NULL, &mil, NULL, &n_stored);
+
     if (strcmp(key, "dtc_count") == 0)
     {
-        snprintf(out, out_len, "%u", r.n_stored);
+        snprintf(out, out_len, "%u", n_stored);
         return ESP_OK;
     }
 
     if (strcmp(key, "dtc_mil") == 0)
     {
-        snprintf(out, out_len, "%s", r.mil ? "true" : "false");
+        snprintf(out, out_len, "%s", mil ? "true" : "false");
         return ESP_OK;
     }
 

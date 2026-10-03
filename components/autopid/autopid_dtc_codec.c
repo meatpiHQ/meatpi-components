@@ -181,6 +181,190 @@ uint8_t ap_dtc_merge_codes(char dst[][AP_DTC_CODE_LEN], uint8_t n_dst,
     return n_dst;
 }
 
+/* ---- filling a report --------------------------------------------------------- */
+
+const char *ap_dtc_kind_name(ap_dtc_kind_t kind)
+{
+    switch (kind)
+    {
+        case AP_DTC_KIND_PENDING:   return "pending";
+        case AP_DTC_KIND_PERMANENT: return "permanent";
+        default:                    return "stored";
+    }
+}
+
+bool ap_dtc_report_add(ap_dtc_report_t *r, ap_dtc_kind_t kind,
+                       const char *code, uint32_t ecu, uint8_t status,
+                       uint8_t severity)
+{
+    if (r == NULL || code == NULL || code[0] == '\0')
+    {
+        return false;
+    }
+
+    char (*set)[AP_DTC_CODE_LEN];
+    uint8_t *n;
+
+    switch (kind)
+    {
+        case AP_DTC_KIND_PENDING:
+            set = r->pending;
+            n = &r->n_pending;
+            break;
+
+        case AP_DTC_KIND_PERMANENT:
+            set = r->permanent;
+            n = &r->n_permanent;
+            break;
+
+        default:
+            kind = AP_DTC_KIND_STORED;
+            set = r->stored;
+            n = &r->n_stored;
+            break;
+    }
+
+    /* the merged view: one code once, whoever reported it */
+    bool known = false;
+
+    for (uint8_t i = 0; i < *n && !known; i++)
+    {
+        known = (strcmp(set[i], code) == 0);
+    }
+
+    if (!known)
+    {
+        if (*n >= AP_DTC_MAX)
+        {
+            return false;
+        }
+
+        snprintf(set[*n], AP_DTC_CODE_LEN, "%s", code);
+        (*n)++;
+    }
+
+    /* the detail: once per ECU */
+    for (uint8_t i = 0; i < r->n_items; i++)
+    {
+        const ap_dtc_item_t *it = &r->items[i];
+
+        if (it->kind == (uint8_t)kind && it->ecu == ecu &&
+            strcmp(it->code, code) == 0)
+        {
+            return true;
+        }
+    }
+
+    if (r->n_items < AP_DTC_ITEMS_MAX)
+    {
+        ap_dtc_item_t *it = &r->items[r->n_items++];
+
+        snprintf(it->code, sizeof(it->code), "%s", code);
+        it->ecu = ecu;
+        it->kind = (uint8_t)kind;
+        it->status = status;
+        it->severity = severity;
+    }
+
+    return true;
+}
+
+bool ap_dtc_report_add_j1939(ap_dtc_report_t *r, const char *code,
+                             uint8_t sa, uint8_t oc, bool previous)
+{
+    ap_dtc_kind_t kind = previous ? AP_DTC_KIND_PENDING : AP_DTC_KIND_STORED;
+
+    if (!ap_dtc_report_add(r, kind, code, sa, 0, 0))
+    {
+        return false;
+    }
+
+    r->j1939 = true;
+
+    /* the item ap_dtc_report_add kept (or found) for this code and source */
+    for (uint8_t i = 0; i < r->n_items; i++)
+    {
+        ap_dtc_item_t *it = &r->items[i];
+
+        if (it->kind == kind && it->ecu == sa && strcmp(it->code, code) == 0)
+        {
+            it->j1939 = true;
+            it->oc = oc;
+            break;
+        }
+    }
+
+    return true;
+}
+
+void ap_dtc_report_src_j1939(ap_dtc_report_t *r, uint8_t sa, uint8_t lamps,
+                             uint8_t count)
+{
+    if (r == NULL)
+    {
+        return;
+    }
+
+    ap_dtc_report_src(r, sa, (lamps & AP_DTC_LAMP_MIL) != 0, count);
+    r->j1939 = true;
+    r->lamps = 0;
+
+    for (uint8_t k = 0; k < r->n_src; k++)
+    {
+        if (r->src[k].ecu == sa)
+        {
+            r->src[k].j1939 = true;
+            r->src[k].lamps = lamps;
+        }
+
+        r->lamps |= r->src[k].lamps;
+    }
+}
+
+void ap_dtc_report_src(ap_dtc_report_t *r, uint32_t ecu, bool mil,
+                       uint8_t count)
+{
+    if (r == NULL)
+    {
+        return;
+    }
+
+    uint8_t k = 0;
+
+    while (k < r->n_src && r->src[k].ecu != ecu)
+    {
+        k++;
+    }
+
+    if (k == r->n_src)
+    {
+        if (r->n_src >= AP_DTC_SRC_MAX)
+        {
+            return;             /* more responders than kept             */
+        }
+
+        r->n_src++;
+    }
+
+    r->src[k].ecu = ecu;
+    r->src[k].mil = mil;
+    r->src[k].count = count;
+
+    /* the folded view: any lamp, the sum of the counts */
+    unsigned sum = 0;
+
+    r->mil = false;
+
+    for (uint8_t i = 0; i < r->n_src; i++)
+    {
+        r->mil |= r->src[i].mil;
+        sum += r->src[i].count;
+    }
+
+    r->mil_count = (sum > UINT8_MAX) ? UINT8_MAX : (uint8_t)sum;
+    r->n_ecus = r->n_src;
+}
+
 /* ---- mode 41 01 -> MIL + count -------------------------------------------------- */
 
 bool ap_dtc_parse_mil(const uint8_t *payload, size_t len, bool *mil,

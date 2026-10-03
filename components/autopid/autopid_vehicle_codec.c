@@ -183,6 +183,9 @@ struct cJSON *ap_vidx_entry_json(const ap_veh_entry_t *e, bool with_current,
     cJSON_AddStringToObject(o, "name", e->name);
     cJSON_AddStringToObject(o, "protocol", e->protocol);
     cJSON_AddStringToObject(o, "chip_protocol", e->chip_protocol);
+    cJSON_AddStringToObject(o, "dialect",
+                            ap_dialect_name((ap_dialect_t)e->dialect));
+    cJSON_AddBoolToObject(o, "j1939", e->j1939);
     cJSON_AddStringToObject(o, "profile", e->profile);
     cJSON_AddStringToObject(o, "specific_init", e->specific_init);
     cJSON_AddStringToObject(o, "ecus", ecus);
@@ -289,6 +292,7 @@ static void sanitize_proto(char *p)
 static bool entry_from_json(const cJSON *item, ap_veh_entry_t *e)
 {
     char ecus[AP_VEH_ECUS_STR_LEN];
+    char dialect[8];
 
     memset(e, 0, sizeof(*e));
 
@@ -308,9 +312,16 @@ static bool entry_from_json(const cJSON *item, ap_veh_entry_t *e)
     copy_str(e->specific_init, sizeof(e->specific_init), item,
              "specific_init");
     copy_str(ecus, sizeof(ecus), item, "ecus");
+    copy_str(dialect, sizeof(dialect), item, "dialect");
 
     e->n_ecus = (uint8_t)ap_veh_ecus_from_str(ecus, e->ecus,
                                              AP_VEH_ECUS_MAX);
+    /* no field (a store written before 2026-10-03) = an OBD-II car */
+    e->dialect = (uint8_t)ap_dialect_from_name(dialect);
+    /* the vehicle network is J1939 (a truck; alone, or beside its OBD
+       dialect): the listener's rows apply. A J1939-only car implies it. */
+    e->j1939 = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(item, "j1939")) ||
+               e->dialect == AP_DIALECT_J1939;
 
     /* a hand-edited file must not smuggle a bad VIN / protocol / print */
     if (!ap_veh_vin_valid(e->vin))

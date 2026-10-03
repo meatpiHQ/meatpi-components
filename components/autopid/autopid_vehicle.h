@@ -56,6 +56,16 @@ extern "C" {
 #define AP_VEH_PROTO_LEN 2      /* one ELM protocol char + NUL           */
 #define AP_VEH_JSON_MAX  320    /* the first-pass vehicle.json bound     */
 
+/** The dialect a car's legislated diagnostics speak: what the standard
+ *  PIDs, the VIN and the trouble codes are asked with. Requests, parsers
+ *  and addressing live in autopid_dialect.h. */
+typedef enum
+{
+    AP_DIALECT_OBD2 = 0,    /* SAE J1979: services 01..0A                */
+    AP_DIALECT_UDS,         /* ISO 27145 / SAE J1979-2: service 22, F4xx */
+    AP_DIALECT_J1939,       /* SAE J1939: broadcast, no request rows     */
+} ap_dialect_t;
+
 /** The first-pass single document (vehicle.json, version 1). Kept only
  *  so ap_vehicle_load() can import it into the store once. */
 typedef struct
@@ -72,7 +82,8 @@ typedef struct
 typedef struct
 {
     uint32_t id;         /* responder CAN id; UINT32_MAX = headers off   */
-    uint32_t bitmap;     /* its 0100 support bitmap                      */
+    uint32_t bitmap;     /* its support bitmap of range 00 (the answer
+                            to `0100`, or to `22F400`)                   */
 } ap_veh_ecu_t;
 
 /** ATDPN reply -> protocol char: "A6" / "6" / "A8>" -> "6"/"8". Only
@@ -94,8 +105,14 @@ bool ap_veh_parse_vin_0902(const char *resp, char vin[AP_VIN_LEN]);
 /** VIN from a UDS 22F190 reply: `62 F1 90` + 17 bytes. */
 bool ap_veh_parse_vin_22f190(const char *resp, char vin[AP_VIN_LEN]);
 
+/** VIN from the 22F802 reply of an ISO 27145 / J1979-2 vehicle:
+ *  `62 F8 02` + 17 bytes; a count byte `01` before the text (the 0902
+ *  habit) is skipped. */
+bool ap_veh_parse_vin_22f802(const char *resp, char vin[AP_VIN_LEN]);
+
 /** Responder table from a headers-on 0100 reply: one entry per CAN id
- *  (headers off = one UINT32_MAX entry, rows OR-merged).
+ *  (headers off = one UINT32_MAX entry, rows OR-merged). The obd2 case of
+ *  ap_dialect_bitmaps(), which also reads the chip's 29-bit print.
  *  @return entry count (0 = nothing parsable). */
 int ap_veh_ecus_from_0100(const char *resp, ap_veh_ecu_t *out, size_t max);
 
@@ -116,6 +133,12 @@ const char *ap_veh_prelude_for(char proto);
 
 /** 29-bit CAN protocols (7, 9, A..C). */
 bool ap_veh_proto_is_29bit(char proto);
+
+/** The chip command that puts the FUNCTIONAL request header of an ISO
+ *  15765-4 protocol back ("ATSH7DF" for 6 and 8, "ATSH18DB33F1" for 7 and
+ *  9); NULL for the search and every other protocol (the caller sends the
+ *  whole prelude instead). */
+const char *ap_veh_func_header(char proto);
 
 /** The first-pass document from its JSON (import only). Resets @p out
  *  and returns false on garbage / another version. */
@@ -142,6 +165,11 @@ typedef struct
     char         name[AP_VEH_NAME_LEN];      /* user label                */
     char         protocol[AP_VEH_PROTO_LEN]; /* detected base protocol    */
     char         chip_protocol[AP_VEH_PROTO_LEN]; /* last ATSP saved      */
+    uint8_t      dialect;                    /* ap_dialect_t              */
+    bool         j1939;                      /* the vehicle network is
+                                                J1939: alone (dialect
+                                                j1939) or beside the OBD
+                                                dialect (an EU truck)     */
     char         profile[AP_VEH_PROFILE_LEN];/* "" = none                 */
     char         specific_init[AP_VEH_INIT_LEN];
     ap_veh_ecu_t ecus[AP_VEH_ECUS_MAX];      /* the fingerprint's inputs  */
@@ -245,6 +273,10 @@ typedef struct
     char         vin[AP_VIN_LEN];            /* "" = none                 */
     ap_veh_ecu_t ecus[AP_VEH_ECUS_MAX];
     uint8_t      n_ecus;
+    uint8_t      dialect;                    /* ap_dialect_t the identity
+                                                requests were answered in */
+    bool         j1939;                      /* the listener (or the bus
+                                                probe) saw a J1939 network */
     uint16_t     std_supported;              /* detection job only        */
 } ap_veh_seen_t;
 
@@ -261,6 +293,12 @@ void ap_vehicle_load(void);                 /* autopid_init (main task)  */
  *  "A".."C") or "" when there is no current car or none learned.
  *  Lock-free read of a 2-byte static. */
 const char *autopid_vehicle_protocol(void);
+/** The current car's dialect (obd2 when there is no current car).
+ *  Lock-free read of a one-byte static. */
+ap_dialect_t autopid_vehicle_dialect(void);
+/** Is the current car's network J1939 (its `j1939` flag; false when there
+ *  is no current car)? Lock-free read of a one-byte static. */
+bool autopid_vehicle_j1939(void);
 /** Point the runner's SPECIFIC type init at the current car's
  *  `specific_init` (the settings value when the car has none). Called
  *  from settings on_apply and after every switch/edit. */

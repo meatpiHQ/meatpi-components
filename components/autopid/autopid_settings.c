@@ -48,8 +48,12 @@ static const settings_field_t FIELDS[] =
     SETTINGS_STR("specific_init", AP_INIT_LEN - 1, ""),
     /* ISO 15765-4 CAN only (the MIC is a CAN chip): 6 = 11-bit 500k,
      * 7 = 29-bit 500k, 8 = 11-bit 250k, 9 = 29-bit 250k, 0 = chip auto.
-     * An enum (meatpi 2026-09-06) so every client offers a list. */
-    SETTINGS_STR_ENUM("std_protocol", "0,6,7,8,9", "6"),
+     * An enum (meatpi 2026-09-06) so every client offers a list.
+     * Default "0" since 2026-10-02 (it was "6"): a pinned protocol
+     * transmits at ITS bitrate whatever the bus runs at, and on a live
+     * 250k bus that drives the sending ECU to bus-off; the chip's own
+     * search does not (TASK_j1939_wwh.md, M2). A stored "6" is kept. */
+    SETTINGS_STR_ENUM("std_protocol", "0,6,7,8,9", "0"),
     /* UI display label only: the name of the selected vehicle profile.
      * Persisted + returned by GET so the app can show which profile is
      * configured; intentionally NOT read in on_apply — the actual PID
@@ -113,6 +117,14 @@ int ap_settings_pause_below_mv(void)
 bool ap_settings_pause_follow_sleep(void)
 {
     return s_pause_follow_sleep;
+}
+
+bool ap_settings_pause_all(void)
+{
+    /* stored since the first settings version and unused until the J1939
+       rows gave the voltage pause two things to stop (2026-10-03):
+       requests_only keeps the rows that transmit nothing running */
+    return s_pause_all;
 }
 
 const char *ap_core_std_protocol(void)
@@ -250,8 +262,8 @@ static esp_err_t ap_settings_migrate(uint32_t from_version, cJSON *settings)
         const cJSON *v = cJSON_GetObjectItemCaseSensitive(settings,
                                                           "std_protocol");
         char c = (cJSON_IsString(v) && v->valuestring != NULL)
-                     ? v->valuestring[0] : ' ';
-        const char *mapped = (c >= '6' && c <= '9') ? (char[]){c, ' '} : "0";
+                     ? v->valuestring[0] : '\0';
+        const char *mapped = (c >= '6' && c <= '9') ? (char[]){c, '\0'} : "0";
 
         if (!cJSON_IsString(v) || v->valuestring == NULL ||
             strcmp(v->valuestring, mapped) != 0)

@@ -1,15 +1,27 @@
 idf_component_register(
     SRCS "autopid.c"
+         "autopid_poller.c"
          "autopid_settings.c"
          "autopid_runner.c"
+         "autopid_runner_j1939.c"
+         "autopid_j1939_core.c"
+         "autopid_j1939_std.c"
+         "autopid_contact.c"
+         "autopid_identify.c"
          "autopid_transport_obd.c"
          "autopid_filter.c"
          "autopid_config.c"
          "autopid_sched.c"
+         "autopid_bus_guard.c"
+         "autopid_dialect.c"
+         "autopid_guard.c"
          "autopid_group.c"
          "autopid_resp.c"
+         "autopid_resp_lines.c"
+         "autopid_resp_filter.c"
          "autopid_std.c"
          "autopid_std_scan.c"
+         "autopid_scan_walk.c"
          "autopid_vehicle_core.c"
          "autopid_vehicle_index.c"
          "autopid_vehicle_codec.c"
@@ -18,11 +30,18 @@ idf_component_register(
          "autopid_cache.c"
          "autopid_dtc_codec.c"
          "autopid_dtc.c"
+         "autopid_dtc_job.c"
+         "autopid_dtc_obd.c"
+         "autopid_dtc_uds.c"
+         "autopid_dtc_wwh.c"
+         "autopid_dtc_j1939.c"
+         "autopid_dtc_report.c"
          "autopid_dtc_db_codec.c"
          "autopid_dtc_db.c"
          "autopid_dbc_codec.c"
          "autopid_dbc.c"
          "autopid_http.c"
+         "autopid_http_test.c"
          "autopid_http_dtc.c"
          "autopid_http_dbc.c"
          "autopid_http_vehicles.c"
@@ -39,5 +58,5 @@ idf_component_register(
                   battery_monitor log_manager esp_timer cmdline_manager
                   http_server_manager esp_http_server console
                   event_manager dev_status_manager can_manager
-                  uds_manager
+                  uds_manager j1939
 )

@@ -125,9 +125,11 @@ bool ap_veh_vin_valid(const char *vin)
     return true;
 }
 
-/** Find @p pfx in @p p, skip 0x00 padding after it, take 17 bytes. */
+/** Find @p pfx in @p p, skip 0x00 padding after it (and, with @p nodi,
+ *  one count byte 0x01), take 17 bytes. */
 static bool vin_after_prefix(const uint8_t *p, size_t len,
-                             const uint8_t pfx[3], char vin[AP_VIN_LEN])
+                             const uint8_t pfx[3], bool nodi,
+                             char vin[AP_VIN_LEN])
 {
     for (size_t i = 0; i + 3 <= len; i++)
     {
@@ -141,6 +143,11 @@ static bool vin_after_prefix(const uint8_t *p, size_t len,
         while (j < len && p[j] == 0x00)
         {
             j++;                /* a few ECUs pad before the text        */
+        }
+
+        if (nodi && j < len && p[j] == 0x01)
+        {
+            j++;                /* "one data item": never a VIN character */
         }
 
         if (len - j < 17)
@@ -166,7 +173,7 @@ static bool vin_after_prefix(const uint8_t *p, size_t len,
 }
 
 static bool vin_from_resp(const char *resp, const uint8_t pfx[3],
-                          char vin[AP_VIN_LEN])
+                          bool nodi, char vin[AP_VIN_LEN])
 {
     if (vin != NULL)
     {
@@ -188,154 +195,39 @@ static bool vin_from_resp(const char *resp, const uint8_t pfx[3],
         return false;
     }
 
-    return vin_after_prefix(payload, n, pfx, vin);
+    return vin_after_prefix(payload, n, pfx, nodi, vin);
 }
 
 bool ap_veh_parse_vin_0902(const char *resp, char vin[AP_VIN_LEN])
 {
     static const uint8_t PFX[3] = { 0x49, 0x02, 0x01 };
 
-    return vin_from_resp(resp, PFX, vin);
+    return vin_from_resp(resp, PFX, false, vin);
 }
 
 bool ap_veh_parse_vin_22f190(const char *resp, char vin[AP_VIN_LEN])
 {
     static const uint8_t PFX[3] = { 0x62, 0xF1, 0x90 };
 
-    return vin_from_resp(resp, PFX, vin);
+    return vin_from_resp(resp, PFX, false, vin);
+}
+
+bool ap_veh_parse_vin_22f802(const char *resp, char vin[AP_VIN_LEN])
+{
+    static const uint8_t PFX[3] = { 0x62, 0xF8, 0x02 };
+
+    return vin_from_resp(resp, PFX, true, vin);
 }
 
 /* ---- responder fingerprint ---------------------------------------------------- */
 
-/** Tokenize one reply line: an optional 3/8-hex CAN id, then 2-hex bytes.
- *  @return byte count, -1 = not a data line. */
-static int line_tokens(const char *line, size_t len, uint32_t *id,
-                       uint8_t *bytes, size_t max)
-{
-    size_t pos = 0, n = 0;
-    bool first = true;
-
-    *id = UINT32_MAX;
-
-    while (pos < len)
-    {
-        while (pos < len && (line[pos] == ' ' || line[pos] == '\t'))
-        {
-            pos++;
-        }
-
-        size_t start = pos;
-
-        while (pos < len && line[pos] != ' ' && line[pos] != '\t')
-        {
-            pos++;
-        }
-
-        size_t tlen = pos - start;
-
-        if (tlen == 0)
-        {
-            continue;
-        }
-
-        for (size_t i = 0; i < tlen; i++)
-        {
-            if (!isxdigit((unsigned char)line[start + i]))
-            {
-                return -1;
-            }
-        }
-
-        if (first && (tlen == 3 || tlen == 8))
-        {
-            *id = (uint32_t)strtoul(line + start, NULL, 16) & 0x1FFFFFFFu;
-        }
-        else if (tlen == 2)
-        {
-            if (n < max)
-            {
-                char tok[3] = { line[start], line[start + 1], '\0' };
-
-                bytes[n++] = (uint8_t)strtol(tok, NULL, 16);
-            }
-        }
-        else
-        {
-            return -1;          /* "014", "0:", SEARCHING... */
-        }
-
-        first = false;
-    }
-
-    return (int)n;
-}
-
 int ap_veh_ecus_from_0100(const char *resp, ap_veh_ecu_t *out, size_t max)
 {
-    if (resp == NULL || out == NULL || max == 0)
-    {
-        return 0;
-    }
-
-    int count = 0;
-    const char *p = resp;
-
-    while (*p != '\0')
-    {
-        const char *eol = p;
-
-        while (*eol != '\0' && *eol != '\r' && *eol != '\n')
-        {
-            eol++;
-        }
-
-        uint32_t id;
-        uint8_t bytes[16];
-        int n = line_tokens(p, (size_t)(eol - p), &id, bytes,
-                            sizeof(bytes));
-
-        /* anchor on "41 00 A B C D" (a headers-on row carries the PCI
-           byte first; the anchor skips it) */
-        for (int i = 0; i + 6 <= n; i++)
-        {
-            if (bytes[i] != 0x41 || bytes[i + 1] != 0x00)
-            {
-                continue;
-            }
-
-            uint32_t bm = ((uint32_t)bytes[i + 2] << 24) |
-                          ((uint32_t)bytes[i + 3] << 16) |
-                          ((uint32_t)bytes[i + 4] << 8) | bytes[i + 5];
-            int k = 0;
-
-            while (k < count && out[k].id != id)
-            {
-                k++;
-            }
-
-            if (k < count)
-            {
-                out[k].bitmap |= bm;        /* same id twice: merge     */
-            }
-            else if ((size_t)count < max)
-            {
-                out[count].id = id;
-                out[count].bitmap = bm;
-                count++;
-            }
-
-            break;
-        }
-
-        p = eol;
-
-        while (*p == '\r' || *p == '\n')
-        {
-            p++;
-        }
-    }
-
-    return count;
+    /* one parser for both dialects (autopid_dialect.c). Until 2026-10-03
+       this one took a 29-bit id only as ONE 8-hex token; the chip prints
+       four byte tokens, so every 29-bit car was kept as a single
+       headers-off row with all bitmaps merged */
+    return ap_dialect_bitmaps(AP_DIALECT_OBD2, resp, 0x00, out, max);
 }
 
 void ap_veh_fingerprint(const ap_veh_ecu_t *ecus, size_t n,
@@ -462,6 +354,18 @@ const char *ap_veh_prelude_for(char proto)
 bool ap_veh_proto_is_29bit(char proto)
 {
     return proto == '7' || proto == '9' || (proto >= 'A' && proto <= 'C');
+}
+
+const char *ap_veh_func_header(char proto)
+{
+    switch (proto)
+    {
+        case '6':
+        case '8': return "ATSH7DF";
+        case '7':
+        case '9': return "ATSH18DB33F1";
+        default:  return NULL;
+    }
 }
 
 /* ---- the first-pass vehicle.json (import only) --------------------------------- */

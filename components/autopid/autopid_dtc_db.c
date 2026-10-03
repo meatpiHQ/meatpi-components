@@ -541,7 +541,19 @@ void ap_dtc_db_desc_map(cJSON *parent, const char *key,
     {
         for (uint8_t i = 0; i < counts[s]; i++)
         {
-            if (!ap_dtc_db_lookup(sets[s][i], desc, sizeof(desc)))
+            /* a database keys on the 5-character code: "P2463-1F" (a
+               failure type from a UDS source) is described by "P2463" */
+            char base[6];
+            const char *code = sets[s][i];
+
+            if (strlen(code) > 5 && code[5] == '-')
+            {
+                memcpy(base, code, 5);
+                base[5] = '\0';
+                code = base;
+            }
+
+            if (!ap_dtc_db_lookup(code, desc, sizeof(desc)))
             {
                 continue;
             }

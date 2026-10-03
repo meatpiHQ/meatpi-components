@@ -75,7 +75,15 @@ esp_err_t ap_std_expression(uint8_t bit_start, uint8_t bit_length,
                             double scale, double offset, char *buf,
                             size_t buf_len)
 {
-    if (buf == NULL || buf_len == 0)
+    return ap_std_expression_shift(bit_start, bit_length, scale, offset, 0,
+                                   buf, buf_len);
+}
+
+esp_err_t ap_std_expression_shift(uint8_t bit_start, uint8_t bit_length,
+                                  double scale, double offset, int shift,
+                                  char *buf, size_t buf_len)
+{
+    if (buf == NULL || buf_len == 0 || shift < 0)
     {
         return ESP_ERR_INVALID_ARG;
     }
@@ -86,9 +94,10 @@ esp_err_t ap_std_expression(uint8_t bit_start, uint8_t bit_length,
         return ESP_ERR_NOT_SUPPORTED;
     }
 
-    int first = bit_start / 8 - 1;              /* drop legacy's PCI byte */
+    /* drop legacy's PCI byte; a dialect with a longer echo moves on */
+    int first = bit_start / 8 - 1 + shift;
     int count = (bit_length + 7) / 8;
-    char base[24];
+    char base[32];
 
     if (count == 1)
     {
@@ -313,11 +322,14 @@ int ap_frz_decode(const uint8_t *payload, size_t len, ap_frz_val_t *out,
 #ifndef AUTOPID_HOST_TEST
 
 /** Append one table entry (with generated expressions) to @p arr. */
-bool ap_std_entry_to_json(cJSON *arr, uint8_t pid)
+bool ap_std_entry_to_json(cJSON *arr, uint8_t pid, ap_dialect_t dialect,
+                          uint32_t owner)
 {
     const std_pid_t *info = get_pid(pid);
+    char cmd[12];
 
-    if (info == NULL || info->base_name == NULL)
+    if (info == NULL || info->base_name == NULL ||
+        ap_dialect_pid_cmd(dialect, pid, cmd, sizeof(cmd)) == 0)
     {
         return false;
     }
@@ -329,12 +341,20 @@ bool ap_std_entry_to_json(cJSON *arr, uint8_t pid)
         return false;
     }
 
-    char cmd[8];
+    int shift = ap_dialect_data_shift(dialect);
+    char hdr[AP_DIALECT_HDR_CMD_LEN];
 
-    snprintf(cmd, sizeof(cmd), "01%02X", pid);
     cJSON_AddNumberToObject(o, "pid", pid);
     cJSON_AddStringToObject(o, "cmd", cmd);
     cJSON_AddStringToObject(o, "name", info->base_name);
+
+    /* a UDS-dialect row asks the ECU that owns the value, and only it:
+       one answer, its flow control, no second unit with its own scaling */
+    if (dialect == AP_DIALECT_UDS &&
+        ap_dialect_header_cmd(owner, hdr, sizeof(hdr)) > 0)
+    {
+        cJSON_AddStringToObject(o, "init", hdr);
+    }
 
     cJSON *params = cJSON_AddArrayToObject(o, "parameters");
 
@@ -344,9 +364,9 @@ bool ap_std_entry_to_json(cJSON *arr, uint8_t pid)
         char expr[AP_EXPR_LEN];
 
         if (prm->name == NULL ||
-            ap_std_expression(prm->bit_start, prm->bit_length,
-                              (double)prm->scale, (double)prm->offset,
-                              expr, sizeof(expr)) != ESP_OK)
+            ap_std_expression_shift(prm->bit_start, prm->bit_length,
+                                    (double)prm->scale, (double)prm->offset,
+                                    shift, expr, sizeof(expr)) != ESP_OK)
         {
             continue;   /* placeholder row */
         }
@@ -373,6 +393,16 @@ bool ap_std_entry_to_json(cJSON *arr, uint8_t pid)
         cJSON_AddItemToArray(params, pj);
     }
 
+    /* A PID the table only names (every parameter a placeholder: 13 "O2
+       sensors present", 7A, 85 ...) decodes nothing. As a row it was polled
+       all the same and each poll counted as failed (bench 2026-10-03: 5 of
+       a van's 20 scanned rows). Not a row. */
+    if (cJSON_GetArraySize(params) == 0)
+    {
+        cJSON_Delete(o);
+        return false;
+    }
+
     cJSON_AddItemToArray(arr, o);
     return true;
 }
@@ -386,9 +416,29 @@ cJSON *ap_std_table_json(void)
         return NULL;
     }
 
-    for (int pid = 1; pid < 256; pid++)
+    /* the table in the current car's dialect (OBD-II when there is no
+       car); a row added from here has no owner: it is asked functionally.
+       A J1939 vehicle gets the built-in SPN rows as well (an EU truck
+       answers both; a J1939-only one has no chip rows at all). */
+    ap_dialect_t dialect = autopid_vehicle_dialect();
+
+    if (ap_dialect_has_requests(dialect) || !autopid_vehicle_j1939())
     {
-        (void)ap_std_entry_to_json(arr, (uint8_t)pid);
+        if (!ap_dialect_has_requests(dialect))
+        {
+            dialect = AP_DIALECT_OBD2;
+        }
+
+        for (int pid = 1; pid < 256; pid++)
+        {
+            (void)ap_std_entry_to_json(arr, (uint8_t)pid, dialect,
+                                       UINT32_MAX);
+        }
+    }
+
+    if (autopid_vehicle_j1939())
+    {
+        (void)ap_j1939_std_table_json(arr);
     }
 
     return arr;

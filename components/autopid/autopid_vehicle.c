@@ -25,10 +25,11 @@
  * @brief The vehicle store (TASK_quick_setup.md, second pass): owner of
  *        /data/autopid/vehicles.json (the index, a RAM copy under one
  *        lock), the import of the first-pass vehicle.json, the queries
- *        and edits behind /api/autopid/vehicles, the per-boot first
- *        contact decision (autopid_vehicle_seen) and the one-shot
+ *        and edits behind /api/autopid/vehicles and the one-shot
  *        internal-stack worker `apid_veh` that does the poller's file
- *        work. The file-level switch lives in autopid_vehicle_switch.c.
+ *        work. The file-level switch, the first-contact decision
+ *        (autopid_vehicle_seen) and the detection job's update live in
+ *        autopid_vehicle_switch.c.
  *
  * Writes are event-driven only (a detection, a switch, the user's edits,
  * a once-a-day last_seen touch), never periodic (standard §11), and every
@@ -54,6 +55,8 @@ static const char *TAG = "autopid";
 static ap_veh_index_t  s_idx EXT_RAM_BSS_ATTR;        /* the RAM copy        */
 static char s_json[AP_VEH_INDEX_JSON_MAX] EXT_RAM_BSS_ATTR; /* persist scratch */
 static char s_proto_cache[AP_VEH_PROTO_LEN];          /* current's protocol  */
+static volatile uint8_t s_dialect_cache;              /* current's dialect   */
+static volatile bool    s_j1939_cache;                /* current's network   */
 static SemaphoreHandle_t s_lock;
 static StaticSemaphore_t s_lock_buf;                  /* internal: FreeRTOS  */
 
@@ -104,18 +107,34 @@ void ap_veh_car_path(const char *key, char *out, size_t cap)
 void ap_veh_refresh_protocol_cache(void)
 {
     const char *p = "";
+    uint8_t dialect = AP_DIALECT_OBD2;
+    bool j1939 = false;
 
     if (s_idx.current >= 0 && s_idx.current < s_idx.n)
     {
         p = s_idx.v[s_idx.current].protocol;
+        dialect = s_idx.v[s_idx.current].dialect;
+        j1939 = s_idx.v[s_idx.current].j1939;
     }
 
     snprintf(s_proto_cache, sizeof(s_proto_cache), "%s", p);
+    s_dialect_cache = dialect;
+    s_j1939_cache = j1939;
 }
 
 const char *autopid_vehicle_protocol(void)
 {
     return s_proto_cache;
+}
+
+ap_dialect_t autopid_vehicle_dialect(void)
+{
+    return (ap_dialect_t)s_dialect_cache;
+}
+
+bool autopid_vehicle_j1939(void)
+{
+    return s_j1939_cache;
 }
 
 /** Serialize the RAM copy and replace the index file (internal-stack
@@ -316,9 +335,10 @@ void ap_vehicle_load(void)
     {
         const ap_veh_entry_t *c = &s_idx.v[s_idx.current];
 
-        ESP_LOGI(TAG, "vehicle store: %u cars, current %s (%s), protocol %s",
-                 (unsigned)s_idx.n, c->name, c->key,
-                 c->protocol[0] ? c->protocol : "(none)");
+        ESP_LOGI(TAG, "vehicle store: %u cars, current %s (%s), protocol %s "
+                      "(%s)", (unsigned)s_idx.n, c->name, c->key,
+                 c->protocol[0] ? c->protocol : "(none)",
+                 ap_dialect_name((ap_dialect_t)c->dialect));
     }
     else
     {
@@ -575,109 +595,4 @@ void ap_vehicle_config_saved(const char *json, size_t len)
     {
         ESP_LOGW(TAG, "%s write failed (%s)", path, esp_err_to_name(err));
     }
-}
-
-/* ---- first contact (poller task: PSRAM stack, the worker writes) --------------------- */
-
-/** Fold what was seen into a matched entry: a VIN the entry lacked, a
- *  re-detected protocol, a fresher responder set behind a VIN match.
- *  @return true when something changed. */
-bool ap_veh_refine_entry(ap_veh_entry_t *e, const ap_veh_seen_t *seen,
-                         const char *fp)
-{
-    bool changed = false;
-
-    if (seen->vin[0] != '\0' && e->vin[0] == '\0')
-    {
-        snprintf(e->vin, sizeof(e->vin), "%s", seen->vin);
-        ESP_LOGI(TAG, "vehicle %s: VIN %s learned", e->key, e->vin);
-        changed = true;
-    }
-
-    if (seen->protocol[0] != '\0' &&
-        strcmp(e->protocol, seen->protocol) != 0)
-    {
-        ESP_LOGI(TAG, "vehicle %s: protocol %s (was %s)", e->key,
-                 seen->protocol, e->protocol[0] ? e->protocol : "(none)");
-        snprintf(e->protocol, sizeof(e->protocol), "%s", seen->protocol);
-        changed = true;
-    }
-
-    if (seen->vin[0] != '\0' && strcmp(e->vin, seen->vin) == 0 &&
-        seen->n_ecus > 0 && fp[0] != '\0' &&
-        strcmp(e->fingerprint, fp) != 0)
-    {
-        /* the VIN decided: keep the latest responder picture behind it */
-        memcpy(e->ecus, seen->ecus, sizeof(e->ecus));
-        e->n_ecus = seen->n_ecus;
-        snprintf(e->fingerprint, sizeof(e->fingerprint), "%s", fp);
-        changed = true;
-    }
-
-    return changed;
-}
-
-ap_veh_result_t autopid_vehicle_seen(const ap_veh_seen_t *seen)
-{
-    char fp[AP_FP_LEN] = "";
-    char prev[AP_VEH_KEY_LEN] = "";
-    bool exact = true;
-
-    if (seen == NULL)
-    {
-        return AP_VEH_RES_NONE;
-    }
-
-    ap_veh_fingerprint(seen->ecus, seen->n_ecus, fp);
-
-    if (seen->vin[0] == '\0' && fp[0] == '\0')
-    {
-        return AP_VEH_RES_NONE;         /* nothing identifiable answered  */
-    }
-
-    ap_veh_lock();
-
-    int i = ap_vidx_match(&s_idx, seen->vin, seen->ecus, seen->n_ecus, fp,
-                          &exact);
-
-    if (i < 0)
-    {
-        ap_veh_unlock();
-        ESP_LOGI(TAG, "vehicle identity: unknown car (vin %s, fp %s): "
-                      "detecting", seen->vin[0] ? seen->vin : "(none)",
-                 fp[0] ? fp : "(none)");
-        return AP_VEH_RES_NEW;
-    }
-
-    ap_veh_entry_t *e = &s_idx.v[i];
-    bool dirty = ap_veh_refine_entry(e, seen, fp);
-
-    dirty |= ap_vidx_touch(e, ap_veh_epoch_now());
-
-    if (i == s_idx.current)
-    {
-        ap_veh_refresh_protocol_cache();
-        ap_veh_unlock();
-
-        if (dirty)
-        {
-            ap_veh_persist_async();
-        }
-
-        return AP_VEH_RES_SAME;
-    }
-
-    if (s_idx.current >= 0 && s_idx.current < s_idx.n)
-    {
-        memcpy(prev, s_idx.v[s_idx.current].key, sizeof(prev));
-    }
-
-    s_idx.current = (int8_t)i;
-    ap_veh_refresh_protocol_cache();
-    ESP_LOGI(TAG, "vehicle identity: %s (%s)%s, switching", e->name, e->key,
-             exact ? "" : " by the ECU subset rule");
-    ap_veh_unlock();
-
-    ap_veh_queue_switch(prev);          /* files, reload, init, event     */
-    return AP_VEH_RES_SWITCHED;
 }

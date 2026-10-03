@@ -343,6 +343,32 @@ esp_err_t ap_config_parse(const char *json, ap_config_t *cfg, char *err,
         copy_str(pid->name, sizeof(pid->name), item, "name");
         copy_str(pid->cmd, sizeof(pid->cmd), item, "cmd");
         copy_str(pid->init, sizeof(pid->init), item, "init");
+        copy_str(pid->rxheader, sizeof(pid->rxheader), item, "rxheader");
+
+        /* a J1939 parameter group: "PGN:<hex>[@<source>][?]" (autopid_j1939.h),
+           served from the listener's store: nothing of the chip applies */
+        esp_err_t pgn_rc = ap_pgn_cmd_parse(pid->cmd, &pid->pgn,
+                                            &pid->j1939_sa,
+                                            &pid->j1939_request);
+
+        if (pgn_rc == ESP_OK)
+        {
+            pid->j1939 = true;
+
+            if (pid->init[0] != '\0' || pid->rxheader[0] != '\0')
+            {
+                cfg_err(err, err_len, "pid %s%d: init and rxheader do not "
+                        "apply to a PGN row", "", cfg->n_pids);
+                goto out;
+            }
+        }
+        else if (pgn_rc != ESP_ERR_NOT_FOUND)
+        {
+            cfg_err(err, err_len, "pid %s%d: bad PGN command, expected "
+                    "PGN:<hex>[@<source>][?]", "", cfg->n_pids);
+            goto out;
+        }
+
         ap_init_sanitize(pid->cmd); /* profile/custom PIDs can carry AT
                                        commands — spare the EEPROM here
                                        too, not just in init strings */
@@ -357,7 +383,6 @@ esp_err_t ap_config_parse(const char *json, ap_config_t *cfg, char *err,
                     "chip's EEPROM (ATPP/ATSD/ATCV/STWBR)", "", cfg->n_pids);
             goto out;
         }
-        copy_str(pid->rxheader, sizeof(pid->rxheader), item, "rxheader");
         copy_str(group, sizeof(group), item, "group");
         copy_str(type, sizeof(type), item, "type");
         pid->period_ms = (uint32_t)get_num(item, "period_ms", 0);

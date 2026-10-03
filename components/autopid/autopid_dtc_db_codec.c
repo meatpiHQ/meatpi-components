@@ -63,7 +63,7 @@ static void emit_entry(db_parse_t *p, const char *code, size_t code_len,
                        const char *desc, size_t desc_len)
 {
     uint8_t hi, lo;
-    char base[AP_DTC_CODE_LEN];
+    char base[AP_DTC_CODE_LEN];     /* ap_dtc_format()'s buffer          */
 
     if (code_len > 5 &&
         (code[5] == '-' || code[5] == ' ' || code[5] == ':'))
@@ -96,7 +96,7 @@ static void emit_entry(db_parse_t *p, const char *code, size_t code_len,
 
     ap_dtc_db_item_t *it = &p->items[p->n];
 
-    memcpy(it->code, base, AP_DTC_CODE_LEN);
+    memcpy(it->code, base, AP_DTC_DB_CODE_LEN);  /* 5 chars + NUL */
     it->off = (uint32_t)p->used;
 
     size_t w = 0;

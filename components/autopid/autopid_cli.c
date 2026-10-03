@@ -46,17 +46,43 @@ static struct
     struct arg_end *end;
 } s_args;
 
-static void print_codes(const char *label,
-                        const char codes[][AP_DTC_CODE_LEN], uint8_t n)
+/** One category of the report's JSON view: "stored (2): P0420 P0171". */
+static void print_codes(const cJSON *report, const char *key)
 {
-    cmdline_printf("%s (%u):", label, n);
+    const cJSON *arr = cJSON_GetObjectItemCaseSensitive(report, key);
+    const cJSON *c = NULL;
 
-    for (uint8_t i = 0; i < n; i++)
+    cmdline_printf("%s (%d):", key, cJSON_GetArraySize(arr));
+
+    cJSON_ArrayForEach(c, arr)
     {
-        cmdline_printf(" %s", codes[i]);
+        if (cJSON_IsString(c))
+        {
+            cmdline_printf(" %s", c->valuestring);
+        }
     }
 
     cmdline_printf("\n");
+}
+
+/** Who asks for the lamp: "ECU 18DAF100: MIL on, 1 code". */
+static void print_sources(const cJSON *report)
+{
+    const cJSON *arr = cJSON_GetObjectItemCaseSensitive(report, "sources");
+    const cJSON *s = NULL;
+
+    cJSON_ArrayForEach(s, arr)
+    {
+        const cJSON *ecu = cJSON_GetObjectItemCaseSensitive(s, "ecu");
+        const cJSON *cnt = cJSON_GetObjectItemCaseSensitive(s, "count");
+
+        cmdline_printf("ECU %s: MIL %s, %d code(s)\n",
+                       cJSON_IsString(ecu) ? ecu->valuestring : "?",
+                       cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(s,
+                                                                    "mil"))
+                           ? "on" : "off",
+                       cJSON_IsNumber(cnt) ? cnt->valueint : 0);
+    }
 }
 
 static int cmd_dtc(bool scan)
@@ -87,29 +113,47 @@ static int cmd_dtc(bool scan)
         }
     }
 
-    ap_dtc_report_t r;
+    /* the JSON view (heap): the report itself is ~5 KB and stays where
+       it is */
+    cJSON *report = ap_dtc_report_json();
 
-    (void)ap_dtc_report_get(&r);
+    if (report == NULL)
+    {
+        cmdline_printf("out of memory\n");
+        return 1;
+    }
 
-    if (!r.valid)
+    const cJSON *err = cJSON_GetObjectItemCaseSensitive(report, "error");
+    const cJSON *proto = cJSON_GetObjectItemCaseSensitive(report, "protocol");
+    const cJSON *cnt = cJSON_GetObjectItemCaseSensitive(report, "mil_count");
+    const char *error = cJSON_IsString(err) ? err->valuestring : "";
+
+    if (!cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(report, "valid")))
     {
         cmdline_printf("no valid scan yet%s%s\n",
-                       (r.error[0] != '\0') ? " - " : "", r.error);
+                       (error[0] != '\0') ? " - " : "", error);
+        cJSON_Delete(report);
         return scan ? 1 : 0;
     }
 
-    cmdline_printf("MIL: %s (count %u)\n", r.mil ? "ON" : "off",
-                   r.mil_count);
-    print_codes("stored", r.stored, r.n_stored);
-    print_codes("pending", r.pending, r.n_pending);
-    print_codes("permanent", r.permanent, r.n_permanent);
-    print_codes("new", r.new_codes, r.n_new);
+    cmdline_printf("MIL: %s (count %d), protocol %s\n",
+                   cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(report,
+                                                                "mil"))
+                       ? "ON" : "off",
+                   cJSON_IsNumber(cnt) ? cnt->valueint : 0,
+                   cJSON_IsString(proto) ? proto->valuestring : "?");
+    print_sources(report);
+    print_codes(report, "stored");
+    print_codes(report, "pending");
+    print_codes(report, "permanent");
+    print_codes(report, "new");
 
-    if (r.error[0] != '\0')
+    if (error[0] != '\0')
     {
-        cmdline_printf("last error: %s\n", r.error);
+        cmdline_printf("last error: %s\n", error);
     }
 
+    cJSON_Delete(report);
     cmdline_printf("OK\n");
     return 0;
 }
@@ -132,11 +176,13 @@ static int cmd_autopid(int argc, char **argv)
     autopid_stats_t st;
 
     autopid_stats(&st);
-    cmdline_printf("AutoPID: %s%s%s%s\n",
+    cmdline_printf("AutoPID: %s%s%s%s%s\n",
                    st.running ? "running" : "idle",
                    st.paused_voltage ? " (voltage pause)" : "",
                    st.paused_client ? " (yielding to an OBD app)" : "",
-                   st.paused_diag ? " (paused for a diagnostic tool)" : "");
+                   st.paused_diag ? " (paused for a diagnostic tool)" : "",
+                   st.paused_bus ? " (bus guard: nothing is transmitted)"
+                                 : "");
     cmdline_printf("Tables: %lu pids, %lu filters, %lu params, %lu groups\n",
                    (unsigned long)st.pids_loaded,
                    (unsigned long)st.filters_loaded,
@@ -145,6 +191,21 @@ static int cmd_autopid(int argc, char **argv)
     cmdline_printf("Polls: %lu ok, %lu failed\n",
                    (unsigned long)st.polls_ok,
                    (unsigned long)st.polls_failed);
+
+    if (st.passive_ok != 0 || st.passive_failed != 0)
+    {
+        /* J1939 rows, read from the listener's store (autopid_j1939.h) */
+        uint32_t published = 0, requested = 0, refused = 0;
+
+        ap_runner_j1939_stats(&published, NULL);
+        ap_runner_j1939_tx_stats(&requested, &refused);
+        cmdline_printf("J1939 rows: %lu looks found the group, %lu not, "
+                       "%lu published, %lu requests sent, %lu refused\n",
+                       (unsigned long)st.passive_ok,
+                       (unsigned long)st.passive_failed,
+                       (unsigned long)published, (unsigned long)requested,
+                       (unsigned long)refused);
+    }
 
     if (s_args.list->count > 0)
     {

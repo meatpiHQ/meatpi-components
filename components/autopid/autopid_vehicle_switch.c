@@ -27,9 +27,11 @@
  *        the switch (snapshot the live config.json into the previous
  *        car's file, copy the new car's file over config.json, live
  *        reload, SPECIFIC init, event), the new-car path with LRU
- *        eviction, and the detection job's store update including the
- *        one-time chip protocol save. INTERNAL-stack callers only (the
- *        scan task, the httpd task, the `apid_veh` worker).
+ *        eviction, the first-contact decision (autopid_vehicle_seen, the
+ *        poller task: it writes nothing itself) and the detection job's
+ *        store update including the one-time chip protocol save. The file
+ *        work is for INTERNAL-stack callers only (the scan task, the httpd
+ *        task, the `apid_veh` worker).
  */
 #include "autopid_private.h"
 
@@ -178,8 +180,9 @@ void ap_veh_switch_files(const char *prev_key, bool known)
     reload_live();
     (void)ap_veh_persist();
 
-    ESP_LOGI(TAG, "vehicle switched to %s (%s), protocol %s", cur.name,
-             cur.key, cur.protocol[0] ? cur.protocol : "(none)");
+    ESP_LOGI(TAG, "vehicle switched to %s (%s), protocol %s (%s)", cur.name,
+             cur.key, cur.protocol[0] ? cur.protocol : "(none)",
+             ap_dialect_name((ap_dialect_t)cur.dialect));
     ap_events_vehicle_changed(cur.vin, cur.name, known);
 }
 
@@ -199,6 +202,137 @@ void ap_veh_new_car_files(const char *prev_key, const char *new_key,
     }
 
     reload_live();
+}
+
+/* ---- first contact (poller task: PSRAM stack, the worker writes) --------------------- */
+
+/** Fold what was seen into a matched entry: a VIN the entry lacked, a
+ *  re-detected protocol or dialect, a fresher responder set behind a VIN
+ *  match.
+ *  @return true when something changed. */
+bool ap_veh_refine_entry(ap_veh_entry_t *e, const ap_veh_seen_t *seen,
+                         const char *fp)
+{
+    bool changed = false;
+
+    if (seen->vin[0] != '\0' && e->vin[0] == '\0')
+    {
+        snprintf(e->vin, sizeof(e->vin), "%s", seen->vin);
+        ESP_LOGI(TAG, "vehicle %s: VIN %s learned", e->key, e->vin);
+        changed = true;
+    }
+
+    if (seen->protocol[0] != '\0' &&
+        strcmp(e->protocol, seen->protocol) != 0)
+    {
+        ESP_LOGI(TAG, "vehicle %s: protocol %s (was %s)", e->key,
+                 seen->protocol, e->protocol[0] ? e->protocol : "(none)");
+        snprintf(e->protocol, sizeof(e->protocol), "%s", seen->protocol);
+        changed = true;
+    }
+
+    if (e->dialect != seen->dialect &&
+        !(e->dialect != AP_DIALECT_J1939 && seen->dialect == AP_DIALECT_J1939))
+    {
+        /* the dialect the identity requests were answered in. The
+           listener's sighting (dialect j1939) never takes a chip dialect
+           away: an EU truck answers both, the chip's word stays. */
+        ESP_LOGI(TAG, "vehicle %s: dialect %s (was %s)", e->key,
+                 ap_dialect_name((ap_dialect_t)seen->dialect),
+                 ap_dialect_name((ap_dialect_t)e->dialect));
+        e->dialect = seen->dialect;
+        changed = true;
+    }
+
+    if (seen->j1939 && !e->j1939)
+    {
+        /* sticky: a chip sighting carries no word about the network */
+        ESP_LOGI(TAG, "vehicle %s: a J1939 network", e->key);
+        e->j1939 = true;
+        changed = true;
+    }
+
+    if (seen->vin[0] != '\0' && strcmp(e->vin, seen->vin) == 0 &&
+        seen->n_ecus > 0 && fp[0] != '\0' &&
+        strcmp(e->fingerprint, fp) != 0 &&
+        !(seen->dialect == AP_DIALECT_J1939 && e->dialect != AP_DIALECT_J1939))
+    {
+        /* the VIN decided: keep the latest responder picture behind it
+           (the listener's source addresses never replace the chip's
+           responders: an EU truck has both, the chip's are the print) */
+        memcpy(e->ecus, seen->ecus, sizeof(e->ecus));
+        e->n_ecus = seen->n_ecus;
+        snprintf(e->fingerprint, sizeof(e->fingerprint), "%s", fp);
+        changed = true;
+    }
+
+    return changed;
+}
+
+ap_veh_result_t autopid_vehicle_seen(const ap_veh_seen_t *seen)
+{
+    char fp[AP_FP_LEN] = "";
+    char prev[AP_VEH_KEY_LEN] = "";
+    bool exact = true;
+
+    if (seen == NULL)
+    {
+        return AP_VEH_RES_NONE;
+    }
+
+    ap_veh_fingerprint(seen->ecus, seen->n_ecus, fp);
+
+    if (seen->vin[0] == '\0' && fp[0] == '\0')
+    {
+        return AP_VEH_RES_NONE;         /* nothing identifiable answered  */
+    }
+
+    ap_veh_lock();
+
+    ap_veh_index_t *idx = ap_veh_index();
+    int i = ap_vidx_match(idx, seen->vin, seen->ecus, seen->n_ecus, fp,
+                          &exact);
+
+    if (i < 0)
+    {
+        ap_veh_unlock();
+        ESP_LOGI(TAG, "vehicle identity: unknown car (vin %s, fp %s): "
+                      "detecting", seen->vin[0] ? seen->vin : "(none)",
+                 fp[0] ? fp : "(none)");
+        return AP_VEH_RES_NEW;
+    }
+
+    ap_veh_entry_t *e = &idx->v[i];
+    bool dirty = ap_veh_refine_entry(e, seen, fp);
+
+    dirty |= ap_vidx_touch(e, ap_veh_epoch_now());
+
+    if (i == idx->current)
+    {
+        ap_veh_refresh_protocol_cache();
+        ap_veh_unlock();
+
+        if (dirty)
+        {
+            ap_veh_persist_async();
+        }
+
+        return AP_VEH_RES_SAME;
+    }
+
+    if (idx->current >= 0 && idx->current < idx->n)
+    {
+        memcpy(prev, idx->v[idx->current].key, sizeof(prev));
+    }
+
+    idx->current = (int8_t)i;
+    ap_veh_refresh_protocol_cache();
+    ESP_LOGI(TAG, "vehicle identity: %s (%s)%s, switching", e->name, e->key,
+             exact ? "" : " by the ECU subset rule");
+    ap_veh_unlock();
+
+    ap_veh_queue_switch(prev);          /* files, reload, init, event     */
+    return AP_VEH_RES_SWITCHED;
 }
 
 /* ---- the detection job's result (scan task) ------------------------------------------ */
@@ -331,6 +465,8 @@ esp_err_t autopid_vehicle_detected(const ap_veh_seen_t *seen,
         ne.n_ecus = seen->n_ecus;
         ap_vidx_default_name(seen->vin, fp, ne.name);
         snprintf(ne.protocol, sizeof(ne.protocol), "%s", seen->protocol);
+        ne.dialect = seen->dialect;
+        ne.j1939 = seen->j1939 || seen->dialect == AP_DIALECT_J1939;
         ne.std_supported = seen->std_supported;
         ne.pending_profile = true;
         ne.first_seen = now;
@@ -376,10 +512,11 @@ esp_err_t autopid_vehicle_detected(const ap_veh_seen_t *seen,
     {
         ap_veh_new_car_files(prev, result.key, std_config, len);
         (void)ap_veh_persist();
-        ESP_LOGI(TAG, "new vehicle %s (%s): %u standard PIDs, protocol %s, "
-                      "profile pending", result.name, result.key,
+        ESP_LOGI(TAG, "new vehicle %s (%s): %u standard PIDs, protocol %s "
+                      "(%s), profile pending", result.name, result.key,
                  (unsigned)result.std_supported,
-                 result.protocol[0] ? result.protocol : "(none)");
+                 result.protocol[0] ? result.protocol : "(none)",
+                 ap_dialect_name((ap_dialect_t)result.dialect));
         ap_events_vehicle_changed(result.vin, result.name, false);
     }
 

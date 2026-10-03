@@ -51,7 +51,9 @@ static const char *TAG = "autopid";
 esp_err_t dtc_get_handler(httpd_req_t *req)
 {
     cJSON *o = cJSON_CreateObject();
-    cJSON *report = ap_dtc_report_json();
+    /* with the databases' descriptions: {"desc":{"P0420":"Catalyst …"}}
+       for every report code with a hit */
+    cJSON *report = ap_dtc_report_json_desc();
 
     if (o == NULL || report == NULL)
     {
@@ -60,20 +62,10 @@ esp_err_t dtc_get_handler(httpd_req_t *req)
         return ap_http_send_error(req, "500 Internal Server Error", "oom");
     }
 
-    /* database enrichment: {"desc":{"P0420":"Catalyst …"}} for every
-     * report code with a hit (arrays stay untouched — no breakage) */
-    {
-        ap_dtc_report_t r;
-
-        if (ap_dtc_report_get(&r) == ESP_OK && r.valid)
-        {
-            ap_dtc_db_desc_map(report, "desc", &r);
-        }
-    }
-
     cJSON_AddBoolToObject(o, "enabled", ap_dtc_enabled());
     cJSON_AddBoolToObject(o, "allow_clear", ap_dtc_clear_gate_open());
     cJSON_AddBoolToObject(o, "scanning", ap_dtc_busy());
+    cJSON_AddStringToObject(o, "path", ap_dtc_path());
     cJSON_AddItemToObject(o, "report", report);
     return ap_http_send_json(req, o);
 }
@@ -287,6 +279,11 @@ esp_err_t dtc_scan_post_handler(httpd_req_t *req)
         return ap_http_send_error(req, "409 Conflict", "another chip job runs");
     }
 
+    if (err == ESP_ERR_NOT_SUPPORTED)
+    {
+        return ap_http_send_guard_error(req);
+    }
+
     if (err != ESP_OK)
     {
         return ap_http_send_error(req, "500 Internal Server Error",
@@ -350,6 +347,13 @@ esp_err_t dtc_clear_post_handler(httpd_req_t *req)
     if (err == ESP_ERR_INVALID_STATE)
     {
         return ap_http_send_error(req, "409 Conflict", err_text);
+    }
+
+    if (err == ESP_ERR_NOT_SUPPORTED)
+    {
+        /* refused by the bus guard: its whole sentence (err_text is too
+           short for it) */
+        return ap_http_send_guard_error(req);
     }
 
     cJSON *o = cJSON_CreateObject();

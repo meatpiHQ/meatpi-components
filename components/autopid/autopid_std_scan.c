@@ -31,14 +31,24 @@
  * spawns a short-lived task (INTERNAL stack: it writes /data at the end,
  * §2) that pauses the poller and runs three phases, reported as `phase`
  * in the status JSON:
- *   protocol  only with `std_protocol` = "0": ATTP0 prelude, 0100 (the
- *             chip prints SEARCHING... so the timeout is long), ATDPN,
- *             then the detected protocol's prelude for the rest;
- *   vin       0902; on failure 22F190 on the engine ECU's physical
- *             address (header restored), then the responder set from a
- *             headers-on 0100 (the fingerprint);
- *   pids      the 0100/0120/../01A0 support bitmap walk (multi-ECU
- *             OR-merged) mapped onto the SAE table.
+ *   protocol  which protocol AND which dialect (autopid_dialect.h) the
+ *             car answers. With `std_protocol` = "0": a walk over the
+ *             ISO 15765-4 protocols the bus guard allows for this bus,
+ *             `0100` (OBD-II) and `22F400` (ISO 27145 / SAE J1979-2) on
+ *             each. Until 2026-10-03 this was the chip's own search
+ *             (ATTP0), which asks `0100` only: it cannot find a
+ *             UDS-dialect vehicle and takes 9.3 s to give up. A pinned
+ *             `std_protocol` is asked in both dialects. What first contact
+ *             just found (a hint) is tried before any of that;
+ *   vin       the responder set and the VIN, in the car's dialect
+ *             (autopid_identify.c);
+ *   pids      the support bitmap walk mapped onto the SAE table
+ *             (autopid_scan_walk.c);
+ *   network   is the vehicle network J1939 (phase 5): the listener's store
+ *             when it runs, a one second sample of a live bus otherwise;
+ *             the built-in SPN rows of the groups heard join the result,
+ *             a J1939-only vehicle gets the dialect `j1939` and its source
+ *             addresses as the responder set (autopid_j1939_std.c).
  * The result goes to the vehicle store (autopid_vehicle_detected: a
  * known car comes back with its own tables, an unknown car becomes a new
  * entry polled on the standard rows found here), then to
@@ -66,7 +76,6 @@ static const char *TAG = "autopid";
 
 #define AP_STD_SCAN_PATH    "/data/autopid/std_scan.json"
 #define AP_SCAN_REQ_TIMEOUT pdMS_TO_TICKS(10000) /* SEARCHING can be slow  */
-#define AP_SCAN_VIN_TIMEOUT pdMS_TO_TICKS(6000)  /* multi-frame reply      */
 #define AP_SCAN_AT_TIMEOUT  pdMS_TO_TICKS(2000)
 
 typedef enum
@@ -83,18 +92,26 @@ typedef enum
     PHASE_PROTOCOL,
     PHASE_VIN,
     PHASE_PIDS,
+    PHASE_NETWORK,
 } scan_phase_t;
 
 static volatile scan_state_t s_scan_state;
 static volatile scan_phase_t s_scan_phase;
 static uint16_t s_scan_found;
-static char     s_scan_err[64];
+static char     s_scan_err[176];  /* holds a bus guard sentence too */
 static int64_t  s_scan_ts;      /* epoch seconds of last completed scan */
 
 static StaticTask_t s_scan_tcb;                    /* internal object    */
 static StackType_t  s_scan_stack[6144];            /* INTERNAL: fs write */
 
 static char s_resp[AP_RESP_MAX] EXT_RAM_BSS_ATTR;  /* scan task only     */
+
+/* what first contact found a moment ago (ap_std_scan_hint): the next job
+   tries it first, once */
+static volatile char    s_hint_proto;
+static volatile uint8_t s_hint_dialect;
+static uint16_t s_no_way_kbps;  /* scan task: the bus bitrate that left the
+                                   job no protocol to ask on (0 = asked)  */
 
 const char *autopid_std_scan_path(void)
 {
@@ -147,178 +164,123 @@ static void scan_send_prelude(const char *prelude)
 
 /* ---- phase: protocol ------------------------------------------------------------- */
 
-/** ATTP0 prelude, 0100 (lets the chip search), ATDPN.
- *  @return the protocol char, or '\0' when the car did not answer. */
-static char scan_detect_protocol(void)
+/** Does anything answer the bitmap request of range 00 in @p dialect on
+ *  what the chip is set to now? */
+static bool scan_alive(ap_dialect_t dialect)
 {
-    scan_send_prelude(ap_veh_prelude_for('0'));
+    char cmd[12];
+    ap_veh_ecu_t ecus[AP_VEH_ECUS_MAX];
 
-    uint32_t bitmap = 0;
-
-    if (scan_request("0100", AP_SCAN_REQ_TIMEOUT) != ESP_OK ||
-        !ap_std_scan_parse(s_resp, 0x00, &bitmap))
-    {
-        return '\0';
-    }
-
-    char dpn[AP_VEH_PROTO_LEN];
-
-    if (scan_request("ATDPN", AP_SCAN_AT_TIMEOUT) != ESP_OK ||
-        !ap_veh_parse_dpn(s_resp, dpn))
-    {
-        ESP_LOGW(TAG, "std scan: ATDPN reply unreadable ('%s')", s_resp);
-        return '\0';
-    }
-
-    return dpn[0];
+    return ap_dialect_pid_cmd(dialect, 0x00, cmd, sizeof(cmd)) > 0 &&
+           scan_request(cmd, AP_SCAN_REQ_TIMEOUT) == ESP_OK &&
+           ap_dialect_bitmaps(dialect, s_resp, 0x00, ecus,
+                              AP_VEH_ECUS_MAX) > 0;
 }
 
-/* ---- phase: vin ---------------------------------------------------------------------- */
-
-static void scan_read_vin(char proto, char vin[AP_VIN_LEN])
+void ap_std_scan_hint(char proto, ap_dialect_t dialect)
 {
-    vin[0] = '\0';
-
-    if (scan_request("0902", AP_SCAN_VIN_TIMEOUT) == ESP_OK &&
-        ap_veh_parse_vin_0902(s_resp, vin))
-    {
-        return;
-    }
-
-    /* UDS fallback: DID F190 on the engine ECU's physical address, CAN
-       protocols only; the functional header is put back either way */
-    if (proto < '6' || proto > '9')
-    {
-        return;
-    }
-
-    bool ext = ap_veh_proto_is_29bit(proto);
-
-    (void)scan_request(ext ? "ATSH18DA10F1" : "ATSH7E0", AP_SCAN_AT_TIMEOUT);
-
-    if (scan_request("22F190", AP_SCAN_VIN_TIMEOUT) == ESP_OK)
-    {
-        (void)ap_veh_parse_vin_22f190(s_resp, vin);
-    }
-
-    (void)scan_request(ext ? "ATSH18DB33F1" : "ATSH7DF", AP_SCAN_AT_TIMEOUT);
+    s_hint_dialect = (uint8_t)dialect;
+    s_hint_proto = proto;
 }
 
-/** The responder set (behind the fingerprint): headers on for ONE 0100,
- *  then off again. */
-static void scan_responders(ap_veh_seen_t *seen)
+/** Which protocol and which dialect answer (see the file header).
+ *  @return false when nothing did. */
+static bool scan_contact(char *proto, ap_dialect_t *dialect)
 {
-    seen->n_ecus = 0;
+    const char *setting = ap_core_std_protocol();
+    bool pinned = (setting[0] >= '6' && setting[0] <= '9');
+    char hint = s_hint_proto;
+    ap_dialect_t hint_dialect = (ap_dialect_t)s_hint_dialect;
 
-    if (scan_request("ATH1", AP_SCAN_AT_TIMEOUT) != ESP_OK)
+    s_hint_proto = '\0';
+
+    if (hint != '\0' && ap_dialect_has_requests(hint_dialect) &&
+        (!pinned || hint == setting[0]))
     {
-        return;
-    }
+        scan_send_prelude(ap_veh_prelude_for(hint));
 
-    if (scan_request("0100", AP_SCAN_REQ_TIMEOUT) == ESP_OK)
-    {
-        seen->n_ecus = (uint8_t)ap_veh_ecus_from_0100(s_resp, seen->ecus,
-                                                     AP_VEH_ECUS_MAX);
-    }
-
-    (void)scan_request("ATH0", AP_SCAN_AT_TIMEOUT);
-}
-
-/** The scanned rows as a config.json document (a new car's tables:
- *  standard PIDs only, the `default` group). Caller frees. */
-static char *std_rows_config(const cJSON *supported)
-{
-    cJSON *root = cJSON_CreateObject();
-    char *body = NULL;
-
-    if (root == NULL)
-    {
-        return NULL;
-    }
-
-    cJSON_AddArrayToObject(root, "groups");
-
-    cJSON *pids = cJSON_AddArrayToObject(root, "pids");
-    const cJSON *e = NULL;
-
-    cJSON_ArrayForEach(e, supported)
-    {
-        const cJSON *name = cJSON_GetObjectItemCaseSensitive(e, "name");
-        const cJSON *cmd = cJSON_GetObjectItemCaseSensitive(e, "cmd");
-        const cJSON *prm = cJSON_GetObjectItemCaseSensitive(e, "parameters");
-        cJSON *pid = cJSON_CreateObject();
-
-        if (pids == NULL || pid == NULL || !cJSON_IsString(name) ||
-            !cJSON_IsString(cmd))
+        if (scan_alive(hint_dialect))
         {
-            cJSON_Delete(pid);
+            *proto = hint;
+            *dialect = hint_dialect;
+            return true;
+        }
+    }
+
+    if (pinned)
+    {
+        /* the user's protocol: both dialects on it, no search */
+        *proto = setting[0];
+        scan_send_prelude(ap_veh_prelude_for(setting[0]));
+
+        if (scan_alive(AP_DIALECT_OBD2))
+        {
+            *dialect = AP_DIALECT_OBD2;
+            return true;
+        }
+
+        if (scan_alive(AP_DIALECT_UDS))
+        {
+            *dialect = AP_DIALECT_UDS;
+            return true;
+        }
+
+        return false;
+    }
+
+    /* nobody named a protocol: the ISO 15765-4 protocols this bus
+       allows, both dialects on each. The guard looks at the bus again
+       before each of them. */
+    char cand[AP_DIALECT_CAND_LEN];
+    ap_bus_t bus;
+
+    ap_guard_bus(&bus);
+
+    int n = ap_dialect_can_candidates(&bus, cand);
+
+    if (n == 0 && bus.kind == AP_BUS_LIVE)
+    {
+        s_no_way_kbps = bus.kbps;       /* e.g. a 125 kbit/s body bus */
+    }
+
+    for (int i = 0; i < n; i++)
+    {
+        if (!ap_guard_candidate_ok(cand[i]))
+        {
             continue;
         }
 
-        cJSON_AddStringToObject(pid, "name", name->valuestring);
-        cJSON_AddStringToObject(pid, "type", "std");
-        cJSON_AddStringToObject(pid, "cmd", cmd->valuestring);
-        cJSON_AddStringToObject(pid, "group", "default");
-        cJSON_AddItemToObject(pid, "parameters",
-                              cJSON_IsArray(prm) ? cJSON_Duplicate(prm, true)
-                                                 : cJSON_CreateArray());
-        cJSON_AddItemToArray(pids, pid);
+        scan_send_prelude(ap_veh_prelude_for(cand[i]));
+        *proto = cand[i];
+
+        if (scan_alive(AP_DIALECT_OBD2))
+        {
+            *dialect = AP_DIALECT_OBD2;
+            return true;
+        }
+
+        if (scan_alive(AP_DIALECT_UDS))
+        {
+            *dialect = AP_DIALECT_UDS;
+            return true;
+        }
     }
 
-    cJSON_AddArrayToObject(root, "filters");
-    body = cJSON_PrintUnformatted(root);
-    cJSON_Delete(root);
-    return body;
+    *proto = '\0';
+    return false;
 }
 
-/* ---- phase: pids ------------------------------------------------------------------- */
-
-/** The bitmap walk. @return true when at least one range answered. */
-static bool scan_pids(cJSON *supported, uint16_t *found)
+/** `22F810`, the protocol identification of ISO 27145-4: recorded when
+ *  the vehicle answers it, never needed. */
+static void scan_uds_protocol_id(cJSON *root)
 {
-    bool any_response = false;
+    uint8_t id = 0;
 
-    for (int range = 0; range < 6; range++)
+    if (scan_request("22F810", AP_SCAN_AT_TIMEOUT) == ESP_OK &&
+        ap_dialect_uds_protocol_id(s_resp, &id))
     {
-        uint8_t base = (uint8_t)(range * 0x20);
-        char cmd[8];
-
-        snprintf(cmd, sizeof(cmd), "01%02X", base);
-
-        if (scan_request(cmd, AP_SCAN_REQ_TIMEOUT) != ESP_OK)
-        {
-            break;
-        }
-
-        uint32_t bitmap = 0;
-
-        if (!ap_std_scan_parse(s_resp, base, &bitmap))
-        {
-            break;      /* NO DATA / noise: range unsupported */
-        }
-
-        any_response = true;
-
-        for (int bit = 0; bit < 31; bit++)  /* bit 31 = next-range flag */
-        {
-            if (bitmap & (1u << (31 - bit)))
-            {
-                uint8_t pid = (uint8_t)(base + bit + 1);
-
-                if (ap_std_entry_to_json(supported, pid))
-                {
-                    (*found)++;
-                }
-            }
-        }
-
-        if ((bitmap & 1u) == 0)
-        {
-            break;      /* next range not supported */
-        }
+        cJSON_AddNumberToObject(root, "uds_protocol_id", id);
     }
-
-    return any_response;
 }
 
 /* ---- the job ------------------------------------------------------------------------ */
@@ -330,7 +292,7 @@ static void scan_store(cJSON *root, const cJSON *supported,
 {
     static ap_veh_entry_t entry EXT_RAM_BSS_ATTR; /* scan task only     */
     bool known = false;
-    char *tables = std_rows_config(supported);
+    char *tables = ap_scan_rows_config(supported);
     esp_err_t err = ESP_ERR_NO_MEM;
 
     seen->std_supported = found;
@@ -367,32 +329,32 @@ static void scan_task(void *arg)
 
     static ap_veh_seen_t seen EXT_RAM_BSS_ATTR;      /* scan task only  */
     const char *setting = ap_core_std_protocol();
-    bool pinned = (setting[0] >= '6' && setting[0] <= '9');
-    char proto = pinned ? setting[0] : '\0';
+    char proto = '\0';
+    ap_dialect_t dialect = AP_DIALECT_OBD2;
     char fp[AP_FP_LEN] = "";
-    bool no_ecu = false;
 
     memset(&seen, 0, sizeof(seen));
+    s_no_way_kbps = 0;
 
-    if (!pinned)
-    {
-        s_scan_phase = PHASE_PROTOCOL;
-        proto = scan_detect_protocol();
-        no_ecu = (proto == '\0');
-    }
+    s_scan_phase = PHASE_PROTOCOL;
 
-    if (!no_ecu)
+    bool contact = scan_contact(&proto, &dialect);
+
+    if (contact)
     {
         seen.protocol[0] = proto;
         seen.protocol[1] = '\0';
-        /* the detected (or pinned) protocol's prelude for the rest */
+        /* the protocol's prelude for the rest (headers off, the
+           functional header, the receive filter cleared) */
         scan_send_prelude(ap_veh_prelude_for(proto));
 
         s_scan_phase = PHASE_VIN;
-        scan_read_vin(proto, seen.vin);
-        scan_responders(&seen);
+        (void)ap_identify(dialect, proto, true, &seen, s_resp,
+                          sizeof(s_resp));
         ap_veh_fingerprint(seen.ecus, seen.n_ecus, fp);
     }
+
+    seen.dialect = (uint8_t)dialect;
 
     cJSON *root = cJSON_CreateObject();
     cJSON *supported = NULL;
@@ -404,24 +366,83 @@ static void scan_task(void *arg)
         cJSON_AddNumberToObject(root, "version", 1);
         cJSON_AddStringToObject(root, "protocol", setting);
         cJSON_AddStringToObject(root, "protocol_detected", seen.protocol);
+        cJSON_AddStringToObject(root, "dialect", ap_dialect_name(dialect));
         cJSON_AddStringToObject(root, "vin", seen.vin);
         cJSON_AddStringToObject(root, "fingerprint", fp);
         supported = cJSON_AddArrayToObject(root, "supported");
     }
 
-    if (!no_ecu && supported != NULL)
+    if (contact && supported != NULL)
     {
+        if (dialect == AP_DIALECT_UDS)
+        {
+            scan_uds_protocol_id(root);
+        }
+
         s_scan_phase = PHASE_PIDS;
-        any_response = scan_pids(supported, &found);
+        any_response = ap_scan_walk(dialect, supported, &found, s_resp,
+                                    sizeof(s_resp));
+    }
+
+    /* the network (phase 5): a J1939 vehicle beside its OBD dialect (an EU
+       truck) or instead of one. The listener's store when it runs; a one
+       second sample of a live bus otherwise (nothing transmitted). */
+    bool j1939 = false;
+    bool listening = ap_j1939_listening();
+
+    if (supported != NULL)
+    {
+        ap_bus_t bus;
+
+        s_scan_phase = PHASE_NETWORK;
+        ap_guard_bus(&bus);
+
+        if (listening)
+        {
+            j1939 = ap_j1939_identify(&seen, supported, &found);
+        }
+        else if (bus.kind == AP_BUS_LIVE)
+        {
+            j1939 = ap_j1939_identify_sample(&seen, supported, &found);
+        }
+
+        if (j1939 && !contact)
+        {
+            dialect = AP_DIALECT_J1939;
+            seen.dialect = (uint8_t)dialect;
+            ap_veh_fingerprint(seen.ecus, seen.n_ecus, fp);
+            cJSON_ReplaceItemInObject(root, "dialect",
+                                      cJSON_CreateString(
+                                          ap_dialect_name(dialect)));
+            cJSON_ReplaceItemInObject(root, "vin",
+                                      cJSON_CreateString(seen.vin));
+            cJSON_ReplaceItemInObject(root, "fingerprint",
+                                      cJSON_CreateString(fp));
+        }
+
+        cJSON_AddBoolToObject(root, "j1939", j1939);
+        cJSON_AddBoolToObject(root, "j1939_listening", listening);
+        cJSON_AddNumberToObject(root, "bus_kbps",
+                                (bus.kind == AP_BUS_LIVE) ? bus.kbps : 0);
+        any_response = any_response || j1939;
     }
 
     esp_err_t err = ESP_FAIL;
 
-    if (!any_response || root == NULL)
+    if (root == NULL)
+    {
+        snprintf(s_scan_err, sizeof(s_scan_err), "out of memory");
+    }
+    else if (!any_response && s_no_way_kbps != 0)
     {
         snprintf(s_scan_err, sizeof(s_scan_err),
-                 (root == NULL) ? "out of memory"
-                                : "no ECU response (ignition on?)");
+                 "the vehicle bus runs at %u kbit/s; OBD is asked at 250 or "
+                 "500, so nothing was sent", (unsigned)s_no_way_kbps);
+    }
+    else if (!any_response)
+    {
+        snprintf(s_scan_err, sizeof(s_scan_err),
+                 "no ECU response (ignition on?)");
     }
     else
     {
@@ -455,9 +476,10 @@ static void scan_task(void *arg)
     s_scan_state = (err == ESP_OK) ? SCAN_DONE : SCAN_FAILED;
     ap_core_job_release();
     ap_events_scan_done(found);
-    ESP_LOGI(TAG, "detection %s: %u PIDs, protocol %s, vin %s, fp %s",
+    ESP_LOGI(TAG, "detection %s: %u rows, protocol %s (%s%s), vin %s, fp %s",
              (err == ESP_OK) ? "done" : "FAILED", found,
              seen.protocol[0] ? seen.protocol : "?",
+             ap_dialect_name(dialect), j1939 ? ", J1939 network" : "",
              seen.vin[0] ? seen.vin : "(none)", fp[0] ? fp : "(none)");
 
     /* ephemeral tasks escape System Monitor: surface the watermark for
@@ -472,6 +494,14 @@ esp_err_t autopid_std_scan_start(void)
     if (s_scan_state == SCAN_RUNNING)
     {
         return ESP_ERR_INVALID_STATE;
+    }
+
+    /* bus guard: a detection on a pinned protocol, or on a bus nothing
+       here can read, would transmit at the wrong bitrate */
+    if (!ap_guard_job_ok(s_scan_err, sizeof(s_scan_err)))
+    {
+        s_scan_state = SCAN_FAILED;
+        return ESP_ERR_NOT_SUPPORTED;
     }
 
     /* one chip job at a time (test-a-PID / dtc scan / dtc clear) */
@@ -507,7 +537,7 @@ cJSON *ap_std_scan_status_json(void)
     };
     static const char *const PHASES[] =
     {
-        "idle", "protocol", "vin", "pids",
+        "idle", "protocol", "vin", "pids", "network",
     };
 
     cJSON *o = cJSON_CreateObject();

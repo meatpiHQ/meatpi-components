@@ -138,6 +138,11 @@ esp_err_t vehicles_post_handler(httpd_req_t *req)
                                       "detection already running");
         }
 
+        if (err == ESP_ERR_NOT_SUPPORTED)
+        {
+            return ap_http_send_guard_error(req);
+        }
+
         if (err != ESP_OK)
         {
             return ap_http_send_error(req, "500 Internal Server Error",

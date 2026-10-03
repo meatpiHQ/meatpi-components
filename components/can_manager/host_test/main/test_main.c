@@ -13,6 +13,10 @@
 #include "can_core_filter.h"
 #include "can_core_recovery.h"
 
+/* test_autobaud.c: the listen-before-talk policy (can_autobaud_core.c) */
+void run_autobaud_tests(void);
+void run_timing_tests(void);
+
 /* ---- filter / mask match ------------------------------------------------ */
 
 void test_filter_match_exact(void)
@@ -290,6 +294,9 @@ void app_main(void)
     RUN_TEST(test_recovery_spurious_recovered_ignored);
     RUN_TEST(test_recovery_wraparound_timestamps);
     RUN_TEST(test_recovery_retry_rearms);
+
+    run_autobaud_tests();
+    run_timing_tests();
 
     UNITY_END();
 }

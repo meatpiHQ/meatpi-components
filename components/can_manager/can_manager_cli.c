@@ -111,11 +111,24 @@ static int cmd_can(int argc, char **argv)
     cmdline_printf("CAN: %s%s\n",
                    st.running ? "UP" : (st.enabled ? "DOWN" : "disabled"),
                    st.silent ? " (silent)" : "");
-    cmdline_printf("Baud: %lu kbit/s\n", (unsigned long)st.baud_kbps);
+
+    if (st.baud_kbps == 0)
+    {
+        cmdline_printf("Baud: auto\n");
+    }
+    else
+    {
+        cmdline_printf("Baud: %lu kbit/s%s\n", (unsigned long)st.baud_kbps,
+                       st.baud_auto ? " (auto)" : "");
+    }
 
     if (st.running)
     {
         cmdline_printf("State: %s\n", bus_state_str(st.stats.bus_state));
+        /* listen before talk: where the link is, what the node may do */
+        cmdline_printf("Link: %s, %s%s\n", st.link.state,
+                       st.link.listen_only ? "listen-only" : "normal",
+                       st.link.verified ? ", bitrate proven" : "");
     }
 
     cmdline_printf("Tx: %lu  Rx: %lu\n",
@@ -126,6 +139,63 @@ static int cmd_can(int argc, char **argv)
                    (unsigned long)st.stats.rx_errors,
                    (unsigned long)st.stats.arb_lost,
                    (unsigned long)st.stats.bus_errors);
+    cmdline_printf("Receive errors: %lu  Error storms: %lu  Deaf looks: %lu  "
+                   "Refused tx: %lu\n", (unsigned long)st.stats.rx_bad,
+                   (unsigned long)st.stats.rx_storms,
+                   (unsigned long)st.stats.rx_deaf,
+                   (unsigned long)st.stats.tx_refused);
+    cmdline_printf("Frames lost: controller FIFO %lu, receive queue %lu\n",
+                   (unsigned long)st.stats.rx_overrun,
+                   (unsigned long)st.stats.rx_missed);
+    cmdline_printf("Transmit: %lu done, %lu repeated after a lost one, %lu "
+                   "given up\n", (unsigned long)st.stats.tx_done,
+                   (unsigned long)st.stats.tx_retries,
+                   (unsigned long)st.stats.tx_lost);
+    cmdline_printf("Bus errors by kind: stuff %lu, form %lu, bit %lu, "
+                   "ack %lu, other %lu\n",
+                   (unsigned long)st.stats.err_stuff,
+                   (unsigned long)st.stats.err_form,
+                   (unsigned long)st.stats.err_bit,
+                   (unsigned long)st.stats.err_ack,
+                   (unsigned long)st.stats.err_other);
+
+    size_t subs_used = 0;
+    size_t subs_cap = 0;
+
+    can_manager_capacity(&subs_used, &subs_cap);
+    cmdline_printf("Subscribers: %u of %u, dropped %lu\n",
+                   (unsigned)subs_used, (unsigned)subs_cap,
+                   (unsigned long)st.stats.dispatch_drops);
+
+    for (int i = 0; i < (int)subs_cap; i++)
+    {
+        can_manager_subscriber_t sub;
+
+        if (can_manager_subscriber_get(i, &sub))
+        {
+            cmdline_printf("  [%d] %s: dropped %lu\n", i,
+                           sub.name[0] ? sub.name : "(unnamed)",
+                           (unsigned long)sub.drops);
+        }
+    }
+
+    can_manager_probe_t probe;
+    uint32_t probe_age_ms = 0;
+
+    can_manager_last_probe(&probe, &probe_age_ms);
+
+    if (probe.result != CAN_PROBE_NONE)
+    {
+        cmdline_printf("Probe: bus %s", can_manager_probe_name(probe.result));
+
+        if (probe.result == CAN_PROBE_LIVE)
+        {
+            cmdline_printf(" at %lu kbit/s", (unsigned long)probe.baud_kbps);
+        }
+
+        cmdline_printf(" (%lu s ago)\n", (unsigned long)(probe_age_ms / 1000));
+    }
+
     cmdline_printf("Bus-off: %lu (recovered %lu)\n",
                    (unsigned long)st.stats.bus_off_count,
                    (unsigned long)st.stats.recovery_count);

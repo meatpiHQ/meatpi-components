@@ -196,6 +196,26 @@ TCP bridge (scratch `elm_timing.py` / `elm_pending.py`):
   host-tested, and bench: `31 01 FF 00` -> `71 01 FF 00 00` pending 8.
 - setup re-send only when needed works: a steady request adds 5 bytes to
   the chip's tx counter (its own line), nothing else writes meanwhile.
+- **2026-10-02, the digit's blind spot (fixed):** it counts printed LINES,
+  not messages. `22F1901` returns `014 / 0: 62 F1 90 31 57 43` and the
+  prompt: the first frame of a 20-byte answer, which the parser handed over
+  as a complete 6-byte message (`ok:true`, VIN and DTC lists alike). Unseen
+  for two weeks because the bench DUT ran with native CAN (backend `auto` =
+  isotp) and `uds_route_bench.py` only checked the SID. Measured on the
+  chip: the exact line count returns at once (`22F1903` 48 ms through the
+  TCP bridge, 6 ms inside the transport), a larger digit or none waits like
+  no digit (132 ms at ATST32), and `7F xx 78` lines do not count against
+  the digit (`7F 22 78 / 7F 22 78 / 014 / 0: ..` with digit 1). The
+  transport now reads the length line (`uds_at_parse_response_len`), asks
+  again with `uds_at_lines_for(total)` (no digit above 15 lines), trims the
+  last frame's padding to the announced size and returns
+  `ESP_ERR_INVALID_SIZE` instead of a part. Services that must not be sent
+  twice (27, 29, 31, 38, 84) go out without the digit
+  (`uds_at_first_digit`). Cost: one extra round trip per multi-frame answer
+  (the VIN: 6 to 9 ms in total), twice the pending time on an ECU that
+  answers a multi-frame read behind `7F xx 78`. Host: 26 tests. Bench:
+  `UDS DTC BENCH PASS` and `UDS ROUTE PASS` (30/30, whole VIN) on the chip
+  backend.
 Also: 8 KB PSRAM reply buffer, 64 B request cap returns INVALID_ARG with a
 log line. The chip path without the Exclusive switch stays at its known
 ceiling under autopid's flood (4/20, 0 corrupt) — that is what the switch

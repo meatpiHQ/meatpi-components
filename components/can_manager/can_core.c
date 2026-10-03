@@ -47,6 +47,8 @@
 #include <stdlib.h>
 #include "can_core.h"
 #include "can_core_filter.h"
+#include "can_core_driver.h"
+#include "can_core_private.h"
 
 #ifdef ESP_PLATFORM
 #include "esp_attr.h"
@@ -64,12 +66,6 @@ static const char *TAG = "can_core";
 #define CAN_CORE_RX_TASK_STACK   4096
 #define CAN_CORE_RX_TASK_PRIO    10
 
-static elm327_err_t can_driver_start(can_core_handle_t *handle,
-                                     const can_core_config_t *config);
-static void can_driver_stop(can_core_handle_t *handle);
-#ifdef ESP_PLATFORM
-static void can_rx_wait_parked(can_core_handle_t *handle);
-#endif
 static bool can_subscription_matches_frame(uint32_t filter,
                                            uint32_t mask,
                                            bool ext,
@@ -78,147 +74,13 @@ static bool can_subscription_matches_frame(uint32_t filter,
 static bool dispatch_frame_to_queue_subscriber(QueueHandle_t queue,
                                                const can_core_frame_t *frame);
 
-/* ---- esp_driver_twai node state (port 2026-07-21) ------------------------
- * RX frames are copied OUT of the driver in the on_rx_done ISR into a
- * STATIC queue that can_core owns and NEVER deletes: a reader blocked
- * on it cannot race a driver teardown -- the class of the 2026-07-21
- * sleep-entry panic (twai_receive vs twai_driver_uninstall) is
- * structurally impossible with this shape. */
-#define CAN_CORE_RXQ_DEPTH 64
-#define CAN_RX_RAW_EXT     0x1
-#define CAN_RX_RAW_RTR     0x2
-
-typedef struct
-{
-    uint32_t id;
-    uint32_t ts_us;     /* esp_timer at the RX interrupt (the bus time) */
-    uint8_t  flags;
-    uint8_t  dlc;
-    uint8_t  data[8];
-} can_rx_raw_t;
-
-static twai_node_handle_t s_node;
-static StaticQueue_t      s_rxq_buf;              /* internal: FreeRTOS */
-static uint8_t            s_rxq_store[CAN_CORE_RXQ_DEPTH *
-                                      sizeof(can_rx_raw_t)];
-static QueueHandle_t      s_rx_q;
-static volatile bool      s_evt_bus_off;
-static volatile bool      s_evt_recovered;
-
-static bool IRAM_ATTR can_on_rx_done(twai_node_handle_t node,
-                                     const twai_rx_done_event_data_t *e,
-                                     void *ctx)
-{
-    can_core_handle_t *handle = (can_core_handle_t *)ctx;
-    BaseType_t hp = pdFALSE;
-    uint8_t buf[8];
-    twai_frame_t f = { .buffer = buf, .buffer_len = sizeof(buf) };
-
-    (void)e;
-
-    /* ONE receive per on_rx_done event: the driver fires the callback
-     * per frame, and re-calling receive_from_isr re-reads the SAME
-     * frame (found at full 500k line rate 2026-07-21: a drain loop
-     * here duplicated frames ~30x into the queue) */
-    if (twai_node_receive_from_isr(node, &f) == ESP_OK)
-    {
-        can_rx_raw_t raw;
-
-        raw.id    = f.header.id;
-        /* stamp HERE, not in the dispatch task: the queue adds up to a
-           few ms of jitter under load and consumers (BLE raw stream,
-           GVRET, J2534, the logger) want bus time. ISR-safe. */
-        raw.ts_us = (uint32_t)esp_timer_get_time();
-        raw.flags = (uint8_t)((f.header.ide ? CAN_RX_RAW_EXT : 0) |
-                              (f.header.rtr ? CAN_RX_RAW_RTR : 0));
-        raw.dlc   = (uint8_t)(f.header.dlc > 8 ? 8 : f.header.dlc);
-        memcpy(raw.data, buf, raw.dlc);
-
-        if (xQueueSendFromISR(s_rx_q, &raw, &hp) != pdTRUE)
-        {
-            handle->stats.rx_missed++;
-        }
-
-    }
-
-    return hp == pdTRUE;
-}
-
-static bool IRAM_ATTR can_on_state_change(
-    twai_node_handle_t node, const twai_state_change_event_data_t *e,
-    void *ctx)
-{
-    (void)node;
-    (void)ctx;
-
-    if (e->new_sta == TWAI_ERROR_BUS_OFF)
-    {
-        s_evt_bus_off = true;
-    }
-    else if (e->old_sta == TWAI_ERROR_BUS_OFF)
-    {
-        s_evt_recovered = true;
-    }
-
-    return false;
-}
-
-/* ---- ISR core affinity (2026-07-21 experiment) ---------------------------
- * esp_intr_alloc binds the node ISR to the CALLING core. The default
- * (core 0) inherits WiFi/BT/USB/i2c neighbours and their slot pool;
- * CONFIG_WICAN_CAN_ISR_CORE=1 runs the driver init on a pinned
- * one-shot task so the CAN interrupt (and rx task) live on core 1. */
-typedef struct
-{
-    can_core_handle_t       *handle;
-    const can_core_config_t *config;
-    elm327_err_t             result;
-    SemaphoreHandle_t        done;
-} can_start_ctx_t;
-
-static void can_driver_start_trampoline(void *arg)
-{
-    can_start_ctx_t *ctx = (can_start_ctx_t *)arg;
-
-    ctx->result = can_driver_start(ctx->handle, ctx->config);
-    xSemaphoreGive(ctx->done);
-    vTaskDelete(NULL);
-}
-
-static elm327_err_t can_driver_start_on_core(can_core_handle_t *handle,
-                                             const can_core_config_t *config)
-{
-#if CONFIG_WICAN_CAN_ISR_CORE == 0
-    return can_driver_start(handle, config);
-#else
-    static StaticSemaphore_t s_done_buf;
-    can_start_ctx_t ctx =
-    {
-        .handle = handle,
-        .config = config,
-        .result = ELM327_ERR_CAN,
-        .done = xSemaphoreCreateBinaryStatic(&s_done_buf),
-    };
-
-    if (xTaskCreatePinnedToCore(can_driver_start_trampoline, "can_init",
-                                3072, &ctx, 10, NULL,
-                                CONFIG_WICAN_CAN_ISR_CORE) != pdPASS)
-    {
-        return can_driver_start(handle, config); /* fallback: this core */
-    }
-
-    (void)xSemaphoreTake(ctx.done, portMAX_DELAY);
-    return ctx.result;
-#endif
-}
-
 /* -------------------------------------------------------------------------
  * Bus-off recovery servicing (runs in the RX task loop)
  *
  * Node-API flow (esp_driver_twai, 2026-07-21): on_state_change(BUS_OFF)
- * sets s_evt_bus_off -> this loop calls twai_node_recover() (completes
+ * sets can_drv_evt_bus_off -> this loop calls twai_node_recover() (completes
  * once the bus shows 128 x 11 recessive bits; the node REJOINS on its
- * own) -> on_state_change(ERR_ACTIVE) sets s_evt_recovered -> the
+ * own) -> on_state_change(ERR_ACTIVE) sets can_drv_evt_recovered -> the
  * restart branch is bookkeeping + the policy backoff (thrash guard,
  * see can_core_recovery.h). CANREC-verified at 0.1 s (legacy driver's
  * initiate/stop/start dance took 0.6 s).
@@ -227,9 +89,9 @@ static void can_service_recovery(can_core_handle_t *handle)
 {
     uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
 
-    if (s_evt_bus_off)
+    if (can_drv_evt_bus_off)
     {
-        s_evt_bus_off = false;
+        can_drv_evt_bus_off = false;
         handle->stats.bus_off_count++;
 
         uint32_t backoff =
@@ -239,15 +101,28 @@ static void can_service_recovery(can_core_handle_t *handle)
                  "(restart backoff %lu ms)",
                  (unsigned long)handle->recovery.off_count,
                  (unsigned long)backoff);
-        (void)twai_node_recover(s_node);
+        (void)twai_node_recover(can_drv_node);
     }
 
-    if (s_evt_recovered)
+    if (can_drv_evt_recovered)
     {
-        s_evt_recovered = false;
+        can_drv_evt_recovered = false;
         can_core_recovery_on_recovered(&handle->recovery, now_ms);
         ESP_LOGW(TAG, "bus recovered -- restarting in %lu ms",
                  (unsigned long)handle->recovery.backoff_ms);
+    }
+
+    if (can_drv_evt_storm)
+    {
+        /* the ISR masked the controller's interrupts (can_core_driver.c):
+           the node is deaf until the link policy bounces it, which the RX
+           line look makes it do within a few looks */
+        can_drv_evt_storm = false;
+        ESP_LOGW(TAG, "receive error storm at %lu kbit/s (%lu errors so far): "
+                      "the controller's interrupts are masked until the node "
+                      "is restarted",
+                 (unsigned long)can_ab_baud(&handle->ab),
+                 (unsigned long)handle->stats.rx_bad);
     }
 
     if (can_core_recovery_restart_due(&handle->recovery, now_ms))
@@ -286,16 +161,28 @@ static void can_rx_task(void *arg)
 
         can_service_recovery(handle);
 
+        /* listen before talk: the bitrate / mode policy, which may
+         * bounce the node right here (this task is outside a receive) */
+        can_link_service(handle);
+
         can_rx_raw_t raw;
 
-        /* OUR queue (static, never deleted) -- 100 ms slices so the
-         * initialised flag stays responsive */
-        if (xQueueReceive(s_rx_q, &raw, pdMS_TO_TICKS(100)) != pdTRUE)
+        /* OUR queue (static, never deleted) -- slices of at most 100 ms
+         * so the initialised flag stays responsive, shorter while the
+         * link policy has no verdict yet */
+        if (xQueueReceive(can_drv_rx_q, &raw,
+                          pdMS_TO_TICKS(can_link_poll_ms(handle))) != pdTRUE)
         {
             continue;
         }
 
+        if (raw.flags & CAN_RX_RAW_EVT)
+        {
+            continue; /* a wake-up for the link policy above, not a frame */
+        }
+
         handle->stats.rx_count++;
+        handle->link_frames++;
 
         /* Build our frame structure */
         can_core_frame_t frame;
@@ -345,6 +232,7 @@ static void can_rx_task(void *arg)
                                                         &frame))
                 {
                     handle->stats.dispatch_drops++;
+                    subscriber->drops++;
                 }
             }
         }
@@ -377,7 +265,12 @@ elm327_err_t can_core_init(can_core_handle_t *handle,
     handle->initialised = true;
 
 #ifdef ESP_PLATFORM
-    elm327_err_t err = can_driver_start_on_core(handle, config);
+    can_drv_rx_reset();
+    can_core_reset_stats(handle); /* stats count from this init */
+
+    /* the node starts listen-only and without its TX pin, whatever the
+     * settings ask for: can_core_link.c promotes it when it may talk */
+    elm327_err_t err = can_link_start(handle);
     if (err != ELM327_OK)
     {
         handle->initialised = false;
@@ -400,7 +293,7 @@ elm327_err_t can_core_init(can_core_handle_t *handle,
     {
         ESP_LOGE(TAG, "rx task create failed");
         handle->initialised = false;
-        can_driver_stop(handle);
+        can_drv_stop(handle);
         return ELM327_ERR_CAN;
     }
     handle->rx_task_handle = (void *)task_hdl;
@@ -425,6 +318,8 @@ void can_core_deinit(can_core_handle_t *handle)
     handle->initialised = false;
 
 #ifdef ESP_PLATFORM
+    can_link_tx_close(handle); /* no transmit inside the driver below */
+
     /* The RX task may be BLOCKED inside twai_receive (100 ms slices) —
      * uninstalling the driver under it deletes the RX queue it sleeps
      * on (spinlock assert; crashed every sleep entry 2026-07-20). Wait
@@ -440,140 +335,29 @@ void can_core_deinit(can_core_handle_t *handle)
     }
     vTaskDelay(pdMS_TO_TICKS(20)); /* let vTaskDelete(NULL) finish
                                     * before the static TCB is reusable */
-    can_driver_stop(handle);
+    can_drv_stop(handle);
 #endif
 
     memset(handle->clients, 0, sizeof(handle->clients));
     memset(handle->queue_subscribers, 0, sizeof(handle->queue_subscribers));
 }
 
-/* -------------------------------------------------------------------------
- * can_core_register_client
- * ------------------------------------------------------------------------- */
-int can_core_register_client(can_core_handle_t *handle,
-                                const can_core_client_t *client)
+void can_core_quiesce(can_core_handle_t *handle)
 {
-    if (!handle || !client)
+#ifdef ESP_PLATFORM
+    if (handle)
     {
-        return ELM327_ERR_INVALID_ARG;
+        handle->tx_open = false; /* no wait: the restart path never blocks */
     }
 
-    for (int i = 0; i < CAN_CORE_MAX_CLIENTS; i++)
-    {
-        if (!handle->clients[i].active)
-        {
-            handle->clients[i]        = *client;
-            handle->clients[i].active = true;
-            return i;
-        }
-    }
-
-    return ELM327_ERR_NO_MEM;
+    can_drv_quiesce();
+#else
+    (void)handle;
+#endif
 }
 
-int can_core_register_rx_queue(can_core_handle_t *handle,
-                                 const can_core_queue_subscriber_t *subscriber)
-{
-    if (!handle || !subscriber || subscriber->queue == NULL)
-    {
-        return ELM327_ERR_INVALID_ARG;
-    }
-
-    for (int i = 0; i < CAN_CORE_MAX_QUEUE_SUBSCRIBERS; i++)
-    {
-        if (!handle->queue_subscribers[i].active)
-        {
-            handle->queue_subscribers[i] = *subscriber;
-            handle->queue_subscribers[i].active = true;
-            return i;
-        }
-    }
-
-    return ELM327_ERR_NO_MEM;
-}
-
-/* -------------------------------------------------------------------------
- * can_core_unregister_client
- * ------------------------------------------------------------------------- */
-void can_core_unregister_client(can_core_handle_t *handle, int idx)
-{
-    if (!handle || idx < 0 || idx >= CAN_CORE_MAX_CLIENTS)
-    {
-        return;
-    }
-    memset(&handle->clients[idx], 0, sizeof(handle->clients[idx]));
-}
-
-void can_core_unregister_rx_queue(can_core_handle_t *handle, int idx)
-{
-    if (!handle || idx < 0 || idx >= CAN_CORE_MAX_QUEUE_SUBSCRIBERS)
-    {
-        return;
-    }
-
-    memset(&handle->queue_subscribers[idx], 0,
-           sizeof(handle->queue_subscribers[idx]));
-}
-
-/* -------------------------------------------------------------------------
- * can_core_set_filter
- * ------------------------------------------------------------------------- */
-void can_core_set_filter(can_core_handle_t *handle,
-                            int idx,
-                            uint32_t filter,
-                            uint32_t mask,
-                            bool ext)
-{
-    if (!handle || idx < 0 || idx >= CAN_CORE_MAX_CLIENTS)
-    {
-        return;
-    }
-    handle->clients[idx].filter = filter;
-    handle->clients[idx].mask   = mask;
-    handle->clients[idx].ext    = ext;
-}
-
-void can_core_set_rx_queue_filter(can_core_handle_t *handle,
-                                    int idx,
-                                    uint32_t filter,
-                                    uint32_t mask,
-                                    bool ext)
-{
-    if (!handle || idx < 0 || idx >= CAN_CORE_MAX_QUEUE_SUBSCRIBERS)
-    {
-        return;
-    }
-
-    handle->queue_subscribers[idx].filter = filter;
-    handle->queue_subscribers[idx].mask = mask;
-    handle->queue_subscribers[idx].ext = ext;
-}
-
-/* -------------------------------------------------------------------------
- * can_core_set_monitor_all
- * ------------------------------------------------------------------------- */
-void can_core_set_monitor_all(can_core_handle_t *handle,
-                                 int idx,
-                                 bool monitor_all)
-{
-    if (!handle || idx < 0 || idx >= CAN_CORE_MAX_CLIENTS)
-    {
-        return;
-    }
-    handle->clients[idx].monitor_all = monitor_all;
-}
-
-void can_core_set_rx_queue_monitor_all(can_core_handle_t *handle,
-                                         int idx,
-                                         bool monitor_all)
-{
-    if (!handle || idx < 0 || idx >= CAN_CORE_MAX_QUEUE_SUBSCRIBERS)
-    {
-        return;
-    }
-
-    handle->queue_subscribers[idx].monitor_all = monitor_all;
-}
+/* The client / queue-subscriber tables (register, unregister, filter,
+ * name, count) live in can_core_clients.c. */
 
 /* -------------------------------------------------------------------------
  * can_core_transmit
@@ -588,26 +372,23 @@ elm327_err_t can_core_transmit(can_core_handle_t *handle,
     }
 
 #ifdef ESP_PLATFORM
-    uint8_t buf[8];
-    twai_frame_t f = { 0 };
-
-    f.header.id  = frame->id;
-    f.header.ide = frame->ext ? 1 : 0;
-    f.header.rtr = frame->rtr ? 1 : 0;
-    f.header.dlc = frame->dlc;
-
-    if (!frame->rtr)
+    /* the node talks only once its bitrate is proven (or a fixed-bitrate
+     * bus stayed silent): until then, and during a bounce, refuse */
+    if (!can_link_tx_enter(handle, timeout_ms))
     {
-        memcpy(buf, frame->data, frame->dlc);
-        f.buffer     = buf;
-        f.buffer_len = frame->dlc;
+        return ELM327_ERR_BUSY;
     }
 
-    esp_err_t ret = twai_node_transmit(s_node, &f, (int)timeout_ms);
-    if (ret != ESP_OK)
+    /* from a slot the driver owns until the frame's tx_done (and retries
+       a lost frame from there): can_core_driver.c */
+    elm327_err_t rc = can_drv_transmit(frame, timeout_ms);
+
+    can_link_tx_exit(handle);
+
+    if (rc != ELM327_OK)
     {
         handle->stats.tx_errors++;
-        return (ret == ESP_ERR_TIMEOUT) ? ELM327_ERR_BUSY : ELM327_ERR_CAN;
+        return rc;
     }
 
     handle->stats.tx_count++;
@@ -632,10 +413,29 @@ void can_core_get_stats(can_core_handle_t *handle,
     }
 
 #ifdef ESP_PLATFORM
+    /* the ISR counts in internal RAM (it must not touch this handle: it
+     * lives in PSRAM): fold its counters in here, in task context */
+    can_drv_counters_t isr;
+
+    can_drv_counters(&isr);
+    handle->stats.rx_missed = isr.rx_missed - handle->isr_base_rx_missed;
+    handle->stats.rx_overrun = isr.rx_overrun - handle->isr_base_rx_overrun;
+    handle->stats.rx_bad = isr.rx_bad - handle->isr_base_rx_bad;
+    handle->stats.arb_lost = isr.arb_lost - handle->isr_base_arb_lost;
+    handle->stats.err_stuff = isr.err_stuff - handle->isr_base_err[0];
+    handle->stats.err_form = isr.err_form - handle->isr_base_err[1];
+    handle->stats.err_bit = isr.err_bit - handle->isr_base_err[2];
+    handle->stats.err_ack = isr.err_ack - handle->isr_base_err[3];
+    handle->stats.err_other = isr.err_other - handle->isr_base_err[4];
+    handle->stats.tx_retries = isr.tx_retries - handle->isr_base_tx[0];
+    handle->stats.tx_lost = isr.tx_lost - handle->isr_base_tx[1];
+    handle->stats.tx_done = isr.tx_done - handle->isr_base_tx[2];
+    handle->stats.rx_storms = isr.rx_storms - handle->isr_base_storms;
+
     twai_node_status_t info;
     twai_node_record_t rec;
-    if (s_node != NULL &&
-        twai_node_get_info(s_node, &info, &rec) == ESP_OK)
+    if (can_drv_node != NULL &&
+        twai_node_get_info(can_drv_node, &info, &rec) == ESP_OK)
     {
         handle->stats.bus_errors = rec.bus_err_num;
         handle->stats.tx_errors  = info.tx_error_count;
@@ -673,59 +473,29 @@ void can_core_reset_stats(can_core_handle_t *handle)
         return;
     }
     memset(&handle->stats, 0, sizeof(handle->stats));
-}
-
-elm327_err_t can_core_set_silent_mode(can_core_handle_t *handle,
-                                        bool silent_mode)
-{
-    if (!handle || !handle->initialised)
-    {
-        return ELM327_ERR_NOT_INIT;
-    }
-
-    if (handle->config.silent_mode == silent_mode)
-    {
-        return ELM327_OK;
-    }
-
-    handle->config.silent_mode = silent_mode;
 
 #ifdef ESP_PLATFORM
-    handle->reconfiguring = true;
-    can_rx_wait_parked(handle);
-    can_driver_stop(handle);
-    elm327_err_t err = can_driver_start_on_core(handle, &handle->config);
-    handle->reconfiguring = false;
-    return err;
-#else
-    return ELM327_OK;
+    can_drv_counters_t isr;
+
+    can_drv_counters(&isr);
+    handle->isr_base_rx_missed = isr.rx_missed;
+    handle->isr_base_rx_overrun = isr.rx_overrun;
+    handle->isr_base_rx_bad = isr.rx_bad;
+    handle->isr_base_arb_lost = isr.arb_lost;
+    handle->isr_base_err[0] = isr.err_stuff;
+    handle->isr_base_err[1] = isr.err_form;
+    handle->isr_base_err[2] = isr.err_bit;
+    handle->isr_base_err[3] = isr.err_ack;
+    handle->isr_base_err[4] = isr.err_other;
+    handle->isr_base_tx[0] = isr.tx_retries;
+    handle->isr_base_tx[1] = isr.tx_lost;
+    handle->isr_base_tx[2] = isr.tx_done;
+    handle->isr_base_storms = isr.rx_storms;
 #endif
 }
 
-/* -------------------------------------------------------------------------
- * can_core_set_baud
- * ------------------------------------------------------------------------- */
-elm327_err_t can_core_set_baud(can_core_handle_t *handle,
-                                  uint32_t baud_kbps)
-{
-    if (!handle || !handle->initialised)
-    {
-        return ELM327_ERR_NOT_INIT;
-    }
-
-    handle->config.baud_kbps = baud_kbps;
-
-#ifdef ESP_PLATFORM
-    handle->reconfiguring = true;
-    can_rx_wait_parked(handle);
-    can_driver_stop(handle);
-    elm327_err_t err = can_driver_start_on_core(handle, &handle->config);
-    handle->reconfiguring = false;
-    return err;
-#else
-    return ELM327_OK;
-#endif
-}
+/* can_core_set_silent_mode() and can_core_set_baud() live in
+ * can_core_link.c: they go through the listen-before-talk policy. */
 
 static bool can_subscription_matches_frame(uint32_t filter,
                                            uint32_t mask,
@@ -780,88 +550,11 @@ static bool dispatch_frame_to_queue_subscriber(QueueHandle_t queue,
 }
 
 #ifdef ESP_PLATFORM
-static elm327_err_t can_driver_start(can_core_handle_t *handle,
-                                     const can_core_config_t *config)
-{
-    if (config->baud_kbps < 25 || config->baud_kbps > 1000)
-    {
-        ESP_LOGE(TAG, "Unsupported baud rate: %lu kbps",
-                 config->baud_kbps);
-        return ELM327_ERR_CAN;
-    }
-
-    if (s_rx_q == NULL)
-    {
-        s_rx_q = xQueueCreateStatic(CAN_CORE_RXQ_DEPTH,
-                                    sizeof(can_rx_raw_t), s_rxq_store,
-                                    &s_rxq_buf);
-    }
-    xQueueReset(s_rx_q);
-    s_evt_bus_off = false;
-    s_evt_recovered = false;
-
-    twai_onchip_node_config_t node_cfg =
-    {
-        .io_cfg =
-        {
-            .tx = (gpio_num_t)config->tx_gpio,
-            .rx = (gpio_num_t)config->rx_gpio,
-            .quanta_clk_out = GPIO_NUM_NC,
-            .bus_off_indicator = GPIO_NUM_NC,
-        },
-        .bit_timing = { .bitrate = config->baud_kbps * 1000 },
-        .tx_queue_depth = (uint32_t)(config->tx_queue_depth > 0
-                                     ? config->tx_queue_depth : 16),
-        /* FINITE retry (was -1 = forever): a tx on a mismatched-baud
-           bus parks the node error-passive (TEC pinned at 128, never
-           bus-off) spewing ~1800 error frames/s UNTIL the next driver
-           bounce — the reconfig hammer surfaced it 2026-07-22. 512
-           attempts ≈ 130 ms at 500k: rides out any real arbitration/
-           error transient, then gives up like an ELM327 does. */
-        .fail_retry_cnt = 512,
-        .flags = { .enable_listen_only = config->silent_mode },
-    };
-
-    can_core_recovery_reset(&handle->recovery);
-
-    esp_err_t ret = twai_new_node_onchip(&node_cfg, &s_node);
-
-    if (ret != ESP_OK)
-    {
-        ESP_LOGE(TAG, "twai_new_node_onchip failed: %d", ret);
-        s_node = NULL;
-        return ELM327_ERR_CAN;
-    }
-
-    twai_event_callbacks_t cbs =
-    {
-        .on_rx_done = can_on_rx_done,
-        .on_state_change = can_on_state_change,
-    };
-
-    ret = twai_node_register_event_callbacks(s_node, &cbs, handle);
-
-    if (ret == ESP_OK)
-    {
-        ret = twai_node_enable(s_node);
-    }
-
-    if (ret != ESP_OK)
-    {
-        ESP_LOGE(TAG, "twai node enable failed: %d", ret);
-        (void)twai_node_delete(s_node);
-        s_node = NULL;
-        return ELM327_ERR_CAN;
-    }
-
-    return ELM327_OK;
-}
-
 /* Rendezvous with the RX task before a driver bounce: caller sets
  * handle->reconfiguring, then waits for rx_parked -- the task must be
  * provably outside a receive when the node is torn down (belt to the
  * static-queue braces; kept from the 2026-07-21 legacy-driver fix). */
-static void can_rx_wait_parked(can_core_handle_t *handle)
+void can_core_rx_wait_parked(can_core_handle_t *handle)
 {
     for (int i = 0; i < 50 && !handle->rx_parked && !handle->rx_exited;
          i++)
@@ -872,24 +565,5 @@ static void can_rx_wait_parked(can_core_handle_t *handle)
     {
         ESP_LOGE(TAG, "rx task did not park; reconfiguring anyway");
     }
-}
-
-static void can_driver_stop(can_core_handle_t *handle)
-{
-    if (!handle || s_node == NULL)
-    {
-        return;
-    }
-
-    (void)twai_node_disable(s_node);
-
-    esp_err_t ret = twai_node_delete(s_node);
-
-    if (ret != ESP_OK)
-    {
-        ESP_LOGE(TAG, "twai_node_delete failed: %d", ret);
-    }
-
-    s_node = NULL;
 }
 #endif

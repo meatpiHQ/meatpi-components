@@ -27,6 +27,7 @@
  *        boot-applied bus knobs + the settings-gated CLI registration §6b).
  */
 #include <stdlib.h>
+#include <string.h>
 
 #include "settings_manager.h"
 
@@ -35,7 +36,10 @@
 static const settings_field_t FIELDS[] =
 {
     SETTINGS_BOOL("enabled", false),
-    SETTINGS_STR_ENUM("baud", "33,83,95,100,125,250,500,1000", "500"),
+    /* "auto": the node listens (it cannot transmit while it does) and
+       takes the bitrate whose frames it can read; a silent bus has none,
+       so a node that must talk first needs a fixed bitrate */
+    SETTINGS_STR_ENUM("baud", "auto,33,83,95,100,125,250,500,1000", "500"),
     SETTINGS_BOOL("silent", false),
     SETTINGS_BOOL("cli", true),
 };
@@ -43,7 +47,7 @@ static const settings_field_t FIELDS[] =
 /* boot-applied settings */
 static bool s_enabled;
 static bool s_silent;
-static uint32_t s_baud_kbps = 500;
+static uint32_t s_baud_kbps = 500; /* 0 = auto */
 static bool s_configured;
 
 bool canm_settings_enabled(void)
@@ -79,11 +83,18 @@ static esp_err_t on_apply(const cJSON *settings)
 
     if (cJSON_IsString(baud) && baud->valuestring != NULL)
     {
-        int v = atoi(baud->valuestring);
-
-        if (v > 0)
+        if (strcmp(baud->valuestring, "auto") == 0)
         {
-            s_baud_kbps = (uint32_t)v;
+            s_baud_kbps = 0;
+        }
+        else
+        {
+            int v = atoi(baud->valuestring);
+
+            if (v > 0)
+            {
+                s_baud_kbps = (uint32_t)v;
+            }
         }
     }
 
@@ -107,7 +118,8 @@ esp_err_t canm_settings_register(void)
     static const settings_descriptor_t DESC =
     {
         .name        = "can_manager",
-        .version     = 1,
+        .version     = 2, /* v2 (2026-10-02): baud gains "auto"; every v1
+                             value stays valid, nothing to migrate */
         .fields      = FIELDS,
         .field_count = sizeof(FIELDS) / sizeof(FIELDS[0]),
         .on_apply    = on_apply,

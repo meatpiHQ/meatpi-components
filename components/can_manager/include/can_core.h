@@ -42,6 +42,7 @@
 #include <stddef.h>
 #include "elm327_err.h"
 #include "can_core_recovery.h"
+#include "can_autobaud_core.h"
 
 #ifdef ESP_PLATFORM
 #include "freertos/FreeRTOS.h"
@@ -63,8 +64,12 @@ extern "C" {
 #define CAN_CORE_MAX_CLIENTS      4
 #endif
 
+/* Task-owned RX queues. 8 until 2026-10-03, which today's consumers fill
+ * but for one slot (four J2534 channels, uds_manager's ISO-TP session, the
+ * bridge endpoints' shared queue, the frame logger); J1939 is the eighth.
+ * The RX task walks the table once per frame: 16 flag tests. */
 #ifndef CAN_CORE_MAX_QUEUE_SUBSCRIBERS
-#define CAN_CORE_MAX_QUEUE_SUBSCRIBERS 8
+#define CAN_CORE_MAX_QUEUE_SUBSCRIBERS 16
 #endif
 
 /* -------------------------------------------------------------------------
@@ -124,6 +129,12 @@ typedef struct
     bool                  ext;          /**< True = match 29-bit IDs.        */
     bool                  monitor_all;  /**< True = ignore filter / mask.    */
     bool                  active;       /**< True if slot is in use.         */
+    const char           *name;         /**< Who it is, for the status views:
+                                             a string that outlives the
+                                             subscription, or NULL.          */
+    uint32_t              drops;        /**< Frames this queue lost (full: the
+                                             oldest one made room). Zeroed at
+                                             registration.                   */
 } can_core_queue_subscriber_t;
 
 /* -------------------------------------------------------------------------
@@ -133,11 +144,40 @@ typedef struct
 {
     int      tx_gpio;        /**< GPIO pin for TWAI TX.                      */
     int      rx_gpio;        /**< GPIO pin for TWAI RX.                      */
-    uint32_t baud_kbps;      /**< Bus speed in kbit/s (e.g. 500).            */
-    bool     silent_mode;    /**< Bus-wide silent mode (no ACK).             */
+    uint32_t baud_kbps;      /**< Bus speed in kbit/s (e.g. 500). Ignored
+                                  when n_baud_candidates > 1.                */
+    bool     silent_mode;    /**< Listen-only for good: the node never gets
+                                  its TX pin (no ACK, no frame, no flag).    */
     size_t   rx_queue_depth; /**< TWAI RX queue depth (frames).              */
     size_t   tx_queue_depth; /**< TWAI TX queue depth (frames).              */
+    uint16_t baud_candidates[CAN_AB_MAX_CANDIDATES]; /**< Auto: the bitrates
+                                  to try, kbit/s, in order.                  */
+    uint8_t  n_baud_candidates; /**< 0 or 1 = fixed (baud_kbps), more = auto. */
+    uint16_t link_retry_ms;  /**< Auto: rest after a round without a readable
+                                  bitrate; 0 = the policy's default.         */
+    bool     quiet_link;     /**< The link's verdicts go to the debug log: an
+                                  internal listener, not the user's bus.     */
 } can_core_config_t;
+
+/* -------------------------------------------------------------------------
+ * The node's link to the bus (listen before talk, can_autobaud_core.h)
+ *
+ * The node always starts listen-only and without its TX pin. It is promoted
+ * to normal mode once frames prove the bitrate (or a fixed-bitrate bus stayed
+ * silent), and demoted again when the bus turns unreadable.
+ * ------------------------------------------------------------------------- */
+typedef struct
+{
+    const char *state;       /**< "detecting", "listening", "mismatch" or
+                                  "running" (can_ab_state_name).             */
+    uint32_t baud_kbps;      /**< The bitrate the node is at.                */
+    uint32_t detected_kbps;  /**< Last bitrate proven by frames, 0 = none.   */
+    bool     autobaud;       /**< More than one candidate.                   */
+    bool     listen_only;    /**< The node cannot transmit right now.        */
+    bool     verified;       /**< Frames were read at this bitrate.          */
+    uint32_t switches;       /**< Auto: candidate changes.                   */
+    uint32_t demotions;      /**< Normal -> listen-only by the watchdog.     */
+} can_core_link_t;
 
 /* -------------------------------------------------------------------------
  * CAN bus state (mapped from the TWAI driver; RECOVERING also covers the
@@ -165,7 +205,40 @@ typedef struct
     uint32_t bus_off_count;  /**< Times the controller entered bus-off.      */
     uint32_t recovery_count; /**< Successful automatic bus restarts.         */
     uint32_t rx_missed;      /**< Wire frames lost to a full TWAI RX queue.  */
+    uint32_t tx_retries;     /**< Transmissions repeated after a lost one (the
+                                  controller is single shot; the driver's
+                                  tx_done interrupt re-queues a frame up to
+                                  CAN_DRV_TX_RETRIES times, 2026-10-03).      */
+    uint32_t tx_lost;        /**< Frames given up on after those retries.    */
+    uint32_t tx_done;        /**< Frames the controller reported sent.       */
+    uint32_t rx_overrun;     /**< Wire frames the controller's own FIFO lost
+                                  (64 bytes: the receive interrupt was served
+                                  too late). Before 2026-10-03 these vanished
+                                  without a trace.                            */
     uint32_t dispatch_drops; /**< Drop-oldest evictions in subscriber queues.*/
+    uint32_t rx_bad;         /**< Errors seen while RECEIVING (stuff / form /
+                                  CRC; every error while listen-only): what
+                                  a wrong bitrate produces, without a frame. */
+    uint32_t tx_refused;     /**< Transmits asked while the node may not talk
+                                  (listening, mismatch, being reconfigured). */
+    uint32_t rx_storms;      /**< Receive-error storms (>= 20 000 errors/s, a
+                                  bitrate close to the bus's) that masked the
+                                  controller's interrupts until the next node
+                                  start: an interrupt watchdog reset before
+                                  2026-10-03                                  */
+    uint32_t rx_deaf;        /**< Looks at the RX line that found the bus busy
+                                  while the listening controller reported
+                                  neither a frame nor an error: traffic it
+                                  cannot even fail on (a saturated bus at a
+                                  higher bitrate).                            */
+    uint32_t err_stuff;      /**< bus_errors by kind, as the controller names
+                                  them. A receiver's errors are stuff, form
+                                  and other (CRC); bit and ack belong to our
+                                  own transmissions.                          */
+    uint32_t err_form;
+    uint32_t err_bit;
+    uint32_t err_ack;
+    uint32_t err_other;
     uint8_t  bus_state;      /**< can_core_bus_state_t snapshot.           */
 } can_core_stats_t;
 
@@ -179,6 +252,33 @@ typedef struct can_core_handle_s
     can_core_queue_subscriber_t queue_subscribers[CAN_CORE_MAX_QUEUE_SUBSCRIBERS]; /**< Task RX queues. */
     can_core_stats_t   stats;                           /**< Statistics.   */
     can_core_recovery_t recovery;      /**< Bus-off restart policy state.  */
+    can_ab_t             ab;            /**< Listen-before-talk policy state. */
+    volatile uint32_t    link_frames;   /**< Frames received: the policy's
+                                             evidence. Never zeroed (stats can
+                                             be, from the CLI). Its receive
+                                             errors come straight from the
+                                             driver's ISR counters.            */
+    uint32_t             isr_base_rx_overrun; /**< (see isr_base_rx_missed)  */
+    uint32_t             isr_base_rx_missed; /**< ISR counters at the last   */
+    uint32_t             isr_base_rx_bad;    /**< stats reset: stats report  */
+    uint32_t             isr_base_arb_lost;  /**< the difference.            */
+    uint32_t             isr_base_err[5];    /**< Same, the errors by kind.  */
+    uint32_t             isr_base_tx[3];     /**< Same: retries, lost, done. */
+    uint32_t             isr_base_storms;    /**< Same: the storms.          */
+    uint32_t             deaf;          /**< Evidence the controller did not
+                                             give: the RX line was busy while
+                                             it reported neither a frame nor
+                                             an error (can_core_link.c). Added
+                                             to its receive errors for the
+                                             policy. Never zeroed.             */
+    uint32_t             line_ms;       /**< When the RX line was last looked
+                                             at, and the counters then.        */
+    uint32_t             line_frames;
+    uint32_t             line_bad;
+    uint32_t             node_baud_kbps; /**< What the node runs at right now. */
+    volatile bool        node_listen;   /**< Node is listen-only (no TX pin).  */
+    volatile bool        tx_open;       /**< Transmit allowed: normal mode, up. */
+    volatile int         tx_users;      /**< Transmits in flight (the gate).   */
     volatile bool        initialised;                     /**< Init flag.    */
     volatile bool        reconfiguring;                   /**< Driver reconfigure in progress. */
     volatile bool        rx_parked;   /**< RX task ack: parked outside twai_receive. */
@@ -208,6 +308,17 @@ elm327_err_t can_core_init(can_core_handle_t *handle,
 void can_core_deinit(can_core_handle_t *handle);
 
 /**
+ * @brief Take the controller off the bus at once, without teardown.
+ *
+ * For the restart path: nothing is waited for, the RX task and every
+ * registration stay as they are. The controller neither receives nor
+ * transmits afterwards; only a deinit + init brings it back.
+ *
+ * @param handle  CAN handle.
+ */
+void can_core_quiesce(can_core_handle_t *handle);
+
+/**
  * @brief Register an AT engine as a CAN client.
  *
  * Returns a client slot index (0 to CAN_CORE_MAX_CLIENTS-1).
@@ -232,6 +343,19 @@ int can_core_register_client(can_core_handle_t *handle,
  */
 int can_core_register_rx_queue(can_core_handle_t *handle,
                                  const can_core_queue_subscriber_t *subscriber);
+
+/** Name a queue subscriber for the status views. @p name must outlive the
+ *  subscription (a string literal). */
+void can_core_set_rx_queue_name(can_core_handle_t *handle, int idx,
+                                const char *name);
+
+/** Queue subscriber slots in use. */
+int can_core_rx_queue_count(const can_core_handle_t *handle);
+
+/** A copy of the subscriber record in slot @p idx; false when the slot is
+ *  free or out of range. */
+bool can_core_get_rx_queue(const can_core_handle_t *handle, int idx,
+                           can_core_queue_subscriber_t *out);
 
 /**
  * @brief Unregister a CAN client.
@@ -311,7 +435,9 @@ void can_core_set_rx_queue_monitor_all(can_core_handle_t *handle,
  * @param frame    Frame to transmit.
  * @param timeout_ms  Timeout in milliseconds (0 = non-blocking).
  * @return ELM327_OK on success, ELM327_ERR_BUSY if the TX queue stays full
- *         until timeout, or ELM327_ERR_CAN on driver error.
+ *         until timeout or the node may not talk within it (listen-only,
+ *         bitrate not proven, mismatch: counted in tx_refused), or
+ *         ELM327_ERR_CAN on driver error.
  */
 elm327_err_t can_core_transmit(can_core_handle_t *handle,
                                    const can_core_frame_t *frame,
@@ -334,7 +460,20 @@ void can_core_get_stats(can_core_handle_t *handle,
 void can_core_reset_stats(can_core_handle_t *handle);
 
 /**
+ * @brief Read the node's link to the bus: policy state, bitrate, mode.
+ *
+ * @param handle  CAN handle.
+ * @param out     Output structure.
+ */
+void can_core_get_link(can_core_handle_t *handle, can_core_link_t *out);
+
+/**
  * @brief Change CAN silent/listen-only mode without losing client registrations.
+ *
+ * To listen-only: at once. To normal: at once when the bitrate in use is
+ * proven or the node already reached its verdict; otherwise the node keeps
+ * listening and the listen-before-talk policy promotes it when it may talk
+ * (frames at this bitrate, or a fixed-bitrate bus that stays silent).
  *
  * @param handle       CAN handle.
  * @param silent_mode  True for listen-only mode, false for normal mode.
@@ -346,7 +485,9 @@ elm327_err_t can_core_set_silent_mode(can_core_handle_t *handle,
 /**
  * @brief Change the bus speed (requires reinitialisation).
  *
- * Stops the bus, reconfigures at the new rate, and restarts.
+ * Stops the bus and restarts it at the new, FIXED rate, listen-only: the
+ * listen-before-talk policy starts over and promotes the node when it may
+ * talk. A transmit before that is refused (ELM327_ERR_BUSY).
  *
  * @param handle     CAN handle.
  * @param baud_kbps  New baud rate in kbit/s.

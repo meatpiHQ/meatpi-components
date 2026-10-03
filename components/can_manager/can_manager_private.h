@@ -38,5 +38,28 @@ esp_err_t canm_settings_register(void);
 /* boot-applied knobs; valid once canm_settings_is_configured() (§4.3) */
 bool     canm_settings_enabled(void);
 bool     canm_settings_silent(void);
-uint32_t canm_settings_baud_kbps(void);
+uint32_t canm_settings_baud_kbps(void);      /* 0 = auto */
 bool     canm_settings_is_configured(void);
+
+/* ---- the one bus handle and its life (can_manager.c) ------------------------ */
+
+struct can_core_handle_s;
+/** The one can_core handle: the running bus, or the probe / watch node. */
+struct can_core_handle_s *cm_bus(void);
+bool cm_started(void);                       /* can_manager_start() ran    */
+bool cm_running(void);                       /* the bus is up by settings  */
+/** start / stop / probe / watch / sample never overlap. */
+void cm_life_take(void);
+void cm_life_give(void);
+/** Transceiver standby pin. */
+void cm_standby(bool standby);
+
+/* ---- probe, watch, id sample (can_manager_probe.c) --------------------------- */
+
+#define CM_PROBE_SILENT_MS 400u /* nothing heard for this long: a silent bus */
+#define CM_PROBE_MAX_MS   1500u /* no verdict by then: not silent, not
+                                   readable                                  */
+
+bool cm_probe_node_up(void);     /* a probe or watch node is up            */
+void cm_probe_node_dropped(void);/* can_manager_stop() took the node down  */
+void cm_node_came_up(void);      /* the node in use came up now            */

@@ -480,6 +480,10 @@ static esp_err_t isotp_open(const can_isotp_cfg_t *cfg,
                      esp_err_to_name(err), CAN_CORE_MAX_QUEUE_SUBSCRIBERS);
             s->sub_idx = -1;
         }
+        else
+        {
+            (void)can_manager_subscriber_name(s->sub_idx, "isotp");
+        }
     }
 
     if (err == ESP_OK)

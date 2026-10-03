@@ -93,6 +93,10 @@ static const uds_transport_t *resolve_transport(void)
     bool can_up = (can_manager_core_handle() != NULL);
     /* fw ISO-TP needs the bus AND a registered provider (can_isotp.h) */
     bool isotp_ok = can_up && (can_isotp() != NULL);
+    /* ... and `auto` needs a node that may TALK: the native node listens
+       first (can_manager, listen before talk) and stays listen-only on a
+       bus its bitrate cannot read, where the chip is the path that works */
+    bool isotp_talks = isotp_ok && can_manager_tx_ready();
 
     switch (uds_settings_config()->backend)
     {
@@ -107,8 +111,8 @@ static const uds_transport_t *resolve_transport(void)
 
     case UDS_BACKEND_AUTO:
     default:
-        /* isotp when available (most capable), else the MIC */
-        return isotp_ok ? uds_transport_isotp() : uds_transport_obd();
+        /* isotp when it can talk (most capable), else the MIC */
+        return isotp_talks ? uds_transport_isotp() : uds_transport_obd();
     }
 }
 

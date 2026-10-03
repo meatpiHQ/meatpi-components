@@ -75,6 +75,15 @@ const uds_transport_t *uds_transport_isotp(void);
 typedef esp_err_t (*uds_at_request_fn)(const char *cmd, char *resp,
                                        size_t resp_len, uint32_t timeout_ms);
 
+/** The bitrate the target setup pins: 500 (ATTP6 / ATTP7, the default) or
+ *  250 (ATTP8 / ATTP9). The obd_chip transport sets it from what the native
+ *  controller heard on the bus. Anything but 250 means 500. */
+void uds_at_set_can_kbps(uint16_t kbps);
+
+/** The chip protocol character the setup pins for an 11-bit / 29-bit
+ *  target at the bitrate set above. PURE. */
+char uds_at_protocol(bool ext_id);
+
 /** The same with @p skip_setup: the caller knows the chip is still in this
  *  address' setup (nobody else wrote to it since), so only the request
  *  line goes out — one request = one AT round-trip. */
@@ -98,9 +107,28 @@ esp_err_t uds_at_transceive(uds_at_request_fn req_fn,
  *  into UDS payload bytes. Host-tested. Returns false on no hex / a
  *  chip error token / overflow. */
 /** The same, also counting the chip's '7F xx 78' responsePending lines
- *  that preceded the final answer (dropped from @p out). */
+ *  that preceded the final answer (dropped from @p out). A multi-frame
+ *  message is trimmed to the size its length line announces; one that
+ *  is SHORTER than announced (cut by the response-count digit) is not a
+ *  message: false. */
 bool uds_at_parse_response_ex(const char *resp, uint8_t *out, size_t cap,
                               size_t *out_len, uint8_t *pending_out);
+
+/** The worker behind both: also hands back the announced ISO-TP total of
+ *  the returned message (0 = single frame) and DOES return a cut message
+ *  (@p out_len < @p announced_out), so the transport can ask again. PURE. */
+bool uds_at_parse_response_len(const char *resp, uint8_t *out, size_t cap,
+                               size_t *out_len, uint8_t *pending_out,
+                               size_t *announced_out);
+
+/** Lines the chip prints for an ISO-TP message of @p total bytes (first
+ *  frame 6 payload bytes, then 7 per line; 1 up to 7 bytes): the
+ *  response-count digit a multi-frame request needs. PURE. */
+uint8_t uds_at_lines_for(size_t total);
+
+/** The response-count digit of the FIRST attempt for service @p sid: '1',
+ *  or '\0' (none) for the services that must not be sent twice. PURE. */
+char uds_at_first_digit(uint8_t sid);
 
 bool uds_at_parse_response(const char *resp, uint8_t *out, size_t cap,
                            size_t *out_len);

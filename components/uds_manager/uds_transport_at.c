@@ -25,7 +25,8 @@
  * @brief The AT-hex transaction behind the obd_chip transport, plus the
  *        pure response parser (host-tested).
  *
- * Per target: set the protocol (ATTP6/7, RAM-only), tx header (ATSH /
+ * Per target: set the protocol (ATTP6/7 at 500k, ATTP8/9 at 250k,
+ * RAM-only), tx header (ATSH /
  * ATCP+ATSH for 29-bit), rx filter (ATCRA), headers-off + auto-formatting
  * so the chip does ISO-TP and hands us the pure UDS payload, and the
  * chip's own reply wait (ATST) from p2. The setup goes out when the
@@ -59,6 +60,27 @@ EXT_RAM_BSS_ATTR static char s_rbuf[UDS_AT_RBUF];
 
 /* one AT line on the chip: 64 request bytes (the route caps there too) */
 #define UDS_AT_REQ_MAX 64
+
+/* the bitrate the target setup pins: 500 kbit/s unless the caller measured
+   the bus at 250 (uds_at_set_can_kbps) */
+static uint16_t s_can_kbps = 500;
+
+void uds_at_set_can_kbps(uint16_t kbps)
+{
+    s_can_kbps = (kbps == 250) ? 250 : 500;
+}
+
+char uds_at_protocol(bool ext_id)
+{
+    /* ISO 15765-4: 6 = 11-bit 500k, 7 = 29-bit 500k, 8 = 11-bit 250k,
+       9 = 29-bit 250k */
+    if (s_can_kbps == 250)
+    {
+        return ext_id ? '9' : '8';
+    }
+
+    return ext_id ? '7' : '6';
+}
 
 /* ---- pure response parser --------------------------------------------------- */
 
@@ -181,9 +203,75 @@ static bool collect_line_bytes(const char *p, size_t len, uint8_t *out,
     return true;
 }
 
-bool uds_at_parse_response_ex(const char *resp, uint8_t *out, size_t cap,
-                              size_t *out_len, uint8_t *pending_out)
+uint8_t uds_at_lines_for(size_t total)
 {
+    /* first frame = 6 payload bytes, every consecutive frame 7 */
+    if (total <= 7)
+    {
+        return 1;
+    }
+
+    size_t lines = 1 + (total - 6 + 6) / 7;
+
+    return (lines > 255) ? 255 : (uint8_t)lines;
+}
+
+char uds_at_first_digit(uint8_t sid)
+{
+    /* "1" hands a single-frame answer over at once, and a longer answer is
+     * cut and asked for AGAIN. Services that change the server's state and
+     * may answer in more than one frame must not go out twice (a second
+     * requestSeed, a second routine start): no digit, the chip prints every
+     * frame and waits for more (bench 2026-10-02: +85 ms at ATST32, 7F xx
+     * 78 lines are ridden out the same way). */
+    switch (sid)
+    {
+    case 0x27: /* SecurityAccess          */
+    case 0x29: /* Authentication          */
+    case 0x31: /* RoutineControl          */
+    case 0x38: /* RequestFileTransfer     */
+    case 0x84: /* SecuredDataTransmission */
+        return '\0';
+
+    default:
+        return '1';
+    }
+}
+
+/** The ISO-TP total of a multi-frame length line ("014"), 0 = not one. */
+static size_t length_line_value(const char *p, size_t len)
+{
+    size_t v = 0;
+
+    if (len == 0 || len > 4)
+    {
+        return 0;
+    }
+
+    for (size_t i = 0; i < len; i++)
+    {
+        if (!isxdigit((unsigned char)p[i]))
+        {
+            return 0;
+        }
+
+        char c = (char)toupper((unsigned char)p[i]);
+
+        v = (v << 4) | (size_t)((c >= 'A') ? (c - 'A' + 10) : (c - '0'));
+    }
+
+    return v;
+}
+
+bool uds_at_parse_response_len(const char *resp, uint8_t *out, size_t cap,
+                               size_t *out_len, uint8_t *pending_out,
+                               size_t *announced_out)
+{
+    if (announced_out != NULL)
+    {
+        *announced_out = 0;
+    }
+
     if (resp == NULL || out == NULL || out_len == NULL)
     {
         return false;
@@ -201,10 +289,17 @@ bool uds_at_parse_response_ex(const char *resp, uint8_t *out, size_t cap,
      * by indexed lines ("0: ..", "1: .."). With the response-count digit
      * the chip still prints every '7F xx 78' responsePending it saw before
      * the final answer (bench 2026-09-16, ELM327 v2.3 core): those are
-     * counted and dropped, the LAST remaining message is the answer. */
+     * counted and dropped, the LAST remaining message is the answer.
+     * The length line is the message's size: the last frame's padding is
+     * cut off, and fewer bytes than announced means the chip stopped
+     * printing early (the response-count digit counts LINES; bench
+     * 2026-10-02: every multi-frame answer came back as its first 6
+     * bytes and was handed over as complete). */
     size_t n = 0;          /* bytes of the message being collected        */
     bool have = false;     /* a complete non-pending message sits in out  */
     bool in_multi = false; /* collecting indexed lines                    */
+    size_t total = 0;      /* announced size of the multi-frame message   */
+    size_t announced = 0;  /* ... of the message that sits in out         */
     uint8_t pending = 0;
 
     const char *p = resp;
@@ -235,6 +330,7 @@ bool uds_at_parse_response_ex(const char *resp, uint8_t *out, size_t cap,
                     in_multi = true; /* (no length line seen: tolerate) */
                     n = 0;
                     have = false;
+                    total = 0;
                 }
 
                 if (!collect_line_bytes(p, len, out, cap, &n))
@@ -260,7 +356,14 @@ bool uds_at_parse_response_ex(const char *resp, uint8_t *out, size_t cap,
                 if (in_multi)
                 {
                     in_multi = false;
+
+                    if (total > 0 && n > total)
+                    {
+                        n = total; /* the last frame's padding */
+                    }
+
                     have = (n > 0);
+                    announced = total;
                 }
 
                 if (next_indexed)
@@ -268,6 +371,7 @@ bool uds_at_parse_response_ex(const char *resp, uint8_t *out, size_t cap,
                     in_multi = true;
                     n = 0;
                     have = false;
+                    total = length_line_value(p, len);
                 }
                 else
                 {
@@ -294,6 +398,7 @@ bool uds_at_parse_response_ex(const char *resp, uint8_t *out, size_t cap,
                         memcpy(out, sf, m);
                         n = m;
                         have = true;
+                        announced = 0; /* a single frame */
                     }
                 }
             }
@@ -304,7 +409,13 @@ bool uds_at_parse_response_ex(const char *resp, uint8_t *out, size_t cap,
 
     if (in_multi)
     {
+        if (total > 0 && n > total)
+        {
+            n = total;
+        }
+
         have = (n > 0);
+        announced = total;
     }
 
     if (pending_out != NULL)
@@ -315,10 +426,36 @@ bool uds_at_parse_response_ex(const char *resp, uint8_t *out, size_t cap,
     if (!have)
     {
         n = 0;
+        announced = 0;
+    }
+
+    if (announced_out != NULL)
+    {
+        *announced_out = announced;
     }
 
     *out_len = n;
     return have && n > 0;
+}
+
+bool uds_at_parse_response_ex(const char *resp, uint8_t *out, size_t cap,
+                              size_t *out_len, uint8_t *pending_out)
+{
+    size_t announced = 0;
+
+    if (!uds_at_parse_response_len(resp, out, cap, out_len, pending_out,
+                                   &announced))
+    {
+        return false;
+    }
+
+    if (announced > *out_len)
+    {
+        *out_len = 0;   /* cut short: never a message */
+        return false;
+    }
+
+    return true;
 }
 
 bool uds_at_parse_response(const char *resp, uint8_t *out, size_t cap,
@@ -394,12 +531,14 @@ esp_err_t uds_at_transceive_ex(uds_at_request_fn req_fn,
      * Skipped when the caller knows the chip is still in this setup. */
     if (!skip_setup)
     {
-        /* CAN protocol: ISO 15765-4, 11-bit (6) or 29-bit (7), 500k —
-           ATTP (try protocol, RAM) not ATSP, which writes the chip's
-           EEPROM on every request (the driver's guard would rewrite it
-           anyway; obd_chip_guard.h) */
-        (void)req_fn(addr->ext_id ? "ATTP7" : "ATTP6", rbuf, UDS_AT_RBUF,
-                     800);
+        /* CAN protocol: ISO 15765-4, 11-bit or 29-bit, at the bitrate
+           the bus runs at (6/7 at 500k, 8/9 at 250k: a request pinned to
+           the other bitrate destroys a live bus's traffic) — ATTP (try
+           protocol, RAM) not ATSP, which writes the chip's EEPROM on
+           every request (the driver's guard would rewrite it anyway;
+           obd_chip_guard.h) */
+        snprintf(at, sizeof(at), "ATTP%c", uds_at_protocol(addr->ext_id));
+        (void)req_fn(at, rbuf, UDS_AT_RBUF, 800);
 
         if (addr->ext_id)
         {
@@ -460,16 +599,16 @@ esp_err_t uds_at_transceive_ex(uds_at_request_fn req_fn,
        ATST for more ECUs (bench 2026-09-16: 4-8 ms vs 180-260 ms). The
        chip still rides out 7F xx 78 responsePending before the final
        answer and prints every one of them — the parser drops + counts
-       them. */
-    {
-        size_t l = strlen(cmd);
-
-        if (l + 1 < sizeof(cmd))
-        {
-            cmd[l] = '1';
-            cmd[l + 1] = '\0';
-        }
-    }
+       them. The digit counts printed LINES, so "1" cuts a multi-frame
+       answer after its first frame: the length line says how long the
+       message is, and a cut answer is asked for again with the digit
+       its line count needs (none above 15 lines; bench 2026-10-02:
+       7 ms for the cut answer + 48 ms for a 3-frame one, against 132 ms
+       without a digit). Services that must not go out twice start
+       without the digit (uds_at_first_digit). */
+    size_t cmd_len = strlen(cmd);
+    char digit = uds_at_first_digit(req[0]);
+    bool repeatable = (digit != '\0');
 
     /* Re-send the request (setup stays, held by the caller's transaction)
        up to 3 times on a NO-DATA / unparseable answer. The first attempt
@@ -483,6 +622,9 @@ esp_err_t uds_at_transceive_ex(uds_at_request_fn req_fn,
 
     for (int attempt = 0; attempt < 3; attempt++)
     {
+        cmd[cmd_len] = digit;
+        cmd[cmd_len + ((digit != '\0') ? 1 : 0)] = '\0';
+
         err = req_fn(cmd, rbuf, UDS_AT_RBUF, timeout_ms);
 
         if (err != ESP_OK)
@@ -491,9 +633,35 @@ esp_err_t uds_at_transceive_ex(uds_at_request_fn req_fn,
         }
 
         uint8_t pend = 0;
+        size_t announced = 0;
 
-        if (uds_at_parse_response_ex(rbuf, resp, resp_cap, resp_len, &pend))
+        if (uds_at_parse_response_len(rbuf, resp, resp_cap, resp_len, &pend,
+                                      &announced))
         {
+            if (announced > *resp_len)
+            {
+                /* cut short: never handed over as a message */
+                size_t got = *resp_len;
+
+                *resp_len = 0;
+                err = ESP_ERR_INVALID_SIZE;
+
+                if (!repeatable)
+                {
+                    ESP_LOGW(TAG, "answer to %02X cut at %u of %u B, not "
+                                  "asked again (the service is not "
+                                  "repeatable)",
+                             req[0], (unsigned)got, (unsigned)announced);
+                    break;
+                }
+
+                /* ask for every line this time */
+                uint8_t lines = uds_at_lines_for(announced);
+
+                digit = (lines <= 15) ? "0123456789ABCDEF"[lines] : '\0';
+                continue;
+            }
+
             if (pending_out != NULL)
             {
                 *pending_out = pend; /* the 7F xx 78 lines the chip rode out */

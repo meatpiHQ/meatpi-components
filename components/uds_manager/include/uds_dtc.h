@@ -93,6 +93,58 @@ void uds_dtc_format(uint8_t hi, uint8_t mid, uint8_t ftb, char *out);
 bool uds_dtc_unformat(const char *code, uint8_t *hi, uint8_t *mid,
                       uint8_t *ftb);
 
+/* ---- WWH-OBD (ISO 27145-3) and SAE J1979-2 ---------------------------------
+ * The legislated trouble codes of a vehicle that speaks OBD over UDS:
+ * service 19 sub-function 42 (by status and severity mask) and 55
+ * (permanent status), both for a functional group; the emissions group
+ * 0x33 is the one OBD means. The answer names its DTC format:
+ * 0x04 = SAE J2012-DA format 04 (the P/C/B/U code + a failure type byte,
+ * "P0420" / "P2463-1F"), 0x02 = SAE J1939-73 (SPN + FMI, "SPN3226-4").   */
+
+#define UDS_WWH_FGID_EMISSIONS  0x33u
+/** The severity mask the legislated testers send: the four WWH-OBD DTC
+ *  classes A, B1, B2 and C (bits 1..4). */
+#define UDS_WWH_SEVERITY_CLASSES 0x1Eu
+#define UDS_DTC_FORMAT_J1939    0x02u
+#define UDS_DTC_FORMAT_J2012_04 0x04u
+#define UDS_DTC_TEXT_LEN        16     /* "SPN524287-31" + NUL, with room */
+
+/** One record of a 59 42 / 59 55 answer. */
+typedef struct
+{
+    uint8_t dtc[3];     /**< the three DTC bytes, as sent                */
+    uint8_t status;     /**< statusOfDTC                                 */
+    uint8_t severity;   /**< severity + class byte (0 in a 59 55 answer) */
+} uds_wwh_dtc_t;
+
+/** 19 42 <group> <status mask> <severity mask>. */
+size_t uds_wwh_req_by_mask(uint8_t group, uint8_t status_mask,
+                           uint8_t severity_mask, uint8_t out[5]);
+
+/** 19 55 <group> — the DTCs with permanent status. */
+size_t uds_wwh_req_permanent(uint8_t group, uint8_t out[3]);
+
+/** 14 FF FF <group> — clear the group (ISO 27145-3: all of it or
+ *  nothing; there is no clear of a single code). */
+size_t uds_wwh_req_clear(uint8_t group, uint8_t out[4]);
+
+/** Parse `59 42 <group> <statusAvail> <severityAvail> <format>
+ *  (severity dtc dtc dtc status)xN`. A truncated last record is ignored,
+ *  records beyond @p max are dropped.
+ *  @return record count, -1 when it is not such an answer for @p group. */
+int uds_wwh_parse_by_mask(const uint8_t *resp, size_t len, uint8_t group,
+                          uint8_t *format, uds_wwh_dtc_t *out, size_t max);
+
+/** Parse `59 55 <group> <statusAvail> <format> (dtc dtc dtc status)xN`. */
+int uds_wwh_parse_permanent(const uint8_t *resp, size_t len, uint8_t group,
+                            uint8_t *format, uds_wwh_dtc_t *out, size_t max);
+
+/** The code as text: format 0x02 = "SPN<spn>-<fmi>" (J1939-73: 19 bits of
+ *  SPN, 5 of FMI), every other format the J2012 text of uds_dtc_format()
+ *  ("P0420", "P2463-1F"). */
+void uds_wwh_dtc_text(uint8_t format, const uds_wwh_dtc_t *dtc,
+                      char out[UDS_DTC_TEXT_LEN]);
+
 #ifdef __cplusplus
 }
 #endif

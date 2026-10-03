@@ -188,6 +188,8 @@ esp_err_t bep_can_subscribe(QueueHandle_t q)
         return err;
     }
 
+    (void)can_manager_subscriber_name(s_can_sub_idx, "bridge");
+
     s_can_qs[slot] = q;
     s_can_nsubs = 1;
     s_can_pump_run = true;

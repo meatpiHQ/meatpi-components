@@ -119,6 +119,7 @@ static void drain_task(void *arg)
                 continue;
             }
 
+            (void)can_manager_subscriber_name(s_sub_idx, "logger");
             ESP_LOGI(TAG, "CAN log subscribed (%s)",
                      s_cfg.monitor_all ? "all ids" : "filtered");
         }

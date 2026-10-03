@@ -71,8 +71,12 @@ legacy `restart_tracker_http.c` was dropped; these routes replace it.
 
 - **Host (`host_test/`, 8 tests):** the pure core — garbage-memory detection,
   boot recording/counters, planned-intent consumed exactly once, unexpected
-  classification (panic/wdt yes; sw/poweron/deepsleep no; planned never),
-  ring wrap, CRC tamper, invalid-clock handling.
+  classification (panic / the three watchdogs yes; sw / poweron / deepsleep
+  no; planned never) on the IDF 5+ reason numbers (INT_WDT 5, TASK_WDT 6,
+  WDT 7, DEEPSLEEP 8, BROWNOUT 9: until 2026-10-03 the core carried IDF 4's,
+  and an interrupt-watchdog reset was recorded as "deepsleep" and not counted
+  as unexpected), the reason names, ring wrap, CRC tamper, invalid-clock
+  handling.
 - **On-target (`test_apps/`):** two-phase self-driving app across a **real
   esp_restart()** — proves `.noinit` survival, intent consumption, and
   software-reset classification on actual hardware. Main partition table per

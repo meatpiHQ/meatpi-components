@@ -8,10 +8,13 @@
 
 #include "restart_tracker_private.h"
 
-#define RST_POWERON 1U
-#define RST_SW      3U
-#define RST_PANIC   4U
-#define RST_TASKWDT 8U
+/* esp_reset_reason_t, the IDF 5+ numbering (restart_tracker_core.c) */
+#define RST_POWERON   1U
+#define RST_SW        3U
+#define RST_PANIC     4U
+#define RST_INTWDT    5U
+#define RST_TASKWDT   6U
+#define RST_DEEPSLEEP 8U
 
 #define GOOD_TIME 1780000000LL /* well past the 2024 sanity floor */
 
@@ -98,18 +101,30 @@ void test_unexpected_reason_classification(void)
 
     rt_inputs_t panic = in(RST_PANIC, GOOD_TIME);
     rt_inputs_t wdt = in(RST_TASKWDT, GOOD_TIME);
+    rt_inputs_t iwdt = in(RST_INTWDT, GOOD_TIME);
     rt_inputs_t sw = in(RST_SW, GOOD_TIME);
+    rt_inputs_t nap = in(RST_DEEPSLEEP, GOOD_TIME);
 
     rt_record_boot(&s_state, &panic);
     rt_record_boot(&s_state, &wdt);
+    rt_record_boot(&s_state, &iwdt);  /* 5 = the interrupt watchdog (IDF 5+),
+                                         recorded as a deep-sleep wake until
+                                         2026-10-03 */
     rt_record_boot(&s_state, &sw);
-    TEST_ASSERT_EQUAL_UINT32(2, s_state.unexpected_reset_count);
+    rt_record_boot(&s_state, &nap);   /* 8 = a wake from deep sleep */
+    TEST_ASSERT_EQUAL_UINT32(3, s_state.unexpected_reset_count);
+    TEST_ASSERT_EQUAL_STRING("interrupt_wdt",
+                             restart_tracker_reset_reason_to_str(RST_INTWDT));
+    TEST_ASSERT_EQUAL_STRING("deepsleep",
+                             restart_tracker_reset_reason_to_str(RST_DEEPSLEEP));
+    TEST_ASSERT_EQUAL_STRING("brownout",
+                             restart_tracker_reset_reason_to_str(9));
 
     /* a PLANNED panic-reason boot never counts (was_planned wins) */
     rt_mark_planned(&s_state, &sw, RESTART_TRACKER_PLANNED_REASON_OTA_APPLY,
                     RESTART_TRACKER_SOURCE_OTA, 0);
     rt_record_boot(&s_state, &panic);
-    TEST_ASSERT_EQUAL_UINT32(2, s_state.unexpected_reset_count);
+    TEST_ASSERT_EQUAL_UINT32(3, s_state.unexpected_reset_count);
 }
 
 void test_history_ring_wraps(void)

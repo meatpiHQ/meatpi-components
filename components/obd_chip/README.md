@@ -134,6 +134,39 @@ convention). Consequences:
 `ELM327 v2.3` ready=1; boot HEALTH errors=0, faults=0; first post-reboot
 TCP-35000 `ATI` returns clean `ELM327 v2.3` (no boot-window garbage).
 
+### The reset is verified (2026-10-03)
+
+The sequence lives in `obd_chip_bringup.c` (split out of `obd_chip.c`, which
+keeps the task and the gate). An awake chip is reset by command, and until
+this date one `ATZ` with a prompt after it counted as done. On a software
+restart of the ESP the chip usually answered that first command with a
+prompt and NO reset (what the last run left in its line buffer, or a glitch
+of our TX pin, sat in front of it): saved console logs show bring-up in
+852 ms on 15 of 30 boots and 2096 ms on the other 15, power-on boots always
+2096 ms. The chip then kept everything the previous run had set: echo,
+headers, filters and an established CAN session.
+
+That last one is not cosmetic. A chip holding a session at 500 kbit/s is a
+node at 500 kbit/s; on a bus at another bitrate it answers every frame with
+an error flag (bench: about 450 error frames a second on a 250k bus, the
+sender driven to bus-off, with the firmware's own CAN node off and autopid
+disabled). `ATPC` or a real reset stops it; a freshly reset chip is quiet
+until its next request, whatever its default protocol is.
+
+`chip_soft_reset()`: one throw-away `ATI` (whatever sits in front ends with
+it), then `ATZ`, and the answer must carry the banner (`ELM`). Twice, then
+the reset pin as before. Bring-up is 2147 ms on every boot now (it runs on
+its own task, so the boot line does not move). Check after a restart:
+`ATDPN` through the ELM port reads the default protocol, and the
+`bring-up done in` log line reads about 2.1 s.
+
+Related chip fact: with its memory function at the power-on default the chip
+stores the last protocol that answered in its own EEPROM (`ATDPN` reads
+`A6` when a search found it, `6` when a pinned `ATTP6` did). It writes only
+when the value changes, and the firmware pins one protocol per car, so this
+is one write per change of car; the EEPROM guard (ATSP / ATM1) does not
+cover it.
+
 ## Bridge-endpoint ABI (TASK_obd_chip_manager_new §2/§3.6 — stable)
 
 The `subscribe`/`unsubscribe`/`send` trio is this component's face to

@@ -1,5 +1,6 @@
 idf_component_register(
     SRCS "obd_chip.c"
+         "obd_chip_bringup.c"
          "obd_chip_events.c"
          "obd_chip_uart.c"
          "obd_chip_cmd.c"

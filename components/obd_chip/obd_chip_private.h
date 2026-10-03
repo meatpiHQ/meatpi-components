@@ -155,6 +155,12 @@ bool obd_core_exclusive_held(void);
                                      2-baud x 3-retry walk + provisioning */
 bool obd_core_bringup_wait(uint32_t timeout_ms);
 
+/** The boot sequence on the bare UART (obd_chip_bringup.c): wake, reset
+ *  (verified), baud negotiation, provisioning, RX task start. Called by the
+ *  bring-up task in obd_chip.c only. @p active_baud is written as the
+ *  sequence learns it. */
+esp_err_t obd_bringup_run(int *active_baud);
+
 /* claim internals shared by request engine + fw update */
 esp_err_t obd_core_claim(int type, uint32_t timeout_ms);
 void      obd_core_release(void);

@@ -76,23 +76,41 @@ Decisions log there is authoritative; the big ones:
 
 | File | Role |
 |---|---|
-| `autopid.c` | settings fields, poller task (PSRAM stack, notify-driven), battery-pause watch, core query surface |
-| `autopid_runner.c` | the chip-facing poll: type/per-PID init transitions, ATCRA rxheader, request → parse → guard → eval → cache |
+| `autopid.c` | lifecycle, the config tables and their lock, battery-pause watch, core query surface |
+| `autopid_poller.c` / `autopid_poller.h` | the poller task (PSRAM stack, notify-driven): pauses, DTC due-check, scheduler -> runner -> bookkeeping (split out of autopid.c 2026-10-02) |
+| `autopid_bus_guard.c` | PURE bus guard: the bitrate a chip protocol transmits at, and the verdict (`allow` / `search` / `park`) for what the native controller heard on the bus, with its one-sentence reason (see "Bus guard" below) |
+| `autopid_guard.c` | the guard's glue: asks `can_manager` what is on the bus before the chip talks (a held listen-only watch until the bitrate is proven), parks the poller, refuses the one-shot jobs, `bus_guard{}` in `GET /api/autopid` |
+| `autopid_runner.c` | the chip-facing poll: type/per-PID init transitions, ATCRA rxheader, request → parse → guard → eval → cache; the chip baseline (prelude) and the borrowed-header rule (a standard row that set its own `ATSH` gives the functional header back before a row that sets none); `ap_runner_publish()` = the publish half (mux, expression, clamp, cache, events) shared with the J1939 runner |
+| `autopid_runner_j1939.c` | the passive runner (2026-10-03, see "J1939 rows"): a `PGN:` row read from the J1939 listener's store, published when the store holds a message the row has not published yet, stamped with the message's own time; the test-a-PID path for a PGN command |
+| `autopid_j1939_core.c` / `autopid_j1939.h` | PURE J1939 rows: the `PGN:<hex>[@<source>][?]` grammar, the scheduling class of a row (`chip` / `passive` / `bus_tx`), the little-endian expression of one SPN of the j1939 component's built-in table (`(B3+B4*256)*0.125`) |
+| `autopid_j1939_std.c` | the J1939 standard set: the built-in SPN table as config rows (one row per SPN), the listener's view of the vehicle for the detection job and first contact (sources as the responder set, the VIN when broadcast, the rows of the groups heard), and the same from a one second listen-only bus sample when the listener is off (`can_manager_sample_ids`) |
+| `autopid_dtc_j1939.c` | the J1939 codes in the DTC report: every controller's DM1 from the listener's store (`SPN110-0`, source address, occurrence count, the four lamps), nothing asked |
+| `autopid_http_test.c` | `POST /api/autopid/test` (split out of autopid_http.c 2026-10-03): one shot through the runner, or the listener's store for a `PGN:` command |
+| `autopid_contact.c` | first contact, once per boot (moved out of the runner 2026-10-03): the identity check after the first answered poll, the stored-protocol fallback, and the contact probes that look for a car the tables do not reach (see "OBD dialects") |
+| `autopid_identify.c` | who is this car, shared by first contact and the detection job: the responder set (one headers-on bitmap request) and the VIN, per dialect |
+| `autopid_dialect.c` / `autopid_dialect.h` | PURE OBD dialects (`obd2`, `uds`, `j1939`): the requests of a dialect, the data shift of its expressions, the bitmap + responder parser for every print shape of the chip (11-bit, 29-bit as four byte tokens, headers off), the per-ECU support table and the owner of a PID, the physical address of a responder, the CAN protocols a contact probe may use on a given bus |
 | `autopid_filter.c` | the ATMA filter window: MONITOR claim, header/CRA choreography, frame capture (`ap_filter_frame`, pure), retried stop |
 | `autopid_std.c` | standard PIDs: vendored SAE table (obd2_standard_pids.h, included ONLY here), PURE bit_start to expression mapping + bitmap parser, freeze-frame decode, the table JSON view |
-| `autopid_std_scan.c` | the vehicle DETECTION job (the async support scan, split out 2026-10-01): phases `protocol` (ATTP0, 0100, ATDPN when `std_protocol` is "0"), `vin` (0902, then 22F190 on the engine ECU, plus the responder set), `pids` (the bitmap walk); hands the result to the vehicle store (`autopid_vehicle_detected`), then writes `/data/autopid/std_scan.json`; started by the poller itself on an unknown car; owns `ap_std_prelude()` |
+| `autopid_std_scan.c` | the vehicle DETECTION job (the async support scan, split out 2026-10-01): phases `protocol` (which protocol and which dialect answer: a walk over the pinned CAN protocols the bus guard allows, `0100` then `22F400` on each), `vin` (`autopid_identify.c`), `pids` (`autopid_scan_walk.c`); hands the result to the vehicle store (`autopid_vehicle_detected`), then writes `/data/autopid/std_scan.json`; started by the poller itself on an unknown car; owns `ap_std_prelude()` |
+| `autopid_scan_walk.c` | the job's `pids` phase: the support bitmap walk of the car's dialect (per ECU with headers on for `uds`) and one config row per supported PID that decodes something |
 | `autopid_vehicle_core.c` | PURE vehicle identity (TASK_quick_setup.md): ATDPN parse, VIN from 0902 / 22F190 replies, responder fingerprint (FNV-1a over sorted ECU id + 0100 bitmap pairs), effective-protocol + prelude selection, the first-pass vehicle.json reader (import); `autopid_vehicle.h` holds every vehicle contract |
 | `autopid_vehicle_index.c` | PURE store index (second pass): key derivation (`VIN` or `fp:<hash>`), find by key / VIN / fingerprint, the fingerprint SUBSET rule, `ap_vidx_match`, the LRU eviction pick, add/remove, the once-a-day `last_seen` touch |
 | `autopid_vehicle_codec.c` | PURE store codec: the responder set as text, one entry as JSON (API + file shape), `vehicles.json` round trip with bounds and sanitizing |
-| `autopid_vehicle.c` | the store: RAM index under one lock, load + the first-pass import, queries, edits (`update` / `activate` / `delete`), the `config.json` mirror, first contact (`autopid_vehicle_seen`), the one-shot internal-stack worker `apid_veh` that does the poller's file work |
-| `autopid_vehicle_switch.c` | the store's files: per-car tables copy/snapshot, the switch (snapshot, copy, live reload, SPECIFIC init, event), the new-car path with LRU eviction, the detection result (`autopid_vehicle_detected`) and the one-time `obd_chip_protocol_save()` |
-| `autopid_sched.c` | PURE scheduler: due times, group inheritance/override (`ap_sched_group_set`/`_restore`, 2026-09-17), fail backoff (×4 after 3), period-0 high-fidelity round-robin, stagger |
+| `autopid_vehicle.c` | the store: RAM index under one lock, load + the first-pass import, queries, edits (`update` / `activate` / `delete`), the `config.json` mirror, the current car's protocol and dialect getters, the one-shot internal-stack worker `apid_veh` that does the poller's file work |
+| `autopid_vehicle_switch.c` | the store's files: per-car tables copy/snapshot, the switch (snapshot, copy, live reload, SPECIFIC init, event), the new-car path with LRU eviction, first contact (`autopid_vehicle_seen`), the detection result (`autopid_vehicle_detected`) and the one-time `obd_chip_protocol_save()` |
+| `autopid_sched.c` | PURE scheduler: due times, group inheritance/override (`ap_sched_group_set`/`_restore`, 2026-09-17), fail backoff (×4 after 3), period-0 high-fidelity round-robin, stagger; `ap_sched_next_of()` picks among the entries of given classes (the poller asks for the chip's rows only while it may use the chip), a passive row at period 0 is looked at every 20 ms |
 | `autopid_group.c` | runtime group control: `autopid_group_set`/`_restore` (name lookup under the core lock + poller wake-up over the pure scheduler calls) and the group state JSON (split out of autopid.c 2026-09-17) |
-| `autopid_resp.c` | PURE ELM text → payload bytes (headers on/off, ISO-TP single/multi, lowest-responder rule, noise/error lines) + the cross-talk guard (`ap_payload_matches_cmd` — a second chip master's response can't be cached as ours) |
+| `autopid_resp.c` | PURE ELM text → payload bytes (headers on/off, ISO-TP single/multi, lowest-responder rule, noise/error lines, the chip's 29-bit header print `18 DA F1 xx`, `7F xx 78` response-pending lines dropped) + the cross-talk guard (`ap_payload_matches_cmd` — a second chip master's response can't be cached as ours; service 22 is compared on both identifier bytes) |
+| `autopid_resp_filter.c` | PURE ATMA monitor lines → frame data bytes: `ap_filter_frame` (one line carrying the wanted id) and the incremental stream collector `ap_flt_stream_*` the filter window feeds; split out of `autopid_resp.c` 2026-10-02 (700-line rule) |
 | `autopid_config.c` | PURE JSON parse/validate + target file load/save (atomic) |
 | `autopid_cache.c` | latest-value slots (PSRAM, mutex), legacy snapshot + detail JSON, plus the **external-value table** (12 name-keyed injected samples: GPS from the ESPNetLink dongle) merged into every snapshot/get/detail |
-| `autopid_dtc_codec.c` | PURE DTC codec: 2-byte code ⇄ "P0420", 43/47/4A payload parse, 41-01 MIL/count, clear-condition matrix (`always/if_any/if_only` — mode 04 is all-or-nothing, so "clear specific" = a condition on the present set) |
-| `autopid_dtc.c` | DTC engine: async scan job (01-01 gate + 03/07/0A), conditional mode-04 clear (fresh 03 → condition → 04 → confirming 03), periodic due-check, RAM report + diff (events fire per NEW code) |
+| `autopid_dtc_codec.c` | PURE DTC codec: 2-byte code ⇄ "P0420", 43/47/4A payload parse, 41-01 MIL/count, clear-condition matrix (`always/if_any/if_only` — mode 04 is all-or-nothing, so "clear specific" = a condition on the present set), and the report fillers (`ap_dtc_report_add`: the merged category arrays plus one item per ECU; `ap_dtc_report_src`: the lamp word of every responder) |
+| `autopid_dtc.c` | DTC engine: the settings-applied knobs (`ap_dtc_cfg()`), the scan itself (01-01 gate, the OBD path, the UDS fallback, the diff: events fire per NEW code), the conditional clear (fresh read → condition → clear → confirming read) and the RAM report. Split 2026-10-02 (700-line rule) into this file plus the four below; `autopid_dtc_engine.h` is what they share |
+| `autopid_dtc_job.c` | the one-shot job task (`apid_dtc`, PSRAM stack) and its triggers: scan start, the rule-queued clear, the periodic due-check the poller calls |
+| `autopid_dtc_obd.c` | the OBD path: chip choreography (`dtc_init`, headers on, ATCRA), the 03/07/0A request with its multi-ECU merge, the mode-02 freeze frame |
+| `autopid_dtc_uds.c` | the UDS path: `19 02` / `14` to one physical address pair through `uds_request()` |
+| `autopid_dtc_wwh.c` | the WWH-OBD path (ISO 27145-3 / SAE J1979-2), the legislated codes of a `uds`-dialect car: `22F401` lamps, `19 42 33` confirmed and pending, `19 55 33` permanent, `14 FF FF 33` clear; functional with headers on, every ECU parsed apart (the codec is uds_manager's `uds_dtc.h`) |
+| `autopid_dtc_report.c` | the report as JSON (`GET /api/autopid/dtc`), read in place under the engine's lock (it is ~5 KB: no copy on a task stack), and the public `autopid_dtc_*` wrappers (script engine) |
 | `autopid_dtc_db_codec.c` | PURE DTC-database importer: sniff + parse CSV/TSV/semicolon/JSON-map/JSON-array/plain text → canonical sorted form ([TASK_dtc_db.md](TASK_dtc_db.md)) |
 | `autopid_dtc_db.c` | database store (/data/autopid/dtc_db) + PSRAM cache w/ binary search: upload/list/delete/search/lookup, report `desc` enrichment — lookups never touch flash |
 | `autopid_dbc_codec.c` | PURE DBC codec: BO_/SG_ parser + the signal→expression compiler (Intel/Motorola, signed via multiply-subtract, Motorola-aligned spans; host cross-checked vs a reference decoder) — [TASK_dbc.md](TASK_dbc.md) |
@@ -107,7 +125,7 @@ Decisions log there is authoritative; the big ones:
 
 `enabled` (default **false**), `std_enabled`/`custom_enabled`/
 `specific_enabled`, `std_init`/`custom_init`/`specific_init`
-(';'-separated AT prelude per type; `specific_init` is the fallback for a current car without its own `specific_init` in the vehicle store), `std_protocol` (enum `0` Automatic | `6` CAN 11-bit 500k | `7` CAN 29-bit 500k | `8` CAN 11-bit 250k | `9` CAN 29-bit 250k, default `6`; schema v7; `0` = follow the vehicle store: the detection job learns the protocol per car and the chip prelude pins the current car's protocol instead of `ATTP0`, see "Vehicle store" below; a pinned 6..9 always wins over the store), `vehicle`,
+(';'-separated AT prelude per type; `specific_init` is the fallback for a current car without its own `specific_init` in the vehicle store), `std_protocol` (enum `0` Automatic | `6` CAN 11-bit 500k | `7` CAN 29-bit 500k | `8` CAN 11-bit 250k | `9` CAN 29-bit 250k, default `0` since 2026-10-03 (it was a pinned `6`: a fresh device must not transmit at 500k onto a bus it has not heard); schema v7; `0` = follow the vehicle store: the detection job learns the protocol per car and the chip prelude pins the current car's protocol instead of `ATTP0`, see "Vehicle store" below; a pinned 6..9 always wins over the store), `vehicle`,
 `pause_below_mv` (0 = no fixed threshold, else 1–14500 mV; resumes +0.3 V with 5 s hold; with `pause_follow_sleep` the threshold is the Power Saving sleep voltage and polling resumes at its wake voltage, sleep_manager v3, 2026-10-01),
 `pause_follow_sleep` (default **true** — legacy `disable_pid_requests`
 parity: requests pause below the sleep threshold via the battery
@@ -140,6 +158,258 @@ and PID commands/inits replay on every poll cycle / type transition,
 so either would wear it out (legacy semantics). Monitor commands
 (`ATMA`/`ATMR`/`ATMT`) and `ATM0` pass through untouched. Write ATSP
 in configs/profiles freely; the chip only ever sees ATTP.
+
+## Bus guard (2026-10-03)
+
+The OBD chip transmits at the bitrate of the protocol it is told to use. A
+request at the wrong bitrate is not a harmless miss: nobody can read it,
+every node answers with an error flag, and the chip repeats it (measured:
+a pinned 500k request on a live 250k bus = a 65 ms burst, 257 to 1255 error
+frames, and the poller would repeat it every period). So before the chip
+talks, autopid asks the native CAN controller what is on the bus
+(`can_manager_probe()`: listen-only, no TX pin, works while can_manager is
+disabled) and `ap_guard_decide()` rules:
+
+| the bus | the protocol in effect | verdict |
+|---|---|---|
+| silent, or unknown | any | `allow` (a gatewayed OBD port answers only when asked) |
+| live at the protocol's bitrate | any | `allow` |
+| live at the other bitrate | from the vehicle store (`std_protocol` = `0`) | `search`: the chip's own protocol search is used (it matches the bus frequency before it sends) |
+| live at the other bitrate | pinned by the setting (`6`..`9`) | `park`: nothing is written to the chip |
+| traffic neither 500k nor 250k reads | a CAN protocol, or the search | `park` |
+
+Protocols 1..5 (K-line, J1850: other pins) and the user CAN definitions B
+and C are not judged: `allow`.
+
+- The poller asks before EVERY transmission until the answer is final: the
+  bus named its bitrate (frames were read) or an ECU answered. A silent bus
+  is not final: a vehicle asleep at boot wakes up later at its own bitrate,
+  so a listen-only watch stays on the bus meanwhile (it costs nothing while
+  the bus is silent).
+- After the poller's first transmission "unreadable" may be the chip's own
+  unanswered requests, so only readable frames decide from then on.
+- One-shot chip jobs ask too: the detection / std scan, test-a-PID, the DTC
+  scan and clear answer HTTP 409 with the guard's sentence.
+- Visible as `stats.paused_bus` and `bus_guard{bus,bus_kbps,verdict,parked,
+  reason}` in `GET /api/autopid`, one `W` log line per change of mind, and
+  the banner on the Automate dashboard.
+- A protocol learned by the search is stored for the car (the identity check
+  asks `ATDPN` before the prelude resets the search).
+
+Bench: `tools/testbench/can/can_autobaud_bench.py` legs c0..c3 (the PCAN
+adapter counts the error frames on the wire: zero while parked, zero with the
+search, and the chip's UART byte counter does not move).
+
+## OBD dialects (2026-10-03)
+
+The legislated data of a vehicle (the standard PIDs, the VIN, the trouble
+codes) is asked in one of two ways, and which one is a property of the car,
+kept as `dialect` in the vehicle store:
+
+| | `obd2` | `uds` |
+|---|---|---|
+| standard | SAE J1979 / ISO 15031-5 | ISO 27145 (WWH-OBD: EU heavy duty, vans) and SAE J1979-2 (OBD on UDS: US cars from MY2027) |
+| is anybody there | `0100` → `41 00` + bitmap | `22F400` → `62 F4 00` + bitmap; **no answer to `0100` at all** |
+| a PID | `010C` → `41 0C A B` | `22F40C` → `62 F4 0C A B` (the same data, one byte further in) |
+| VIN | `0902` | `22F802` |
+| bitmap ranges | `00`..`A0` | `00`..`E0` |
+| trouble codes | `03` / `07` / `0A`, clear `04` | `19 42 33 <mask> 1E`, `19 55 33`, clear `14 FF FF 33` |
+
+`j1939` = a vehicle that only broadcasts (SAE J1939: trucks, buses,
+agricultural machines): no OBD request is answered, the chip stays parked for
+it, and its data comes in as J1939 rows (next section). An EU truck answers
+WWH-OBD AND broadcasts J1939: its dialect is `uds` and its `j1939` flag is
+set, both sets of rows apply.
+
+## J1939 rows (2026-10-03, TASK_j1939_wwh.md phases 5 and 6)
+
+A J1939 parameter group is an ordinary PID row whose `cmd` reads
+
+```
+PGN:<hex>[@<source>][?]     PGN:F004      engine controller 1, the pick
+                            PGN:FEEE@0    engine temperature from source 0
+                            PGN:FEE5?     engine hours, a group sent on request
+```
+
+`<hex>` is the group number (1 to 5 hex digits; a PDU1 group with its
+destination byte zero), `@<source>` pins a source address (decimal or
+`0x..`, 0..253; without it the listener's pick: the lowest address heard in
+the last 5 s, else the lowest of all), `?` marks a group that is sent on
+request only: in `j1939` `mode` active the row asks for it (see below), in
+listen mode it publishes whatever another node asked for. Any `type`, the same groups,
+periods, parameters and expressions as any row; B0 is the first data byte
+and J1939 words are little-endian, which the grammar's `[Bx:By]` span is
+not, so they are composed byte by byte (`B3+B4*256`). `init` and `rxheader`
+mean nothing to such a row and are refused by the config parser.
+
+**Never the chip.** The rows are served by `autopid_runner_j1939.c` from the
+store of the `j1939` component (which needs `can_manager` enabled, `auto`
+or the bus's bitrate, `silent`): the newest message of the group, published
+when the store holds a message the row has not published yet (its `(source,
+count)` moved), stamped with the message's own time so the value's age is the
+data's age. A row at period 0 is looked at every `AP_PASSIVE_FLOOR_MS` (20 ms)
+instead of spinning. A message from ANOTHER source that is already older
+than 5 s when a row first sees it is not news (the store's pick moved
+because the bus fell silent), the row keeps what it published; a new
+message of the source the row follows is news however old the look finds
+it. A group nobody sends fails like a silent PID and backs off the same way.
+
+**Scheduling classes.** Every entry has a class (`ap_row_class`): `chip`
+(every request through the OBD chip, filters too), `passive` (a PGN row),
+`bus_tx` (a PGN row with `?`). The poller picks among the chip's rows only
+while it may use the chip; the passive rows run through every pause that is
+about the chip: an external ELM app on the bridge (`paused_client`), a
+diagnostic tool's hold (`paused_diag`), the bus guard (`paused_bus`), a chip
+job. The voltage pause stops them only under `pause_mode` = `all`
+(`requests_only`, the default, keeps the rows that transmit nothing running;
+the setting existed since v1 and did nothing until now). `GET /api/autopid`
+counts them apart: `passive_ok` / `passive_failed` (looks: the group was
+there / nobody sent it) and `passive_published`.
+
+**`?` rows ask (phase 6).** When the `j1939` component is in `mode` active
+and holds an address (`j1939_active()`), a `bus_tx` row sends a Request for
+its group before the look (`j1939_request()`, to the pinned source or to
+everyone), at its period floored to `AP_BUS_TX_FLOOR_MS` (1 s: J1939
+etiquette, and 50 requests/s at period 0 would be a flood), and publishes
+the answer at the next look, one period later. A controller that answered
+the request negatively (not supported, denied, busy) fails the row
+(`passive_refused`) and holds the asking for `AP_J1939_NACK_HOLD_MS` (60 s);
+the scheduler's backoff does the rest. A diagnostic tool's hold
+(`paused_diag`: the UDS Tool or a J2534 tester with their exclusive option)
+stops the asking, not the reading: the tool's session is not ours to talk
+over. `GET /api/autopid` `passive_requested`, `passive_refused`,
+`j1939_active`.
+
+**The standard set.** One row per SPN of the j1939 component's built-in
+table (21 SPNs: engine speed and torque, pedal, load, gear, wheel speed,
+coolant and oil temperature, oil and intake pressure, barometric and
+ambient, battery, fuel rate, fuel and DEF level, distances, hours, total
+fuel), `cmd` `PGN:<hex>`, `type` `std`, the SPN's unit and HA class, `min` /
+`max` = the operational range so the plausibility clamp drops "not
+available" (`FF..`) and error (`FE..`) raw values by itself. The detection
+job stores the rows of the groups it heard; `GET /api/autopid/std_table`
+appends the whole table for a vehicle with the `j1939` flag.
+
+**Detection and first contact.** The detection job's fourth phase, `network`:
+with the listener up, the listener's store says whether this is a J1939 bus
+(two distinct well-known groups), who is on it (the source addresses become
+the responder set behind the fingerprint; NAMEs are not used, a claim is
+heard on some boots only), the VIN when one was broadcast (PGN 65260; in
+active mode it is asked for once and given 1.5 s, so a truck is keyed by its
+VIN at once), and the rows of the groups heard; with the native bus still off, a one second
+listen-only sample of a live bus through `can_manager_sample_ids()` says the
+same without the VIN. A vehicle that answered no OBD request but broadcasts
+J1939 gets the dialect `j1939` (chip parked: no `ATTP0`, no idle `0100`, no
+`ATSP` save) and the result carries `j1939:true`, `j1939_listening:false`,
+`bus_kbps`: the Quick Setup stages `can_manager` (listen-only, that bitrate)
++ `j1939` for one restart. First contact (`autopid_contact.c`) treats the
+listener's word as a sighting once the chip's probe found nobody (an EU truck
+answers the chip too, whose responders are the better print), and gives the
+listener a ten second head start on a stored J1939 vehicle so a truck's boot
+sends no OBD request at all; the VIN broadcast (a BAM, on request or at
+start-up, a few seconds after the groups) gets the same time before an
+identity without it, and a VIN heard within two minutes after such an
+identity is still adopted (the store matches an entry learned without its
+VIN by its fingerprint). A chip sighting never takes the `j1939` flag
+away; a listener sighting never replaces a chip dialect or a chip responder
+set. The listener's word counts from the poll-result path too, once the
+chip's probe ran and found nobody: a device moved from a car to a truck
+polls the car's rows, they fail, the chip probes, and the truck becomes the
+current car (6 s on the bench); until 2026-10-03 only the idle path asked
+the listener, which a table of chip rows never reaches, and the car's rows
+were polled for ever.
+
+**Trouble codes.** A scan on a vehicle with the `j1939` flag folds in every
+controller's DM1 from the store (`autopid_dtc_j1939.c`): `SPN110-0` codes as
+`stored` (active) with `sa` and `oc` per item, the four lamps (`mil`, `rsl`,
+`awl`, `pl`) per source and folded, `protocol` `j1939` when the chip was not
+used. In active mode the scan first asks everyone for DM2 (the previously
+active codes, a group only ever answered to a request) and waits 1.5 s; they
+join the report as `pending` items with `sa` / `oc`. The clear on a
+J1939-only vehicle (`ap_dtc_j1939_clear`, no chip job): the condition is
+evaluated against the active codes heard now, DM11 (active codes) then DM3
+(previously active) are requested of every controller heard and their
+acknowledgments awaited (1.5 s each); `cleared` when at least one controller
+acknowledged DM11, `after` = the active codes 1.5 s later (the next DM1
+broadcast), and a fresh scan is queued so the report follows the network.
+Listen mode is refused with 403 `J1939: clearing needs mode active (j1939)`,
+no address yet with 409.
+
+Bench: `tools/testbench/obd/autopid_j1939_bench.py` (third stage of
+`.\test.ps1 j1939`, verdict `AUTOPID J1939 PASS`): detection from a bus
+sample and from the listener, every stored row equal to the PCAN truck's
+value with the chip's counters at zero, a change on the truck at the API and
+on the Pi's broker, the rows publishing while an ELM app holds the chip,
+`pause_mode`, the DM1 report and the refused clear, test-a-PID through the
+store, a pinned custom row, and silence (nothing new, values keep their
+reading and grow old). The active half is in
+`tools/testbench/can/j1939_active_bench.py` (fourth stage, `J1939 ACTIVE
+PASS`): the car switch by the VIN asked for, a `?` row asking at its period
+and publishing, a refused `?` row held, DM2 in the report, the DM11 / DM3
+clear acknowledged and the report empty after it, the asking stopped by a
+J2534 tester's hold.
+
+**Rows.** The standard rows of a `uds` car are ordinary rows of type `std`
+with `cmd` `22F4xx`, expressions shifted by one byte (`[B3:B4]*0.25`), the
+SAE names and units unchanged (the same entities in Home Assistant), and an
+`init` that addresses ONE ECU: `ATSH18DA58F1` (29-bit) or `ATSH7E0`
+(11-bit). That ECU is the row's owner: the lowest responder whose support
+bitmap has the PID. Why physical and not functional + `rxheader`:
+
+- a functional request with the chip's receive filter (`ATCRA`) on one ECU
+  leaves every other ECU that holds a multi-frame answer without its flow
+  control. It waits out its timeout and answers the NEXT request late,
+  inside another request's window (bench 2026-10-03, two ECUs: `NO DATA`,
+  then a stale `62 F4 00 ..` line in front of the next answer);
+- a second unit may repeat a PID in its own scaling (a Mercedes Sprinter
+  VS30's `5A` answers the engine speed unscaled; `58` is the engine). Asked
+  physically it never gets the question.
+
+**The borrowed header.** A standard row that sets its own request header
+gives the functional one back: before any row that does not set one (a
+custom row, a specific row, a standard row added by hand), the runner sends
+`ATSH7DF` / `ATSH18DB33F1` again, so such a row finds the same baseline as
+on an OBD-II car. Only standard rows are tracked. A header set by a custom
+or specific init stays in effect as it always did. Test-a-PID follows the
+same rule, and every DTC job starts from the whole prelude.
+
+**Contact.** The chip's own protocol search (`ATTP0`) asks `0100`: it
+cannot find a `uds` car, and it needs 9.3 s to say `UNABLE TO CONNECT`. So
+first contact (`autopid_contact.c`) and the detection job look for the car
+themselves: on each pinned ISO 15765-4 protocol the bus guard allows for
+this bus, `0100`, then `22F400` (0.6 s each when nobody answers).
+
+- Boot: the prelude pins the stored protocol; the first answered poll
+  triggers the identity check in the car's dialect (the other dialect when
+  that yields nothing).
+- The stored protocol stays silent for three polls (or the tables are
+  empty): contact probes every 10 s, doubling up to 80 s while nothing
+  answers: the walk above. Whoever answers is identified; a known car
+  switches the tables, an unknown one starts the detection job with what
+  was found as a hint. This is what makes the device find its car again
+  when it is moved between an OBD-II car and a WWH van (bench: values 12 to
+  16 s after boot, both directions).
+- A pinned `std_protocol` is never left: both dialects are asked on it.
+
+**The chip's 29-bit print.** With headers on the chip prints a 29-bit id as
+FOUR byte tokens (`18 DA F1 10 06 41 00 ..`). Until 2026-10-03 the parsers
+took such a line for data: detection kept a 29-bit OBD-II car's responders
+as one row without an id, and a DTC scan on any 29-bit car found "no ECU".
+`take_id29()` takes the four tokens as an id only for the legislated
+answers `18 DA F1 xx` followed by a PCI byte that fits the line.
+
+**Trouble codes.** `dtc_protocol` = `obd` means "the legislated codes": on
+a `uds` car the scan and the clear take the WWH-OBD path
+(`autopid_dtc_wwh.c`). `GET /api/autopid/dtc` names the path a job takes
+now (`path`: `obd` / `wwh` / `uds`) and the report says who reported what:
+`sources[{ecu, mil, count}]` and `items[{code, kind, ecu, status,
+severity}]` beside the merged `stored` / `pending` / `permanent` arrays
+that events, rules and scripts keep reading. A code in the SAE J1939 format
+(DTC format 02) reads `SPN3226-4`.
+
+Bench: `tools/testbench/obd/wwh_obd_bench.py` (`.\test.ps1 wwh`, verdict
+`WWH OBD PASS`); the vehicle is `tools/testbench/actors/pcan_wwh_ecu.py`,
+including the Sprinter VS30 of the field report (`--sprinter`).
 
 ## Config file shape (`PUT /api/autopid/config`)
 
@@ -216,29 +486,43 @@ on the same frame evaluate normally.
 runs one chip job in three phases (`GET /api/autopid/std_scan` reports
 the current one as `phase`):
 
-1. `protocol` (only with `std_protocol` = "0"): prelude
-   `ATS1;ATH0;ATST96;ATTP0`, then `0100` with a long timeout (the chip
-   prints `SEARCHING...` while it tries the protocols), then `ATDPN`;
-   `A6` / `6` style replies give the protocol, which is pinned with its
-   `ATTP<n>` + functional header + `ATCRA` prelude for the rest of the
-   job. A pinned setting (6..9) skips the phase and uses its own prelude.
-2. `vin`: `0902` (ISO-TP joined by the chip, multi-ECU: the lowest
-   responder wins); when no VIN comes back, `ATSH7E0` (`ATSH18DA10F1` on
-   29-bit) + UDS `22F190`, header restored afterwards. Then one headers-on
-   `0100` collects the responding ECU ids + their support bitmaps for the
-   fingerprint (headers off again right after).
-3. `pids`: the SAE support bitmap walk `0100/0120/../01A0` (multi-ECU
-   OR-merged) mapped onto the built-in table into ready-made config rows
-   (names, units, classes, **generated expressions** such as
-   `[B2:B3]*0.25`).
+1. `protocol`: which protocol AND which dialect answer (see "OBD
+   dialects"). With `std_protocol` = "0" the job walks the ISO 15765-4
+   protocols the bus guard allows for this bus (`6`, `7`, `8`, `9` on a
+   silent bus; the two at the bus's bitrate on a live one), pins each
+   with its `ATTP<n>` + functional header + `ATCRA` prelude and asks
+   `0100`, then `22F400`. The first answer decides. A pinned setting
+   (6..9) is asked in both dialects on that protocol alone. What first
+   contact found a moment ago is tried before any of that. (Until
+   2026-10-03 this phase was the chip's own search, `ATTP0` + `0100` +
+   `ATDPN`: 9.3 s to give up when nothing answers `0100`, and blind to a
+   UDS-dialect vehicle.)
+2. `vin`: one headers-on bitmap request collects the responding ECU ids
+   + their support bitmaps (the fingerprint), headers off again right
+   after. Then the VIN: `0902` on an OBD-II car (ISO-TP joined by the
+   chip, the lowest responder wins), falling back to `ATSH7E0`
+   (`ATSH18DA10F1` on 29-bit) + UDS `22F190`; `22F802` asked of each ECU
+   in turn on a UDS-dialect car, lowest id first. The functional header
+   is restored afterwards.
+3. `pids`: the support bitmap walk mapped onto the built-in SAE table
+   into ready-made config rows (names, units, classes, **generated
+   expressions** such as `[B2:B3]*0.25`). OBD-II: `0100/0120/../01A0`
+   with headers off, multi-ECU OR-merged. UDS dialect: `22F400` ..
+   `22F4E0` with headers on, every ECU's bitmaps kept apart, each row
+   given to the lowest responder that has the PID. A PID the table knows
+   by name only (no parameter to decode: `13`, `7A`, `85` ...) gets NO
+   row: until 2026-10-03 it was polled all the same and every poll of it
+   counted as failed.
 
 The result goes to the vehicle store first (`autopid_vehicle_detected`:
 a known car comes back with its own tables, an unknown car becomes a new
 entry whose tables are these rows, see "Vehicle store"), then the table
 to `/data/autopid/std_scan.json` (atomic). `GET /api/autopid/std_scan/result`
 carries the table plus `protocol_detected` (the detected char, or the
-pinned setting), `vin` ("" when none), `fingerprint` ("" when none) and,
-since the second pass, `key` / `known` / `name` of the store entry; the
+pinned setting), `dialect`, `uds_protocol_id` (the `22F810` byte, when
+a UDS-dialect vehicle answers it), `vin` ("" when none), `fingerprint`
+("" when none) and, since the second pass, `key` / `known` / `name` of
+the store entry; a UDS-dialect row carries `init` (its ECU). The
 UI copies entries (or the full catalog at `/api/autopid/std_table`)
 straight into the config PUT. The poller starts the job by itself once
 per boot when first contact meets an unknown car; otherwise never without
@@ -462,7 +746,13 @@ and polls a 24-parameter PID on the simulator — the regression for the
 
 ## Tests
 
-`host_test/` (run: `.\test.ps1 host autopid`): scheduler regression
+`host_test/` (run: `.\test.ps1 host autopid`, 118 tests): the J1939 rows
+(`test_j1939_rows.c`, 10 cases: the `PGN:` grammar and its refusals, the
+config parser's typed fields and the `init` / `rxheader` refusal, the
+scheduler's class-masked pick and the 20 ms passive floor, the built-in
+table's expressions cross-checked against `j1939_spn_decode` over every SPN
+and a not-available frame), the DM1 report fillers (`test_dtc_report.c`);
+scheduler regression
 (one-request-per-PID-per-period, group toggle/override, type gates,
 round-robin, backoff, stagger), response-parser vectors (single frame,
 SEARCHING noise, headers-on lowest responder, ISO-TP both header
@@ -488,8 +778,18 @@ responder-set text form, the `vehicles.json` round trip (escaping, the
 `current` key, no per-entry flag in the file), a full 8-car index fits the
 6 KB bound, and the bounds/sanitizing on load (no key, duplicate key,
 bad VIN/protocol, derived keys, out-of-range numbers, the 9th+ entry
-dropped). 80 tests in all. Bench verification per TASK_autopid.md Phase 1
-and TASK_quick_setup.md (vehicle_identity_bench.py, planned).
+dropped); the bus guard (`test_bus_guard.c`, 7 cases); the OBD dialects
+(`test_dialect.c`, 17 cases, on reply texts captured from the chip): the
+requests and the expression shift, the bitmap parser for every print shape
+(11-bit, the 29-bit four-token id, headers off, a stale answer of another
+range, the Sprinter's three ECUs), the VIN from `62 F8 02` (pending lines
+first, two ECUs interleaved, a count byte), the per-ECU table and the owner
+of a PID, physical addresses, `ATSH` detection in an init chain, the CAN
+candidates per bus, the parser on 29-bit headers-on lines (and what it must
+NOT take for an id), `7F xx 78` lines, the two-byte identifier check; and
+the DTC report fillers (`test_dtc_report.c`, 3 cases). 107 tests in all.
+Bench verification per TASK_autopid.md Phase 1, TASK_quick_setup.md and
+TASK_j1939_wwh.md.
 
 **ELM app responsiveness bench (2026-09-08)** -
 `tools/testbench/obd/elm_app_bench.py [dut[:port]] [--dut-ip 10.42.1.194]`
@@ -506,7 +806,8 @@ reference USB adapter (OBDLink) on the same bus.
 
 **Bench matrix (2026-09-06)** —
 `tools/testbench/obd/autopid_matrix_bench.py [dut[:port]] [--sim 192.168.8.1]
-[--sim-restore asis|on|off]` (PC or Pi, plain HTTP, no PCAN): standard
+[--sim-restore asis|on|off] [--ack-pcan PCAN_USBBUS2]` (PC or Pi, plain
+HTTP; PCAN only for the optional ACK source of leg 5): standard
 PIDs via the support scan, custom expressions (hinted `010C1`, a
 multi-parameter PID, an unsupported `0162` kept isolated), vehicle-
 specific entries with per-PID init + rxheader (multi-frame UDS DIDs
@@ -551,3 +852,24 @@ chunks + unparsed lines) before changing the window design. The bench
 PCAN-USB FD is currently NOT on the DUT/simulator bus (channel 2 sees no
 traffic), so the DBC / monitor-injection benches that need it cannot
 run until it is re-wired.
+
+**2026-10-02, what the "flood" is.** PCAN is back on the bus
+(`PCAN_USBBUS2`) and measured it: the simulator does not broadcast at kHz
+rates, it RETRANSMITS. While the chip monitors it is silent (no ACK), the
+native controller is off, nothing else is on the bench bus, so the frame
+is never acknowledged and the simulator's controller repeats it for ever
+at line rate: 6868 frames of one id in 2 s with PCAN listen-only, 21 and
+41 frames in 2 s (the configured 200 ms and 100 ms periods) as soon as
+PCAN is a normal node that ACKs. The 0x0C0 frame also has seven data
+bytes now (`0C 80 00 00 00 00 00`); the matrix bench's bus look sets
+`ATCAF0` itself and accepts two bytes or more. `--ack-pcan PCAN_USBBUS2`
+holds PCAN on the bus during leg 5 as the acknowledging node a car always
+has. Result with it (10 frames/s on the bus): 4 filter updates and 8
+standard-PID updates in 15 s, the same as on the saturated bus. So the
+two halves of this finding separate: the polling starvation (8 updates
+where about 30 are due) is the window design, it holds the chip for
+`monitor_ms` plus the stop whatever the bus carries; the MISSED windows
+belong to saturation (one saturated run: 1 filter update in 15 s). Last
+full runs 2026-10-02: 50 checks PASS + 1 WARN, with and without the ACK
+source; 4 std PIDs at 500 ms = 7.8 polls/s, period-0 custom RPM 17
+updates / 5 s, 17 / 32 / 9 in the combination leg, HTTP p50 65 ms.

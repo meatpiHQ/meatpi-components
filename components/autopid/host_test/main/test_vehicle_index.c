@@ -368,6 +368,7 @@ void test_vidx_json_roundtrip(void)
     a.scan_ts = 1759300000;
     b.pending_profile = true;
     snprintf(b.protocol, sizeof(b.protocol), "7");
+    b.dialect = AP_DIALECT_UDS;                       /* a WWH-OBD van */
 
     ap_vidx_init(&idx);
     ap_vidx_add(&idx, &a, NULL);
@@ -383,6 +384,8 @@ void test_vidx_json_roundtrip(void)
     TEST_ASSERT_NOT_NULL(strstr(body, "\"ecus\":\"7E8:BE7FB813,7E9:80000001,"
                                       "7EA:00000000\""));
     TEST_ASSERT_NULL(strstr(body, "\"current\":true"));  /* file: no flag */
+    TEST_ASSERT_NOT_NULL(strstr(body, "\"dialect\":\"obd2\""));
+    TEST_ASSERT_NOT_NULL(strstr(body, "\"dialect\":\"uds\""));
 
     TEST_ASSERT_TRUE(ap_vidx_from_json(body, &back));
     TEST_ASSERT_EQUAL(2, back.n);
@@ -407,6 +410,20 @@ void test_vidx_json_roundtrip(void)
     TEST_ASSERT_EQUAL_STRING("", back.v[1].vin);
     TEST_ASSERT_EQUAL_STRING("7", back.v[1].protocol);
     TEST_ASSERT_TRUE(back.v[1].pending_profile);
+    TEST_ASSERT_EQUAL(AP_DIALECT_OBD2, back.v[0].dialect);
+    TEST_ASSERT_EQUAL(AP_DIALECT_UDS, back.v[1].dialect);
+
+    /* a store written before dialects existed has no such field: every
+       car in it is an OBD-II car; an unknown word is one too */
+    TEST_ASSERT_TRUE(ap_vidx_from_json(
+        "{\"version\":1,\"current\":\"\",\"vehicles\":["
+        "{\"key\":\"" VIN_A "\",\"vin\":\"" VIN_A "\",\"protocol\":\"6\"},"
+        "{\"key\":\"fp:0123abcd\",\"fingerprint\":\"0123abcd\","
+        "\"dialect\":\"klingon\"}]}",
+        &back));
+    TEST_ASSERT_EQUAL(2, back.n);
+    TEST_ASSERT_EQUAL(AP_DIALECT_OBD2, back.v[0].dialect);
+    TEST_ASSERT_EQUAL(AP_DIALECT_OBD2, back.v[1].dialect);
 
     /* an empty index round-trips empty */
     ap_vidx_init(&idx);

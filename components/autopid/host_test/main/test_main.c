@@ -18,6 +18,16 @@
    test_vehicle_index.c: the vehicle store index (second pass) */
 void run_vehicle_tests(void);
 void run_vehicle_index_tests(void);
+/* test_bus_guard.c: may the chip transmit, given what is on the bus */
+void run_bus_guard_tests(void);
+/* test_dialect.c: OBD dialects (obd2 / uds) and the chip's 29-bit print */
+void run_dialect_tests(void);
+/* test_dtc_report.c: the DTC report's per-ECU items and lamps */
+void run_dtc_report_tests(void);
+/* test_resp_lines.c: the chip's 29-bit print, pending lines, service 22 */
+void run_resp_lines_tests(void);
+/* test_j1939_rows.c: the PGN: rows, their classes, the SPN expressions */
+void run_j1939_rows_tests(void);
 
 /* ---- helpers ----------------------------------------------------------------- */
 
@@ -2046,6 +2056,11 @@ void app_main(void)
 
     run_vehicle_tests();
     run_vehicle_index_tests();
+    run_bus_guard_tests();
+    run_dialect_tests();
+    run_dtc_report_tests();
+    run_resp_lines_tests();
+    run_j1939_rows_tests();
 
     UNITY_END();
 }

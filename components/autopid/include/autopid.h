@@ -117,8 +117,10 @@ void autopid_set_value_sink(autopid_value_sink_t sink);
 
 typedef struct
 {
-    uint32_t polls_ok;
+    uint32_t polls_ok;       /* chip requests answered                 */
     uint32_t polls_failed;
+    uint32_t passive_ok;     /* J1939 rows: the group was in the store */
+    uint32_t passive_failed; /* ... nobody sent it                     */
     uint32_t params_loaded;
     uint32_t pids_loaded;
     uint32_t filters_loaded;
@@ -129,6 +131,8 @@ typedef struct
     bool     paused_client;  /* yielding to an external ELM app        */
     bool     paused_diag;    /* a diagnostic tool holds the bus (the   */
                              /* UDS Tool / J2534 "exclusive" option)   */
+    bool     paused_bus;     /* the bus guard: the vehicle bus runs at */
+                             /* a bitrate the protocol contradicts     */
 } autopid_stats_t;
 
 esp_err_t autopid_stats(autopid_stats_t *out);

@@ -40,6 +40,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include "can_manager.h"
 #include "log_manager.h"
 #include "obd_gate.h"
 
@@ -200,6 +201,7 @@ static void handle_connect(const j2534_transport_t *t, const j2534_hdr_t *h,
 
     uint32_t proto = rd_u32(payload);
     uint32_t flags = rd_u32(payload + 4);
+    uint32_t baud = rd_u32(payload + 8);
     uint32_t tx_id = (h->length >= 20) ? rd_u32(payload + 12) : 0;
     uint32_t rx_id = (h->length >= 20) ? rd_u32(payload + 16) : 0;
     bool ext = (flags & J2534_TX_CAN_29BIT_ID) != 0;
@@ -213,6 +215,29 @@ static void handle_connect(const j2534_transport_t *t, const j2534_hdr_t *h,
     if (slot < 0)
     {
         j2534_srv_send_ack(t, h->seq, 0, J2534_ERR_FAILED, NULL);
+        return;
+    }
+
+    /* the bus has its bitrate (the device's setting, or what the node read
+       off the wire): a tester that asks for another one is told so, not
+       served at the wrong rate */
+    can_manager_status_t cst;
+    uint32_t bus_kbps = 0;
+
+    if (can_manager_status(&cst) == ESP_OK && cst.running)
+    {
+        bus_kbps = cst.link.verified ? cst.link.detected_kbps
+                 : cst.baud_auto     ? 0
+                                     : cst.baud_kbps;
+    }
+
+    if ((proto == J2534_PROT_CAN || proto == J2534_PROT_ISO15765) &&
+        j2534_connect_baud_check(baud, bus_kbps) != J2534_STATUS_NOERROR)
+    {
+        ESP_LOGW(TAG, "CONNECT at %lu bit/s refused: the CAN bus runs at "
+                      "%lu kbit/s", (unsigned long)baud,
+                 (unsigned long)bus_kbps);
+        j2534_srv_send_ack(t, h->seq, 0, J2534_ERR_INVALID_BAUDRATE, NULL);
         return;
     }
 

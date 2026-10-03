@@ -340,6 +340,34 @@ static void test_tcp_gate_predicate(void)
     TEST_ASSERT_TRUE(j2534_tcp_gate_allowed(true, false, false, false));
 }
 
+static void test_connect_baud_check(void)
+{
+    /* the tester asks for what the bus runs at */
+    TEST_ASSERT_EQUAL_UINT32(J2534_STATUS_NOERROR,
+                             j2534_connect_baud_check(500000, 500));
+    TEST_ASSERT_EQUAL_UINT32(J2534_STATUS_NOERROR,
+                             j2534_connect_baud_check(250000, 250));
+    /* the rates a setting rounds */
+    TEST_ASSERT_EQUAL_UINT32(J2534_STATUS_NOERROR,
+                             j2534_connect_baud_check(33333, 33));
+    TEST_ASSERT_EQUAL_UINT32(J2534_STATUS_NOERROR,
+                             j2534_connect_baud_check(83333, 83));
+    TEST_ASSERT_EQUAL_UINT32(J2534_STATUS_NOERROR,
+                             j2534_connect_baud_check(95238, 95));
+    /* ... or for something else: refused, not silently served at 500 */
+    TEST_ASSERT_EQUAL_UINT32(J2534_ERR_INVALID_BAUDRATE,
+                             j2534_connect_baud_check(250000, 500));
+    TEST_ASSERT_EQUAL_UINT32(J2534_ERR_INVALID_BAUDRATE,
+                             j2534_connect_baud_check(500000, 250));
+    TEST_ASSERT_EQUAL_UINT32(J2534_ERR_INVALID_BAUDRATE,
+                             j2534_connect_baud_check(0, 500));
+    TEST_ASSERT_EQUAL_UINT32(J2534_ERR_INVALID_BAUDRATE,
+                             j2534_connect_baud_check(500, 500));
+    /* the bus bitrate is not known: the channel opens */
+    TEST_ASSERT_EQUAL_UINT32(J2534_STATUS_NOERROR,
+                             j2534_connect_baud_check(500000, 0));
+}
+
 void app_main(void)
 {
     UNITY_BEGIN();
@@ -358,5 +386,6 @@ void app_main(void)
     RUN_TEST(test_frame_read_discard_and_stop);
     RUN_TEST(test_ack_encode_vectors);
     RUN_TEST(test_tcp_gate_predicate);
+    RUN_TEST(test_connect_baud_check);
     UNITY_END();
 }

@@ -92,8 +92,14 @@ Types 0x01..0x15 are tester to device; 0x80.. are device to tester.
 | `0x81` | `RX_MSG` | device: one PASSTHRU_MSG; `seq 0`, `hdr.channel` = source channel | |
 | `0x82` | `EVENT` | reserved, never sent in v1 | |
 
-`CONNECT` details: `baud` is informational (the bus parameters come from
-`can_manager`); `flags` bit `0x100` (`TX_CAN_29BIT_ID`) selects 29-bit
+`CONNECT` details: the bus parameters come from `can_manager`, and since
+2026-10-03 `baud` is checked against them for CAN and ISO15765: a tester
+that asks for another bitrate than the bus runs at (the device's setting,
+or what its listen-before-talk policy read off the wire) gets
+`ERR_INVALID_BAUDRATE` instead of a channel at the wrong rate. Whole
+kbit/s decide (83333 matches the setting `83`); with `can_manager.baud =
+auto` and nothing detected yet any baud is accepted. `flags` bit `0x100`
+(`TX_CAN_29BIT_ID`) selects 29-bit
 ids; `tx_id`/`rx_id` are optional (for ISO15765 they may instead come
 from a FLOW_CONTROL filter). Errors: `ERR_DEVICE_NOT_CONNECTED` before
 `OPEN` or with a short payload, `ERR_NOT_SUPPORTED` for a protocol other
@@ -157,7 +163,7 @@ Data conventions:
 | `0x15` | `ERR_INVALID_FILTER_ID` | |
 | `0x16` | `ERR_NO_FLOW_CONTROL` | ISO15765 write without a bound tx/rx id |
 | `0x17` | `ERR_NOT_UNIQUE` | |
-| `0x18` | `ERR_INVALID_BAUDRATE` | |
+| `0x18` | `ERR_INVALID_BAUDRATE` | `CONNECT` (CAN, ISO15765) with a baud the bus does not run at |
 | `0x19` | `ERR_INVALID_DEVICE_ID` | |
 | `0x1A` | `ERR_DEVICE_IN_USE` | a tester is attached on another transport |
 

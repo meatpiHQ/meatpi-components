@@ -315,3 +315,15 @@ bool j2534_tcp_gate_allowed(bool allow_lan, bool loopback, bool on_ap,
 {
     return allow_lan || loopback || on_ap || on_usb;
 }
+
+uint32_t j2534_connect_baud_check(uint32_t asked_bps, uint32_t bus_kbps)
+{
+    if (bus_kbps == 0)
+    {
+        return J2534_STATUS_NOERROR;
+    }
+
+    /* whole kbit/s, as the settings count: 83333 is "83" */
+    return (asked_bps / 1000u == bus_kbps) ? J2534_STATUS_NOERROR
+                                           : J2534_ERR_INVALID_BAUDRATE;
+}

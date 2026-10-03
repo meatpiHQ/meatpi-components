@@ -252,6 +252,18 @@ size_t j2534_ack_encode(uint8_t *buf, size_t cap, uint16_t seq,
 bool j2534_tcp_gate_allowed(bool allow_lan, bool loopback, bool on_ap,
                             bool on_usb);
 
+/**
+ * CONNECT's baud against the bus the device sits on. The native CAN node
+ * runs at the device's setting (or at what its listen-before-talk policy
+ * read off the bus), not at the tester's wish: a channel opened "at 250000"
+ * on a 500 kbit/s node would read and write at 500. @p bus_kbps is the
+ * node's bitrate in kbit/s as the settings count it (33 = 33.333, 83 =
+ * 83.333, 95 = 95.238), 0 = not known (CAN down, or automatic with nothing
+ * detected yet: accepted, nothing can be sent until it is).
+ * @return J2534_STATUS_NOERROR or J2534_ERR_INVALID_BAUDRATE.
+ */
+uint32_t j2534_connect_baud_check(uint32_t asked_bps, uint32_t bus_kbps);
+
 #ifdef __cplusplus
 }
 #endif

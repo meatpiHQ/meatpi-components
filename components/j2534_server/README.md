@@ -15,6 +15,15 @@ transports: the TCP listener in this component (port 6809), USB CDC-ACM
 tester at a time across all of them; a second one is answered
 `ERR_DEVICE_IN_USE`.
 
+The CAN bitrate is the device's, not the tester's (2026-10-03): the native
+node runs at the `can_manager` setting, or at what its listen-before-talk
+policy read off the bus. `CONNECT` (CAN or ISO15765) with another baud is
+answered `ERR_INVALID_BAUDRATE` instead of a channel that reads and writes
+at the wrong rate (the baud was ignored before). With `can_manager.baud =
+auto` and nothing detected yet the channel opens, and writes fail until the
+bus shows traffic: for an ECU alone on a desk (silent until asked) set the
+bitrate. Pure rule: `j2534_connect_baud_check()`.
+
 Layout (each file under the 700-line cap):
 
 | File | Role |

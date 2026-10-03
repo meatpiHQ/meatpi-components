@@ -276,6 +276,10 @@ uint32_t j2534_channel_connect(int slot, uint32_t protocol, uint32_t flags,
             teardown(c);
             st = J2534_ERR_FAILED;
         }
+        else
+        {
+            (void)can_manager_subscriber_name(c->can_sub, "j2534");
+        }
     }
     else if (protocol == J2534_PROT_ISO15765)
     {

@@ -134,6 +134,11 @@ esp_err_t http_server_manager_set_request_gate(http_request_gate_fn_t fn);
  *  (ble_http). */
 uint16_t http_server_manager_port(void);
 
+/** Occupancy of the route table (boot health report): routes registered so
+ *  far, WebSocket channels included, and the table's size. A registration
+ *  beyond it is refused and logged as an error. */
+void http_server_manager_capacity(size_t *used, size_t *cap);
+
 /**
  * @brief The underlying server handle, for APIs that require it (e.g. async
  *        WebSocket sends via httpd_ws_send_frame_async).

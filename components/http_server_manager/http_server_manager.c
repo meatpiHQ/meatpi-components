@@ -74,6 +74,19 @@ uint16_t http_server_manager_port(void)
     return HTTP_SERVER_MANAGER_PORT;
 }
 
+void http_server_manager_capacity(size_t *used, size_t *cap)
+{
+    if (used != NULL)
+    {
+        *used = s_uri_count;
+    }
+
+    if (cap != NULL)
+    {
+        *cap = HSM_MAX_BUFFERED_URIS;
+    }
+}
+
 static esp_err_t gate_reject(httpd_req_t *req)
 {
     httpd_resp_set_status(req, "403 Forbidden");

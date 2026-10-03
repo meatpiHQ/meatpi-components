@@ -24,6 +24,7 @@ then served locally on every later request. See `ARCHITECTURE.md` §8.
 - `esp_err_t http_server_manager_register_assets(const http_asset_t *table)` — sentinel-terminated asset table. **Pre-start only** (tables are read lock-free by the catch-all). Earlier tables win on conflicts.
 - `esp_err_t http_server_manager_set_asset_fetcher(http_asset_fetch_fn_t fn)` — inject the fetch-on-miss downloader (main wires the download component's ensure-present here). NULL disables; misses then 404 with `source_url` logged.
 - `esp_err_t http_server_manager_set_request_gate(http_request_gate_fn_t fn)` — a per-request admission gate `bool fn(int sockfd)`. Every registered route (incl. WS pre-handshake) is installed behind a trampoline that consults the gate first; `false` → 403 (WS: refuse before the 101), `true` → chain to the real handler. Content-agnostic — the manager knows nothing about *why*; main wires it to `wifi_manager_http_request_allowed` for the network-trust lockdown. NULL disables. The gate runs in httpd-task context: keep it fast + non-blocking.
+- `void http_server_manager_capacity(size_t *used, size_t *cap)` — occupancy of the route table (2026-10-03): routes registered so far, WebSocket channels included, and the table's size (`HSM_MAX_BUFFERED_URIS`, 144). Main prints it as `WICAN CAPS http_routes=113/144` and latches `registry_headroom` below 2 free; `/api/status` carries it in `health.caps.http_routes`. The table had overflowed three times (80, 96, 112) with the last registration refused each time; the third was found by this getter on its first boot, at 112 of 112.
 - `httpd_handle_t http_server_manager_handle(void)` — escape hatch for APIs needing the raw handle (async WebSocket sends). Do not register handlers through it.
 
 `http_asset_t` fields: `uri` (exact, or a prefix entry: a path ending in `/` plus
@@ -108,7 +109,7 @@ numbers **estimated** — replace with **measured** before release.
 
 | Region                          | Where           | Size (est.) | Notes                          |
 |---------------------------------|-----------------|-------------|---------------------------------|
-| Route buffer `s_uris[48]`       | PSRAM `.bss`    | ~1.5 KB     | `EXT_RAM_BSS_ATTR`             |
+| Route buffer `s_uris[144]`      | PSRAM `.bss`    | ~4.6 KB     | `EXT_RAM_BSS_ATTR` (113 in use, 2026-10-03) |
 | Asset table ptrs `s_tables[16]` | PSRAM `.bss`    | 128 B       | `EXT_RAM_BSS_ATTR`             |
 | Chunk buffer (per active file)  | internal heap   | 4 KB transient | `// internal: DMA / cache-off during FS read` |
 | httpd stack/control             | per esp_http_server config | ~4–8 KB | owned by IDF httpd          |

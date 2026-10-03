@@ -42,7 +42,18 @@ extern "C" {
    rejects surface as 404s on whatever registers LATER (ws channels,
    /api/logs). Watch the "route buffer full" boot error when adding
    routes. Each slot is one httpd_uri_t (~16 B) in PSRAM — cheap. */
-#define HSM_MAX_BUFFERED_URIS 112 /* 2026-07-08: 83 static routes + WS channels overflowed 80 (dtc+dbc routes; symptom = ws channel 404s); 2026-09-07: the script_engine reference/examples/check routes overflowed 96 (symptom = the LAST route registered 404s with no other sign) */
+/* The route table (PSRAM). History of running out, each time with the LAST
+ * registration refused and nothing else to show for it:
+ *   2026-07-08  83 static routes + the WebSocket channels overflowed 80
+ *               (dtc + dbc routes; symptom: ws channel 404s)
+ *   2026-09-07  the script_engine reference / examples / check routes
+ *               overflowed 96
+ *   2026-10-03  112 of 112 in use, found the day the table got an occupancy
+ *               getter (http_server_manager_capacity, WICAN CAPS http_routes,
+ *               /api/status health.caps): one more route (/api/j1939) and
+ *               /ws/log was refused
+ * 144 leaves 31 free; the boot report latches a fault below 2. */
+#define HSM_MAX_BUFFERED_URIS 144
 #define HSM_PATH_MAX 192
 
 /* ---- match (http_server_manager_match.c, pure / host-testable) ------------ */

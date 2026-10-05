@@ -147,7 +147,7 @@ static esp_err_t do_transaction(const uds_transport_t *t,
     esp_err_t err;
 
     /* the shared bus has a second requester (autopid through the MIC): a
-       reply that does not belong to OUR SID is a stray — a frame left on
+       reply that does not belong to OUR SID is a stray, a frame left on
        the bus by another conversation that landed in our window (bench
        2026-09-16: `41 0C ..` for `3E 00`, `62 01 02` for a `22 01 01`).
        The transaction hold stops NEW interleaving; a stray from a frame
@@ -395,7 +395,7 @@ static void tp_timer_cb(void *arg)
         return;
     }
 
-    /* 3E 80 = TesterPresent, suppressPositiveResponse — fire and forget */
+    /* 3E 80 = TesterPresent, suppressPositiveResponse: fire and forget */
     const uint8_t tp[] = { 0x3E, 0x80 };
     uint8_t r[8];
     size_t rn = 0;

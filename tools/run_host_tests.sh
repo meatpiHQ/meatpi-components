@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# MeatPi components — host unit tests.
+# MeatPi components: host unit tests.
 #
 # Builds and runs every components/*/host_test on the ESP-IDF `linux`
 # target (no hardware needed) and prints a compact PASS/FAIL summary
@@ -12,7 +12,7 @@
 # Requirements: Linux with gcc/cmake/ninja/libbsd-dev and ESP-IDF
 # (the version in the repo README). Two ways to provide IDF:
 #   - an environment where `idf.py` is already on PATH (e.g. after
-#     `. $IDF_PATH/export.sh`, or inside the espressif/idf container —
+#     `. $IDF_PATH/export.sh`, or inside the espressif/idf container:
 #     this is what CI uses), or
 #   - a plain checkout at ~/esp-idf (or $IDF_PATH) with its python env
 #     installed; the script then invokes idf.py through that env
@@ -28,7 +28,7 @@ else
     export IDF_PYTHON_CHECK_CONSTRAINTS=no
     IDF_PY=$(ls -d "$HOME"/.espressif/python_env/*/bin/python 2>/dev/null | head -1)
     if [ -z "${IDF_PY:-}" ] || [ ! -d "$IDF_PATH" ]; then
-        echo "idf.py not on PATH and no IDF checkout found — install ESP-IDF" >&2
+        echo "idf.py not on PATH and no IDF checkout found: install ESP-IDF" >&2
         exit 1
     fi
     idf() { "$IDF_PY" "$IDF_PATH/tools/idf.py" "$@"; }

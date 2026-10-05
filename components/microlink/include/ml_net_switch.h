@@ -1,6 +1,6 @@
 /**
  * @file ml_net_switch.h
- * @brief MicroLink Network Switching — WiFi Primary + Cellular Fallback
+ * @brief MicroLink Network Switching: WiFi Primary + Cellular Fallback
  *
  * Manages automatic failover between WiFi and cellular connectivity.
  * WiFi is the primary transport; when it fails, switches to cellular.

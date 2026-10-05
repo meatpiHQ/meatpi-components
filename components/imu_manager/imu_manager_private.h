@@ -23,8 +23,8 @@
 /**
  * @file imu_manager_private.h
  * @brief Internal contracts: the PURE activity state machine (time
- *        injected, no RTOS), the PURE settings migration — both
- *        host-testable — and the boot-applied settings surface.
+ *        injected, no RTOS), the PURE settings migration (both
+ *        host-testable) and the boot-applied settings surface.
  */
 #pragma once
 
@@ -38,7 +38,7 @@ typedef struct cJSON cJSON;
 
 /** v1 (wom_threshold) -> v2 (smd_sensitivity). Mutates in place;
  *  missing new keys are filled from schema defaults by validation.
- *  (imu_manager_migrate.c — pure, host-tested.) */
+ *  (imu_manager_migrate.c: pure, host-tested.) */
 esp_err_t imu_settings_migrate(uint32_t from_version, cJSON *settings);
 
 /* ---- settings (imu_manager_settings.c) -------------------------------------- */
@@ -81,7 +81,7 @@ int imu_policy_on_motion(imu_policy_t *p, uint32_t now_ms);
 int imu_policy_on_tick(imu_policy_t *p, uint32_t now_ms);
 
 /** WOM publish gate: true = publish this one, false = throttled.
- *  (Driving vibration fires WoM continuously — subscribers get at most
+ *  (Driving vibration fires WoM continuously: subscribers get at most
  *  one event per throttle window.) Wrap-safe. */
 bool imu_policy_wom_gate(imu_policy_t *p, uint32_t now_ms);
 

@@ -22,7 +22,7 @@
 
 /**
  * @file data_logger_cli.c
- * @brief The `logger` CLI command — registered by
+ * @brief The `logger` CLI command: registered by
  *        data_logger_register_cli() on the settings apply (§6b).
  *        `logger test <rows>` queues synthetic param records and
  *        `logger frametest <n>` synthetic CAN frames (bench smoke +
@@ -106,7 +106,7 @@ static int cmd_logger_frametest(int n)
 
         if (dl_can_test_push(chunk) != ESP_OK)
         {
-            cmdline_printf("queued %d/%d — CAN stream off "
+            cmdline_printf("queued %d/%d: CAN stream off "
                            "(enabled + can_log required)\n", queued, n);
             return 1;
         }

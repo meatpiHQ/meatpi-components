@@ -1,4 +1,4 @@
-# Host test compiles ONLY the pure arbitration policy — no I2C, no RTOS.
+# Host test compiles ONLY the pure arbitration policy: no I2C, no RTOS.
 set(comp_dir "${CMAKE_CURRENT_LIST_DIR}/../..")
 
 idf_component_register(

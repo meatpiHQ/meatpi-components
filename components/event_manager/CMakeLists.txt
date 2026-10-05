@@ -9,7 +9,7 @@ idf_component_register(
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "."
     # The automation engine: registries + rules + dispatcher. Depends on
-    # settings/log/esp_timer/cJSON ONLY (§9 layering) — every component
+    # settings/log/esp_timer/cJSON ONLY (§9 layering): every component
     # with events/actions points AT it via its own <comp>_events.c.
     REQUIRES espressif__cjson
     PRIV_REQUIRES settings_manager log_manager esp_timer

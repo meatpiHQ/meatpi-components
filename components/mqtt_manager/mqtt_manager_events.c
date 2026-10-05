@@ -27,7 +27,7 @@
  *
  * Hot-source rule (TASK_event_manager.md §5): mqtt.rx topics are
  * derived FROM THE ENABLED RULES at start (meatpi-approved AUTO
- * proposal) — we subscribe only what rules can match, never a
+ * proposal), we subscribe only what rules can match, never a
  * firehose. Payloads are truncated to the event kv size (47 chars);
  * bigger payloads belong to bridges, not automation.
  *
@@ -103,7 +103,7 @@ static esp_err_t act_publish(const cJSON *with, const em_event_t *ev)
 
     /* Offline is the async path's contract, not a rule error: the drop
        is already counted (stats.dropped_offline) and event actions are
-       fire-and-forget — surfacing it would make event_manager warn on
+       fire-and-forget, surfacing it would make event_manager warn on
        EVERY event while MQTT is disconnected or disabled (default
        imu.bump/motion rules -> endless console spam on the bench). */
     return (err == ESP_ERR_INVALID_STATE) ? ESP_OK : err;

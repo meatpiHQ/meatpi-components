@@ -76,7 +76,7 @@ static esp_err_t write_rtc_from_system(void)
 
 /* ---- SNTP task -------------------------------------------------------------
  * Sync policy (meatpi 2026-07-04): sync system time + RTC on EVERY
- * internet (re)connect — not just the first — plus a configurable
+ * internet (re)connect (not just the first) plus a configurable
  * periodic resync while the link stays up. Failed attempts retry in
  * 60 s. */
 
@@ -370,7 +370,7 @@ esp_err_t rtc_manager_sync_now(void)
 
     if (!dev_status_manager_any_set(DEV_STATUS_NETWORK_CONNECTED_MASK))
     {
-        return ESP_ERR_INVALID_STATE; /* no internet — nothing to try */
+        return ESP_ERR_INVALID_STATE; /* no internet: nothing to try */
     }
 
     return sntp_sync_once() ? ESP_OK : ESP_FAIL;

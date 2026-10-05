@@ -1,5 +1,5 @@
 # Host test compiles ONLY the pure utility layer (redaction, route parsing,
-# level mapping) — no esp_http_server needed, so it runs on the linux target.
+# level mapping): no esp_http_server needed, so it runs on the linux target.
 set(comp_dir "${CMAKE_CURRENT_LIST_DIR}/../..")
 
 idf_component_register(

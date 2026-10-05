@@ -23,7 +23,7 @@
 /**
  * @file http_server_manager_settings.c
  * @brief settings_manager descriptor for http_server_manager: the admin
- *        password (meatpi 2026-07-19 — the basic-password successor to
+ *        password (meatpi 2026-07-19, the basic-password successor to
  *        the parked pairing-token design). Disabled by default; when
  *        enabled every inbound HTTP request / WS handshake must present
  *        the password (Basic/Bearer header or `wican_auth` cookie).

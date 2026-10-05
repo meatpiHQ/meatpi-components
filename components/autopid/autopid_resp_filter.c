@@ -146,7 +146,7 @@ bool ap_filter_frame(const char *line, size_t len, uint32_t frame_id,
     }
 
     /* remaining byte tokens = the frame's data (expressions index from
-       B0 = first data byte — the legacy filter frame-of-reference).
+       B0 = first data byte: the legacy filter frame-of-reference).
        Non-hex tokens are SKIPPED like legacy did: the chip appends
        markers such as "<DATA ERROR" after byte-perfect data
        (bench-observed with PCAN-injected frames) */
@@ -193,7 +193,7 @@ bool ap_flt_stream_feed_ex(ap_flt_stream_t *st, const uint8_t *bytes,
 
         if (ch == '\r' || ch == '\n')
         {
-            /* a truncated line can't be trusted as a frame — skip it
+            /* a truncated line can't be trusted as a frame: skip it
                whole rather than parse half its bytes */
             if (st->n > 0 && !st->overflow &&
                 ap_filter_frame(st->line, st->n, frame_id, payload,

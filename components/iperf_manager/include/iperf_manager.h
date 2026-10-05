@@ -26,7 +26,7 @@
  *
  * Thin lifecycle + CLI wrapper around the managed `espressif/iperf`
  * engine (the esp-idf iperf example matured into a component;
- * **iperf2-compatible** — the PC/Pi side must run iperf 2.x, NOT
+ * **iperf2-compatible**: the PC/Pi side must run iperf 2.x, NOT
  * iperf3; default port 5001). Nothing runs until the operator starts a
  * session from the console:
  *
@@ -38,7 +38,7 @@
  *
  * Use cases: DUT<->PC over USB-NCM (192.168.82.x), DUT<->bench-Pi over
  * WiFi, and later the ESPNetlink LTE uplink. The server listens on
- * every netif — it is operator-started, time-bounded, and never
+ * every netif: it is operator-started, time-bounded, and never
  * persists across reboots (no autostart setting on purpose: an open
  * traffic sink is a diagnostic, not a service).
  *

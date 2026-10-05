@@ -23,9 +23,9 @@
 /**
  * @file http_server_manager_auth.c
  * @brief PURE admin-password check (host-tested): parse the request's
- *        Authorization header (Basic — any username, the password part
- *        counts — or Bearer) or the `wican_auth` cookie and compare
- *        against the configured password. No httpd, no settings — the
+ *        Authorization header (Basic (any username, the password part
+ *        counts) or Bearer) or the `wican_auth` cookie and compare
+ *        against the configured password. No httpd, no settings: the
  *        caller feeds strings. Comparison is flat (no early-out) so
  *        timing doesn't leak the match length position.
  *
@@ -43,7 +43,7 @@
 
 #include "http_server_manager_private.h"
 
-/* tiny base64 decoder — dependency-free so this file host-tests clean */
+/* tiny base64 decoder: dependency-free so this file host-tests clean */
 static int b64_val(char c)
 {
     if (c >= 'A' && c <= 'Z') return c - 'A';

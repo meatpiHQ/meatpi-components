@@ -1,4 +1,4 @@
-# event_manager — host unit tests
+# event_manager: host unit tests
 
 Pure modules only (`event_manager_rules.c`, `event_manager_template.c`
 with `EM_HOST_TEST`). Run via `.\test.ps1 host event_manager`.

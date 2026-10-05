@@ -22,7 +22,7 @@
 
 /**
  * @file iperf_manager_settings.c
- * @brief settings_manager descriptor for iperf_manager ({cli} only —
+ * @brief settings_manager descriptor for iperf_manager ({cli} only:
  *        sessions are deliberately CLI-started, never persisted).
  */
 #include "settings_manager.h"

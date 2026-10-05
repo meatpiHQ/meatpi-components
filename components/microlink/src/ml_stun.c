@@ -99,7 +99,7 @@ static size_t build_stun_request(uint8_t *out, uint8_t *txid_out) {
     memcpy(out + pos, STUN_SOFTWARE, STUN_SOFTWARE_LEN);
     pos += STUN_SOFTWARE_LEN;
 
-    /* FINGERPRINT attribute (type 0x8028) — CRC32 of everything before it */
+    /* FINGERPRINT attribute (type 0x8028): CRC32 of everything before it */
     uint32_t fp = stun_fingerprint(out, pos);
     out[pos++] = (STUN_ATTR_FINGERPRINT >> 8) & 0xFF;
     out[pos++] = STUN_ATTR_FINGERPRINT & 0xFF;
@@ -148,7 +148,7 @@ static esp_err_t ensure_stun_socket(microlink_t *ml) {
 esp_err_t ml_stun_resolve_servers(microlink_t *ml) {
     struct addrinfo *res = NULL;
 
-    /* Determine primary STUN host — use parsed DERPMap home region if available */
+    /* Determine primary STUN host: use parsed DERPMap home region if available */
     const char *primary_host = ML_STUN_PRIMARY_HOST;
     uint16_t primary_port = ML_STUN_PRIMARY_PORT;
 
@@ -242,11 +242,11 @@ esp_err_t ml_stun_resolve_servers(microlink_t *ml) {
 }
 
 /* ============================================================================
- * Send Probe (hostname-based — legacy, resolves DNS each time)
+ * Send Probe (hostname-based: legacy, resolves DNS each time)
  * ========================================================================== */
 
 esp_err_t ml_stun_send_probe(microlink_t *ml, const char *server, uint16_t port) {
-    /* Resolve STUN server — accept either IPv4 or IPv6 */
+    /* Resolve STUN server: accept either IPv4 or IPv6 */
     struct addrinfo hints = { .ai_family = AF_UNSPEC, .ai_socktype = SOCK_DGRAM };
     struct addrinfo *res = NULL;
     char port_str[6];
@@ -306,7 +306,7 @@ esp_err_t ml_stun_send_probe(microlink_t *ml, const char *server, uint16_t port)
 }
 
 /* ============================================================================
- * Send Probe (pre-resolved IP — no DNS in hot path)
+ * Send Probe (pre-resolved IP: no DNS in hot path)
  * ========================================================================== */
 
 esp_err_t ml_stun_send_probe_to(microlink_t *ml, uint32_t server_ip, uint16_t port) {
@@ -376,7 +376,7 @@ bool ml_stun_parse_response(const uint8_t *data, size_t len,
 
     /* Check txid against IPv4 txid (IPv6 responses use separate parser) */
     if (txid_v4_valid && memcmp(data + 8, txid_v4, 12) != 0) {
-        /* Could be an IPv6 response arriving on IPv4 queue — don't warn */
+        /* Could be an IPv6 response arriving on IPv4 queue: don't warn */
         ESP_LOGD(TAG, "STUN IPv4 txid mismatch (may be IPv6 response)");
         return false;
     }
@@ -456,7 +456,7 @@ bool ml_stun_parse_response(const uint8_t *data, size_t len,
     if (!found_ipv6_only) {
         ESP_LOGW(TAG, "STUN: no mapped address attribute found");
     }
-    /* If found_ipv6_only, silently return false — IPv6 parser will handle it */
+    /* If found_ipv6_only, silently return false: IPv6 parser will handle it */
     return false;
 }
 
@@ -580,7 +580,7 @@ bool ml_stun_parse_response_ipv6(const uint8_t *data, size_t len,
             }
 
             if (family == 0x01 && attr_len >= 8) {
-                /* Got IPv4 response on IPv6 socket (dual-stack) — skip */
+                /* Got IPv4 response on IPv6 socket (dual-stack): skip */
                 offset += (attr_len + 3) & ~3;
                 continue;
             }

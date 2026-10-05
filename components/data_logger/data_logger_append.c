@@ -23,7 +23,7 @@
 /**
  * @file data_logger_append.c
  * @brief The two append-log storage engines (meatpi 2026-07-07: sqlite
- *        stays for tooling compatibility, these are the fast options —
+ *        stays for tooling compatibility, these are the fast options,
  *        BENCHMARKS.md measured raw append at ~170× tuned sqlite).
  *
  * Engines take a dl_append_ctx_t since 2026-07-09 so the param and CAN
@@ -31,7 +31,7 @@
  *
  * csv    param stream: `ts_ms,source.name,value` rows under a header;
  *        CAN stream:   `ts_ms,id,ext,rtr,dlc,data` (hex id + payload).
- * binary dl/can_<epoch>.wdl — "WDL1" magic then framed records:
+ * binary dl/can_<epoch>.wdl: "WDL1" magic then framed records:
  *          0x01 def:   u16 id, u8 len, "source.name" (first use only)
  *          0x02 param: i64 ts_ms, u16 id, f64 value  (little-endian)
  *          0x03 frame: i64 ts_ms, u32 id_word, u8 dlc, data[dlc]
@@ -158,7 +158,7 @@ static void ap_repair_tail(const char *path, uint8_t fmt, char *stdio_buf)
 
 /* The stdio buffer must be INTERNAL (DMA-capable), deliberately not
  * PSRAM: FATFS hands big flushes straight to sdmmc, and a non-DMA
- * buffer makes the driver heap-allocate a bounce buffer PER TRANSFER —
+ * buffer makes the driver heap-allocate a bounce buffer PER TRANSFER,
  * which fails intermittently under load (bench 2026-07-07: EIO every
  * few thousand rows). Allocated at open / freed at close so an idle
  * stream costs zero internal RAM (~25 KB free at steady state). */
@@ -373,7 +373,7 @@ static esp_err_t bin_open(void *ctx, const char *path, bool frames)
 {
     esp_err_t err = ap_open(ctx, path, DL_AP_WDL, frames);
 
-    /* ids restart per open, definitions re-emitted on first use — a
+    /* ids restart per open, definitions re-emitted on first use: a
      * resumed file carries a second dictionary block; a def frame
      * applies to the records AFTER it, so sequential readers stay
      * correct */
@@ -467,7 +467,7 @@ const dl_engine_t dl_engine_binary =
    Text rows via the pure encoders in data_logger_files.c; same
    buffered-append + fflush/fsync-per-commit contract as csv. Each
    engine instance only ever sees its stream's record kind (the rings
-   route by kind) — a mismatched record is skipped defensively. */
+   route by kind): a mismatched record is skipped defensively. */
 
 static esp_err_t row_write(dl_append_ctx_t *c, const char *row, int n)
 {

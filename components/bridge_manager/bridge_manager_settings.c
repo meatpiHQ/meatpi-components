@@ -46,7 +46,7 @@ static const settings_field_t BRIDGE_ITEMS[] =
 };
 
 /* Defaults (meatpi 2026-07-18, legacy-parity): the OBD chip reachable out
-   of the box over TCP 35000 (socket_manager's default-enabled obd0 —
+   of the box over TCP 35000 (socket_manager's default-enabled obd0,
    the classic ELM327-WiFi-adapter convention 192.168.0.10:35000), the
    USB port-B UART (plug into a PC = serial ELM327), and the built-in web
    UI's terminal (ws_obd). All three ride the obd jack's multi_consumer
@@ -96,7 +96,7 @@ static esp_err_t on_validate(const cJSON *settings, char *err, size_t err_len)
     }
 
     /* BOOT apply (bridge_manager not started yet): the registry is not
-       final — dynamic socket/WS jacks register at bridge_endpoints_start,
+       final, dynamic socket/WS jacks register at bridge_endpoints_start,
        between this pass and bridge_manager_start. Pass -1 = skip the
        existence checks (cross-item rules still apply); build_bridge
        degrades an unknown name alone. A runtime PUT is strict. */

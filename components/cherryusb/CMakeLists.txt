@@ -23,7 +23,7 @@ if(BL_SDK_BASE)
     set(CONFIG_CHERRYUSB_HOST_ASIX 1)
     # RTL8152 DISABLED (meatpi 2026-07-13): the r815x driver demands a
     # 16 KB RX-aggregation buffer and its accumulation path needs a
-    # 32 KB internal-DMA pool — ruled not worth it; ASIX is the
+    # 32 KB internal-DMA pool: ruled not worth it; ASIX is the
     # supported USB-Ethernet adapter. Details: usb_config.h note +
     # CHECKLIST 2026-07-13. Also flip the Kconfig + usb_eth_host glue
     # gate if re-enabling.
@@ -50,10 +50,10 @@ elseif(ESP_PLATFORM)
     set(CONFIG_CHERRYUSB_DEVICE_DWC2_ESP 1)
     set(CONFIG_CHERRYUSB_HOST_DWC2_ESP 1)
     set(CONFIG_CHERRYUSB_OSAL "idf")
-    # WiCAN (PROVENANCE): device stack for role=device (usb_net_device —
+    # WiCAN (PROVENANCE): device stack for role=device (usb_net_device,
     # RNDIS USB-Ethernet to a PC → IP-over-USB → J2534 server, web UI,
     # bridges). Host + device both COMPILE; only one runs (role-gated at
-    # boot — the S3 OTG is host XOR device). NCM device isn't vendored
+    # boot: the S3 OTG is host XOR device). NCM device isn't vendored
     # (no class/cdc/usbd_cdc_ncm.c) so RNDIS (Windows-native) + CDC-ACM.
     set(CONFIG_CHERRYUSB_DEVICE 1)
     set(CONFIG_CHERRYUSB_DEVICE_CDC_RNDIS 1)

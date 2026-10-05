@@ -1,4 +1,4 @@
-/* web_ui_v2 — the File Manager page as an on-demand chunk (2026-09-07, meatpi:
+/* web_ui_v2: the File Manager page as an on-demand chunk (2026-09-07, meatpi:
    "improve the UI and UX of the Files tab, rename it File Manager").
    Loaded by index.html's PAGES.files stub from /ui/files.js the first time the
    page opens (embedded, gzipped; web_ui_v2/CMakeLists.txt minifies it with the
@@ -66,7 +66,7 @@ const EXT_HINT={corrupt:"set aside by the logger: the file was corrupt; what cou
 
 PAGES.__files=async(view)=>{
   const p=page(view,null,"File Manager","Browse, upload, download and tidy the internal flash and the SD card.");
-  /* the fs API validates paths literally — never percent-encode the slashes */
+  /* the fs API validates paths literally: never percent-encode the slashes */
   const enc=s=>encodeURIComponent(s).replace(/%2F/gi,"/");
   const join=(a,b)=>(a==="/"?"":a.replace(/\/$/,""))+"/"+b;
   const parent=x=>x.split("/").slice(0,-1).join("/")||"/";
@@ -180,7 +180,7 @@ PAGES.__files=async(view)=>{
           e.dir?h("a",{href:"#",class:"fn",title:"Open "+full,onclick:ev=>{ev.preventDefault();go(full);}},e.name):h("span",{class:"fn"},e.name),
           act.has(e.name)?chip("in use","warn"):null),
           known?h("div",{class:"fm-desc"},known):null);}},
-      {label:"Size",align:"right",get:e=>e.dir?"—":fmt.bytes(e.size)},
+      {label:"Size",align:"right",get:e=>e.dir?"-":fmt.bytes(e.size)},
       {label:"",get:e=>h("div",{class:"fm-acts"},...actions(e,act.has(e.name)))}
     ],list,{responsive:false});
     body.replaceChildren(t,path===((S.logger||{}).dir||"")?note("",["These are the logger's files. The ",h("a",{href:"#/logger"},"Logger page")," charts and exports them; the file being written is locked until logging is paused."]):null);

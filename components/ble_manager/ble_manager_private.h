@@ -23,7 +23,7 @@
 /**
  * @file ble_manager_private.h
  * @brief Internal API between ble_manager translation units, incl. the pure
- *        layer (host-testable — no BT stack deps).
+ *        layer (host-testable: no BT stack deps).
  */
 #pragma once
 
@@ -44,7 +44,7 @@ extern "C" {
 #define BLM_NAME_MAX       32
 #define BLM_TX_QUEUE_DEPTH 32
 
-/* ---- pure helpers (ble_manager_pack.c — host-tested) ------------------------ */
+/* ---- pure helpers (ble_manager_pack.c: host-tested) ------------------------ */
 
 /** Packets needed to flush `pending` buffered bytes plus `add` new ones at
  *  `max_data` bytes per packet (legacy round-up math). */
@@ -61,7 +61,7 @@ bool blm_pack_fill(uint8_t *buf, size_t *buf_len, size_t max_data,
 /** Device name from the device id: "WiC_<id>" (legacy ble_uid). */
 void blm_ident_name(const char *device_id, char *name, size_t name_len);
 
-/** Serial number from the device name — legacy rule verbatim:
+/** Serial number from the device name: legacy rule verbatim:
  *  serial = dev_name + 7 (the on-air value existing tools see). */
 void blm_ident_serial(const char *dev_name, char *serial, size_t serial_len);
 

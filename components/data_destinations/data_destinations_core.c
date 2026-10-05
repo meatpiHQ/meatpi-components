@@ -25,7 +25,7 @@
  * @brief PURE policy: settings-item parse/normalize, the per-destination
  *        scheduler with exponential backoff, percent-encoding, URL
  *        composition and `~/` topic expansion (the ABRP rules live in
- *        data_destinations_abrp.c). No IDF, no RTOS — host-tested.
+ *        data_destinations_abrp.c). No IDF, no RTOS: host-tested.
  */
 #include <stdio.h>
 #include <stdlib.h>

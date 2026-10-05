@@ -115,7 +115,7 @@ void bridge_manager_capacity(int *eps_used, int *eps_cap,
                              int *trs_used, int *trs_cap)
 {
     /* health surface: the endpoint table sat at 15/16 unnoticed until
-       the 2026-07-19 capacity sweep — the bench asserts headroom now */
+       the 2026-07-19 capacity sweep: the bench asserts headroom now */
     if (eps_used != NULL)
     {
         *eps_used = s_ep_count;

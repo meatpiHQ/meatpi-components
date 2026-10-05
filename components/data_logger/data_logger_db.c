@@ -22,7 +22,7 @@
 
 /**
  * @file data_logger_db.c
- * @brief The sqlite storage engine. Called from the writer task ONLY —
+ * @brief The sqlite storage engine. Called from the writer task ONLY:
  *        the vendored port is compiled SQLITE_THREADSAFE=0
  *        (sqlite3/PROVENANCE.md), so the single-toucher rule is a hard
  *        requirement, not style. Takes a dl_sq_ctx_t since 2026-07-09
@@ -32,14 +32,14 @@
  * at open, plus forever-prepared INSERTs. Since 2026-09-07 (ROBUSTNESS.md
  * case 1) the commits are ATOMIC: the port syncs again (SQLITE_NO_SYNC
  * off), journal_mode=PERSIST (rollback journal on the card, header zeroed
- * per commit — no create/delete churn) and synchronous=FULL. A resumed
+ * per commit, no create/delete churn) and synchronous=FULL. A resumed
  * file gets PRAGMA quick_check first; SQLITE_CORRUPT/NOTADB anywhere sets
  * the ctx's `corrupt` flag so the writer sets the file aside instead of
  * retrying it (that loop dropped every record on the bench).
  *
  * Schema: params(id, source, name UNIQUE) + records(ts, param_id,
  * value REAL) + frames(ts, id, ext, rtr, dlc, data BLOB), ts-indexed.
- * NOTE the measured ~700 rows/s ceiling — sqlite for the CAN stream is
+ * NOTE the measured ~700 rows/s ceiling: sqlite for the CAN stream is
  * a filtered/slow-bus choice, not a busy-bus one (README).
  */
 #include <stdio.h>
@@ -205,7 +205,7 @@ static bool sq_count(dl_sq_ctx_t *c, const char *sql, uint64_t *out)
 }
 
 /* PRAGMA quick_check(1): "ok", or a damage report. No answer at all (a
- * build with the check omitted — that was the case on 2026-09-07 and it
+ * build with the check omitted: that was the case on 2026-09-07 and it
  * set every good file aside) counts as UNKNOWN, never as corrupt. */
 static bool sq_quick_check(sqlite3 *db)
 {
@@ -393,7 +393,7 @@ static esp_err_t sq_open(void *ctx, const char *path, bool frames)
     c->ins_frame = st;
 
     /* resuming an existing file: seed the size estimates. These full
-       scans double as THE resume check — the port answers nothing to
+       scans double as THE resume check: the port answers nothing to
        PRAGMA quick_check (bench 2026-09-07), but walking each table's
        btree surfaces SQLITE_CORRUPT on a torn file, which sets the
        ctx's corrupt flag and fails the open (the writer sets the file
@@ -584,7 +584,7 @@ const dl_engine_t dl_engine_sqlite =
    the params dictionary first (ids keep their meaning), then the rows in
    rowid order, in 1000-row transactions, stopping at the first read error
    or when the time budget is spent. Writer task only (single toucher);
-   the destination uses the fast pragmas — a crash mid-salvage leaves a
+   the destination uses the fast pragmas: a crash mid-salvage leaves a
    valid partial file that the next boot resumes, and the source is never
    retried. */
 esp_err_t dl_sq_salvage(const char *src, const char *dst, bool frames,
@@ -728,7 +728,7 @@ esp_err_t dl_sq_salvage(const char *src, const char *dst, bool frames,
     {
         /* the ts index needs a sort; the port has no temp files (its VFS
            answered "disk I/O error" on the bench), so give the sorter room
-           in PSRAM and take a miss as a warning — readers stay correct */
+           in PSRAM and take a miss as a warning: readers stay correct */
         char *errmsg = NULL;
 
         (void)sqlite3_exec(out, "PRAGMA cache_size=-4096;", NULL, NULL, NULL);

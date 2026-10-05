@@ -23,15 +23,15 @@
 /**
  * @file event_manager_http.c
  * @brief Discovery + observability routes (own-routes pattern §9.1):
- *        the UI builds its rule editor from these — zero hardcoded
+ *        the UI builds its rule editor from these, zero hardcoded
  *        dropdowns (API-first §1b).
  *
- * GET /api/events/sources — declared events + their keys/types
- * GET /api/events/actions — registered actions + params_schema
- * GET /api/events/values  — pull-value names (trailing '.' = prefix)
- * GET /api/events/log     — stats + the last 32 events + fired rules
- * GET /api/events/rules   — per-rule runtime: fired count, last fired,
-                             active (undo rules) — the list's badges
+ * GET /api/events/sources: declared events + their keys/types
+ * GET /api/events/actions: registered actions + params_schema
+ * GET /api/events/values:   pull-value names (trailing '.' = prefix)
+ * GET /api/events/log:      stats + the last 32 events + fired rules
+ * GET /api/events/rules:    per-rule runtime: fired count, last fired,
+                             active (undo rules), the list's badges
  */
 #include <stdlib.h>
 

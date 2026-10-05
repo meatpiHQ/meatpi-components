@@ -22,7 +22,7 @@
 
 /**
  * @file uds_manager.h
- * @brief UDS (ISO 14229) request/response over a SELECTABLE transport —
+ * @brief UDS (ISO 14229) request/response over a SELECTABLE transport:
  *        the MIC3624 (obd_chip) or firmware ISO-TP over native CAN
  *        (isotp / can_manager).
  *
@@ -105,7 +105,7 @@ esp_err_t uds_manager_stop(void);
  * @param resp_len receives the response length.
  * @param opts     optional timing overrides (NULL = defaults).
  * @param result   optional outcome decode (NULL to ignore).
- * @return ESP_OK when a final response arrived (positive OR negative —
+ * @return ESP_OK when a final response arrived (positive OR negative:
  *         a negative response is still a completed transaction; check
  *         result->negative), ESP_ERR_TIMEOUT, ESP_ERR_INVALID_STATE
  *         (busy or transport down), ESP_ERR_INVALID_ARG.
@@ -128,7 +128,7 @@ esp_err_t uds_session_end(void);
 /* ---- raw ISO-TP (script bindings; no UDS semantics) ------------------------ */
 
 /** Send one raw ISO-TP PDU to @p addr (no 0x78 loop, no NRC decode).
- *  isotp backend only — ESP_ERR_NOT_SUPPORTED when can_manager is not
+ *  isotp backend only: ESP_ERR_NOT_SUPPORTED when can_manager is not
  *  the active transport's bus. Used by the script `obd_isotp_tx`. */
 esp_err_t uds_isotp_tx(const uds_addr_t *addr,
                        const uint8_t *data, size_t len, uint32_t timeout_ms);
@@ -169,8 +169,8 @@ typedef struct
 void uds_manager_get_status(uds_status_t *out);
 
 /** Runtime "exclusive" (boot default = the `exclusive` setting): while
- *  the tool is in use — a request, then UDS_EXCLUSIVE_IDLE_MS of idle,
- *  or an open session — the background pollers (autopid: PID polling +
+ *  the tool is in use (a request, then UDS_EXCLUSIVE_IDLE_MS of idle,
+ *  or an open session) the background pollers (autopid: PID polling +
  *  DTC scans) stay off the bus (obd_gate's diagnostics hold). Applies
  *  at once. */
 void uds_manager_set_exclusive(bool on);

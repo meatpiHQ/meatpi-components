@@ -1,4 +1,4 @@
-# restart_tracker — host unit tests
+# restart_tracker: host unit tests
 
 The component's four pure files (no esp_cache, esp_timer, NVS or panic
 hooks), IDF `linux` target. Run via `.\test.ps1 host restart_tracker`.

@@ -22,7 +22,7 @@
 
 /**
  * @file j2534_server_http.c
- * @brief GET /api/j2534 — J2534 PassThru server status (UI + bench).
+ * @brief GET /api/j2534: J2534 PassThru server status (UI + bench).
  */
 #include <stdlib.h>
 
@@ -78,7 +78,7 @@ static esp_err_t status_handler(httpd_req_t *req)
     return r;
 }
 
-/* POST /api/j2534 {"exclusive":bool} — the runtime switch (boot default =
+/* POST /api/j2534 {"exclusive":bool}: the runtime switch (boot default =
  * the setting); answers with the status like GET */
 static esp_err_t control_handler(httpd_req_t *req)
 {

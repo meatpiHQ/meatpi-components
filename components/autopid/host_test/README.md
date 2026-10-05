@@ -1,4 +1,4 @@
-# autopid — host unit tests
+# autopid: host unit tests
 
 Pure modules only (`autopid_sched.c`, `autopid_resp.c`, the parse half
 of `autopid_config.c`, `autopid_std.c`, the codecs,
@@ -11,7 +11,7 @@ filesystem). Run via `.\test.ps1 host autopid`.
 
 | Case | What it proves |
 |---|---|
-| **one request per PID per period** | THE legacy fix #1 regression: a 5-parameter PID over a simulated 10 s produces ~10 requests at 1 Hz, not 50 — parameters aren't schedulable units |
+| **one request per PID per period** | THE legacy fix #1 regression: a 5-parameter PID over a simulated 10 s produces ~10 requests at 1 Hz, not 50, parameters aren't schedulable units |
 | group inheritance + override | PID period 0 inherits the group; per-PID period wins; a runtime group override retargets the whole group (§5b action) |
 | group toggle gates entries | disabled group hides its entries from `ap_sched_next`; the ephemeral flip re-exposes them |
 | type gates | `std_enabled=false` hides STD PIDs |
@@ -27,10 +27,10 @@ filesystem). Run via `.\test.ps1 host autopid`.
 | error lines | NO DATA / CAN ERROR / `?` → ESP_FAIL; only-noise/empty → ESP_ERR_NOT_FOUND |
 | cross-talk guard | `ap_payload_matches_cmd`: payload must echo (service\|0x40)+identifier (010C vs 0105, UDS 22xx DIDs, mode 03, response-count hint digit); AT/ST/VT unchecked |
 | ATMA filter frames | legacy header shapes (contiguous `123`/`18DAF110`, byte-split ids), id mismatch skipped, the REAL bench `<DATA ERROR` suffix (markers skipped, bytes kept), noise/header-only rejected |
-| **filter stream: busy bus** | crowded monitor (many other ids + noise + pre-ATCRA buffered frames), target = ONE frame among them, fed at EVERY chunk size 1..200 — chunk-boundary reassembly can't miss it |
+| **filter stream: busy bus** | crowded monitor (many other ids + noise + pre-ATCRA buffered frames), target = ONE frame among them, fed at EVERY chunk size 1..200: chunk-boundary reassembly can't miss it |
 | filter stream: duplicates | same id repeating in one window → FIRST frame wins (collector stops); a fresh window picks up the newest traffic |
-| filter stream: mixed DLC | other ids with DLC 1..8 around a DLC-2 target — line length never confuses the match; captured length = the frame's REAL length |
-| filter: short-DLC bounds | expression beyond the captured frame (`B6` on 2 bytes, `[B0:B3]`, bit refs) = ESP_ERR_INVALID_SIZE — parameter skipped, never cached as garbage; in-range params on the same frame still evaluate |
+| filter stream: mixed DLC | other ids with DLC 1..8 around a DLC-2 target: line length never confuses the match; captured length = the frame's REAL length |
+| filter: short-DLC bounds | expression beyond the captured frame (`B6` on 2 bytes, `[B0:B3]`, bit refs) = ESP_ERR_INVALID_SIZE: parameter skipped, never cached as garbage; in-range params on the same frame still evaluate |
 | filter stream: truncation | an overlong corrupt line (>160 chars) dropped WHOLE; the next line still parses |
 | filter monitor bounds | `monitor_ms` outside 50..60000 rejected at config parse |
 | std expression mapping | legacy bit_start/scale/offset → v6 expressions (`[B2:B3]*0.25`, `B2-40`, `B3*0.78125-100`); placeholders refused |

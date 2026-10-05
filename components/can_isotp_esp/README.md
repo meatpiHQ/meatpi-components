@@ -1,4 +1,4 @@
-# can_isotp_esp — the public build's native ISO-TP provider
+# can_isotp_esp: the public build's native ISO-TP provider
 
 `can_manager` owns the TWAI bus and offers an ISO-TP (ISO 15765-2) **provider
 slot** (`can_isotp.h`): whoever registers a `can_isotp_ops_t` there serves
@@ -73,7 +73,7 @@ before `uds_manager`/`j2534_server` start; `open()` needs the bus up
   per session in PSRAM; the consumer's `recv()` waits on a counting
   semaphore paired with every put that grows the ring. Full → oldest
   dropped (the newest reply wins). `recv()` into a buffer too small returns
-  `ESP_ERR_NO_MEM` and has CONSUMED the PDU — the `can_isotp.h` contract the
+  `ESP_ERR_NO_MEM` and has CONSUMED the PDU: the `can_isotp.h` contract the
   UDS transport drains stale traffic on.
 - **Memory:** nothing until the first `open()`: then the task (4 KB PSRAM
   stack, static) and the frame queue (2 KB PSRAM, static); per session
@@ -81,7 +81,7 @@ before `uds_manager`/`j2534_server` start; `open()` needs the bus up
   few hundred bytes internal for the semaphores.
 - **Registration:** `can_isotp_esp_init()` is called by main right
   after `ext_manager_init` and registers ONLY when `can_isotp()` is still
-  NULL — a build carrying the add-on pack keeps the pack's provider (the
+  NULL, a build carrying the add-on pack keeps the pack's provider (the
   slot is single-writer). It also registers the `esp_isotp` log tag at WARN
   (the stack logs every send at INFO).
 
@@ -90,7 +90,7 @@ before `uds_manager`/`j2534_server` start; `open()` needs the bus up
 The WiCAN Pro has two requesters on one bus: the MIC chip (autopid, apps)
 and the ESP side (these sessions). `obd_gate` serializes the conversations:
 the chip already holds the gate around every command; the two consumers of
-this provider hold it around theirs — the UDS isotp transport per
+this provider hold it around theirs: the UDS isotp transport per
 request→final response, the J2534 ISO15765 channel from `WRITE_MSGS` until
 `READ_MSGS` delivers the reply (or the 2 s hold self-expires). The gate is
 fail-open (3 s wait, then take), so a wedged side can never brick the other.
@@ -126,7 +126,7 @@ rx_oversize (`recv()` cap too small).
 
 ## Testing
 
-- Host: `host_test/` (the mailbox ring) — `run_host_tests.sh can_isotp_esp`.
+- Host: `host_test/` (the mailbox ring), `run_host_tests.sh can_isotp_esp`.
 - Bench (public build, DUT + ECU simulator; `TESTING.md`):
   `tools/testbench/obd/uds_route_bench.py --expect-backend isotp`,
   `tools/testbench/usb/j2534_transport_probe.py` (raw CAN + ISO15765 bind),

@@ -23,7 +23,7 @@
 /**
  * @file websocket_manager_policy.c
  * @brief Pure policy: channel config parsing + cross-item validation.
- *        No httpd — host-tests on the linux target.
+ *        No httpd: host-tests on the linux target.
  */
 #include <stdio.h>
 #include <string.h>
@@ -96,7 +96,7 @@ esp_err_t wsm_migrate_channels(uint32_t from_version, cJSON *settings)
 
     /* v1 -> v2: the ws_log channel (log_sinks' live log stream) joins
      * the defaults. Stored arrays don't schema-fill, so migration
-     * appends it — unless the user already claimed the name or the
+     * appends it, unless the user already claimed the name or the
      * table is full. Ships ENABLED: the route is just registered; no
      * log line flows until log_sinks' ws gate (default false) opens. */
     cJSON *channels = cJSON_GetObjectItemCaseSensitive(settings,

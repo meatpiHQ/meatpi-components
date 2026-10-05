@@ -24,7 +24,7 @@
 
 /* RTL8152 support DISABLED (meatpi 2026-07-13): the r815x driver needs
  * a 32 KB internal-DMA RX pool (16 KB aggregation + accumulation
- * headroom — 16 KB exactly corrupts the heap, 2 KB refuses to
+ * headroom, 16 KB exactly corrupts the heap, 2 KB refuses to
  * connect). Ruled not worth the RAM; ASIX is the supported adapter.
  * Re-enable by flipping CONFIG_CHERRYUSB_HOST_RTL8152 (Kconfig +
  * cherryusb/CMakeLists ESP branch) and sizing

@@ -22,7 +22,7 @@
 
 /**
  * @file led_manager_cli.c
- * @brief The component's CLI command (`led`) — registered into
+ * @brief The component's CLI command (`led`): registered into
  *        cmdline_manager by led_manager_register_cli() (main wires it
  *        in CLI compositions only). Legacy option interface preserved
  *        (-i/--id, -c/--color <r> <g> <b>, -b/--blink); in v6 a manual

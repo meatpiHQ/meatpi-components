@@ -22,7 +22,7 @@
 
 /**
  * @file mdns_manager_policy.c
- * @brief PURE string builders for the mDNS contract — host-testable.
+ * @brief PURE string builders for the mDNS contract: host-testable.
  */
 #include <stdio.h>
 

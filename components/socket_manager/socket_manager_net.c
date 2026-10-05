@@ -31,7 +31,7 @@
  * stalled clients are closed individually (send timeout/error) without
  * disturbing the server; at max_clients the newest connection is
  * accept-then-closed (counted as refused). A subscriber's full queue drops
- * that chunk and counts it — RX never blocks.
+ * that chunk and counts it: RX never blocks.
  */
 #include <string.h>
 

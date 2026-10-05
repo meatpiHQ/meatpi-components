@@ -1,5 +1,5 @@
 > **App developers (Android/iOS/desktop): the on-air contract lives in**
-> **[`BLE_API.md`](BLE_API.md)** — advertising, pairing, every service/
+> **[`BLE_API.md`](BLE_API.md)**, advertising, pairing, every service/
 > characteristic UUID with byte-exact values, pipe semantics, and the
 > WiFi-handover behavior an app must expect (2026-07-05). The HTTP API
 > and J2534 ride on stream channels: `ble_http/BLE_HTTP_PROTOCOL.md`,
@@ -164,7 +164,7 @@ firmware (the historic 4.6 ms figure measured the FFF2->FFF1 echo path
 with the WiFi-off test app). `wifi --stop` (ephemeral, reboot restores)
 exists for exactly this kind of isolation run.
 
-**Re-run on the CLEAN bench (2026-07-05, TP-Link UB500 dongle — the
+**Re-run on the CLEAN bench (2026-07-05, TP-Link UB500 dongle: the
 Pi's internal adapter, disabled since, was inflating every earlier RTT
 number ~3x):**
 
@@ -185,27 +185,27 @@ run on the clean bench (NimBLE, UB500), tuning one lever at a time:
 | configuration | TX notify | CLI RTT p50 |
 |---|---|---|
 | product (`ios` profile), WiFi coex forced on (rules off) | 24-28.6 KB/s | 115 ms |
-| + DLE forced (`ble_gap_set_data_len` 251) | **2.1 KB/s — collapse** | unstable connects |
+| + DLE forced (`ble_gap_set_data_len` 251) | **2.1 KB/s: collapse** | unstable connects |
 | `android_fast` profile (15 ms interval), coex | 26.1 KB/s | 66.3 ms |
-| **clean radio** (rules ON -> BLE connect suspends WiFi), `blast` over UART | **77.1 KB/s** | — |
+| **clean radio** (rules ON -> BLE connect suspends WiFi), `blast` over UART | **77.1 KB/s** | - |
 
 Conclusions:
 
 - **The gap is coex, not the stack.** With WiFi suspended (which IS the
-  product path — interface_manager suspends STA/AP on a BLE connect)
+  product path: interface_manager suspends STA/AP on a BLE connect)
   the same firmware does 77 KB/s, demo territory. The demo runs with
   no WiFi at all.
 - **Connection interval helps RTT only** (115 -> 66 ms with
   `android_fast`); TX is airtime-bound under coex, so the interval
   lever doesn't move it.
-- **DLE is harmful under coex** — forcing 251-byte LL packets collapsed
+- **DLE is harmful under coex**: forcing 251-byte LL packets collapsed
   TX 28 -> 2 KB/s and destabilised connects (long LL packets lose the
   coex arbitration). Reverted; do-not-retry note lives in
   `ble_manager_gatt_nimble.c`.
 - Measurement notes: `blast N` (main_cli.c) pumps N bytes through
-  `ble_manager_send`; fire it over **UART only** — BLE CLI lines run
+  `ble_manager_send`; fire it over **UART only**: BLE CLI lines run
   inline in the NimBLE host task, so a long command wedges the stack
   (GATT Unlikely Error; fix item filed: route BLE CLI through the
   cmdline dispatcher queue). Pi side: `tools/testbench/ble_blast.py`
-  (passive subscribe + count). NimBLE logs an INFO pair per notify —
+  (passive subscribe + count). NimBLE logs an INFO pair per notify:
   console spam during blast, harmless.

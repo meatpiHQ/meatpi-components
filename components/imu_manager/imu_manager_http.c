@@ -23,7 +23,7 @@
 /**
  * @file imu_manager_http.c
  * @brief The optional /api/imu route (§9.1: feature components register
- *        their own domain routes) — main calls imu_manager_register_http()
+ *        their own domain routes), main calls imu_manager_register_http()
  *        only in HTTP compositions, so the chip code carries no HTTP
  *        dependency. Documented in components/HTTP_API.md §6e.
  */

@@ -25,7 +25,7 @@ BASE = {
 
 # Per-test ERROR-line budgets (2026-07-19 health pass): every test tallies
 # `E (…)` serial lines and FAILS over budget. Calibrated run measured
-# errors=0 on ALL 14 tests — even the wrong-PSK/dead-AP ones (the driver
+# errors=0 on ALL 14 tests, even the wrong-PSK/dead-AP ones (the driver
 # reports those as I/W lines and wifi_manager handles them at DEBUG), so
 # the budget is ZERO everywhere: any error line is a finding. The two
 # error sources the first calibration run exposed were REAL wifi_manager
@@ -41,7 +41,7 @@ ERROR_BUDGET = {}
 def error_budget(dut, request):
     """Tally E/W serial lines per test; assert the error budget. Every
     tally also lands in hil_health.log next to this file (pytest hides
-    passing tests' stdout) — the calibration record across runs."""
+    passing tests' stdout): the calibration record across runs."""
     dut.reset_health()
     yield
     errors, warnings = dut.health()
@@ -61,7 +61,7 @@ def error_budget(dut, request):
 
     lines = dut.health_lines("E")
     assert errors <= budget, (
-        f"{errors} error lines > budget {budget} — either a real "
+        f"{errors} error lines > budget {budget}: either a real "
         f"regression or a new deliberate-failure path that needs an "
         f"ERROR_BUDGET entry:\n" + "\n".join(lines[:10]))
 
@@ -77,7 +77,7 @@ def apply_wifi(dut, **overrides):
 def bench_ap(bench):
     """One AP on wlan1 for the whole module; torn down at the end. The
     persistent wican-bench hotspot is parked first (autoconnect off) or it
-    re-grabs wlan1 whenever a test AP drops — and restored afterwards."""
+    re-grabs wlan1 whenever a test AP drops, and restored afterwards."""
     bench.park_persistent()
     bench.cleanup()
     bench.ap_up(AP1_CON, AP1_SSID, AP1_PSK)
@@ -159,7 +159,7 @@ def test_s7_ap_auto_disable(bench, dut):
 
 def test_s9_scan_sees_bench_ap(bench, dut):
     # s7 ended with the bench AP freshly resumed; let the STA finish
-    # reconnecting — a scan racing the connect comes back empty
+    # reconnecting: a scan racing the connect comes back empty
     dut.expect(r"STA got IP", 60)
 
     for _ in range(3):
@@ -176,7 +176,7 @@ def test_s9_scan_sees_bench_ap(bench, dut):
 
 def test_s4_priority_both_visible(bench, dut):
     """Both configured networks on air simultaneously -> the PRIMARY wins
-    (config order, not scan order/RSSI) — the 'home > car hotspot' rule."""
+    (config order, not scan order/RSSI), the 'home > car hotspot' rule."""
     bench.ap_up(AP2_CON, AP2_SSID, AP2_PSK, ifname="wlan0")
     time.sleep(3)
 
@@ -191,7 +191,7 @@ def test_s4_priority_both_visible(bench, dut):
 
 def test_s10_wrong_password_moves_to_fallback(bench, dut):
     """meatpi 2026-07-08: an SSID with the wrong password must NOT wedge
-    the device — after the ban kicks in, the other configured (and
+    the device, after the ban kicks in, the other configured (and
     visible) network is selected."""
     apply_wifi(dut,
                sta_ssid=AP1_SSID, sta_password="definitely-wrong",
@@ -205,8 +205,8 @@ def test_s10_wrong_password_moves_to_fallback(bench, dut):
 
 def test_s11_banned_only_visible_trickles(bench, dut):
     """meatpi 2026-07-08 (drive-home case): when the wrong-password SSID
-    is the ONLY option it must keep being retried — the same SSID may
-    carry the right password at another location — but throttled
+    is the ONLY option it must keep being retried (the same SSID may
+    carry the right password at another location) but throttled
     (~1/min), never hammered at the 5 s reconnect cadence."""
     bench.ap_down(AP2_CON)
     apply_wifi(dut, sta_ssid=AP1_SSID, sta_password="definitely-wrong")
@@ -247,7 +247,7 @@ def test_s12_roam_to_preferred(bench, dut):
 
 
 def test_s13_hidden_ssid(bench, dut):
-    """A hidden network never shows in scan results — the blind
+    """A hidden network never shows in scan results, the blind
     sequential fallback must still reach it."""
     bench.ap_hidden(AP1_CON, True)
     try:
@@ -265,8 +265,8 @@ def test_s13_hidden_ssid(bench, dut):
 
 def test_s14_same_ssid_two_bssids(bench, dut):
     """Two APs broadcasting the SAME SSID+password (mesh/repeater case,
-    legacy behavior): the device must associate cleanly with ONE of them
-    — esp_wifi picks the stronger BSSID (WIFI_ALL_CHANNEL_SCAN +
+    legacy behavior): the device must associate cleanly with ONE of them,
+    esp_wifi picks the stronger BSSID (WIFI_ALL_CHANNEL_SCAN +
     WIFI_CONNECT_AP_BY_SIGNAL, wifi_manager.c apply_sta_network)."""
     # same identity on both radios, different channels
     bench.cleanup()
@@ -291,7 +291,7 @@ def test_s14_same_ssid_two_bssids(bench, dut):
 
 def test_s8_ap_channel_follows_sta(bench, dut):
     """APSTA single-radio rule: associating parks the radio on the upstream
-    AP's channel, so the DUT's own AP must follow it — and must STAY there
+    AP's channel, so the DUT's own AP must follow it, and must STAY there
     when the STA link later drops (a hop back to the stale configured
     channel would yank any connected AP clients)."""
     bench.cleanup()
@@ -303,7 +303,7 @@ def test_s8_ap_channel_follows_sta(bench, dut):
                ap_ssid=DUT_AP_SSID, ap_channel=6)
 
     # sync runs on got-ip (association-time set_config is refused by the
-    # driver — see wifi_manager.c), so got-IP logs FIRST
+    # driver, see wifi_manager.c), so got-IP logs FIRST
     dut.expect(r"STA got IP", 60)
     dut.expect(r"moving AP to STA channel 11", 60)
     wait_status(dut, "ap_ch=11")

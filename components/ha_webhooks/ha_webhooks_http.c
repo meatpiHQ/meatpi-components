@@ -22,7 +22,7 @@
 
 /**
  * @file ha_webhooks_http.c
- * @brief `/api/webhook` GET/POST/DELETE — the HA HACS integration's
+ * @brief `/api/webhook` GET/POST/DELETE: the HA HACS integration's
  *        discovery/registration endpoint (kept verbatim for compat).
  *        Feature-component route (§9.1); the network-trust gate wraps it.
  */

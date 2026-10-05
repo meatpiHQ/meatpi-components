@@ -10,7 +10,7 @@ idf_component_register(
          "vpn_manager_cli.c"
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "."
-    # Feature: THE VPN client — user-selected `type`: plain WireGuard
+    # Feature: THE VPN client, user-selected `type`: plain WireGuard
     # (vendored esp_wireguard API) or Tailscale (vendored microlink).
     # Both share ONE WireGuard core (wireguard_lwip). /api/vpn and the
     # `vpn` command are optional (main wires them).

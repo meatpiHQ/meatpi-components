@@ -24,14 +24,14 @@
  * @file uds_manager_events.c
  * @brief event_manager glue: the `uds.request` action (fire a UDS
  *        request from a rule) and the `uds.response` event source it
- *        publishes — so rules and scripts can chain on UDS outcomes.
+ *        publishes, so rules and scripts can chain on UDS outcomes.
  *
  * Events carry OUTCOMES, not blobs (SCRIPTING.md §2): the response hex
  * is truncated to the event kv string limit (~23 bytes of payload).
- * Rules that need full payloads run a script (`script.run` — the uds()
+ * Rules that need full payloads run a script (`script.run`: the uds()
  * binding returns up to 128 bytes into script memory). The action
  * blocks the dispatcher for the transaction (bounded by the p2, p2star
- * and max-pending caps — same contract as `http.post`).
+ * and max-pending caps, same contract as `http.post`).
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -82,7 +82,7 @@ static esp_err_t act_request(const cJSON *with, const em_event_t *ev)
     esp_err_t err = uds_request(&addr, reqb, reqn, respb, sizeof(respb),
                                 &respn, NULL, &res);
 
-    /* publish the outcome (also on failure — rules may want timeouts) */
+    /* publish the outcome (also on failure: rules may want timeouts) */
     char hex[48];
 
     if (err == ESP_OK && respn > 0)
@@ -145,7 +145,7 @@ void uds_events_register(void)
             "\"ext\":{\"type\":\"boolean\"}},"
             "\"required\":[\"tx\",\"rx\",\"req\"]}",
         .run = act_request,
-        .blocking = true, /* UDS/ISO-TP round-trip — off the dispatcher */
+        .blocking = true, /* UDS/ISO-TP round-trip: off the dispatcher */
     };
 
     (void)event_manager_declare_source(&SRC);

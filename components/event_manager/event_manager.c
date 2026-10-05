@@ -32,7 +32,7 @@
  * via <comp>_events.c; this file knows no component by name. Registration
  * calls are BOOT-CONTEXT ONLY (plain array writes). Publish is any-task,
  * never blocks (drop-oldest + counter). Actions run in the dispatcher
- * ONLY (8 KB PSRAM stack — no flash access in handlers, standard §2).
+ * ONLY (8 KB PSRAM stack: no flash access in handlers, standard §2).
  * All time is esp_timer 64-bit µs.
  */
 #include "event_manager.h"
@@ -55,7 +55,7 @@ static const char *TAG = "event_manager";
 
 #define EM_QUEUE_LEN 32
 
-/* bounded worker pool for `blocking` actions (network/bus) — keeps a slow
+/* bounded worker pool for `blocking` actions (network/bus): keeps a slow
    action off the single dispatcher. Fixed cost regardless of event rate. */
 #define EM_WORKERS       2
 #define EM_JOB_QUEUE     8
@@ -64,7 +64,7 @@ static const char *TAG = "event_manager";
 
 /* ---- runtime halves of the settings-applied config --------------------------------
         event_manager_settings.c owns the PARSED config (rules, timer periods,
-        enabled) — this file owns what mutates at runtime: per-rule state,
+        enabled): this file owns what mutates at runtime: per-rule state,
         timer handles, the stop latch. Both are index-aligned with the
         settings tables. ------------------------------------------------------------- */
 
@@ -338,7 +338,7 @@ static bool run_action(const em_rule_t *rule, int r, const em_event_t *ev,
 
     if (action->blocking)
     {
-        /* offload to the worker pool — ownership of `with` moves to
+        /* offload to the worker pool: ownership of `with` moves to
            the job; do NOT delete it here. Marks the ring as
            dispatched; the worker records the real fired/error stat. */
         em_job_t job = { .action = action, .with = with,
@@ -419,7 +419,7 @@ static void dispatch_one(const em_event_t *ev)
 }
 
 /** Between events: an ACTIVE undo rule whose live-value conditions no
- *  longer hold gets its undo — its trigger may stay silent (SOC drifting
+ *  longer hold gets its undo, its trigger may stay silent (SOC drifting
  *  down while CHARGING never changes). Runs every EM_RECHECK_US. */
 static void recheck_active(void)
 {

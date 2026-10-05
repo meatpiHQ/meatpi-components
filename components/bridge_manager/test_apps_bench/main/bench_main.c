@@ -22,13 +22,13 @@
 
 /**
  * @file bench_main.c
- * @brief The flagship data-path bench: the FULL production composition —
+ * @brief The flagship data-path bench: the FULL production composition,
  *        wifi_manager (STA to the rpi001 bench AP) + socket_manager +
- *        bridge_manager + obd_chip — with two configured bridges:
+ *        bridge_manager + obd_chip, with two configured bridges:
  *
- *          br_obd:  obd  <-raw-> obd0  (TCP:35000)  — the real OBD chip,
+ *          br_obd:  obd  <-raw-> obd0  (TCP:35000),   the real OBD chip,
  *                   reachable from the LAN exactly like production
- *          br_echo: echo <-raw-> echo0 (TCP:3334)   — RF benchmark loop
+ *          br_echo: echo <-raw-> echo0 (TCP:3334),    RF benchmark loop
  *                   (latency / throughput measured by socket_bench.py)
  *
  * Endpoint glue lives HERE (composition root), per the ownership rule:

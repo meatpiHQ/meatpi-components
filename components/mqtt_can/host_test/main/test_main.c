@@ -20,7 +20,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-/** @file test_main.c — mqtt_can pure-codec suite (TASK_mqtt_can.md §7). */
+/** @file test_main.c: mqtt_can pure-codec suite (TASK_mqtt_can.md §7). */
 #include <string.h>
 
 #include "unity.h"
@@ -139,7 +139,7 @@ void test_batch_overflow_counted(void)
 void test_batch_worstcase_fits(void)
 {
     /* 24 max-size frames (29-bit id, 8 data bytes of 255) must fit
-       MC_JSON_MAX — the sizing contract behind BM_CTX_MAX */
+       MC_JSON_MAX: the sizing contract behind BM_CTX_MAX */
     mc_batch_t b;
     uint8_t chunk[CAN_WIRE_MAX];
     char json[MC_JSON_MAX];
@@ -184,7 +184,7 @@ void test_txasm_fragmented(void)
     mc_txasm_init(&a);
     g_objs = 0;
 
-    /* feed one byte at a time — worst-case fragmentation */
+    /* feed one byte at a time: worst-case fragmentation */
     for (size_t i = 0; i < len; i++)
     {
         mc_txasm_feed(&a, (const uint8_t *)msg + i, 1, obj_cb, NULL);
@@ -269,7 +269,7 @@ void test_tx_parse_legacy_exact(void)
 
 void test_tx_parse_fuel_level_example(void)
 {
-    /* legacy main/mqtt.c:215 — the "get fuel level" recipe, with ts */
+    /* legacy main/mqtt.c:215: the "get fuel level" recipe, with ts */
     const char *msg =
         "{\"bus\":0,\"type\":\"tx\",\"ts\":35519,\"frame\":"
         "[{\"id\":2016,\"dlc\":8,\"rtr\":false,\"extd\":false,"

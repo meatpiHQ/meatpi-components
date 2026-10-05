@@ -60,7 +60,7 @@ static const char *TAG = "autopid";
 #define AP_IDLE_WAIT     pdMS_TO_TICKS(500)
 
 /* the due entry's parameter slice, copied under the core's lock and
-   consumed by the poller task alone — PSRAM, not a stack frame: at
+   consumed by the poller task alone: PSRAM, not a stack frame: at
    AP_PARAMS_PER 256 the slice is ~60 KB, larger than the whole task stack */
 static ap_param_t  s_params_copy[AP_PARAMS_PER] EXT_RAM_BSS_ATTR;
 
@@ -69,7 +69,7 @@ static StaticTask_t s_tcb;             /* internal: FreeRTOS object */
 static StackType_t  s_stack[12288] EXT_RAM_BSS_ATTR; /* PSRAM: 8192 left
                                 only 508 B headroom (System Monitor,
                                 2026-07-08) over ap_resp_to_payload's
-                                ~5.6 KB line table — the dtc job stack
+                                ~5.6 KB line table: the dtc job stack
                                 DID overflow on the same table
                                 (2026-07-22), so buy real margin; no fs
                                 I/O on this task so PSRAM is safe */
@@ -151,8 +151,8 @@ static void poller_task(void *arg)
 
         /* an ESP-side diagnostic tool (the UDS Tool, the J2534 PassThru
          * server) with its "exclusive" option on holds the bus for itself
-         * (obd_gate's diagnostics hold): stay off the chip — polls AND DTC
-         * scans — and acknowledge every loop so the tool can wait for us
+         * (obd_gate's diagnostics hold): stay off the chip (polls AND DTC
+         * scans) and acknowledge every loop so the tool can wait for us
          * to be off the bus before its first request. */
         bool diag = obd_gate_diag_held();
 
@@ -181,7 +181,7 @@ static void poller_task(void *arg)
 
         obd_gate_diag_ack(diag);
 
-        /* periodic DTC scan due-check — runs every iteration, incl. the
+        /* periodic DTC scan due-check: runs every iteration, incl. the
          * idle branch, so DTC works with polling disabled (dtc_enabled
          * without enabled; TASK_dtc.md §5). Voltage pause gates it: a
          * weak battery is no time for bus traffic; the client pause too. */

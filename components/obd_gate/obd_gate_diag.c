@@ -22,7 +22,7 @@
 
 /**
  * @file obd_gate_diag.c
- * @brief Pure diagnostics-hold bookkeeping (host-tested — no RTOS): the
+ * @brief Pure diagnostics-hold bookkeeping (host-tested: no RTOS): the
  *        set of tools holding the bus for themselves, and the poller's
  *        acknowledgement. See obd_gate_private.h for the contract.
  */

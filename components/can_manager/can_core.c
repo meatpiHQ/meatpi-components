@@ -149,7 +149,7 @@ static void can_rx_task(void *arg)
         if (handle->reconfiguring)
         {
             /* rx_parked is the teardown rendezvous: the driver may only
-             * be uninstalled while this task is provably parked here —
+             * be uninstalled while this task is provably parked here,
              * a twai_receive blocked on the RX queue when the queue is
              * deleted dies on its spinlock (hit at sleep entry
              * 2026-07-20) */
@@ -278,7 +278,7 @@ elm327_err_t can_core_init(can_core_handle_t *handle,
     }
 
     /* Start the RX dispatch task. WiCAN: PSRAM stack (the task does
-     * twai_receive + dispatch only, never flash) + internal TCB —
+     * twai_receive + dispatch only, never flash) + internal TCB,
      * keeps the scarce internal heap for NVS-touching tasks. */
     static StaticTask_t s_rx_tcb;
     static EXT_RAM_BSS_ATTR StackType_t
@@ -320,7 +320,7 @@ void can_core_deinit(can_core_handle_t *handle)
 #ifdef ESP_PLATFORM
     can_link_tx_close(handle); /* no transmit inside the driver below */
 
-    /* The RX task may be BLOCKED inside twai_receive (100 ms slices) —
+    /* The RX task may be BLOCKED inside twai_receive (100 ms slices),
      * uninstalling the driver under it deletes the RX queue it sleeps
      * on (spinlock assert; crashed every sleep entry 2026-07-20). Wait
      * for its exit ack, THEN stop the driver. Worst case one receive
@@ -393,7 +393,7 @@ elm327_err_t can_core_transmit(can_core_handle_t *handle,
 
     handle->stats.tx_count++;
 #else
-    /* Host stub — pretend TX succeeded */
+    /* Host stub: pretend TX succeeded */
     (void)timeout_ms;
     handle->stats.tx_count++;
 #endif

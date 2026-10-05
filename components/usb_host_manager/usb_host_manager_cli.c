@@ -48,7 +48,7 @@ static int cmd_usb(int argc, char **argv)
     usb_host_manager_status_t st;
 
     /* WiCAN DEBUG (temporary): poke the mux/vbus pins live during the
-     * eth bring-up — `usb mux <0|1>` / `usb vbus <0|1>` */
+     * eth bring-up: `usb mux <0|1>` / `usb vbus <0|1>` */
     if (argc >= 3 && strcmp(argv[1], "mux") == 0)
     {
         gpio_set_level(CONFIG_WICAN_USB_MODE_GPIO, atoi(argv[2]));
@@ -67,7 +67,7 @@ static int cmd_usb(int argc, char **argv)
         return err == ESP_OK ? 0 : 1;
     }
 
-    /* WiCAN DEBUG (temporary): DWC2 port suspend/resume — quiets the bus
+    /* WiCAN DEBUG (temporary): DWC2 port suspend/resume, quiets the bus
      * (no SOF) without dropping enumeration. GPS-desense experiment
      * 2026-07-30: CherryUSB's HUB_PORT_FEATURE_SUSPEND is a no-op stub,
      * so poke HPRT directly. W1C bits (PCDET|PENA|PENCHNG|POCCHNG =

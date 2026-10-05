@@ -1,4 +1,4 @@
-# led_manager — RGB status LED owner + indication arbitration (service)
+# led_manager: RGB status LED owner + indication arbitration (service)
 
 Owns the AW2023 3-channel LED controller (I2C 0x45 on `i2c_bus`) and the
 ARBITRATION over it: the LED is one shared resource many components want,
@@ -9,7 +9,7 @@ vacated, so the LED is never undefined.
 
 The designed-for case (meatpi 2026-07-04): idle = solid blue; during an
 OTA update the session sets **fast-blinking red at PRIO_CRITICAL** (via
-main's `ota_manager_set_event_cb` glue) — anything lower set meanwhile is
+main's `ota_manager_set_event_cb` glue): anything lower set meanwhile is
 stored, not shown, and reappears when the update ends.
 
 ## API
@@ -25,14 +25,14 @@ stored, not shown, and reappears when the update ends.
 | `led_manager_clear(prio)` | Release; next lower occupied indication shows. |
 | `led_manager_active(*prio, *state)` | What's showing (status/tests). |
 
-Priorities: `IDLE < STATUS < ALERT < CRITICAL` — small and semantic; a new
+Priorities: `IDLE < STATUS < ALERT < CRITICAL`, small and semantic; a new
 use case picks by urgency, no registration needed.
 
 ## Decided semantics
 
 - **`led.indicate` is undoable (2026-09-17)**: a rule with `undo:true` runs
   the action again with `"undo":true` when its conditions stop holding, and
-  the handler clears the ALERT slot (`led_manager_clear`) — "blink while the
+  the handler clears the ALERT slot (`led_manager_clear`): "blink while the
   battery is low" is one rule.
 
 - Blink is the AW2023's **hardware pattern engine** (T1..T4 timers): zero
@@ -47,22 +47,22 @@ use case picks by urgency, no registration needed.
   lit channel.
 - `enabled=false` in settings → start() succeeds but stays dark; set/clear
   still book-keep (so enabling later shows the right state after reboot).
-- All calls serialize on one mutex — the multi-register updates must be
+- All calls serialize on one mutex: the multi-register updates must be
   atomic (the i2c_master driver only locks single transactions).
 
 ## Settings (`"led_manager"`, version 1, field table)
 
-`cli` (bool, default true): register this component's console command(s) with cmdline_manager on the settings boot apply (reboot-to-apply). Ownership: the component registers its own commands — main wires nothing (2026-07-05).
+`cli` (bool, default true): register this component's console command(s) with cmdline_manager on the settings boot apply (reboot-to-apply). Ownership: the component registers its own commands, main wires nothing (2026-07-05).
 
 `enabled` (bool, true) · `idle_mode` (off|solid|blink_slow, solid) ·
-`idle_r`/`idle_g`/`idle_b` (0..255, default 0,204,255 — brand cyan,
+`idle_r`/`idle_g`/`idle_b` (0..255, default 0,204,255: brand cyan,
 the startup color; meatpi 2026-07-19. Was 0,0,60 dim blue).
 
 ## Files
 
-- `led_manager.c` — lifecycle, settings, mutex-serialized API.
-- `led_manager_policy.c` — PURE arbiter (host-tested, 6 tests).
-- `led_manager_aw2023.c` — chip layer (port of the field-proven legacy
+- `led_manager.c`: lifecycle, settings, mutex-serialized API.
+- `led_manager_policy.c`: PURE arbiter (host-tested, 6 tests).
+- `led_manager_aw2023.c`: chip layer (port of the field-proven legacy
   `led.c` onto i2c_master; same bring-up values).
 
 ## Memory (estimated)
@@ -73,10 +73,10 @@ Arbiter table in PSRAM `.bss` (~100 B); mutex internal; no task.
 
 `led_manager_register_cli()` (main, CLI builds) registers the `led` command with cmdline_manager (`led_manager_cli.c`).
 
-## HTTP API (endpoint reference — conventions: `components/HTTP_API.md` §6e2)
+## HTTP API (endpoint reference: conventions: `components/HTTP_API.md` §6e2)
 
 `/api/led` (2026-07-05): GET = the arbiter's current winner
 (priority/mode/rgb); PUT `{r,g,b[,mode]}` = set the **ALERT** indication
-(the user slot — same as `led -c`); DELETE = release it. REST drives only
+(the user slot, same as `led -c`); DELETE = release it. REST drives only
 ALERT: STATUS/CRITICAL stay firmware-internal so the ladder stays honest.
 Idle config via `/api/settings/led_manager`.

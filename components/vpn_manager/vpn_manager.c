@@ -57,12 +57,12 @@ static const char *TAG = "vpn_manager";
 static volatile bool s_run;
 static TaskHandle_t s_task;
 /* The state task uses a DYNAMIC internal stack (plain xTaskCreate),
- * created only when the VPN feature is enabled — so it costs zero
+ * created only when the VPN feature is enabled, so it costs zero
  * internal RAM when disabled. INTERNAL (not PSRAM) because the
  * tailscale path calls microlink_init here, which reads/writes device
  * keys in NVS = flash access, and §2-corollary forbids flash IO from a
  * PSRAM-stack task (WireGuard does no NVS, so it never tripped this). */
-#define VPN_TASK_STACK 6144 /* watermark-checked on the bench 2026-07-07; was 7168 — see TASK_tailscale.md internal-RAM note */
+#define VPN_TASK_STACK 6144 /* watermark-checked on the bench 2026-07-07; was 7168, see TASK_tailscale.md internal-RAM note */
 
 static vpn_manager_status_t s_status;
 static uint32_t s_up_since_ms;
@@ -251,7 +251,7 @@ static void state_task(void *arg)
 
         bool up = false;
         /* tailscale needs the full control-plane dance (register +
-         * map + DERP/DISCO) — give it a longer budget than a plain
+         * map + DERP/DISCO): give it a longer budget than a plain
          * WG handshake */
         int budget_s = cfg->tailscale ? 90 : VPN_HANDSHAKE_S;
 
@@ -424,7 +424,7 @@ esp_err_t vpn_manager_tunnel_ip(char *buf, size_t len)
     {
         strlcpy(buf, cfg->address, len);
 
-        /* the setting allows an optional /cidr suffix — the tunnel IP
+        /* the setting allows an optional /cidr suffix: the tunnel IP
            consumers (HA vpn_ip) want the bare address */
         char *slash = strchr(buf, '/');
 

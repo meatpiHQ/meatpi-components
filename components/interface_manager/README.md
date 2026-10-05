@@ -1,7 +1,7 @@
 # interface_manager
 
 THE place wireless-interface on/off decisions live (policy component,
-meatpi 2026-07-05 — generalizes the legacy wireless modes ap+sta / ap /
+meatpi 2026-07-05: generalizes the legacy wireless modes ap+sta / ap /
 sta / sta+BLE into rules).
 
 ## Rules (v1)
@@ -13,7 +13,7 @@ sta / sta+BLE into rules).
 
 Rules only engage when BLE is enabled and the wifi mode includes the
 interface in question. Future rules (e.g. USB-connected turns both
-radios off) extend `im_inputs_t` + `im_policy_evaluate()` — nothing
+radios off) extend `im_inputs_t` + `im_policy_evaluate()`: nothing
 else changes.
 
 ## Shipping defaults
@@ -30,20 +30,20 @@ evaluates the PURE rule table (`interface_manager_policy.c`,
 host-tested 7/7), debounces (2 identical evaluations ≈ 1 s) and diffs
 the target against current suspensions. Actuators:
 
-- `wifi_manager_suspend_sta()/resume_sta()` and `suspend_ap()/resume_ap()`
-  — new RUNTIME per-interface suspension in wifi_manager
+- `wifi_manager_suspend_sta()/resume_sta()` and `suspend_ap()/resume_ap()`:
+  new RUNTIME per-interface suspension in wifi_manager
   (`wifi_manager_suspend.c`): recomputes the esp_wifi mode from
   (configured mode − suspensions), parks the reconnect task while STA
-  is suspended, respects `ap_auto_disable`. EPHEMERAL — settings
+  is suspended, respects `ap_auto_disable`. EPHEMERAL: settings
   untouched, reboot restores.
 - `ble_manager_stop()/start()` for the BLE side.
 
-Policy inputs use `ble_manager_is_enabled()` — the CONFIGURED truth,
+Policy inputs use `ble_manager_is_enabled()`: the CONFIGURED truth,
 stable across runtime stop/start (the `BLE_ENABLED` dev-status bit
 tracks the *running* state and clears when the policy stops the stack).
 The current arbitration state is published as dev-status bits
 `sta_suspended` / `ap_suspended` / `ble_suspended` (BIT20–22), visible
-in `/api/status` and the `status` CLI command — the answer to "why is
+in `/api/status` and the `status` CLI command: the answer to "why is
 this interface down". `interface_manager_stop()` resumes everything
 (interfaces are never left suspended without their arbiter).
 

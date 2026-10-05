@@ -23,7 +23,7 @@
 /**
  * @file data_destinations_private.h
  * @brief Internals shared between the PURE core (data_destinations_core.c:
- *        config parse, scheduler/backoff, URL/form/ABRP builders — host-
+ *        config parse, scheduler/backoff, URL/form/ABRP builders, host-
  *        tested), the settings descriptor, the poster task, the
  *        transports, the HTTP routes and the CLI.
  */
@@ -195,7 +195,7 @@ bool dd_topic_expand(const char *topic, const char *prefix, char *out,
 cJSON *dd_abrp_tlm(const cJSON *snapshot, const char *car_model,
                    int64_t utc_s);
 
-/** `token=<enc>&tlm=<enc>` — the form body ABRP expects. */
+/** `token=<enc>&tlm=<enc>`: the form body ABRP expects. */
 bool dd_abrp_form(const char *token, const char *tlm_json, char *out,
                   size_t cap);
 

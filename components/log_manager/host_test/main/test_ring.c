@@ -63,7 +63,7 @@ void test_wrap_keeps_newest(void)
 
     TEST_ASSERT_EQUAL(RING_SIZE, read_all());
     /* 40 bytes into a 32-byte ring keeps bytes 8..39: the D line is intact
-       and at most ONE trailing 'A' (byte 8) survives — never the full run */
+       and at most ONE trailing 'A' (byte 8) survives, never the full run */
     TEST_ASSERT_NOT_NULL(strstr(s_out, "DDDDDDDDD"));
     TEST_ASSERT_NULL(strstr(s_out, "AA"));
     TEST_ASSERT_EQUAL('D', s_out[RING_SIZE - 2]); /* newest byte before \n */
@@ -117,7 +117,7 @@ void test_tuning_guard_clobber_is_harmless(void)
     lm_ring_reset(&s_hdr, RING_SIZE);
     append("keep me");
 
-    /* S3 MSPI timing tuning writes the first 64 bytes each boot — the guard */
+    /* S3 MSPI timing tuning writes the first 64 bytes each boot: the guard */
     memset(s_hdr.mspi_tuning_guard, 0x5A, sizeof(s_hdr.mspi_tuning_guard));
     TEST_ASSERT_TRUE(lm_ring_valid(&s_hdr, RING_SIZE));
     TEST_ASSERT_EQUAL(7, read_all());

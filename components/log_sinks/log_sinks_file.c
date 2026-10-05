@@ -22,7 +22,7 @@
 
 /**
  * @file log_sinks_file.c
- * @brief The file sink's writer: an INTERNAL-stack task (§2 corollary —
+ * @brief The file sink's writer: an INTERNAL-stack task (§2 corollary,
  *        the log_manager README's wear-safe recipe) draining the PSRAM
  *        file ring to /sd/devlog in coarse batches. Flush triggers:
  *        ring high-water, the flush_s period, or an explicit
@@ -187,7 +187,7 @@ static FILE *open_current(void)
 
         if (f != NULL)
         {
-            /* prune AFTER the new file exists so retention counts it —
+            /* prune AFTER the new file exists so retention counts it,
              * pruning first leaves file_keep+1 files behind */
             prune(cfg->file_keep);
         }

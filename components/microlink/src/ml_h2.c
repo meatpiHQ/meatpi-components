@@ -209,7 +209,7 @@ int ml_h2_build_headers_frame(uint8_t *out, size_t out_size,
         hpack_len += hpack_literal_indexed(hpack + hpack_len, 4, path);
     }
 
-    /* :scheme = http (Noise over raw TCP, not TLS — must match v1's 0x86) */
+    /* :scheme = http (Noise over raw TCP, not TLS: must match v1's 0x86) */
     hpack_len += hpack_indexed(hpack + hpack_len, HPACK_SCHEME_HTTP);
 
     /* :authority */

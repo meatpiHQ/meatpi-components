@@ -1,4 +1,4 @@
-# Host test compiles ONLY the pure presence debouncer — no GPIO/USB.
+# Host test compiles ONLY the pure presence debouncer: no GPIO/USB.
 set(comp_dir "${CMAKE_CURRENT_LIST_DIR}/../..")
 
 idf_component_register(

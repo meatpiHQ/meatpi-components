@@ -23,7 +23,7 @@
 /**
  * @file rtc_manager_events.c
  * @brief event_manager glue: wall-clock pull values for rule templates
- *        (`${time.iso}` in MQTT payloads — main_events.c parity).
+ *        (`${time.iso}` in MQTT payloads, main_events.c parity).
  */
 #include <stdio.h>
 #include <string.h>

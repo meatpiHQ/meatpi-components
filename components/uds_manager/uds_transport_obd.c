@@ -22,7 +22,7 @@
 
 /**
  * @file uds_transport_obd.c
- * @brief backend "obd_chip" — UDS over the MIC3624 via AT-hex.
+ * @brief backend "obd_chip": UDS over the MIC3624 via AT-hex.
  */
 #include "uds_transport.h"
 
@@ -38,7 +38,7 @@ static const char *TAG = "uds_manager";
 
 /* Re-send the 8-command target setup only when needed: the address or
  * p2 changed, the previous transaction failed, or anyone else wrote to
- * the chip in between (autopid's polls, an app) — detected with the
+ * the chip in between (autopid's polls, an app), detected with the
  * driver's tx_bytes counter, which only we moved otherwise (read while
  * we still hold the chip). One request = one AT line in a steady UDS
  * conversation (bench 2026-09-16: 8 round-trips -> 1).

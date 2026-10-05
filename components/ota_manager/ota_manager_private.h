@@ -22,7 +22,7 @@
 
 /**
  * @file ota_manager_private.h
- * @brief Internal API: the PURE session state machine (host-testable —
+ * @brief Internal API: the PURE session state machine (host-testable,
  *        flash operations injected) and its contract with the esp_ota glue.
  */
 #pragma once

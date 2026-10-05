@@ -22,7 +22,7 @@
 
 /**
  * @file interface_manager_policy.c
- * @brief PURE wireless arbitration rules — no IDF deps; host-tested.
+ * @brief PURE wireless arbitration rules: no IDF deps; host-tested.
  *        See interface_manager_private.h for the rule definitions.
  */
 #include "interface_manager_private.h"
@@ -44,7 +44,7 @@ void im_policy_evaluate(const im_inputs_t *in, im_target_t *out)
         out->suspend_sta = true;
     }
 
-    /* R2: AP vs BLE — whoever the user connects to wins; BLE wins ties */
+    /* R2: AP vs BLE, whoever the user connects to wins; BLE wins ties */
     if (in->rule_ap_ble_exclusive && in->mode_has_ap)
     {
         if (in->ble_connected)

@@ -22,7 +22,7 @@
 
 /**
  * @file autopid_runner.c
- * @brief The chip-facing runner: one PID poll end to end — init strings
+ * @brief The chip-facing runner: one PID poll end to end, init strings
  *        on type/PID transitions, ATCRA rxheader management, request,
  *        payload parse + cross-talk guard, then EVERY enabled parameter
  *        from the ONE response (fix #1) into the cache
@@ -92,7 +92,7 @@ void ap_runner_set_type_init(int type, const char *init)
 void ap_runner_reset(void)
 {
     /* someone else (std scan, settings apply) changed protocol/header
-       state under the chip — replay inits on the next poll */
+       state under the chip: replay inits on the next poll */
     s_last_type = -1;
     s_last_pid = -1;
     s_rxheader_set = false;
@@ -409,7 +409,7 @@ esp_err_t ap_runner_test(int type, const char *type_init, const char *init,
        it switches to this PID's type), the per-PID init, ATCRA, the
        request, ATCRA off. Caller must hold the poller paused
        (ap_core_scan_pause) and this leaves the chip state dirty on
-       purpose — unpausing runs ap_runner_reset(). The baseline prelude
+       purpose, unpausing runs ap_runner_reset(). The baseline prelude
        goes out first when none went out since the chip was last reset.
        httpd-task context (internal stack). */
     char resp[64];
@@ -642,7 +642,7 @@ bool ap_runner_run(const ap_pid_t *pid, int pid_index,
     }
 
     /* cross-talk guard: another chip master's response (WS-OBD bridge,
-       CLI) can land in our request window — never cache it (Phase 1b) */
+       CLI) can land in our request window, never cache it (Phase 1b) */
     if (!ap_payload_matches_cmd(pid->cmd, payload, payload_len))
     {
         ESP_LOGD(TAG, "%s: response echo mismatch (cross-talk?)",

@@ -59,7 +59,7 @@ static const char *TAG = "filesystem";
 
 /**
  * True when the named partition exists and both superblock blocks read as
- * erased flash — i.e. it has never been formatted. Any read error or a
+ * erased flash, i.e. it has never been formatted. Any read error or a
  * missing partition counts as "not blank" so the normal mount path runs.
  */
 static bool fs_partition_is_blank(const char *label)
@@ -222,7 +222,7 @@ esp_err_t filesystem_init(void)
      * unit (fresh-unit bench 2026-08-31). Probe the superblock pair
      * ({0,1}, one flash block each) and format a blank partition quietly
      * before mounting. A non-blank partition that fails to mount still
-     * takes the loud path — that IS a fault worth seeing. */
+     * takes the loud path: that IS a fault worth seeing. */
     if (fs_partition_is_blank(CONFIG_FILESYSTEM_PARTITION_LABEL))
     {
         ESP_LOGI(TAG, "'%s' is blank (first boot): formatting",

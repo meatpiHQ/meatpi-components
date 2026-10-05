@@ -1,6 +1,6 @@
 /**
  * @file ml_at_socket.h
- * @brief AT Socket Bridge — BSD socket API over SIM7600 internal TCP/IP stack
+ * @brief AT Socket Bridge: BSD socket API over SIM7600 internal TCP/IP stack
  *
  * Provides socket(), connect(), send(), recv(), sendto(), recvfrom(), close(),
  * select(), getaddrinfo(), setsockopt(), and fcntl() implementations that
@@ -181,7 +181,7 @@ void ml_at_freeaddrinfo(struct addrinfo *res);
  * Helpers
  * ========================================================================== */
 
-/** Virtual FD range for AT sockets — must fit within FD_SETSIZE (64) */
+/** Virtual FD range for AT sockets: must fit within FD_SETSIZE (64) */
 #define ML_AT_SOCK_FD_BASE  32
 #define ML_AT_SOCK_MAX      10
 
@@ -204,7 +204,7 @@ ssize_t ml_at_read(int fd, void *buf, size_t len);
 
 #else /* !CONFIG_ML_ENABLE_CELLULAR */
 
-/* Stubs when cellular is disabled — always report "not ready" */
+/* Stubs when cellular is disabled: always report "not ready" */
 static inline bool ml_at_socket_is_ready(void) { return false; }
 static inline bool ml_at_socket_is_at_fd(int fd) { (void)fd; return false; }
 

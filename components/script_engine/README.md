@@ -2,15 +2,15 @@
 
 Berry scripting for WiCAN: a stored script (`/data/scripts/<name>.be`) or
 inline source runs on the engine's own PSRAM-stack runner task against
-the device bindings — UDS/OBD requests, a claimed multi-step conversation,
-raw CAN, trouble codes, events — with a runtime budget and a kill switch.
+the device bindings (UDS/OBD requests, a claimed multi-step conversation,
+raw CAN, trouble codes, events) with a runtime budget and a kill switch.
 The bindings ARE the scripting API; there is no privileged path (design:
 `event_manager/SCRIPTING.md`).
 
 Settings (`script_engine`, reboot-to-apply): `enabled` (default **off**),
 `max_runtime_ms` (100–120000, default 10 s), `allow_reflash` (default
-off — gates UDS 0x34–0x37 and `obd_transfer_file`), `exclusive` (default
-**on**, 2026-09-16 — from a script's first ECU access to the end of the run
+off: gates UDS 0x34–0x37 and `obd_transfer_file`), `exclusive` (default
+**on**, 2026-09-16: from a script's first ECU access to the end of the run
 AutoPID polling and DTC scans stay off the bus: obd_gate's diagnostics
 hold, independent of the UDS Tool's switch), `cli`.
 
@@ -22,8 +22,8 @@ the firmware reports, so the page never drifts from the bindings:
 | Route | What |
 |---|---|
 | `GET /api/scripts/reference` | `{language, enabled, allow_reflash, limits{src_max,file_max,out_max,sleep_max_ms,name_max,resp_max_bytes,max_runtime_ms}, groups[{id,title}], bindings[{name,sig,group,ret,doc,ex}], globals[{name,doc}], primer[{title,code,note}], errors[{match,hint}], rules{action,with,event}}` |
-| `GET /api/scripts/examples` | `{examples:[{id,title,desc,needs,level,size}]}` — the gallery |
-| `GET /api/scripts/examples?id=` | one example's Berry source (`text/plain`; 404 unknown) — the same handler as the list |
+| `GET /api/scripts/examples` | `{examples:[{id,title,desc,needs,level,size}]}`: the gallery |
+| `GET /api/scripts/examples?id=` | one example's Berry source (`text/plain`; 404 unknown): the same handler as the list |
 | `POST /api/scripts/check {src}` | compile only → `{ok}` or `{ok:false,error:"syntax_error: string:3: …"}` |
 
 `script_engine_doc.c` holds the reference tables (one line per binding,
@@ -58,7 +58,7 @@ Error messages name the line of the inline source as `string:<line>:`
 
 A rule runs a script with the `script.run {name}` action (or the sugar
 `{"on":"…","script":"name"}`); the trigger event reaches the script as the
-`evt_source` / `evt_name` / `evt_<field>` globals — a field exists only
+`evt_source` / `evt_name` / `evt_<field>` globals: a field exists only
 when the trigger carries it (`import global` + `global.contains('evt_param')`
 to test; a bare undeclared name is a compile error in Berry). Scripts
 publish `script.done {value}` through `emit()` for rules to chain on.

@@ -9,7 +9,7 @@ idf_component_register(
          "espnetlink_link_cli.c"
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "."
-    # Feature: the ESPNetLink LTE/GPS dongle as the internet uplink —
+    # Feature: the ESPNetLink LTE/GPS dongle as the internet uplink,
     # zero-touch pairing over USB, then its WiFi AP (USB = power only) or
     # plain USB-Ethernet. usb_acm_cli is public: the fix struct/parser/sink
     # type live in its header and are shared with the USB-console GPS path.

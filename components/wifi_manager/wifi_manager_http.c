@@ -24,7 +24,7 @@
  * @file wifi_manager_http.c
  * @brief The component's own HTTP routes (HTTP_API.md §7): /api/wifi/status
  *        and /api/wifi/scan. Feature components register their routes
- *        themselves — main calls wifi_manager_register_http() only in
+ *        themselves: main calls wifi_manager_register_http() only in
  *        compositions that include http_server_manager, keeping the radio
  *        code free of any HTTP dependency.
  *
@@ -121,7 +121,7 @@ static esp_err_t wifi_status_handler(httpd_req_t *req)
 
 static esp_err_t wifi_scan_handler(httpd_req_t *req)
 {
-    /* blocking ≈2 s (the UI shows a spinner) — the JSON goes out verbatim */
+    /* blocking ≈2 s (the UI shows a spinner): the JSON goes out verbatim */
     char *json = wifi_manager_scan_networks();
 
     if (json == NULL)

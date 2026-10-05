@@ -28,7 +28,7 @@
  * MIC3624 OBD chip (obd_chip, driven by apps over BLE/TCP/WS/USB) and any
  * ESP-side requester on the TWAI controller (an add-on pack's virtual ELM
  * jacks). Both address the
- * ECU functionally (0x7DF) and both hear every 0x7E8.. response — when two
+ * ECU functionally (0x7DF) and both hear every 0x7E8.. response: when two
  * request/response conversations OVERLAP, a requester can attribute the
  * other's response to its own request (bad data: the driving-app +
  * autopid clash, meatpi 2026-07-11).
@@ -38,12 +38,12 @@
  * default (`obd_gate` settings, reboot-to-apply); disabled = every call is
  * a no-op.
  *
- * Semantics (fail-open by design — the gate is a data-quality guard, never
+ * Semantics (fail-open by design: the gate is a data-quality guard, never
  * an availability hazard):
  *  - acquire() waits up to @p wait_ms for the gate, then TAKES it anyway
- *    (counted + warned) — a wedged holder can't brick the other side.
+ *    (counted + warned): a wedged holder can't brick the other side.
  *  - a hold auto-expires after OBD_GATE_HOLD_MS (a holder that never
- *    releases — e.g. a monitor command with no '>' prompt — self-clears).
+ *    releases, e.g. a monitor command with no '>' prompt: self-clears).
  *  - re-acquire by the CURRENT holder just extends the hold (a multi-step
  *    conversation stays owned).
  */
@@ -60,7 +60,7 @@ extern "C" {
 
 /** How long a blocked requester waits before taking the gate anyway. */
 #define OBD_GATE_WAIT_MS 3000
-/** Failsafe hold expiry — an un-released hold self-clears after this. */
+/** Failsafe hold expiry: an un-released hold self-clears after this. */
 #define OBD_GATE_HOLD_MS 2000
 
 typedef struct
@@ -114,7 +114,7 @@ void obd_gate_diag_ack(bool off_bus);
 bool obd_gate_diag_acked(void);
 
 /** Wait (polling) up to @p wait_ms for the poller's acknowledgement.
- *  True when acknowledged — or when no poller ever reported (nothing
+ *  True when acknowledged, or when no poller ever reported (nothing
  *  to wait for, e.g. autopid disabled). */
 bool obd_gate_diag_wait_ack(uint32_t wait_ms);
 

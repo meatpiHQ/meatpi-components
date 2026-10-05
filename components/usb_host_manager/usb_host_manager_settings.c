@@ -40,18 +40,18 @@ static const settings_field_t FIELDS[] =
 {
     /* Default TRUE since 2026-08-31: a fresh WiCAN Pro must pair with an
      * ESPNetLink with zero user input (integration contract §6), and with
-     * host mode off the dongle is never even enumerated — field-hit on an
+     * host mode off the dongle is never even enumerated: field-hit on an
      * out-of-the-box unit. Safe as a default: in the host role the mux
      * only leaves the CH342 when the OTG ID pin reports an attached
      * DEVICE, so a plain PC cable (console/flash) is untouched. */
     SETTINGS_BOOL("enabled", true),
     /* When enabled, which USB stack the connector's ESP-OTG runs.
-     * `host`   = CherryUSB host (USB-Ethernet adapters, espnetlink — today).
-     * `device` = CherryUSB DEVICE — WiCAN presents itself to the PC; the
+     * `host`   = CherryUSB host (USB-Ethernet adapters, espnetlink: today).
+     * `device` = CherryUSB DEVICE: WiCAN presents itself to the PC; the
      *  class is `device_class`. Default `host` keeps existing enabled=true
      *  configs unchanged. `enabled=false` leaves the connector on the
      *  CH342 (serial console/flash) regardless. Host vs device is fixed
-     *  at boot (the S3 USB-OTG is one or the other). Phase 3 —
+     *  at boot (the S3 USB-OTG is one or the other). Phase 3:
      *  TASK_j2534_server.md §5. */
     SETTINGS_STR_ENUM("role", "host,device", "host"),
     /* device role only: which USB-device class WiCAN presents.
@@ -142,7 +142,7 @@ static esp_err_t on_apply(const cJSON *settings)
              (cJSON_IsString(item) && item->valuestring[0]) ?
              item->valuestring : "ncm");
     /* host stack runs only in the host role; device role is the J2534
-     * USB-CDC path (Phase 3) — it does NOT bring up CherryUSB host */
+     * USB-CDC path (Phase 3): it does NOT bring up CherryUSB host */
     s_enabled = feature_on && !s_role_device;
     item = cJSON_GetObjectItemCaseSensitive(settings, "ip_mode");
     s_ip_static = cJSON_IsString(item) &&

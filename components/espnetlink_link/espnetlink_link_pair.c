@@ -31,7 +31,7 @@
  * settings_manager_set() walks LittleFS on the CALLER's stack (flash
  * reads with the cache disabled): a PSRAM-stack caller trips
  * esp_task_stack_is_sane_cache_disabled (bench 2026-08-24, first pairing
- * attempt). The §2 corollary applies — so the store always runs on a
+ * attempt). The §2 corollary applies, so the store always runs on a
  * short-lived internal-RAM worker task and the caller (link task, HTTP or
  * CLI handler) blocks until it is done.
  */
@@ -356,7 +356,7 @@ esp_err_t espnetlink_link_pair(const char *ssid, const char *password,
     }
 
     ESP_LOGI(TAG, "paired with '%s' (wifi slot %d)%s", ssid, slot,
-             changed ? " — reboot to apply" : " (unchanged)");
+             changed ? ": reboot to apply" : " (unchanged)");
     if (slot_out != NULL)
     {
         *slot_out = slot;

@@ -143,7 +143,7 @@ static esp_err_t status_handler(httpd_req_t *req)
         }
     }
 
-    /* die temperature (best effort — omitted if the sensor errors) */
+    /* die temperature (best effort: omitted if the sensor errors) */
     float temp_c = 0;
 
     if (dev_status_manager_temperature(&temp_c) == ESP_OK)
@@ -153,7 +153,7 @@ static esp_err_t status_handler(httpd_req_t *req)
     }
 
     /* health surface (2026-07-19): log E/W counters, flash-op counters
-       and the latched fault count — what the bench asserts against */
+       and the latched fault count, what the bench asserts against */
     cJSON *health = cJSON_AddObjectToObject(resp, "health");
     uint32_t errors = 0;
     uint32_t warnings = 0;
@@ -256,13 +256,13 @@ static esp_err_t faults_clear_handler(httpd_req_t *req)
     return api_send_json(req, resp);
 }
 
-/* ---- GET /api/info (device identity — device-contract v2 ask #1) ----------- */
+/* ---- GET /api/info (device identity: device-contract v2 ask #1) ----------- */
 
 static esp_err_t info_handler(httpd_req_t *req)
 {
     cJSON *resp = cJSON_CreateObject();
 
-    /* same keys and casing as the webhook push `status` section — the
+    /* same keys and casing as the webhook push `status` section: the
        HA integration verifies identity BEFORE control commands with
        this, so keep it cheap and dependency-free */
     cJSON_AddStringToObject(resp, "device_type", CONFIG_WICAN_DEVICE_TYPE);
@@ -312,7 +312,7 @@ static esp_err_t tasks_handler(httpd_req_t *req)
 
     cJSON *resp = cJSON_CreateObject();
 
-    /* raw cumulative counters — CPU%% is a CLIENT-side delta between two
+    /* raw cumulative counters: CPU%% is a CLIENT-side delta between two
        polls: task_delta / (total_delta * cores). total_us is per-core
        scheduler time (dev_status_manager.h) */
     cJSON_AddNumberToObject(resp, "cores", CONFIG_FREERTOS_NUMBER_OF_CORES);

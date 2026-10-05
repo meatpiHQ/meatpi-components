@@ -1,7 +1,7 @@
-# bridge_manager — host unit suite
+# bridge_manager: host unit suite
 
 Compiles the pure config layer (`bridge_manager_config.c`) plus a
-line-splitter test codec that exercises the `bridge_translator_t` CONTRACT —
+line-splitter test codec that exercises the `bridge_translator_t` CONTRACT:
 no FreeRTOS runtime use, IDF **linux** target. Runs via `.\test.ps1 host`.
 
 ## What is covered (12 tests)
@@ -16,7 +16,7 @@ bridge names rejected.
 
 Translator contract (the ctx/sink plumbing every real codec relies on):
 ctx fits the manager's 256 B pool slot; one input chunk → many sink outputs;
-a frame FRAGMENTED across three chunks reassembles (zero outputs mid-frame —
+a frame FRAGMENTED across three chunks reassembles (zero outputs mid-frame:
 the chunk-boundary bug class); two ctx instances (the pump's a2b/b2a) are
 fully isolated.
 

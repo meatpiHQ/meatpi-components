@@ -26,13 +26,13 @@
  *
  * Answers "why did the device reboot?" across warm restarts without touching
  * flash: its state lives in PSRAM `.noinit` (EXT_RAM_NOINIT_ATTR) guarded by
- * a magic/version/CRC envelope. A power cycle leaves random PSRAM — the
+ * a magic/version/CRC envelope. A power cycle leaves random PSRAM: the
  * envelope detects that and starts fresh; any warm reset (esp_restart, panic,
  * watchdog, brownout-less resets) preserves the full history.
  *
  * Two jobs:
  *  1. Every boot, record one history entry: reset reason, timestamp (when
- *     wall time is valid), and — if the previous run declared it — the
+ *     wall time is valid), and (if the previous run declared it) the
  *     planned reason/source of the restart.
  *  2. Give the firmware ONE sanctioned way to reboot on purpose:
  *     restart_tracker_restart(reason, source, flags). Transports that call
@@ -41,7 +41,7 @@
  * Lifecycle: restart_tracker_init() must run EARLY in main (right after
  * log_manager_init) so the boot record is written before anything can crash.
  * start()/stop() exist for lifecycle uniformity (Coding Standard §3) and are
- * no-ops — the component is passive after init.
+ * no-ops: the component is passive after init.
  */
 #pragma once
 
@@ -141,7 +141,7 @@ typedef struct
  *
  * `mspi_tuning_guard` MUST stay the first member and outside the CRC: on the
  * ESP32-S3, MSPI PSRAM timing tuning writes a 64-byte test pattern at PSRAM
- * physical address 0 on EVERY boot — and `.ext_ram_noinit` starts there. If
+ * physical address 0 on EVERY boot, and `.ext_ram_noinit` starts there. If
  * this object links first in the section, only the guard is sacrificed.
  */
 typedef struct
@@ -163,7 +163,7 @@ typedef struct
 /** Validate/adopt the PSRAM state and record this boot. Call early in main. */
 esp_err_t restart_tracker_init(void);
 
-/** Lifecycle uniformity (§3); passive component — both return ESP_OK. */
+/** Lifecycle uniformity (§3); passive component: both return ESP_OK. */
 esp_err_t restart_tracker_start(void);
 esp_err_t restart_tracker_stop(void);
 
@@ -188,7 +188,7 @@ esp_err_t restart_tracker_get_latest_record(restart_tracker_record_t *out_record
 
 /** Register the `restart_tracker` CLI command with cmdline_manager.
  *  Called INTERNALLY on the settings boot apply when the `cli` setting is
- *  true (default) — main no longer wires it. */
+ *  true (default): main no longer wires it. */
 esp_err_t restart_tracker_register_cli(void);
 
 /** Register the settings descriptor ({cli}). Init runs before

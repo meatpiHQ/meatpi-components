@@ -1,4 +1,4 @@
-# CAN Translators — Design & Implementation (SLCAN · GVRET · RealDash)
+# CAN Translators: Design & Implementation (SLCAN · GVRET · RealDash)
 
 > Implements the three deferred CAN framing codecs as `bridge_translator_t`s
 > plus the missing **internal-CAN endpoint** they all bridge to. Contract:
@@ -30,7 +30,7 @@
     in each translator README + validated where practical.
 - Endpoints already exist as socket/glue: `slcan0`, `gvret0` (TCP, from
   socket_manager), plus we add `rd0` for RealDash. The **`can` endpoint is new**
-  (this design) — the "internal-CAN endpoint" both TASK specs waited on.
+  (this design): the "internal-CAN endpoint" both TASK specs waited on.
 
 Why this model: the codecs stay **pure** (ctx-only state, sink-only output,
 host-testable with no FreeRTOS/driver), exactly as the contract and the
@@ -67,7 +67,7 @@ endpoint (frames are ≤14 B ≪ 128 B chunk), so the CAN side needs no reassemb
 only the **client side** is a fragmented stream (handled in each codec's ctx).
 
 Rationale for LE id + flags byte (vs j2534's `[4B BE id][data]`): translators
-need ext/rtr, and SavvyCAN/GVRET already use LE ids — LE keeps the gvret path a
+need ext/rtr, and SavvyCAN/GVRET already use LE ids, LE keeps the gvret path a
 near-memcpy. This format is bridge-internal (never leaves the device), so it is
 free to differ from the j2534 wire.
 
@@ -75,37 +75,37 @@ free to differ from the j2534 wire.
 
 ## 3. The `can` endpoint (new glue)
 
-A `bridge_endpoint_t` named `"can"`, registered in the adapter glue —
+A `bridge_endpoint_t` named `"can"`, registered in the adapter glue:
 `main/main_endpoints.c` when this was designed, `components/
 bridge_endpoints` since the extraction (matches how `obd`/`slcan0` are
 glued; providers don't depend on bridge_manager).
 
-- **`send(data, len)`** — `can_wire_decode(data,len,&f)`; on success
+- **`send(data, len)`**: `can_wire_decode(data,len,&f)`; on success
   `can_manager_send(f.id, f.ext, f.rtr, f.data, f.dlc)`. Malformed → count + drop.
-- **`subscribe(q)`** — `can_manager_subscribe_queue(q_internal, 0, 0, false,
+- **`subscribe(q)`**: `can_manager_subscribe_queue(q_internal, 0, 0, false,
   monitor_all=true, &idx)` to get every frame, then run a small **pump task**
   that blocks on `q_internal` (can_core_frame_t), `can_wire_encode`s each into a
   `bridge_chunk_t`, and `xQueueSend`s to the bridge's `q`. (The bridge pump reads
   `q` as the endpoint's RX.) One subscriber at a time is enough for v1 (a bridge
   owns the endpoint); guard against a second subscribe.
-- **`unsubscribe(q)`** — stop the pump task, `can_manager_unsubscribe_queue(idx)`.
+- **`unsubscribe(q)`**: stop the pump task, `can_manager_unsubscribe_queue(idx)`.
 - Internal-RAM note: the pump task stack goes to PSRAM (`EXT_RAM_BSS_ATTR`), TCB
   internal; it never touches flash. The encode scratch is stack-local (14 B).
 
 Bus config (bitrate/silent/enable) is **can_manager's** settings job, NOT the
-codec's — SLCAN `S`/`O`/`C` and GVRET `SETUP_CANBUS` are **absorbed** (see §4/§5).
+codec's: SLCAN `S`/`O`/`C` and GVRET `SETUP_CANBUS` are **absorbed** (see §4/§5).
 The bus must be enabled in `can_manager` settings for a bridge to carry traffic;
 document this in each README ("enable CAN bus first").
 
 ---
 
-## 4. translator_slcan (Lawicel ASCII)  — testable now (python-can + PCAN)
+## 4. translator_slcan (Lawicel ASCII):   testable now (python-can + PCAN)
 
 Port of `legacy/slcan.c`, stripped to a pure codec. New component
 `components/translator_slcan/` registering itself in `translator_slcan_init()`
 via `bridge_manager_register_translator()`.
 
-### decode — CAN-wire chunk → slcan ASCII (`tIIIL DD..\r` / `TIIIIIIIIL DD..\r`)
+### decode: CAN-wire chunk → slcan ASCII (`tIIIL DD..\r` / `TIIIIIIIIL DD..\r`)
 Port of `slcan_parse_frame()`:
 - `can_wire_decode` the chunk. Emit `t`(11-bit data) / `T`(29-bit data) /
   `r`(11-bit RTR) / `R`(29-bit RTR); id as 3 or 8 upper-hex nibbles; one hex
@@ -113,10 +113,10 @@ Port of `slcan_parse_frame()`:
   supported iff the `Z1` command enabled it (ctx flag). One chunk → one `sink`
   call (one line). ~30 B max (`SLCAN_MTU`).
 
-### encode — slcan ASCII stream → CAN-wire chunk(s)
+### encode: slcan ASCII stream → CAN-wire chunk(s)
 Port of `slcan_parse_str()` + `slcan_set_frame()`, made pure & reentrant on ctx:
 - Byte-fed state machine reassembling commands across chunk boundaries in the
-  **ctx** (no statics — the legacy used file-scope statics; move them all into
+  **ctx** (no statics: the legacy used file-scope statics; move them all into
   `slcan_ctx_t`). On a complete `t/T/r/R` line → build `can_core_frame_t` →
   `can_wire_encode` → `sink` (one chunk = one frame). Many frames per input chunk
   supported (loop). Malformed / overflow → reset the line, drop, no ctx
@@ -127,13 +127,13 @@ Port of `slcan_parse_str()` + `slcan_set_frame()`, made pure & reentrant on ctx:
   (status/version/serial). They consume their line and emit nothing. Rationale:
   the bus is configured by `can_manager` settings; **python-can's `slcan`
   interface only *writes* `O`/`S`/`C` and never requires a reply**, and its RX
-  path only parses `t/T/r/R` — so absorb-control + round-trip-frames is exactly
+  path only parses `t/T/r/R`, so absorb-control + round-trip-frames is exactly
   what it needs. (If a client is found that needs `V`/`N`/`F` replies, use the
-  reply channel from §6 — but slcan v1 does not.)
+  reply channel from §6, but slcan v1 does not.)
 
 `ctx` (≤256 B): line-reassembly buffer + parse state (header/body/end, cmd,
 frame-build index/id/data), `timestamp_flag`, a 100 ms inter-byte reset timer is
-DROPPED (host-pure; the pump delivers contiguously enough — instead reset on any
+DROPPED (host-pure; the pump delivers contiguously enough, instead reset on any
 framing error).
 
 ### Tests
@@ -149,32 +149,32 @@ framing error).
 
 ---
 
-## 5. translator_gvret (SavvyCAN binary)  — needs the reply channel (§6)
+## 5. translator_gvret (SavvyCAN binary):   needs the reply channel (§6)
 
 Port of `legacy/gvret.c`. New component `components/translator_gvret/`.
 
-### decode — CAN-wire chunk → GVRET frame record
+### decode: CAN-wire chunk → GVRET frame record
 Port of `gvret_parse_can_frame()`: `F1 00 <ts:4 LE> <id:4 LE, bit31=ext> <dlc:1>
 <data:dlc> <checksum:1>` (XOR checksum). Timestamp = a ctx microsecond counter
-(monotonic; seeded at ctx_init, advanced by the pump is not available — use a
+(monotonic; seeded at ctx_init, advanced by the pump is not available: use a
 free-running value derived from a ctx counter; SavvyCAN tolerates relative ts).
 One chunk → one record.
 
-### encode — GVRET command stream → CAN-wire TX frames **+ protocol replies**
+### encode: GVRET command stream → CAN-wire TX frames **+ protocol replies**
 Port of `gvret_parse()` state machine into the ctx. Handles:
 - `F1 00 …` BUILD_CAN_FRAME → assemble frame → `can_wire_encode` → `sink` (far).
 - `F1 01` TIME_SYNC, `F1 06` GET_CANBUS_PARAMS, `F1 07` GET_DEV_INFO,
   `F1 09` KEEPALIVE, `F1 0C` GET_NUMBUSES, `F1 0D` GET_EXT_BUSES, `E7` binary
-  mode — these **reply to the client** via the **reply channel** (§6). Values:
+  mode: these **reply to the client** via the **reply channel** (§6). Values:
   build num `CFG_BUILD_NUM`, single bus, speed from an injected getter (see §6).
 - `F1 04/05/08/0A/0B/0E` (dig-out, setup-canbus, sw-mode, systype, echo,
   ext-buses) → parse+absorb (setup-canbus does NOT reconfigure the bus in v1;
-  bus is can_manager's; log + ignore, or optionally forward bitrate — decide
+  bus is can_manager's; log + ignore, or optionally forward bitrate: decide
   with meatpi; default: absorb).
 
 ### Reference fixture (the "figure it out" part)
 GVRET dialect: capture a real **SavvyCAN ↔ legacy-WiCAN (TCP:23)** session with
-Wireshark and save as `translator_gvret/fixtures/savvycan_session.bin` — the
+Wireshark and save as `translator_gvret/fixtures/savvycan_session.bin`, the
 host test replays it (whole + re-split at every boundary) and asserts the exact
 reply bytes. Until we have that capture, the host test uses hand-built vectors
 from the legacy code's constants; the fixture upgrades confidence. Bench: SavvyCAN
@@ -186,7 +186,7 @@ the §6 reply header + an injected device-info getter.
 
 ---
 
-## 6. Reply channel — a minimal, backward-compatible bridge_manager extension
+## 6. Reply channel: a minimal, backward-compatible bridge_manager extension
 
 GVRET (and RealDash 0x66 request/response, if used) must answer the client on
 the **same side** the command arrived. The pure `decode`/`encode` sink only
@@ -205,7 +205,7 @@ existing signatures** (so `raw` and the test codec are untouched):
   `hdr->reply(hdr->reply_arg, bytes, len)` to answer the client.
 - Codecs that need device state (gvret time/bus/dev-info) get it via a small
   **injected getter** set at `translator_*_init()` time (a function pointer the
-  component stores, wired by main to `can_manager_status`/build constants) — keeps
+  component stores, wired by main to `can_manager_status`/build constants): keeps
   the codec host-testable (tests inject a stub). NOT globals.
 
 This is ~30 lines in `bridge_manager_pump.c` + 2 fields, fully opt-in. `slcan`
@@ -218,16 +218,16 @@ and `raw` set `wants_reply=0` and are unaffected. Document in `bridge_manager.h`
 Port of `legacy/realdash.c`. New component `components/translator_realdash/`.
 RealDash speaks two frame flavors; support both, selectable by a translator name:
 
-- **`realdash44`** — RealDash "44" text-ish binary in: `44 33 22 11 <id:4 LE>
+- **`realdash44`**: RealDash "44" text-ish binary in: `44 33 22 11 <id:4 LE>
   <data:1..8> <chksum8>` (`real_dash_parse_44`); out uses the 44 frame too.
-- **`realdash66`** — CRC32 framed: `66 33 22 11 <id:4 LE> <data:8 padded>
+- **`realdash66`**: CRC32 framed: `66 33 22 11 <id:4 LE> <data:8 padded>
   <crc32:4 LE>` (`real_dash_set_66` / `real_dash_parse_66`). This is the common
   one for RealDash "CAN/serial" custom connections.
 
 Decisions:
-- **decode** (CAN-wire → RealDash out): port `real_dash_set_66` (66) — always
+- **decode** (CAN-wire → RealDash out): port `real_dash_set_66` (66), always
   8-byte payload, CRC32. Emit one 20-byte frame per CAN chunk. (44-out is
-  rarely needed; 66-out is the RealDash norm — ship 66-out, note 44-out as
+  rarely needed; 66-out is the RealDash norm: ship 66-out, note 44-out as
   optional.)
 - **encode** (RealDash in → CAN-wire): port `real_dash_parse_66` /
   `real_dash_parse_44`, reassembling the fixed-length frame in the ctx (66 = 20
@@ -257,7 +257,7 @@ components/translator_slcan/
 ```
 Same shape for `translator_gvret`, `translator_realdash`.
 
-Wiring in `main` (historical — this glue now lives in
+Wiring in `main` (historical: this glue now lives in
 `components/bridge_endpoints`, and socket jacks register under their
 CONFIGURED names automatically):
 - `main_endpoints.c`: register the new `"can"` endpoint (+ `"rd0"` socket
@@ -276,11 +276,11 @@ CONFIGURED names automatically):
   translator:"slcan", enabled:true}`. (These endpoint names already exist in
   main's glue.)
 
-Registration cap: `BRIDGE_MANAGER_MAX_TRANSLATORS` is 4 — slcan+gvret+
+Registration cap: `BRIDGE_MANAGER_MAX_TRANSLATORS` is 4, slcan+gvret+
 realdash(+realdash44 if split) = 3–4. If both RealDash flavors ship as separate
 translators, bump the cap to 5 (one-line change) or fold them into one
 `realdash` translator with the flavor auto-detected from the header byte
-(`0x44` vs `0x66`) — **preferred: one `realdash` translator, auto-detect on
+(`0x44` vs `0x66`), **preferred: one `realdash` translator, auto-detect on
 encode, 66-frame on decode**; keeps the cap at 4.
 
 ---
@@ -289,7 +289,7 @@ encode, 66-frame on decode**; keeps the cap at 4.
 
 | Translator | Host tests | Bench |
 |---|---|---|
-| slcan | round-trip 11/29/RTR/dlc, fragmentation, multi-frame, malformed, timestamp | **python-can `slcan` + PCAN** (both directions) — do first |
+| slcan | round-trip 11/29/RTR/dlc, fragmentation, multi-frame, malformed, timestamp | **python-can `slcan` + PCAN** (both directions): do first |
 | gvret | replay fixture (whole + re-split), command parse, frame emit, reply bytes, malformed | SavvyCAN ↔ `can↔gvret↔tcp:23` ↔ PCAN (needs the capture) |
 | realdash | 44 & 66 round-trip, CRC32/chksum reject, fragmentation, 29-bit | RealDash app custom CAN connection ↔ `can↔realdash↔tcp` ↔ PCAN |
 
@@ -302,7 +302,7 @@ full-bus 500 kbit/s headline once benched.
 
 ## 10. Build order / milestones
 
-1. **`can_frame_wire.h`** + its host test (pure, trivial) — the shared foundation.
+1. **`can_frame_wire.h`** + its host test (pure, trivial): the shared foundation.
 2. **`can` endpoint** glue in `main_endpoints.c` + pump task. Build-only check.
 3. **translator_slcan** + host tests → green. Wire `translator_slcan_init`.
    Build + flash. **python-can + PCAN bench both directions.** ← first real win.
@@ -314,15 +314,15 @@ full-bus 500 kbit/s headline once benched.
    "CAN bridges" view (bridge list already at `/api/bridges`).
 
 ## 11. Open questions for meatpi
-- **GVRET dialect/version** SavvyCAN expects — capture a legacy TCP:23 session as
+- **GVRET dialect/version** SavvyCAN expects: capture a legacy TCP:23 session as
   the fixture before finalizing replies (TASK_gvret).
 - **SLCAN control replies:** confirmed not needed for python-can; confirm no
   other target needs `V`/`N`/`F` before shipping absorb-only.
 - **RealDash flavor:** ship one auto-detecting `realdash` translator (66 out,
-  44/66 in) — confirm 66-out is the desired default.
+  44/66 in), confirm 66-out is the desired default.
 - **Bus reconfigure from protocol** (GVRET SETUP_CANBUS / SLCAN `S`): v1 absorbs
   (bus owned by can_manager settings). Confirm that's acceptable vs. letting the
   client set the bitrate live.
-- **RealDash socket port / endpoint** — dedicated `rd0` or reuse a generic TCP
+- **RealDash socket port / endpoint**: dedicated `rd0` or reuse a generic TCP
   server? (default: a user-configured socket_manager server).
 ```

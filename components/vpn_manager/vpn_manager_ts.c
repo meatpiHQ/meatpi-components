@@ -22,7 +22,7 @@
 
 /**
  * @file vpn_manager_ts.c
- * @brief Tailscale glue (vendored microlink) — the `type = tailscale`
+ * @brief Tailscale glue (vendored microlink): the `type = tailscale`
  *        path of the state task. Everything microlink allocates lives
  *        only between vpn_ts_up() and vpn_ts_down(): zero memory cost
  *        while tailscale is disabled or wireguard is selected.
@@ -40,7 +40,7 @@
 static const char *TAG = "vpn_manager";
 
 static microlink_t *s_ml;
-/* microlink keeps POINTERS into its config — these back them */
+/* microlink keeps POINTERS into its config: these back them */
 static char s_auth_key[96];
 static char s_device_name[48];
 static char s_control_url[64];
@@ -132,7 +132,7 @@ void vpn_ts_status(char *ip, size_t ip_len, int *peers)
     }
 
     /* peer_count is a slot bound and may contain pruned holes (removal
-     * only tail-compacts) — count the slots that still answer. */
+     * only tail-compacts): count the slots that still answer. */
     int slots = microlink_get_peer_count(s_ml);
     int live  = 0;
 

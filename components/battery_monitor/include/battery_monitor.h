@@ -25,18 +25,18 @@
  * @brief WiCAN battery/supply voltage owner (feature component).
  *
  * Owns the battery-sense ADC input (WiCAN Pro: ADC1 CH3 = GPIO4 behind a
- * ÷11 divider, 6 dB attenuation — Kconfig per hardware revision) and
+ * ÷11 divider, 6 dB attenuation, Kconfig per hardware revision) and
  * turns it into ONE product-level signal: the supply voltage, sampled
  * every `poll_s`, 8-sample averaged, calibration-corrected.
  *
  * WATCHES: any component registers a threshold pair + debounce and
- * subscribes a queue — cross below `below_v` (held for `hold_ms`) →
+ * subscribes a queue, cross below `below_v` (held for `hold_ms`) →
  * BELOW event; recover to `above_v` (the hysteresis gap prevents
  * flapping around one threshold) held for `hold_ms` → ABOVE event. The
  * first stable side after registration is also delivered, so consumers
  * learn the current state without polling. This is the foundation the
  * future sleep_manager builds on (its sleep/wake voltages become one
- * watch), and anything else can react too — stop ECU polling, send an
+ * watch), and anything else can react too: stop ECU polling, send an
  * MQTT alert, log a voltage sag.
  *
  * Fan-out semantics match imu_manager: zero-timeout queue sends,
@@ -75,7 +75,7 @@ typedef struct
 {
     float    below_v;    /* BELOW when sustained under this             */
     float    above_v;    /* ABOVE when sustained at/over this (must be  */
-                         /* >= below_v — the hysteresis gap)            */
+                         /* >= below_v: the hysteresis gap)            */
     uint32_t hold_ms;    /* debounce: how long a side must persist      */
 } battery_monitor_watch_cfg_t;
 
@@ -93,17 +93,17 @@ esp_err_t battery_monitor_voltage(float *out);
 
 /**
  * Fresh synchronous ADC read (also refreshes the cached value). For
- * callers that cannot rely on the sampler task's cadence — the
+ * callers that cannot rely on the sampler task's cadence: the
  * light-sleep nap loop advances the RTOS tick ~40x slower than wall
  * time, so the cache goes minutes stale there (2026-07-21 wake bug).
  * May race a concurrent sampler cycle: one of the two reads can fail
- * that round (adc_oneshot unit lock) — retry-tolerant by design.
+ * that round (adc_oneshot unit lock): retry-tolerant by design.
  */
 esp_err_t battery_monitor_read_now(float *out);
 
 /**
  * Register a threshold watch delivering battery_monitor_event_t into
- * @p q (caller-owned). Returns the watch id via @p out_id (nullable) —
+ * @p q (caller-owned). Returns the watch id via @p out_id (nullable):
  * events carry it so one queue can serve several watches.
  * ESP_ERR_NO_MEM when the table is full; ESP_ERR_INVALID_ARG for a
  * malformed cfg (above_v < below_v, zero queue).
@@ -120,7 +120,7 @@ esp_err_t battery_monitor_register_http(void);
 
 /** Register the `battery` CLI command with cmdline_manager. Called
  *  INTERNALLY on the settings boot apply when the `cli` setting is true
- *  (default) — main no longer wires it. */
+ *  (default): main no longer wires it. */
 esp_err_t battery_monitor_register_cli(void);
 
 #ifdef __cplusplus

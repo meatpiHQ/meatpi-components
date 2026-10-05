@@ -7,7 +7,7 @@ idf_component_register(
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "."
     # Service: the external log sinks log_manager deliberately doesn't
-    # own (standard §9.3) — TCP tail server + UDP collector push (own
+    # own (standard §9.3), TCP tail server + UDP collector push (own
     # lwip sockets, the j2534 ownership model), the ws_log channel
     # (websocket_manager), and rotated files on the SD card
     # (external_storage mount-follow). Registers its sinks into

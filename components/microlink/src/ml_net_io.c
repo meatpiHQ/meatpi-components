@@ -196,7 +196,7 @@ void ml_net_io_task(void *arg) {
                     ml_rx_packet_t pkt = {
                         .data = pkt_data,
                         .len = n,
-                        .src_ip = 0,  /* IPv6 — use parse_response_ipv6 */
+                        .src_ip = 0,  /* IPv6: use parse_response_ipv6 */
                         .src_port = ntohs(src_addr6.sin6_port),
                         .via_derp = false,
                     };

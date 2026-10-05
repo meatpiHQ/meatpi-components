@@ -102,7 +102,7 @@ typedef void (*can_core_rx_cb_t)(void *ctx,
                                    const can_core_frame_t *frame);
 
 /* -------------------------------------------------------------------------
- * Client record — one per AT engine instance
+ * Client record: one per AT engine instance
  * ------------------------------------------------------------------------- */
 typedef struct
 {
@@ -116,7 +116,7 @@ typedef struct
 } can_core_client_t;
 
 /* -------------------------------------------------------------------------
- * Queue subscriber record — one per task-owned RX queue
+ * Queue subscriber record: one per task-owned RX queue
  *
  * Queue item size must be sizeof(can_core_frame_t). When the queue is full,
  * the oldest frame is discarded so the newest frame can be enqueued.

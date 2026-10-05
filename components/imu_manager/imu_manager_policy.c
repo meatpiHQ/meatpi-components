@@ -22,7 +22,7 @@
 
 /**
  * @file imu_manager_policy.c
- * @brief PURE activity state machine — motion events + injected time in,
+ * @brief PURE activity state machine: motion events + injected time in,
  *        stationary/active out. No I2C, no RTOS; host-testable.
  */
 #include "imu_manager_private.h"

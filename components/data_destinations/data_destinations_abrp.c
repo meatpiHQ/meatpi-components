@@ -24,7 +24,7 @@
  * @file data_destinations_abrp.c
  * @brief PURE ABRP (Iternio telemetry API) rules: the autopid snapshot ->
  *        `tlm` name map, the `token=&tlm=` form body, the `APIKEY` header
- *        value and the response verdict. No IDF, no RTOS — host-tested.
+ *        value and the response verdict. No IDF, no RTOS: host-tested.
  *        Contract: https://documenter.getpostman.com/view/7396339/SWTK5a8w
  *        (GET or POST /1/tlm/send, api_key as a query parameter or an
  *        `Authorization: APIKEY <key>` header, `token` + URL-encoded

@@ -22,11 +22,11 @@
 
 /**
  * @file obd_chip_fw.c
- * @brief Chip firmware update — a distinct EXCLUSIVE state: fan-out pauses,
+ * @brief Chip firmware update: a distinct EXCLUSIVE state: fan-out pauses,
  *        send() rejects, this module owns the wire with byte-level reads.
  *
  * The wire protocol is the VERIFIED legacy flow (elm327.c, tested in
- * production — do not improvise):
+ * production: do not improvise):
  *   1. VTVERS            -> "MIC3624 ... Vx.y.z" (identity + version check)
  *   2. VTDLMIC3422       -> OK           (enter download mode)
  *   3. VTDLDT<line>      -> OK           (one vendor hex record per line)
@@ -35,7 +35,7 @@
  *   6. hardware reset pulse (GPIO41), rewake, re-probe
  *
  * Update responses DO end with the '>' prompt (bench-verified 2026-07-03):
- * collect until '>' — that is the chip's "ready for the next command" signal —
+ * collect until '>' (that is the chip's "ready for the next command" signal)
  * then classify the text: "OK"/"MIC3624" = accepted, "?" = rejected. Returning
  * early on "OK\r" without waiting for '>' makes the next record race the
  * chip's mode switch and get dropped (it answers a bare "\r>"). VTDLED is the
@@ -125,10 +125,10 @@ static esp_err_t fw_command(const char *cmd, char *resp, size_t resp_len,
                 continue;
             }
 
-            echo_skipped = true; /* no echo — chip already answered */
+            echo_skipped = true; /* no echo: chip already answered */
         }
 
-        /* VTDLED: the chip resets right after — don't insist on a prompt */
+        /* VTDLED: the chip resets right after, don't insist on a prompt */
         if (is_vtdled && byte == '\r' && strstr(resp, "OK") != NULL)
         {
             return ESP_OK;
@@ -180,7 +180,7 @@ static esp_err_t fw_update_run(const char *fw_buf, size_t fw_len,
         return ESP_ERR_INVALID_STATE;
     }
 
-    /* EXCLUSIVE: fan-out pauses, send() rejects — we own the wire now */
+    /* EXCLUSIVE: fan-out pauses, send() rejects, we own the wire now */
     esp_err_t err = obd_core_claim(3 /* CLAIM_EXCLUSIVE */, 5000);
 
     if (err != ESP_OK)
@@ -192,17 +192,17 @@ static esp_err_t fw_update_run(const char *fw_buf, size_t fw_len,
     vTaskDelay(pdMS_TO_TICKS(100));
 
     /* 1. identity + version gate. Legacy semantics: '?' means the chip is
-       not in its normal state — typically stuck in download mode after an
-       interrupted update — and COMPLETING a download is the recovery path,
+       not in its normal state (typically stuck in download mode after an
+       interrupted update) and COMPLETING a download is the recovery path,
        so proceed. Only a healthy chip already at the target version skips.
-       Stricter than legacy in ONE case: a VTVERS TIMEOUT (dead wire — no
+       Stricter than legacy in ONE case: a VTVERS TIMEOUT (dead wire, no
        chip, no download-stuck bootloader) aborts instead of streaming
        ~3.6k records into 5 s timeouts; `force` overrides. */
     err = fw_command("VTVERS\r", resp, sizeof(resp), FW_TIMEOUT_MS);
 
     if (err == ESP_ERR_TIMEOUT && !force)
     {
-        ESP_LOGW(TAG, "no answer on the wire (VTVERS timeout) — not "
+        ESP_LOGW(TAG, "no answer on the wire (VTVERS timeout), not "
                  "flashing; use force to override");
         obd_core_release();
         return ESP_ERR_TIMEOUT;
@@ -216,14 +216,14 @@ static esp_err_t fw_update_run(const char *fw_buf, size_t fw_len,
 
         if (!force && ver[0] != '\0' && strstr(resp, ver) != NULL)
         {
-            ESP_LOGI(TAG, "already at %s — nothing to do", ver);
+            ESP_LOGI(TAG, "already at %s: nothing to do", ver);
             obd_core_release();
             return ESP_OK;
         }
     }
     else
     {
-        ESP_LOGW(TAG, "chip not in normal state (VTVERS: %s, '%s') — "
+        ESP_LOGW(TAG, "chip not in normal state (VTVERS: %s, '%s'), "
                  "updating anyway to recover it", esp_err_to_name(err), resp);
     }
 

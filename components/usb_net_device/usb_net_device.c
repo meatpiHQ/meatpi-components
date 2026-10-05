@@ -27,7 +27,7 @@
  *
  * Context rules: every CherryUSB device callback (endpoint completions,
  * class notify, the bus event handler) runs in the USB INTERRUPT on the ESP
- * port — they only flip state and notify the worker task with FromISR
+ * port: they only flip state and notify the worker task with FromISR
  * primitives. The worker owns esp_netif calls and endpoint re-arming; lwIP
  * calls und_transmit() from its own task.
  */
@@ -66,7 +66,7 @@ static const char *TAG = "usb_net_device";
 #define UND_BIT_LINK_DOWN  0x04
 #define UND_BIT_CONFIGURED 0x08
 
-/* NOT 192.168.80.x — that's the WiFi AP's subnet (both netifs can be up
+/* NOT 192.168.80.x: that's the WiFi AP's subnet (both netifs can be up
  * at once, and a duplicate IP/subnet breaks lwIP routing; bench-hit
  * 2026-07-08: the PC's DHCP OFFER went out the AP netif). */
 #define UND_DEFAULT_IP_A 192
@@ -80,7 +80,7 @@ static const char *TAG = "usb_net_device";
 
 static const uint8_t s_device_desc[] =
 {
-    /* composite (IAD) device; VID/PID from Kconfig (16D0:1262 — NOT 1261,
+    /* composite (IAD) device; VID/PID from Kconfig (16D0:1262, NOT 1261,
      * that's the MeatPi USB-CAN product; see the Kconfig help) */
     USB_DEVICE_DESCRIPTOR_INIT(USB_2_0, 0xEF, 0x02, 0x01,
                                CONFIG_WICAN_USB_DEV_VID,
@@ -189,7 +189,7 @@ void usbd_cdc_ncm_link_event(bool up)
 }
 
 /* RNDIS hooks (no alt-setting link concept: link = configured + filter,
- * approximated as configured — see the worker) */
+ * approximated as configured, see the worker) */
 void usbd_rndis_data_recv_done(uint32_t len)
 {
     s_rx_len = len;
@@ -248,7 +248,7 @@ static void und_arm_read(void)
 
     if (ret != 0)
     {
-        ESP_LOGD(TAG, "arm read failed (%d) — link down?", ret);
+        ESP_LOGD(TAG, "arm read failed (%d): link down?", ret);
     }
 }
 
@@ -376,7 +376,7 @@ static void und_link_set(bool up)
     {
         esp_netif_action_connected(s_netif, NULL, 0, NULL);
         und_arm_read();
-        ESP_LOGI(TAG, "link up (%s) — host opened the data path",
+        ESP_LOGI(TAG, "link up (%s): host opened the data path",
                  s_st.device_class);
     }
     else
@@ -641,7 +641,7 @@ esp_err_t usb_net_device_start(const usb_net_device_config_t *cfg)
     }
 
     s_started = true;
-    ESP_LOGI(TAG, "up: class=%s ip=%s vid=0x%04x pid=0x%04x — waiting for "
+    ESP_LOGI(TAG, "up: class=%s ip=%s vid=0x%04x pid=0x%04x, waiting for "
              "the host", s_st.device_class, s_st.ip,
              CONFIG_WICAN_USB_DEV_VID, CONFIG_WICAN_USB_DEV_PID);
     return ESP_OK;

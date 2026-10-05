@@ -59,7 +59,7 @@ static volatile bool s_run;
 static volatile uint32_t s_test_wake_s; /* !=0: forced bench sleep */
 static TaskHandle_t s_task;
 static StaticTask_t s_tcb;                    /* internal: FreeRTOS */
-/* INTERNAL stack — this task calls esp_light_sleep_start, which runs
+/* INTERNAL stack: this task calls esp_light_sleep_start, which runs
  * with the cache disabled; a PSRAM stack here = interrupt-watchdog
  * reset at the first nap (hit on the bench 2026-07-07; legacy's
  * static-DRAM stack was load-bearing, not habit) */
@@ -72,7 +72,7 @@ static sleep_manager_status_t s_status;
 /* Wall-clock ms for policy deadlines. NOT esp_log_timestamp(): manual
  * esp_light_sleep_start does NOT step the FreeRTOS tick (only the
  * esp_pm auto-sleep path does), so tick time crawls ~40x slow inside
- * the nap loop — a tick-based 1 s wake-stable window took ~80 s of
+ * the nap loop: a tick-based 1 s wake-stable window took ~80 s of
  * real time (2026-07-21 wake bug). esp_timer IS slept-time
  * compensated. */
 static uint32_t sm_now_ms(void)
@@ -154,7 +154,7 @@ static void nap_and_verify(void)
             ESP_LOGW(TAG, "OBD chip awake during sleep; re-sleeping "
                      "(%u/%u)", s_resleeps, SM_RESLEEP_MAX);
             /* hard reset FIRST (legacy parity): a chip mid-monitor
-             * (ATMA) ignores the sleep pin — without the reset every
+             * (ATMA) ignores the sleep pin, without the reset every
              * retry fails and the loop ends in a recovery reboot
              * (sleep matrix `elm_monitor`, 2026-07-21) */
             (void)obd_chip_hard_reset();
@@ -177,7 +177,7 @@ static void nap_and_verify(void)
 }
 
 /* The planned reason is what the next boot reports (restart history, the web
- * UI's "Last wake-up") — a voltage recovery and the periodic check-in must be
+ * UI's "Last wake-up"): a voltage recovery and the periodic check-in must be
  * told apart (meatpi 2026-09-07). */
 static void wake_reboot(const char *why,
                         restart_tracker_planned_reason_t reason)
@@ -187,7 +187,7 @@ static void wake_reboot(const char *why,
 }
 
 /* boot-loop guard: repeated unexpected resets on a sagging battery
- * mean crash-loop-until-flat — sleep instead (legacy parity) */
+ * mean crash-loop-until-flat: sleep instead (legacy parity) */
 static bool bootloop_guard_trips(float volts)
 {
     restart_tracker_state_t rt;
@@ -226,7 +226,7 @@ static void state_task(void *arg)
         float volts;
         /* Napping (or about to): the sampler task's cache goes minutes
          * stale because the RTOS tick barely advances across manual
-         * light sleep — read the ADC fresh, like legacy's in-loop read
+         * light sleep, read the ADC fresh, like legacy's in-loop read
          * (the frozen cache held wake off for good, 2026-07-21). */
         bool in_sleep_states =
             s_policy.state == SLEEP_MANAGER_SLEEPING ||
@@ -270,14 +270,14 @@ static void state_task(void *arg)
 
         /* LAST-LINE battery defense (legacy parity, meatpi 2026-07-21):
          * evaluated EVERY loop and INDEPENDENT of the sleep-enabled
-         * setting — a crash-looping device on a sagging battery parks
+         * setting, a crash-looping device on a sagging battery parks
          * itself no matter what. On trip the SLEEPING policy takes
          * over (voltage-recovery wake + periodic check-ins apply). */
         if (have_v && !guard_tripped && bootloop_guard_trips(volts))
         {
             guard_tripped = true;
             ESP_LOGE(TAG, "boot-loop guard: %d+ unexpected resets "
-                     "below %.2f V — sleeping to protect the battery",
+                     "below %.2f V, sleeping to protect the battery",
                      3, SM_ERROR_V);
             enter_sleep_sequence(volts);
             s_policy.state = SLEEP_MANAGER_SLEEPING;
@@ -310,7 +310,7 @@ static void state_task(void *arg)
             if (in_sleep_states)
             {
                 /* one racy/failed ADC read must not park the loop
-                 * AWAKE (tick delays run ~40x long here) — keep
+                 * AWAKE (tick delays run ~40x long here): keep
                  * napping, next cycle rereads */
                 nap_and_verify();
             }
@@ -402,7 +402,7 @@ esp_err_t sleep_manager_start(void)
     }
 
     /* the task runs even when sleep is DISABLED: it carries the
-     * boot-loop battery guard (last-line defense — legacy parity,
+     * boot-loop battery guard (last-line defense: legacy parity,
      * meatpi 2026-07-21). s_run gates only the voltage-policy part. */
     s_run = sleep_settings_enabled();
 

@@ -23,7 +23,7 @@
 /**
  * @file cert_manager_private.h
  * @brief Internal contract: the PURE validation/mapping logic
- *        (host-testable — no filesystem, no RTOS).
+ *        (host-testable, no filesystem, no RTOS).
  */
 #pragma once
 
@@ -32,7 +32,7 @@
 
 #include "cert_manager.h"
 
-/** Set names: 1..CERT_MANAGER_NAME_MAX of [a-z0-9_-] — nothing that can
+/** Set names: 1..CERT_MANAGER_NAME_MAX of [a-z0-9_-], nothing that can
  *  traverse or surprise a filesystem. */
 bool cm_set_name_valid(const char *name);
 
@@ -43,14 +43,14 @@ const char *cm_part_filename(cert_manager_part_t part);
  *  false for junk. */
 bool cm_part_from_type(const char *type, cert_manager_part_t *out);
 
-/** Map a multipart form FIELD name ("ca"/"client_cert"/"client_key" —
+/** Map a multipart form FIELD name ("ca"/"client_cert"/"client_key":
  *  the legacy UI's names, preserved) to a part; false for junk. */
 bool cm_part_from_field(const char *field, cert_manager_part_t *out);
 
 /**
  * PEM sanity for an uploaded part: printable text containing the
- * expected BEGIN marker — certificates for CA/CLIENT_CERT, a private
- * key (PRIVATE KEY / RSA / EC) for CLIENT_KEY. Not a full parse — it
+ * expected BEGIN marker, certificates for CA/CLIENT_CERT, a private
+ * key (PRIVATE KEY / RSA / EC) for CLIENT_KEY. Not a full parse: it
  * catches "uploaded the wrong file", the actual crypto validation
  * happens at TLS handshake time.
  */

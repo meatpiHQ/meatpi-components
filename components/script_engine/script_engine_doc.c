@@ -25,7 +25,7 @@
  * @brief The scripting reference the web UI shows next to the editor
  *        (2026-09-07): one entry per device binding, the globals a script
  *        can read, a Berry primer, hints for the common error messages and
- *        the engine limits. PURE (cJSON only) — host-tested.
+ *        the engine limits. PURE (cJSON only): host-tested.
  *
  * Adding a binding = adding its line to BIND_DOCS below AND its function
  * to the table in script_engine_bind.c; se_bindings_selfcheck() logs any

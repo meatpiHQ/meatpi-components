@@ -22,7 +22,7 @@
 
 /**
  * @file imu_manager_cli.c
- * @brief The component's CLI command (`imu`) — registered into
+ * @brief The component's CLI command (`imu`): registered into
  *        cmdline_manager by imu_manager_register_cli() (main wires it
  *        in CLI compositions only). Legacy option interface preserved
  *        (-i/--id byte-alike); -r/--read and the bare summary are v6.

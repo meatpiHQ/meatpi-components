@@ -23,7 +23,7 @@
 /**
  * @file http_server_manager_match.c
  * @brief URI normalization, asset-table resolution, MIME inference.
- *        Pure logic, no httpd/VFS — host-testable on the linux target.
+ *        Pure logic, no httpd/VFS: host-testable on the linux target.
  */
 #include <string.h>
 #include <strings.h>

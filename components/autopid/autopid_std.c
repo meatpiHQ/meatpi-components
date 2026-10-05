@@ -47,7 +47,7 @@
 /* ---- PURE: legacy table row -> v6 expression ---------------------------------- */
 
 /** Print @p v as a parser-safe decimal literal: %.10g normally, but the
- *  grammar has no exponent form — tiny scales (1/32768) fall back to
+ *  grammar has no exponent form, tiny scales (1/32768) fall back to
  *  fixed-point with trailing zeros trimmed. */
 static void fmt_literal(double v, char *out, size_t len)
 {
@@ -221,7 +221,7 @@ bool ap_std_scan_parse(const char *resp, uint8_t expect_pid,
         int n = line_bytes(p, (size_t)(eol - p), bytes,
                            sizeof(bytes));
 
-        /* anchor on "41 <pid>" anywhere in the line — headers-on rows
+        /* anchor on "41 <pid>" anywhere in the line: headers-on rows
            (11-bit, 3-hex header + PCI) work because the anchor skips
            leading bytes. Noise lines (SEARCHING, "N:" ISO rows, 8-hex
            29-bit headers) fail tokenization and are skipped; the scan
@@ -265,7 +265,7 @@ bool ap_std_scan_parse(const char *resp, uint8_t expect_pid,
 int ap_frz_decode(const uint8_t *payload, size_t len, ap_frz_val_t *out,
                   int n, int max)
 {
-    /* [0x42, pid, frame, A, B, …] — same byte semantics as the mode-01
+    /* [0x42, pid, frame, A, B, …], same byte semantics as the mode-01
        expressions, shifted by the extra frame byte */
     if (payload == NULL || out == NULL || len < 4 || payload[0] != 0x42)
     {
@@ -297,7 +297,7 @@ int ap_frz_decode(const uint8_t *payload, size_t len, ap_frz_val_t *out,
 
         if ((size_t)(first + 1 + count) > len)
         {
-            continue;   /* short payload — skip, keep what fits */
+            continue;   /* short payload: skip, keep what fits */
         }
 
         uint32_t raw = 0;

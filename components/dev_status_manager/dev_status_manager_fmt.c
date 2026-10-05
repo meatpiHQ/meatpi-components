@@ -23,7 +23,7 @@
 /**
  * @file dev_status_manager_fmt.c
  * @brief Pure helpers: bit-name table and uptime formatting. No IDF deps
- *        beyond the FreeRTOS BIT macros (redefined locally for the host) —
+ *        beyond the FreeRTOS BIT macros (redefined locally for the host),
  *        compiled as-is by the host unit tests.
  */
 #include <stdint.h>
@@ -59,7 +59,7 @@ static const char *const BIT_NAMES[] =
     "eth_connected",   /* BIT17 */
     "autopid_idle",    /* BIT18 */
     "motion",          /* BIT19 */
-    "sta_suspended",   /* BIT20 — interface_manager arbitration */
+    "sta_suspended",   /* BIT20: interface_manager arbitration */
     "ap_suspended",    /* BIT21 */
     "ble_suspended",   /* BIT22 */
 };

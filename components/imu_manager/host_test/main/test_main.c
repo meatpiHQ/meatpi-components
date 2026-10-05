@@ -81,7 +81,7 @@ static void test_wom_gate_clock_wrap(void)
 static void test_migrate_v1_v2_keys_survive(void)
 {
     /* v3 runs both detectors, so BOTH historical shapes pass through
-     * intact — validation fills the new keys from schema defaults */
+     * intact: validation fills the new keys from schema defaults */
     cJSON *v1 = cJSON_Parse("{\"enabled\":true,\"wom_threshold\":8,"
                             "\"stationary_s\":3}");
     cJSON *v2 = cJSON_Parse("{\"enabled\":true,\"smd_sensitivity\":2,"

@@ -1,5 +1,5 @@
 /*
- * usbd_cdc_ncm.c — CDC-NCM (NTB16) DEVICE class.
+ * usbd_cdc_ncm.c: CDC-NCM (NTB16) DEVICE class.
  *
  * WiCAN-AUTHORED (2026-07-07, see PROVENANCE.md and usbd_cdc_ncm.h).
  * Style/structure follows usbd_cdc_ecm.c and usbd_rndis.c.

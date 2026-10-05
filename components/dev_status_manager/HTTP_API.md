@@ -1,4 +1,4 @@
-# dev_status_manager — HTTP API reference
+# dev_status_manager: HTTP API reference
 
 > **Implemented (2026-07-03)** by the `api_http` glue (on-target suite green).
 > Conventions: `components/HTTP_API.md` §1.
@@ -45,7 +45,7 @@ image identity, and reboot counters (the latter come from `restart_tracker`).
 }
 ```
 
-- `bits` keys are exactly `dev_status_manager_bit_name()` strings — the UI can
+- `bits` keys are exactly `dev_status_manager_bit_name()` strings: the UI can
   render unknown-to-it bits generically.
 - `sta_suspended` / `ap_suspended` / `ble_suspended` (added 2026-07-05) are
   `interface_manager`'s arbitration state: the interface is CONFIGURED on but
@@ -54,7 +54,7 @@ image identity, and reboot counters (the latter come from `restart_tracker`).
 - `network_connected` is the `DEV_STATUS_NETWORK_CONNECTED_MASK` convenience
   (STA **or** ETH).
 - Poll-friendly: cheap snapshot, no side effects. Suggested UI cadence 1–2 s.
-- **`memory`** (added 2026-07-04, Architecture §12b): both heaps —
+- **`memory`** (added 2026-07-04, Architecture §12b): both heaps,
 
 ```json
 "memory": {
@@ -73,7 +73,7 @@ image identity, and reboot counters (the latter come from `restart_tracker`).
 
 ## GET /api/info
 
-Device identity for the control API (added 2026-07-11 — device-contract
+Device identity for the control API (added 2026-07-11: device-contract
 v2 ask #1: the HA integration verifies it is talking to the *configured*
 device before sending control commands, and pre-fills add-by-IP flows).
 Same keys and casing as the webhook push `status` section.
@@ -94,13 +94,13 @@ Same keys and casing as the webhook push `status` section.
 - `device_type` / `model`: Kconfig `WICAN_DEVICE_TYPE` /
   `WICAN_MODEL_NAME` (per-product, defaults `wican_pro` / "WiCAN Pro");
   `hw_version`: `WICAN_HW_VERSION`.
-- `mac` is the STA MAC, colon-separated uppercase — identical to the
+- `mac` is the STA MAC, colon-separated uppercase: identical to the
   mDNS TXT `mac` (HA's stable unique ID).
 - `api_level` bumps only when the `/api/*` surface changes incompatibly.
 
 ## GET /api/status/tasks
 
-Task monitor (2026-07-08, JSON — was text/plain): every FreeRTOS task
+Task monitor (2026-07-08, JSON: was text/plain): every FreeRTOS task
 with state, core affinity, priority, stack high-water and the cumulative
 runtime counter. Busiest first.
 
@@ -120,12 +120,12 @@ runtime counter. Busiest first.
 
 - `state`: `X` running, `R` ready, `B` blocked, `S` suspended, `D`
   deleted-pending-cleanup. `core`: `-1` = unpinned.
-- `stack_hw` = stack bytes the task has NEVER used — small values mean
+- `stack_hw` = stack bytes the task has NEVER used: small values mean
   it is close to overflowing (the httpd-4KB lesson).
 - **CPU% is a client-side delta**: poll twice, then per task
   `Δruntime_us / (Δtotal_us × cores) × 100`. `total_us` is PER-CORE
   scheduler time; the IDLE0/IDLE1 deltas give the idle share (system
-  load = 100 − idle%). Counters are u64 microseconds — no wrap handling
+  load = 100 − idle%). Counters are u64 microseconds: no wrap handling
   needed. The web UI System Monitor page (`#/monitor`) and `system -t`
   (1 s window) both do exactly this.
 

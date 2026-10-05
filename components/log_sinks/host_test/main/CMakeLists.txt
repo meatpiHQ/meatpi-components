@@ -1,4 +1,4 @@
-# Compiles ONLY the pure core (ring + batcher + rotation planner) — no
+# Compiles ONLY the pure core (ring + batcher + rotation planner): no
 # lwip/FreeRTOS/VFS needed on the linux target.
 set(comp_dir "${CMAKE_CURRENT_LIST_DIR}/../..")
 

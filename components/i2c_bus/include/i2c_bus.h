@@ -24,7 +24,7 @@
  * @file i2c_bus.h
  * @brief WiCAN shared I2C bus owner (HAL component, Architecture §4).
  *
- * Owns THE one I2C master bus (WiCAN Pro: SDA=GPIO5, SCL=GPIO6 — Kconfig
+ * Owns THE one I2C master bus (WiCAN Pro: SDA=GPIO5, SCL=GPIO6, Kconfig
  * per hardware revision) that the on-board peripherals share: the AW2023
  * LED controller (led_manager), the RX8130 RTC (rtc_manager) and the
  * ICM-42670 IMU (imu_manager). Peripheral managers attach their device
@@ -34,7 +34,7 @@
  * the bus with its own per-bus lock, so managers on different tasks can
  * talk to their devices concurrently. A manager whose operation spans
  * MULTIPLE transactions (read-modify-write of a register) still needs its
- * own mutex around the sequence — that's the manager's job, not this
+ * own mutex around the sequence: that's the manager's job, not this
  * component's.
  */
 #pragma once
@@ -52,7 +52,7 @@ extern "C" {
 /** Create the master bus (no device traffic). */
 esp_err_t i2c_bus_init(void);
 
-/** Lifecycle uniformity (§3); passive component — both trivial. */
+/** Lifecycle uniformity (§3); passive component: both trivial. */
 esp_err_t i2c_bus_start(void);
 esp_err_t i2c_bus_stop(void);
 

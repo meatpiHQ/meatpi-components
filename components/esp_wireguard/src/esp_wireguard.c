@@ -299,7 +299,7 @@ fail:
 /* WICAN FIX (BUG_WG_DEFAULT_NETIF_CLOBBER.md): only a set_default that
  * actually ran may be undone at disconnect. Upstream restored the
  * default netif UNCONDITIONALLY from a value captured at init/connect
- * time — on a dual-uplink device (WiFi STA + USB-LTE) every failed
+ * time: on a dual-uplink device (WiFi STA + USB-LTE) every failed
  * handshake retry then reverted the system default route to a STALE
  * netif, silently flipping all off-subnet traffic (found live: the WG
  * underlay hairpinned via WiFi while the LTE uplink sat idle). */
@@ -352,7 +352,7 @@ esp_err_t esp_wireguard_disconnect(wireguard_ctx_t *ctx)
     wireguardif_fini(ctx->netif);
 
     /* WICAN FIX (BUG_WG_DEFAULT_NETIF_CLOBBER.md): restore ONLY what we
-     * took. default_route=false sessions never touched the default —
+     * took. default_route=false sessions never touched the default,
      * restoring here clobbered another owner's route pin on every
      * reconnect cycle. */
     if (s_default_route_taken) {

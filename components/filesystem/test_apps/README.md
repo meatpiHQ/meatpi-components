@@ -1,4 +1,4 @@
-# filesystem — on-target test app
+# filesystem: on-target test app
 
 Self-contained (no external gear). Mounts the real `storage` LittleFS
 partition from the **main partition table** (standard rev 2.1 §7). Run:
@@ -17,7 +17,7 @@ rejected, `/sd` reserved-but-unavailable (`ESP_ERR_INVALID_STATE`), validated
 streaming `open`, capacity info from the real partition, persistence across
 unmount/remount.
 
-## Expected result — serial markers, in this order
+## Expected result: serial markers, in this order
 
 ```
 MOUNT ok=1
@@ -37,5 +37,5 @@ TEST DONE
 ```
 
 `INFO total_kib=5888` doubles as proof the main partition table is in use.
-First mount of a virgin partition logs `mount failed, formatting...` —
+First mount of a virgin partition logs `mount failed, formatting...`,
 expected. Last verified green: 2026-07-02 on WiCAN Pro.

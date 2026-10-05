@@ -61,7 +61,7 @@ bool ap_dtc_obd_init_ok(void)
 }
 
 /** Optional prep: dtc_init commands (';'-separated) + ATCRA rxheader.
- *  Best-effort — a failed init command doesn't abort the scan. The job
+ *  Best-effort: a failed init command doesn't abort the scan. The job
  *  asked ap_dtc_obd_init_ok() when it started. */
 void ap_dtc_obd_prep(char *resp, size_t resp_len)
 {
@@ -127,7 +127,7 @@ void ap_dtc_obd_done(char *resp, size_t resp_len)
     }
 }
 
-/* one per-ECU assembly buffer — scan/clear jobs run one at a time */
+/* one per-ECU assembly buffer: scan/clear jobs run one at a time */
 static ap_resp_ecu_t s_ecus[AP_RESP_ECUS_MAX] EXT_RAM_BSS_ATTR;
 
 ap_resp_ecu_t *ap_dtc_obd_ecus(void)
@@ -184,9 +184,9 @@ uint8_t ap_dtc_obd_codes(const char *cmd, uint8_t svc,
     return n;
 }
 
-/* ---- freeze frame (mode 02 frame 0 — TASK_dtc §14) --------------------------------- */
+/* ---- freeze frame (mode 02 frame 0: TASK_dtc §14) --------------------------------- */
 
-/* Curated value PIDs — the classic freeze-frame set, bounded scan cost.
+/* Curated value PIDs: the classic freeze-frame set, bounded scan cost.
  * The supported-PID bitmaps (02 00/20/40) prune this to what the ECU
  * actually stores; a silent bitmap falls back to blind probing (an
  * unsupported PID just answers NO DATA = zero decoded values). */
@@ -214,9 +214,9 @@ static const ap_resp_ecu_t *frz_ecu_payload(int n_ecu, uint32_t want)
 }
 
 /** Capture frame 0 into @p r: DTCFRZF (which DTC froze it, and which
- *  ECU answered — the functional query can hit several; first responder
+ *  ECU answered: the functional query can hit several; first responder
  *  with a frame wins, multi-ECU freeze = v2), then the curated PIDs
- *  decoded via the standard table. Best-effort throughout — a scan
+ *  decoded via the standard table. Best-effort throughout: a scan
  *  never fails because the freeze frame is unreadable. */
 void ap_dtc_obd_freeze(ap_dtc_report_t *r, char *resp, size_t resp_len)
 {
@@ -239,7 +239,7 @@ void ap_dtc_obd_freeze(ap_dtc_report_t *r, char *resp, size_t resp_len)
 
     if (!r->frz_present)
     {
-        return;         /* codes stored but no frame (or NRC) — fine */
+        return;         /* codes stored but no frame (or NRC): fine */
     }
 
     /* supported bitmaps for the ranges the curated list spans */

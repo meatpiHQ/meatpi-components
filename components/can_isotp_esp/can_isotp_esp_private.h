@@ -68,12 +68,12 @@ void isotp_mbox_init(isotp_mbox_t *m, isotp_mbox_slot_t *slots,
 
 /** Store a PDU. Returns true when the unread count GREW (the RTOS side
  *  then gives one semaphore token); false when the ring was full and the
- *  oldest was replaced (count unchanged — no new token), or when @p len
+ *  oldest was replaced (count unchanged: no new token), or when @p len
  *  does not fit a slot (refused, nothing stored). */
 bool isotp_mbox_put(isotp_mbox_t *m, const uint8_t *data, size_t len);
 
 /** Take the oldest PDU. ESP_OK (+*len); ESP_ERR_NOT_FOUND when empty;
- *  ESP_ERR_NO_MEM when the PDU is larger than @p cap — it has been
+ *  ESP_ERR_NO_MEM when the PDU is larger than @p cap: it has been
  *  CONSUMED (the can_isotp.h contract callers drain on) and *len tells
  *  its size. */
 esp_err_t isotp_mbox_take(isotp_mbox_t *m, uint8_t *buf, size_t cap,

@@ -26,7 +26,7 @@
  *
  * The TWAI controller enters BUS_OFF at TEC=256 (e.g. a shorted bus or
  * a baud-mismatch collision storm while transmitting). Recovery itself
- * (128 x 11 recessive bits) is initiated immediately — it only completes
+ * (128 x 11 recessive bits) is initiated immediately: it only completes
  * once the bus is electrically sane again. This module decides how long
  * to wait AFTER recovery completes before restarting the driver, so a
  * still-faulty bus can't thrash through off/recover/off cycles:

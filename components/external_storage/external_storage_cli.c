@@ -22,7 +22,7 @@
 
 /**
  * @file external_storage_cli.c
- * @brief The component's CLI command (`sdcard`) — registered into
+ * @brief The component's CLI command (`sdcard`): registered into
  *        cmdline_manager by external_storage_register_cli() (main wires
  *        it in CLI compositions only). Legacy option interface
  *        preserved (-i/--info, -t/--test); bare = presence/mount.
@@ -70,7 +70,7 @@ static int sdcard_info(void)
 }
 
 /** Write/read-back/delete a marker file on the card (legacy -t). The
- *  card is SDMMC — no internal-flash cache involvement (§2-safe). */
+ *  card is SDMMC: no internal-flash cache involvement (§2-safe). */
 static int sdcard_test(void)
 {
     static const char PATTERN[] =

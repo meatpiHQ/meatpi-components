@@ -22,7 +22,7 @@
 
 /**
  * @file web_ui_v2.h
- * @brief v2 built-in web UI — registers the embedded single-page app with
+ * @brief v2 built-in web UI: registers the embedded single-page app with
  *        http_server_manager's catch-all. No-op unless CONFIG_WICAN_WEBUI_V2
  *        is selected (the Kconfig web-UI choice), so main can always call it.
  */

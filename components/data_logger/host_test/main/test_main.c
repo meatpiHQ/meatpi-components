@@ -5,7 +5,7 @@
  *        engine, the prefix-filtered directory scan fold, the hex
  *        filter parser, and the record/row encoders for every
  *        non-sqlite engine (.wdl, csv, candump, asc, jsonl rows +
- *        MDF4 prelude/record + BLF builders — byte-level golden
+ *        MDF4 prelude/record + BLF builders: byte-level golden
  *        vectors). Expected: 20 Tests 0 Failures 0 Ignored.
  */
 #include <string.h>
@@ -145,7 +145,7 @@ static void test_scan_isolates_streams_by_prefix(void)
     dl_scan_t s;
 
     /* a param-stream scan must not count/age the CAN stream's files
-     * (retention runs per stream) — and vice versa */
+     * (retention runs per stream), and vice versa */
     dl_scan_init(&s, DL_PREFIX_PARAM);
     dl_scan_add(&s, "dl_1783000005.db");
     dl_scan_add(&s, "can_1783000001.wdl");

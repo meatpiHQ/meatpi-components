@@ -24,7 +24,7 @@
  * @file obd_chip_events.c
  * @brief event_manager glue: the `obd.request {cmd}` action (meatpi's
  *        original "MQTT message triggers an OBD request" example) and
- *        the `obd.response {cmd, response}` event it publishes back —
+ *        the `obd.response {cmd, response}` event it publishes back:
  *        chain a second rule on obd.response to deliver the answer
  *        (e.g. mqtt.publish ${response}).
  */
@@ -56,7 +56,7 @@ static esp_err_t act_request(const cJSON *with, const em_event_t *ev)
 
     if (err != ESP_OK)
     {
-        return err;    /* busy (monitor/update) or timeout — counted   */
+        return err;    /* busy (monitor/update) or timeout: counted   */
     }
 
     /* strip trailing CR/LF for a clean single-line event value */
@@ -100,7 +100,7 @@ void oc_events_register(void)
             "\"cmd\":{\"type\":\"string\",\"minLength\":1,"
             "\"maxLength\":23}},\"required\":[\"cmd\"]}",
         .run = act_request,
-        .blocking = true, /* OBD chip round-trip — off the dispatcher */
+        .blocking = true, /* OBD chip round-trip: off the dispatcher */
     };
 
     (void)event_manager_declare_source(&RESPONSE);

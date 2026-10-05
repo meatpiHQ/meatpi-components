@@ -1,6 +1,6 @@
 #define BUILD_sqlite -DNDEBUG
 #define SQLITE_CORE                          1
-#define SQLITE_NO_SYNC                       0 /* 2026-09-07: fsync ON — see data_logger/ROBUSTNESS.md */
+#define SQLITE_NO_SYNC                       0 /* 2026-09-07: fsync ON, see data_logger/ROBUSTNESS.md */
 #define YYSTACKDEPTH                        20
 #define SQLITE_TEMP_STORE                    1
 #define SQLITE_SYSTEM_MALLOC                 1

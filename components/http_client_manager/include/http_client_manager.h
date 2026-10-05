@@ -30,22 +30,22 @@
  * web-asset fetch-on-miss, future integrations.
  *
  * THREAD SAFETY (the point of the "manager"): every request builds its
- * own esp_http_client instance on the CALLER's task — no shared mutable
- * state between requests — and a counting semaphore caps concurrent
+ * own esp_http_client instance on the CALLER's task (no shared mutable
+ * state between requests) and a counting semaphore caps concurrent
  * requests (default 4) so many tasks can't exhaust sockets/TLS heap;
  * excess callers briefly block. Calls are SYNCHRONOUS and can take
- * seconds (network): call from ordinary tasks only — never from ISRs,
+ * seconds (network): call from ordinary tasks only, never from ISRs,
  * timer callbacks, or event handlers that must not block (mqtt/imu/
  * battery handler contexts included).
  *
  * CALLER STACK REQUIREMENT (found the hard way on the bench):
- * https:// requests run the mbedTLS handshake on YOUR stack — budget
+ * https:// requests run the mbedTLS handshake on YOUR stack, budget
  * ≥8 KB (a 4 KB task stack-overflowed and panicked). download() is
  * stack-agnostic: all media writes run on the manager's own
  * internal-stack writer task, so PSRAM-stack callers are fine.
  *
  * TLS: `https://` URLs verify against, in priority order, a
- * cert_manager SET (`cert_set` — CA + optional client pair = mutual
+ * cert_manager SET (`cert_set`, CA + optional client pair = mutual
  * TLS, same model as mqtt_manager) > explicit PEM fields > the built-in
  * certificate bundle.
  *
@@ -113,16 +113,16 @@ typedef struct
 /** Register the log descriptor + the concurrency limiter. No network. */
 esp_err_t http_client_manager_init(void);
 
-/** Lifecycle uniformity (§3); passive — both trivial. */
+/** Lifecycle uniformity (§3); passive: both trivial. */
 esp_err_t http_client_manager_start(void);
 esp_err_t http_client_manager_stop(void);
 
 /**
  * Perform @p req synchronously. On ESP_OK, @p out holds the (possibly
- * truncated at max_response) body and status_code — release with
+ * truncated at max_response) body and status_code: release with
  * http_client_manager_free(). Transport failures return an error and a
  * zeroed response. HTTP error statuses (4xx/5xx) return ESP_OK with the
- * status_code set — the caller decides what an error is.
+ * status_code set: the caller decides what an error is.
  */
 esp_err_t http_client_manager_request(const http_client_request_t *req,
                                       http_client_response_t *out);
@@ -139,11 +139,11 @@ esp_err_t http_client_manager_post(const char *url, const void *body,
 
 /**
  * STREAMED download of @p url into @p save_path (filesystem paths,
- * /data or /sd) — no size limit beyond free space: the caller receives
+ * /data or /sd): no size limit beyond free space: the caller receives
  * into ping-pong PSRAM buffers while the manager's writer task drains
  * them to the media, so network RX and media writes OVERLAP (the slower
  * of the two sets the pace). Atomic like every filesystem write: the
- * stream targets a temp sibling, committed by rename — a failed or
+ * stream targets a temp sibling, committed by rename, a failed or
  * interrupted download never leaves a torn file. One download at a
  * time (a second caller blocks). @p progress_cb (nullable) reports
  * (downloaded, total; total 0 when unknown).

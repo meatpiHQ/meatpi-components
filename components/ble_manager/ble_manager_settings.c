@@ -33,7 +33,7 @@
 #include "ble_manager_private.h"
 
 /* enabled=false by default: BLE is opt-in (it shares the radio with WiFi;
- * coexistence policy is the composition root's business — README). */
+ * coexistence policy is the composition root's business: README). */
 static const settings_field_t FIELDS[] =
 {
     SETTINGS_BOOL("enabled", false),
@@ -48,7 +48,7 @@ static const settings_field_t FIELDS[] =
     SETTINGS_BOOL("bonding", true),
     /* v3: sc_only = require LE Secure Connections. Default true refuses a
        peer that tries to downgrade to weak LEGACY pairing (whose static-
-       passkey exchange is brute-forceable) — closes the downgrade attack
+       passkey exchange is brute-forceable): closes the downgrade attack
        at a negligible interop cost (every phone since ~2014 does SC).
        Disable only for a genuinely pre-4.2 accessory (meatpi 2026-07-09). */
     SETTINGS_BOOL("sc_only", true),

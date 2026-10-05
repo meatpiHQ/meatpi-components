@@ -80,13 +80,13 @@ struct ml_config_ctx {
 static void config_save_peers(ml_config_ctx_t *ctx);  /* forward decl for migration */
 
 static void config_load_settings(ml_config_ctx_t *ctx) {
-    /* Read whatever size blob exists — v1 blobs are smaller than v2 struct */
+    /* Read whatever size blob exists: v1 blobs are smaller than v2 struct */
     memset(&ctx->settings, 0, sizeof(ml_config_settings_t));
     size_t len = sizeof(ml_config_settings_t);
     esp_err_t err = nvs_get_blob(ctx->nvs, NVS_KEY_SETTINGS, &ctx->settings, &len);
 
     if (err == ESP_OK && ctx->settings.version >= 1) {
-        /* v1 blob is smaller — v2 fields will be zero (defaults) */
+        /* v1 blob is smaller: v2 fields will be zero (defaults) */
         if (ctx->settings.version < ML_CONFIG_SETTINGS_VERSION) {
             ESP_LOGI(TAG, "Migrating settings v%d -> v%d",
                      ctx->settings.version, ML_CONFIG_SETTINGS_VERSION);
@@ -233,7 +233,7 @@ static void config_load_wifi_list(ml_config_ctx_t *ctx) {
         }
         ESP_LOGI(TAG, "WiFi list loaded: %d entries", ctx->wifi_list.count);
     } else {
-        /* No wifi_list key — migrate from settings blob if it has WiFi creds */
+        /* No wifi_list key: migrate from settings blob if it has WiFi creds */
         if (ctx->settings.wifi_ssid[0] != '\0') {
             ctx->wifi_list.count = 1;
             ctx->wifi_list.active_idx = 0;
@@ -378,7 +378,7 @@ static char *read_post_body(httpd_req_t *req) {
     return buf;
 }
 
-/* GET / — serve HTML config page */
+/* GET /: serve HTML config page */
 static esp_err_t handler_root(httpd_req_t *req) {
     httpd_resp_set_type(req, "text/html");
     httpd_resp_sendstr(req, CONFIG_PAGE_HTML);
@@ -429,7 +429,7 @@ static esp_err_t handler_get_settings(httpd_req_t *req) {
     if (!json) return ESP_FAIL;
 
     cJSON_AddStringToObject(json, "wifi_ssid", ctx->settings.wifi_ssid);
-    /* Don't expose password in plain text — show masked */
+    /* Don't expose password in plain text: show masked */
     cJSON_AddStringToObject(json, "wifi_pass",
         ctx->settings.wifi_pass[0] ? "********" : "");
     cJSON_AddStringToObject(json, "auth_key",
@@ -552,7 +552,7 @@ static esp_err_t handler_post_settings(httpd_req_t *req) {
     return send_json(req, resp);
 }
 
-/* GET /api/peers — all known peers with status */
+/* GET /api/peers: all known peers with status */
 static esp_err_t handler_get_peers(httpd_req_t *req) {
     ml_config_ctx_t *ctx = (ml_config_ctx_t *)req->user_ctx;
     microlink_t *ml = ctx->ml;
@@ -584,7 +584,7 @@ static esp_err_t handler_get_peers(httpd_req_t *req) {
     return send_json(req, json);
 }
 
-/* GET /api/peers/allowed — current allowlist */
+/* GET /api/peers/allowed: current allowlist */
 static esp_err_t handler_get_allowed(httpd_req_t *req) {
     ml_config_ctx_t *ctx = (ml_config_ctx_t *)req->user_ctx;
 
@@ -609,7 +609,7 @@ static esp_err_t handler_get_allowed(httpd_req_t *req) {
     return send_json(req, json);
 }
 
-/* POST /api/peers/allowed — replace allowlist */
+/* POST /api/peers/allowed: replace allowlist */
 static esp_err_t handler_post_allowed(httpd_req_t *req) {
     ml_config_ctx_t *ctx = (ml_config_ctx_t *)req->user_ctx;
 
@@ -670,7 +670,7 @@ static esp_err_t handler_post_allowed(httpd_req_t *req) {
     return send_json(req, resp);
 }
 
-/* DELETE /api/peers/allowed — clear allowlist */
+/* DELETE /api/peers/allowed: clear allowlist */
 static esp_err_t handler_delete_allowed(httpd_req_t *req) {
     ml_config_ctx_t *ctx = (ml_config_ctx_t *)req->user_ctx;
 
@@ -689,7 +689,7 @@ static esp_err_t handler_delete_allowed(httpd_req_t *req) {
     return send_json(req, resp);
 }
 
-/* GET /api/monitor — temperature, RSSI, uptime, task stack watermarks */
+/* GET /api/monitor: temperature, RSSI, uptime, task stack watermarks */
 static esp_err_t handler_monitor(httpd_req_t *req) {
     ml_config_ctx_t *ctx = (ml_config_ctx_t *)req->user_ctx;
     microlink_t *ml = ctx->ml;
@@ -788,7 +788,7 @@ static esp_err_t handler_restart(httpd_req_t *req) {
  * WiFi List HTTP Handlers
  * ========================================================================== */
 
-/* GET /api/wifi — return WiFi list with masked passwords */
+/* GET /api/wifi: return WiFi list with masked passwords */
 static esp_err_t handler_get_wifi(httpd_req_t *req) {
     ml_config_ctx_t *ctx = (ml_config_ctx_t *)req->user_ctx;
 
@@ -810,7 +810,7 @@ static esp_err_t handler_get_wifi(httpd_req_t *req) {
     return send_json(req, json);
 }
 
-/* POST /api/wifi — replace entire WiFi list */
+/* POST /api/wifi: replace entire WiFi list */
 static esp_err_t handler_post_wifi(httpd_req_t *req) {
     ml_config_ctx_t *ctx = (ml_config_ctx_t *)req->user_ctx;
 

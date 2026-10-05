@@ -22,7 +22,7 @@
 
 /**
  * @file j2534_server.h
- * @brief SAE J2534 PassThru device — session + channel server. See
+ * @brief SAE J2534 PassThru device: session + channel server. See
  *        TASK_j2534_server.md. Groundwork phase: the transport-agnostic
  *        frame pump + a TCP listener doing the session/channel HANDSHAKE
  *        (HELLO/OPEN/CONNECT/DISCONNECT/CLOSE). Vehicle I/O (CAN +

@@ -25,7 +25,7 @@
  * @brief Lifecycle, the param registry, the PSRAM record rings, and
  *        the writer task (see include/data_logger.h for the model).
  *        Settings live in data_logger_settings.c (standard §4.1). The
- *        writer is the ONLY code that opens files — it follows
+ *        writer is the ONLY code that opens files: it follows
  *        external_storage_is_mounted(), so a yanked card just parks
  *        the writer while the rings keep absorbing (drop-oldest).
  *
@@ -69,7 +69,7 @@ static StaticSemaphore_t s_lock_buf;   /* internal: FreeRTOS object */
 /* record rings (PSRAM), producers push under s_lock, writer pops.
  * Params and frames are SEPARATE rings so a busy CAN bus can never
  * evict param records; the frame ring's live length comes from the
- * ring_len setting (static at the cap — caps not rationing). */
+ * ring_len setting (static at the cap: caps not rationing). */
 typedef struct
 {
     dl_record_t *buf;
@@ -84,7 +84,7 @@ typedef struct
    The registry and both rings survive warm resets: after a panic, a
    watchdog or a restart that skipped the clean stop, the next boot
    validates this envelope (magic/version/caps, a CRC over the registry
-   names, index + per-record sanity — data_logger_recover.c) and writes
+   names, index + per-record sanity: data_logger_recover.c) and writes
    the records that were still queued BEFORE anything new. Power cuts and
    EN-pin resets leave random or bit-rotten PSRAM; the envelope catches
    that and starts clean. Same pattern as restart_tracker / log_manager's
@@ -207,7 +207,7 @@ static uint32_t ps_adopt(void)
 
 /* writer task. PSRAM stack per the standard: it only touches the SD
  * card via SDMMC (never internal flash), so the §2 corollary doesn't
- * apply — and 10 KB of internal RAM is exactly what broke the build
+ * apply, and 10 KB of internal RAM is exactly what broke the build
  * that kept it internal (bench 2026-07-07: ~2.5 KB internal free =
  * wifi auth AND sdmmc DMA allocations failing). */
 static TaskHandle_t s_task;
@@ -454,10 +454,10 @@ static void enforce_retention(dl_stream_t *st)
     }
 }
 
-/* A dev_status fault latches to NVS — a flash write. The writer task's
+/* A dev_status fault latches to NVS: a flash write. The writer task's
  * stack is in PSRAM, and a task on a PSRAM stack must never write flash:
  * the cache is off during the write and the stack is gone with it
- * (cache_utils.c:126 assert — three panics on the bench, 2026-09-07).
+ * (cache_utils.c:126 assert, three panics on the bench, 2026-09-07).
  * Raise from a short-lived task on an internal stack instead. */
 typedef struct
 {
@@ -684,7 +684,7 @@ static void prune_corrupt(dl_stream_t *st)
 /* The file just failed as CORRUPT (ROBUSTNESS.md case 5): set it aside as
  * <name>.corrupt, drop its journal, latch a fault, copy what sqlite can
  * still read into a fresh file with the old name, and go on in a new
- * file. Never retry a bad file — that was the loop that dropped every
+ * file. Never retry a bad file: that was the loop that dropped every
  * record. Writer task only. */
 static void quarantine(dl_stream_t *st)
 {
@@ -816,11 +816,11 @@ static void write_batch(dl_stream_t *st)
 
         if (st->eng->corrupt != NULL && st->eng->corrupt(st->ctx))
         {
-            quarantine(st); /* set aside + fresh file — never retry a bad file */
+            quarantine(st); /* set aside + fresh file: never retry a bad file */
             return;
         }
 
-        /* card yanked mid-write, disk full — drop the file handle and let
+        /* card yanked mid-write, disk full: drop the file handle and let
          * the mount/open path recover next lap */
         close_current(st);
         return;
@@ -846,7 +846,7 @@ static void writer_task(void *arg)
     {
         if (!s_run || !s_gate)
         {
-            /* stopped, or paused by a logger.disable rule — the rings
+            /* stopped, or paused by a logger.disable rule: the rings
              * keep absorbing (drop-oldest), so re-enabling flushes
              * the newest records from before the trigger */
             close_all();
@@ -912,15 +912,15 @@ static void writer_task(void *arg)
         }
 
         /* the nap ends early when the gate flips (dl_runtime_gate notifies):
-           a pause — a rule, /api/logger/gate or the export reading the
-           active file — closes the files right away instead of up to
+           a pause (a rule, /api/logger/gate or the export reading the
+           active file) closes the files right away instead of up to
            flush_ms later (2026-09-06; the export used to find the newest
            file still locked and return nothing) */
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(cfg->flush_ms));
 
         if (!s_run || !s_gate)
         {
-            continue; /* gate flipped during the nap — park FIRST, a
+            continue; /* gate flipped during the nap: park FIRST, a
                          "paused" logger must not leak a batch */
         }
 
@@ -963,7 +963,7 @@ esp_err_t data_logger_init(void)
     return dl_settings_register();
 }
 
-/* esp_restart() runs this before the reset — user restart, settings
+/* esp_restart() runs this before the reset: user restart, settings
  * apply, OTA, CLI, factory reset: the files are flushed and closed the
  * way sleep entry does it (ROBUSTNESS.md case 7). Panics never get here;
  * the PSRAM envelope covers those (case 6). */
@@ -1048,7 +1048,7 @@ esp_err_t data_logger_stop(void)
     }
 
     /* synchronous since 2026-09-07 (ROBUSTNESS.md cases 7/8): sleep entry
-       unmounts the card right after this and a restart cuts the IO —
+       unmounts the card right after this and a restart cuts the IO,
        wait for the writer to finish its batch and close both files */
     xTaskNotifyGive(s_task);
 
@@ -1148,7 +1148,7 @@ esp_err_t data_logger_write(dl_param_t param, double value)
                                 value);
 }
 
-/* autopid value sink — main wires it to autopid_set_value_sink().
+/* autopid value sink: main wires it to autopid_set_value_sink().
  * Poller/filter task context: registry lookup + ring push, no IO. */
 void data_logger_autopid_sink(const char *name, const char *unit,
                               double value, bool changed)
@@ -1167,7 +1167,7 @@ void data_logger_autopid_sink(const char *name, const char *unit,
 
     if (data_logger_register_param("autopid", name, &param) != ESP_OK)
     {
-        return; /* registry full — counted nowhere, params are bounded */
+        return; /* registry full: counted nowhere, params are bounded */
     }
 
     (void)data_logger_write(param, value);

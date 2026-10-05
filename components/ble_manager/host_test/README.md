@@ -1,6 +1,6 @@
-# ble_manager — host unit suite
+# ble_manager: host unit suite
 
-Compiles ONLY the pure layer (`ble_manager_pack.c` — no BT stack) on the
+Compiles ONLY the pure layer (`ble_manager_pack.c`: no BT stack) on the
 IDF **linux** target. Runs on the bench Pi via `.\test.ps1 host`.
 
 ## What is covered (6 tests)

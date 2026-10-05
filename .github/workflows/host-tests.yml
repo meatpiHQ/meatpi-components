@@ -1,4 +1,4 @@
-# Host unit tests — every components/*/host_test built and run on the
+# Host unit tests: every components/*/host_test built and run on the
 # ESP-IDF `linux` target. No hardware involved; hardware benches live in
 # the firmware project's private test infrastructure.
 name: Host unit tests

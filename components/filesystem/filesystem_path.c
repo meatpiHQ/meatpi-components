@@ -23,7 +23,7 @@
 /**
  * @file filesystem_path.c
  * @brief Pure path validation/routing for the filesystem component.
- *        No IDF/VFS dependencies — compiled as-is by the host unit tests.
+ *        No IDF/VFS dependencies: compiled as-is by the host unit tests.
  */
 #include "filesystem_private.h"
 

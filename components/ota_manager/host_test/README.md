@@ -1,6 +1,6 @@
-# ota_manager — host unit suite
+# ota_manager: host unit suite
 
-Compiles ONLY the pure session state machine (`ota_session.c` — flash
+Compiles ONLY the pure session state machine (`ota_session.c`: flash
 operations injected via a recorder backend, no esp_ota) on the IDF
 **linux** target. Runs on the bench Pi via `.\test.ps1 host`.
 

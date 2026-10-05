@@ -1,5 +1,5 @@
 # Coding Standard rev 2.1 (§7): on-device test apps build against the MAIN
-# firmware's partition table — no private fork.
+# firmware's partition table, no private fork.
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="../../../wican_pro_partitions_table.csv"
 # Flash size matches the main firmware / WiCAN Pro hardware (16 MB).
@@ -11,7 +11,7 @@ CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_OCT=y
 CONFIG_SPIRAM_SPEED_80M=y
 CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
-# restart_tracker/log_manager state is EXT_RAM_NOINIT_ATTR — matches main:
+# restart_tracker/log_manager state is EXT_RAM_NOINIT_ATTR: matches main:
 # the submit-then-reboot assertion needs history to survive the warm reset.
 CONFIG_SPIRAM_ALLOW_NOINIT_SEG_EXTERNAL_MEMORY=y
 CONFIG_SPIRAM_MEMTEST=n

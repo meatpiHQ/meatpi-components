@@ -23,7 +23,7 @@
 /**
  * @file socket_manager_private.h
  * @brief Internal API between socket_manager translation units, and the pure
- *        policy layer (host-testable — no lwIP dependency).
+ *        policy layer (host-testable: no lwIP dependency).
  */
 #pragma once
 
@@ -39,7 +39,7 @@
 extern "C" {
 #endif
 
-/* ---- pure policy (socket_manager_policy.c — host-tested) ------------------- */
+/* ---- pure policy (socket_manager_policy.c: host-tested) ------------------- */
 
 /** Listener retry backoff progression: 1 s → 2 s → 4 s → 8 s (cap).
  *  prev_ms == 0 (fresh failure) yields the first step. */
@@ -55,7 +55,7 @@ smp_accept_verdict_t smp_accept_decision(int connected_count, int max_clients);
 
 /**
  * Validate the "servers" array (already schema-validated for types/ranges):
- * cross-item rules — unique names, unique ports among enabled servers,
+ * cross-item rules, unique names, unique ports among enabled servers,
  * max_clients within the static table. Pure; used by on_validate.
  */
 esp_err_t smp_validate_servers(const cJSON *servers, char *err,
@@ -77,7 +77,7 @@ typedef struct
  *  keys: max_clients=2, keepalive_s=30, enabled=false). Pure. */
 esp_err_t smp_parse_server(const cJSON *item, smp_server_cfg_t *out);
 
-/* ---- net layer (socket_manager_net.c) — indexed like the config array ------ */
+/* ---- net layer (socket_manager_net.c): indexed like the config array ------ */
 
 esp_err_t sm_net_start(void);
 void      sm_net_stop(void);

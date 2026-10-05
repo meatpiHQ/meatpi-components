@@ -32,10 +32,10 @@
 extern "C" {
 #endif
 
-/* ---- pure core (obd_gate_core.c — host-tested) ----------------------------- */
+/* ---- pure core (obd_gate_core.c: host-tested) ----------------------------- */
 
 /** How long a waiter's next-turn reservation survives without a re-poll
- *  (the wrapper polls every 10 ms — 500 ms means "the waiter gave up"). */
+ *  (the wrapper polls every 10 ms: 500 ms means "the waiter gave up"). */
 #define OG_RESERVE_MS 500
 
 typedef struct
@@ -56,7 +56,7 @@ typedef struct
  * has expired (reaped + counted). Returns true when @p owner holds it.
  *
  * FAIRNESS: the first owner refused while the gate is held becomes the
- * WAITER and owns the next turn — after a release, other owners are
+ * WAITER and owns the next turn, after a release, other owners are
  * refused until the waiter collects (a tight requester loop can otherwise
  * starve a slow poller indefinitely; seen live: the MIC chip's TCP client
  * re-won the gate for 14 consecutive cycles while the engine polled at
@@ -73,7 +73,7 @@ void og_core_force(og_core_t *g, const void *owner, int64_t now_ms,
 /** Release iff held by @p owner; no-op otherwise. */
 void og_core_release(og_core_t *g, const void *owner);
 
-/* ---- diagnostics hold (obd_gate_diag.c — host-tested) ---------------------
+/* ---- diagnostics hold (obd_gate_diag.c: host-tested) ---------------------
  * An ESP-side diagnostic tool (the UDS Tool, the J2534 PassThru server)
  * with its "exclusive" option on asks the background bus pollers (autopid:
  * PID polling + DTC scans) to stay off the bus while it is in use.

@@ -22,8 +22,8 @@
 
 /**
  * @file usb_acm_cli_http.c
- * @brief POST /api/usb/acm/cmd — send an AT/console line to the modem,
- *        return the response. GET /api/usb/acm — connection status.
+ * @brief POST /api/usb/acm/cmd: send an AT/console line to the modem,
+ *        return the response. GET /api/usb/acm: connection status.
  */
 #include <stdlib.h>
 #include <string.h>
@@ -65,7 +65,7 @@ static esp_err_t status_handler(httpd_req_t *req)
     return send_json(req, o);
 }
 
-/* GET /api/gps — the dongle's last GPS fix (cache read). Device-contract
+/* GET /api/gps: the dongle's last GPS fix (cache read). Device-contract
  * field names; `speed` in m/s per DEVICE_ENDPOINTS.md. Also flows to HA
  * as autopid `gps_*` parameters (main-wired). */
 static esp_err_t gps_handler(httpd_req_t *req)
@@ -142,7 +142,7 @@ static esp_err_t cmd_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    /* cap, not latency: collection ends at the dongle's prompt — but
+    /* cap, not latency: collection ends at the dongle's prompt, but
      * the modem legs of lte/gps commands legitimately take seconds */
     uint32_t timeout = 8000;
     const cJSON *t = cJSON_GetObjectItemCaseSensitive(root, "timeout_ms");

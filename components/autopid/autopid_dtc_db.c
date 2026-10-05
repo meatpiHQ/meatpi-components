@@ -29,7 +29,7 @@
  *        search, Berry) never touch flash.
  *
  * File I/O happens only in internal-stack contexts (autopid_start =
- * main task; store/delete = httpd task) — the §2-corollary rule.
+ * main task; store/delete = httpd task): the §2-corollary rule.
  */
 #include <ctype.h>
 #include <stdio.h>
@@ -234,7 +234,7 @@ void ap_dtc_db_load_all(void)
     (void)filesystem_list(DB_DIR, list_cb, NULL);
 }
 
-/* ---- store / delete (httpd context — internal stack) ---------------------------- */
+/* ---- store / delete (httpd context: internal stack) ---------------------------- */
 
 esp_err_t ap_dtc_db_store(const char *name, const char *raw,
                           size_t raw_len, int *entries_out,
@@ -276,7 +276,7 @@ esp_err_t ap_dtc_db_store(const char *name, const char *raw,
     size_t out_cap = raw_len + 32 +
                      (size_t)AP_DTC_DB_ENTRIES_MAX * 8;
     /* the emitter checks used + AP_DTC_DESC_MAX headroom BEFORE every
-     * entry — cap must cover worst-case content (<= raw_len) PLUS that
+     * entry: cap must cover worst-case content (<= raw_len) PLUS that
      * final-entry headroom, or small files reject their tail */
     size_t scratch_cap = raw_len + AP_DTC_DESC_MAX + 16;
     char *scratch = heap_caps_malloc(scratch_cap, MALLOC_CAP_SPIRAM);
@@ -363,7 +363,7 @@ esp_err_t ap_dtc_db_delete(const char *name)
                ? ESP_OK : ESP_ERR_NOT_FOUND;
 }
 
-/* ---- lookup / search / list (no flash — PSRAM cache only) ----------------------- */
+/* ---- lookup / search / list (no flash: PSRAM cache only) ----------------------- */
 
 /** Iterate used slots in NAME order (deterministic priority). */
 static dtc_db_t *next_db_by_name(const char *after)

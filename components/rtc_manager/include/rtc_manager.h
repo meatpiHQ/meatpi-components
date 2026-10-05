@@ -64,12 +64,12 @@ esp_err_t rtc_manager_stop(void);
 esp_err_t rtc_manager_get_time(struct tm *out);
 
 /** Write the RTC from the current SYSTEM clock (the one sanctioned write
- *  path — set the system clock first, then persist it here). */
+ *  path: set the system clock first, then persist it here). */
 esp_err_t rtc_manager_sync_from_system(void);
 
 /** Set BOTH clocks from an epoch (UTC seconds): system time, then the
  *  RTC, then TIME_SYNCED. The manual path for when no NTP is reachable
- *  (AP mode — the browser knows the time; POST /api/rtc uses this).
+ *  (AP mode: the browser knows the time; POST /api/rtc uses this).
  *  ESP_ERR_INVALID_ARG outside 2020..2099. */
 esp_err_t rtc_manager_set_time(time_t epoch);
 
@@ -79,7 +79,7 @@ esp_err_t rtc_manager_register_http(void);
 
 /** Register the `rtc` CLI command with cmdline_manager. Called
  *  INTERNALLY on the settings boot apply when the `cli` setting is true
- *  (default) — main no longer wires it. */
+ *  (default): main no longer wires it. */
 esp_err_t rtc_manager_register_cli(void);
 
 /** "YYYY-MM-DDTHH:MM:SSZ" from the SYSTEM clock (UTC). Needs ≥ 21 bytes. */

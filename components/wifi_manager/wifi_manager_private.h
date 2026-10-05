@@ -23,7 +23,7 @@
 /**
  * @file wifi_manager_private.h
  * @brief Internals shared between wifi_manager.c, wifi_manager_settings.c and
- *        the pure candidate-selection module (wifi_manager_select.c — keep
+ *        the pure candidate-selection module (wifi_manager_select.c: keep
  *        that one free of IDF deps so the host tests compile it directly).
  */
 #pragma once
@@ -45,10 +45,10 @@ extern "C" {
 #define WM_MAX_CANDIDATES (1 + WM_MAX_FALLBACKS)
 
 /* Failure memory (meatpi 2026-09-06, replaces the timed ban list): an
- * entry whose last WM_AUTH_FAIL_THRESHOLD connection attempts failed —
+ * entry whose last WM_AUTH_FAIL_THRESHOLD connection attempts failed,
  * for ANY reason except "network not found" (a wrong password, an AP
- * that never finishes the handshake, a full AP, a refused association)
- * — is only DEPRIORITISED: every other visible network on the list is
+ * that never finishes the handshake, a full AP, a refused association),
+ * is only DEPRIORITISED: every other visible network on the list is
  * tried first, and when it is the only network around it keeps being
  * tried at the normal reconnect cadence, because it is our best chance.
  * Nothing is ever blocked for a period (the old 10-minute ban parked a
@@ -81,7 +81,7 @@ typedef enum
  * sizing the driver buffers at esp_wifi_init. */
 typedef enum
 {
-    WM_RAM_FULL = 0, /* IDF defaults — max throughput          */
+    WM_RAM_FULL = 0, /* IDF defaults: max throughput          */
     WM_RAM_LEAN,     /* smaller buffers, ~15 KB internal freed */
     WM_RAM_CUSTOM,   /* the wifi_static_rx/tx + cache_tx knobs */
 } wm_ram_profile_t;
@@ -139,13 +139,13 @@ typedef struct
                                             re-check for a higher-priority
                                             network this often; 0 = never
                                             (v2, TASK: home > car hotspot) */
-    /* v5: WiFi memory profile — buffer counts fed to esp_wifi_init.
+    /* v5: WiFi memory profile, buffer counts fed to esp_wifi_init.
        0 in a count = "use the profile/IDF default". */
     wm_ram_profile_t ram_profile;
     uint16_t     wifi_static_rx;         /* custom: static RX buffers  */
     uint16_t     wifi_static_tx;         /* custom: static TX buffers  */
     uint16_t     wifi_cache_tx;          /* custom: cache TX buffers   */
-    /* v6: PER-NETWORK STA addressing — static (user-fixed) or DHCP
+    /* v6: PER-NETWORK STA addressing, static (user-fixed) or DHCP
        (default). Each candidate lives on its own LAN, so its addressing
        travels with it through the empty-slot collapse (like trusted[]).
        Applied per CONNECT ATTEMPT (apply_sta_network). Host-order.
@@ -158,7 +158,7 @@ typedef struct
 /** Parse a dotted-quad IPv4 into host-order uint32 (any address). */
 bool wm_parse_ipv4(const char *s, uint32_t *out);
 
-/** wm_parse_ipv4 + reject a host octet of 0/255 (network/broadcast) —
+/** wm_parse_ipv4 + reject a host octet of 0/255 (network/broadcast):
  *  for the device's own / gateway addresses. Shared with the settings
  *  validator (wifi_manager_settings.c) and the host tests. */
 bool wm_parse_ap_ipv4(const char *s, uint32_t *out);
@@ -197,8 +197,8 @@ void wm_select_init(wm_select_state_t *st);
  * Pick a candidate given scan results: the highest-priority VISIBLE entry
  * with a clean record (fewer than WM_AUTH_FAIL_THRESHOLD recent failed
  * attempts). When every visible entry has failed, one of them is still
- * returned — round-robin, so two entries sharing an SSID (different
- * passwords) alternate — because an entry that fails authentication is
+ * returned, round-robin, so two entries sharing an SSID (different
+ * passwords) alternate, because an entry that fails authentication is
  * still our best chance when nothing else is there. @p present is an
  * array of SSIDs seen in the scan. Returns -1 only when nothing
  * configured is visible.
@@ -210,7 +210,7 @@ int wm_select_from_scan(wm_select_state_t *st, const wm_network_t *cand,
 
 /**
  * No-scan/blind path (single network, scan failed, or nothing visible
- * matched — hidden SSIDs and scan-truncation land here): rotate through
+ * matched: hidden SSIDs and scan-truncation land here): rotate through
  * the candidates, skipping ones that failed lately; when all have, rotate
  * through all of them. Returns -1 only for an empty list.
  */
@@ -222,7 +222,7 @@ int wm_select_sequential(wm_select_state_t *st, const wm_network_t *cand,
  * @p current_idx > 0): returns the highest-priority candidate index
  * < current_idx that is visible in @p present, has a clean record and
  * carries a DIFFERENT SSID from the working connection (the same name
- * is the same AP with another password on file — nothing to gain), or
+ * is the same AP with another password on file: nothing to gain), or
  * -1 (stay). The "home > car hotspot" migration decision.
  */
 int wm_select_better(wm_select_state_t *st, const wm_network_t *cand,
@@ -254,7 +254,7 @@ bool wm_select_is_deprioritised(const wm_select_state_t *st, int idx,
 /* Escalating reconnect backoff (2026-07-10): how many 5 s reconnect
  * loops to SKIP after real attempt number @p retry_count failed.
  * 0 for the first two attempts (fast candidate walk / short outages),
- * then 1/3/5 (10/20/30 s cadence — cap per meatpi) so a parked device
+ * then 1/3/5 (10/20/30 s cadence: cap per meatpi) so a parked device
  * doesn't scan every 5 s forever. Resets with sta_retry_count on
  * got-ip. */
 #define WM_BACKOFF_MAX_SKIP_LOOPS 5 /* x 5 s = 30 s cadence cap */
@@ -264,8 +264,8 @@ int wm_backoff_skip_loops(int32_t retry_count);
  * STA (re)connect may hop the radio's channel and knock it off, so the
  * reconnect loop defers. Two escapes, or the device never gets its
  * uplink: the FIRST association of a boot always goes ahead (a user who
- * is on our AP precisely to configure the device — the ESPNetLink
- * pairing story — would otherwise wait forever: field-hit on a fresh
+ * is on our AP precisely to configure the device (the ESPNetLink
+ * pairing story) would otherwise wait forever: field-hit on a fresh
  * WiCAN Pro), and the pause is BOUNDED (max_pauses x the pause period)
  * so an outage cannot last as long as a client stays parked on the AP.
  * @return true = defer this loop. */

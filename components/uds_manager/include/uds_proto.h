@@ -22,7 +22,7 @@
 
 /**
  * @file uds_proto.h
- * @brief PURE UDS (ISO 14229) helpers — no I/O, host-tested. Predicates
+ * @brief PURE UDS (ISO 14229) helpers: no I/O, host-tested. Predicates
  *        on response bytes, the NRC name table, and hex⇄bytes for the
  *        terminal.
  */

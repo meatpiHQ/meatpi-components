@@ -1,4 +1,4 @@
-# Host test compiles ONLY the pure file-name helpers — no sqlite, no
+# Host test compiles ONLY the pure file-name helpers: no sqlite, no
 # RTOS, no VFS.
 set(comp_dir "${CMAKE_CURRENT_LIST_DIR}/../..")
 

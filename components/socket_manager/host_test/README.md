@@ -1,6 +1,6 @@
-# socket_manager — host unit suite
+# socket_manager: host unit suite
 
-Compiles ONLY the pure policy layer (`socket_manager_policy.c` — no lwIP)
+Compiles ONLY the pure policy layer (`socket_manager_policy.c`: no lwIP)
 on the IDF **linux** target. Runs on the bench Pi via `.\test.ps1 host`.
 
 ## What is covered (9 tests)

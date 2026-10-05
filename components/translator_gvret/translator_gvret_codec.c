@@ -280,7 +280,7 @@ static esp_err_t gvret_encode(void *vctx, const uint8_t *in, size_t len,
             break;
 
         case S_ECHO:
-            /* id(4) bus(1) dlc(1) then dlc data + checksum — swallow; a
+            /* id(4) bus(1) dlc(1) then dlc data + checksum: swallow; a
              * conservative fixed swallow of 6 + up-to-8 + 1 is unknown until
              * dlc, so track like BUILD but emit nothing */
             if (c->step == 5)

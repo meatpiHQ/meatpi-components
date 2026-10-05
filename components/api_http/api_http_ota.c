@@ -23,12 +23,12 @@
 /**
  * @file api_http_ota.c
  * @brief The HTTP transport for ota_manager (ota_manager/HTTP_API.md):
- *        POST /api/ota/upload — multipart/form-data (the HTML UI path,
+ *        POST /api/ota/upload, multipart/form-data (the HTML UI path,
  *        streamed via the legacy-proven multipart_upload component) or a
- *        raw body (curl --data-binary) — plus GET /api/ota/status.
+ *        raw body (curl --data-binary), plus GET /api/ota/status.
  *
  *        On success: respond, then reboot via
- *        restart_tracker_restart(OTA_APPLY, WEB_UI) — the standard deferred
+ *        restart_tracker_restart(OTA_APPLY, WEB_UI), the standard deferred
  *        path, never a raw esp_restart().
  */
 #include <stdlib.h>
@@ -91,7 +91,7 @@ static esp_err_t ota_part_data(const char *data, size_t len, void *user_ctx)
 
     if (len == 0)
     {
-        return ESP_OK; /* the parser may emit empty callbacks — not an error */
+        return ESP_OK; /* the parser may emit empty callbacks, not an error */
     }
 
     esp_err_t err = ota_manager_write((const uint8_t *)data, len);
@@ -273,7 +273,7 @@ esp_err_t api_http_register_ota(void)
           .handler = ota_upload_handler },
         { .uri = "/api/ota/status", .method = HTTP_GET,
           .handler = ota_status_handler },
-        /* the legacy HA-integration route (multipart field `ota_file`) —
+        /* the legacy HA-integration route (multipart field `ota_file`):
            the device-contract v2 migration bridge; keep ≥2 releases so
            firmware and integration can update in either order */
         { .uri = "/upload/ota.bin", .method = HTTP_POST,

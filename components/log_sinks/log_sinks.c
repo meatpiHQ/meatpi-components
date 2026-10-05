@@ -23,13 +23,13 @@
 /**
  * @file log_sinks.c
  * @brief Engine: the four log_manager sink callbacks (log-task context,
- *        ring-copy only, never block — §9.5) and the network flusher task
+ *        ring-copy only, never block, §9.5) and the network flusher task
  *        (PSRAM stack) serving the TCP tail server, the UDP collector
  *        push and the ws_log channel. The file half (internal-stack
  *        writer) lives in log_sinks_file.c.
  *
  * Recursion rule: NOTHING on the write-callback or per-batch flush path
- * may ESP_LOG — sink callbacks run inside the log task itself. Lifecycle
+ * may ESP_LOG, sink callbacks run inside the log task itself. Lifecycle
  * transitions (client attach/detach, resolve failures) log at DEBUG from
  * the flusher task only.
  */
@@ -558,7 +558,7 @@ esp_err_t log_sinks_start(void)
 
     /* All four sinks register unconditionally (they enumerate in
      * /api/logs/status and the web UI chip row); the settings gates
-     * decide which ENGINES run — a gate-off sink's callback is a no-op.
+     * decide which ENGINES run: a gate-off sink's callback is a no-op.
      * PUT /api/logs/sink can pause/resume a running sink (§9.4); it
      * cannot bring up an engine whose gate was off at boot. */
     log_manager_add_sink(&S_TCP_SINK);

@@ -1,6 +1,6 @@
 /**
  * @file ml_cellular.h
- * @brief MicroLink Cellular Module — SIM7600 4G Modem Driver
+ * @brief MicroLink Cellular Module: SIM7600 4G Modem Driver
  *
  * Provides AT command interface to SIM7600G-H cellular modem over UART,
  * plus PPP data connection that creates an esp_netif PPP interface for lwIP.
@@ -66,8 +66,8 @@ typedef enum {
 
 typedef enum {
     ML_DATA_MODE_NONE,          /* No data connection */
-    ML_DATA_MODE_PPP,           /* PPP — standard lwIP sockets */
-    ML_DATA_MODE_AT_SOCKET,     /* AT socket bridge — modem internal TCP/IP */
+    ML_DATA_MODE_PPP,           /* PPP: standard lwIP sockets */
+    ML_DATA_MODE_AT_SOCKET,     /* AT socket bridge: modem internal TCP/IP */
 } ml_cellular_data_mode_t;
 
 /* ============================================================================
@@ -124,7 +124,7 @@ esp_err_t ml_cellular_ppp_stop(void);
 
 /**
  * Start cellular data using AT socket bridge (modem internal TCP/IP).
- * Uses AT+NETOPEN instead of PPP — bypasses CHAP authentication issues.
+ * Uses AT+NETOPEN instead of PPP: bypasses CHAP authentication issues.
  * Initializes the AT socket bridge (ml_at_socket_init) which provides
  * BSD socket API wrappers over AT commands.
  *

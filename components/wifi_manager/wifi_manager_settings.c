@@ -23,7 +23,7 @@
 /**
  * @file wifi_manager_settings.c
  * @brief settings_manager descriptor for wifi_manager: JSON schema (source of
- *        truth for shape/ranges/defaults), on_apply (stores config — runs at
+ *        truth for shape/ranges/defaults), on_apply (stores config, runs at
  *        boot before wifi_manager_start(), touches no hardware), on_validate.
  *
  * Fallback networks are flat keys (fallback1_ssid/.._password ... 5) because
@@ -61,7 +61,7 @@ static const settings_field_t WM_FIELDS[] =
     SETTINGS_STR_ENUM("mode",             "off,sta,ap,apsta", "apsta"),
     SETTINGS_STR ("sta_ssid",           32, ""),
     SETTINGS_STR ("sta_password",       64, ""),
-    /* v3: per-network trust — untrusted networks refuse ALL inbound
+    /* v3: per-network trust, untrusted networks refuse ALL inbound
        admin surfaces (API/UI/WS) that arrive VIA the STA address;
        outbound clients (autopid HTTP posts, MQTT) are unaffected and
        the device's own AP + USB stay fully usable (meatpi 2026-07-08:
@@ -70,7 +70,7 @@ static const settings_field_t WM_FIELDS[] =
     SETTINGS_STR ("hostname",           32, ""),
     SETTINGS_BOOL("sta_auto_reconnect", true),
     SETTINGS_INT ("sta_max_retry",      -1, 1000, -1),
-    /* v6: PER-NETWORK STA addressing — DHCP (default) or static; each
+    /* v6: PER-NETWORK STA addressing, DHCP (default) or static; each
        network (primary + every fallback) carries its own choice since
        they live on different LANs. sta_dns = GLOBAL DNS override for
        BOTH modes (empty = automatic: DHCP-provided, or that network's
@@ -125,7 +125,7 @@ static const settings_field_t WM_FIELDS[] =
     SETTINGS_BOOL("ap_auto_disable",    false),
     /* v4: AP LAN knobs. ap_ip is the device/gateway address on its own
        network (a /24 is assumed; the DHCP pool follows it). Default =
-       the LEGACY 192.168.0.10 (legacy wifi_mgr.c/safemode.c) — the
+       the LEGACY 192.168.0.10 (legacy wifi_mgr.c/safemode.c): the
        classic ELM327-WiFi-adapter convention (192.168.0.10:35000), so
        OBD apps work out of the box (meatpi 2026-07-18; supersedes the
        brief 192.168.80.1 default). ap_auth "auto" = the historic rule
@@ -140,7 +140,7 @@ static const settings_field_t WM_FIELDS[] =
     /* v2: while connected to a FALLBACK network, re-scan this often and
        migrate when a higher-priority one (e.g. home) is visible; 0=off */
     SETTINGS_INT ("sta_roam_interval_s", 0, 86400, 300),
-    /* v5: WiFi memory profile (runtime — the buffer counts are
+    /* v5: WiFi memory profile (runtime, the buffer counts are
        wifi_init_config_t fields, applied at esp_wifi_init; reboot to
        take effect). `full` = IDF defaults (throughput); `lean` frees
        ~15 KB internal at a throughput cost (the RAM-cliff Option B, e.g.
@@ -290,7 +290,7 @@ static wm_ap_auth_t parse_ap_auth(const cJSON *obj)
 }
 
 /** Default AP SSID: unique per device, derived from THE device id
- *  (dev_status_manager, 12 lowercase hex chars of the SoftAP MAC) —
+ *  (dev_status_manager, 12 lowercase hex chars of the SoftAP MAC),
  *  the legacy on-air format: "WiCAN_<full 12-hex MAC>" (legacy main.c
  *  sprintf "WiCAN_%02x..."; meatpi 2026-07-18 defaults pass). */
 static void derive_ap_ssid(char *dst, size_t dst_len)
@@ -420,7 +420,7 @@ static esp_err_t wm_on_apply(const cJSON *settings)
     s_configured = true;
 
     /* CLI ownership: the component registers its own commands, gated by
-       its `cli` setting (reboot-to-apply) — main no longer wires this */
+       its `cli` setting (reboot-to-apply), main no longer wires this */
     if (get_bool(settings, "cli", true))
     {
         static bool s_cli_registered;
@@ -439,7 +439,7 @@ static esp_err_t wm_on_apply(const cJSON *settings)
 
     s_boot_applied = true;
 
-    /* §10: don't log secrets — SSIDs only. */
+    /* §10: don't log secrets, SSIDs only. */
     ESP_LOGI(TAG, "config applied: mode=%d sta_networks=%u ap_ssid=%s",
              (int)c->mode, (unsigned)c->sta_count, c->ap.ssid);
 
@@ -494,7 +494,7 @@ static esp_err_t wm_on_validate(const cJSON *settings, char *err,
         }
     }
 
-    /* v6: static addressing needs a coherent set — per NETWORK (the
+    /* v6: static addressing needs a coherent set, per NETWORK (the
        primary + every fallback carries its own choice) */
     static const char *const BASES[] =
     {
@@ -559,7 +559,7 @@ static esp_err_t wm_on_validate(const cJSON *settings, char *err,
         }
     }
 
-    /* v6: the DNS override applies in BOTH ip modes — validate whenever set */
+    /* v6: the DNS override applies in BOTH ip modes, validate whenever set */
     {
         uint32_t parsed;
         const cJSON *v = cJSON_GetObjectItemCaseSensitive(settings,
@@ -594,7 +594,7 @@ static esp_err_t wm_on_validate(const cJSON *settings, char *err,
     }
 
     /* the factory password is public: once the device is up, a write that
-       keeps it is refused — the API merges a blank password with the stored
+       keeps it is refused, the API merges a blank password with the stored
        one before validation, so "leave it" lands here too (meatpi
        2026-09-07). The boot pass still accepts it, or a fresh device could
        never come up. */
@@ -614,7 +614,7 @@ static esp_err_t wm_on_migrate(uint32_t from_version, cJSON *settings)
     /* v1->v2 +sta_roam_interval_s, v2->v3 +trusted flags, v3->v4
        +ap_ip/hidden/bandwidth/auth, v4->v5 +wifi_ram_profile, v5->v6 +STA
        static addressing: fill-missing defaults cover all of those.
-       v6->v7 (2026-09-07): ap_auth "open" is gone — a device that had it
+       v6->v7 (2026-09-07): ap_auth "open" is gone, a device that had it
        comes up with "auto" (= WPA2 with its stored password) instead of
        failing validation and losing its whole WiFi setup. */
     if (from_version < 7 && settings != NULL)

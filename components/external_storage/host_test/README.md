@@ -1,6 +1,6 @@
-# external_storage — host unit suite
+# external_storage: host unit suite
 
-Compiles ONLY the pure card-detect debouncer (`es_detect.c` — no
+Compiles ONLY the pure card-detect debouncer (`es_detect.c`: no
 GPIO/SDMMC) on the IDF **linux** target. Runs via `.\test.ps1 host`.
 
 ## What is covered (3 tests)

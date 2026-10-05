@@ -56,7 +56,7 @@ static const settings_field_t FIELDS[] =
     SETTINGS_STR_ENUM("std_protocol", "0,6,7,8,9", "0"),
     /* UI display label only: the name of the selected vehicle profile.
      * Persisted + returned by GET so the app can show which profile is
-     * configured; intentionally NOT read in on_apply — the actual PID
+     * configured; intentionally NOT read in on_apply: the actual PID
      * tables come from /data/autopid/config.json (see autopid_config.c),
      * PUT via /api/autopid/config, not derived from this name. */
     SETTINGS_STR("vehicle", 63, ""),
@@ -68,7 +68,7 @@ static const settings_field_t FIELDS[] =
     SETTINGS_STR_ENUM("pause_mode", "all,requests_only", "requests_only"),
     SETTINGS_INT("min_event_interval_ms", 10, 600000, 1000),
     SETTINGS_BOOL("cli", true),
-    /* DTC scan/report/clear (v3, TASK_dtc.md §6) — BOTH gates default
+    /* DTC scan/report/clear (v3, TASK_dtc.md §6): BOTH gates default
      * false (meatpi 2026-07-08): no bus activity until the user opts in,
      * and mode 04 needs its own second opt-in. */
     SETTINGS_BOOL("dtc_enabled", false),
@@ -77,14 +77,14 @@ static const settings_field_t FIELDS[] =
     SETTINGS_BOOL("dtc_pending", true),      /* include mode 07         */
     SETTINGS_BOOL("dtc_permanent", false),   /* include mode 0A         */
     /* freeze frame (v5, TASK_dtc §14): capture mode-02 frame 0 during
-     * an OBD scan when stored codes exist — default ON like
+     * an OBD scan when stored codes exist, default ON like
      * dtc_pending (extra requests only inside an already-opted-in scan
      * that actually found codes; the dtc_enabled gate stays the bus
      * opt-in). */
     SETTINGS_BOOL("dtc_freeze", true),
     SETTINGS_STR("dtc_init", AP_INIT_LEN - 1, ""),
     SETTINGS_STR("dtc_rxheader", AP_HDR_LEN - 1, ""),
-    /* UDS DTC (v4, TASK_dtc §12 — meatpi 2026-07-22): obd = mode
+    /* UDS DTC (v4, TASK_dtc §12: meatpi 2026-07-22): obd = mode
      * 03/07/0A only (default, zero behavior change), uds = ISO 14229
      * 19/14 on the address pair below, auto = OBD first then UDS when
      * no ECU answers. */
@@ -235,7 +235,7 @@ static esp_err_t ap_settings_migrate(uint32_t from_version, cJSON *settings)
 {
     /* v1->v2 +backend, v2->v3 +dtc_*, v3->v4 +dtc_protocol/uds addr/mask,
        v4->v5 +dtc_freeze: defaults fill in. v5->v6 (2026-09-06): the
-       `backend` field is gone — drop a stored one so it stops riding
+       `backend` field is gone, drop a stored one so it stops riding
        along in every read-modify-write */
     if (from_version < 6 && settings != NULL)
     {
@@ -243,10 +243,10 @@ static esp_err_t ap_settings_migrate(uint32_t from_version, cJSON *settings)
     }
 
     /* v6->v7 (2026-09-06): std_protocol became an enum (0,6,7,8,9). The
-       old free text was read by its FIRST character (6..9, else auto) —
+       old free text was read by its FIRST character (6..9, else auto):
        keep exactly that meaning for whatever a device has stored */
     /* v7->v8 (2026-09-06): pause_below_mv capped at 14.5 V (a 12 V
-       battery) — 0 keeps meaning "no fixed threshold" */
+       battery), 0 keeps meaning "no fixed threshold" */
     if (from_version < 8 && settings != NULL)
     {
         cJSON *pv = cJSON_GetObjectItemCaseSensitive(settings, "pause_below_mv");

@@ -22,7 +22,7 @@
 
 /**
  * @file uds_proto.c
- * @brief Pure UDS helpers (see uds_proto.h). No I/O — host-tested.
+ * @brief Pure UDS helpers (see uds_proto.h). No I/O: host-tested.
  */
 #include "uds_proto.h"
 

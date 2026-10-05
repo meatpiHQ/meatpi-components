@@ -22,7 +22,7 @@
 
 /**
  * @file rtc_manager_time.c
- * @brief PURE RX8130 register-image <-> struct tm codec. No I2C, no RTOS —
+ * @brief PURE RX8130 register-image <-> struct tm codec. No I2C, no RTOS:
  *        host-testable.
  */
 #include "rtc_manager_private.h"
@@ -42,13 +42,13 @@ bool rtc_time_decode(const uint8_t regs[RTC_REGS_LEN], struct tm *out)
     int sec = bcd_to_dec(regs[0] & 0x7F);
     int min = bcd_to_dec(regs[1] & 0x7F);
     int hour = bcd_to_dec(regs[2] & 0x3F);
-    /* regs[3] = weekday (one-hot) — ignored, mktime recomputes it */
+    /* regs[3] = weekday (one-hot): ignored, mktime recomputes it */
     int day = bcd_to_dec(regs[4] & 0x3F);
     int month = bcd_to_dec(regs[5] & 0x1F);
     int year = bcd_to_dec(regs[6]);
 
     /* plausibility gate: a fresh board / drained caps reads garbage or
-     * 2000-01-01 — both must NOT overwrite the system clock */
+     * 2000-01-01, both must NOT overwrite the system clock */
     if (sec > 59 || min > 59 || hour > 23 ||
         day < 1 || day > 31 || month < 1 || month > 12 ||
         year < 20 || year > 99)

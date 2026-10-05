@@ -22,7 +22,7 @@
 
 /**
  * @file data_logger_mf4.c
- * @brief MDF 4.10 (ASAM) storage engine — the de-facto bus-logging
+ * @brief MDF 4.10 (ASAM) storage engine: the de-facto bus-logging
  *        standard (asammdf / Vector CANoe / MATLAB / INCA; what a
  *        CANedge emits). Byte layout comes from the PURE builders in
  *        data_logger_files.c (host-tested); this file is only the
@@ -32,7 +32,7 @@
  * + the DT block header) is written once at open, then fixed 22-byte
  * CAN_DataFrame records append into the DT block. Every commit()
  * seeks back and patches the DT block length + CG cycle_count, so a
- * power cut loses at most the last batch — no UNFINALIZED-recovery
+ * power cut loses at most the last batch: no UNFINALIZED-recovery
  * dance. single_use: the master time channel is relative to the file
  * start, so files never resume across opens.
  */

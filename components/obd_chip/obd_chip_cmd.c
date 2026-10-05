@@ -25,7 +25,7 @@
  * @brief The request->response engine. It is an ordinary fan-out subscriber
  *        (broadcast contract): it receives EVERYTHING the chip prints and,
  *        per design, whatever arrives inside its transaction window up to the
- *        '>' prompt IS the response — interleaved unsolicited noise included.
+ *        '>' prompt IS the response, interleaved unsolicited noise included.
  *        Framing/matching logic is pure (obd_chip_parse.c) and host-tested,
  *        including chunk-boundary splits and noise interleave.
  */
@@ -77,7 +77,7 @@ esp_err_t obd_cmd_engine_init(void)
 
         /* NOT subscribed here: the engine subscribes per transaction
            (below). A standing subscription filled the 64-slot queue with
-           every app line while no request was in flight — an ELM app
+           every app line while no request was in flight: an ELM app
            streaming through a bridge for minutes (autopid yielded) made
            the fan-out drop-count this queue and WARN every 100 chunks
            for nothing (2026-09-08). */
@@ -110,7 +110,7 @@ static esp_err_t request_run(const char *cmd, char *resp, size_t resp_len,
 
     if (obd_parse_is_monitor_cmd(cmd))
     {
-        /* monitor-class commands never end with a prompt — callers must use
+        /* monitor-class commands never end with a prompt: callers must use
            claim(MONITOR) + send() + subscribe instead (README) */
         return ESP_ERR_NOT_SUPPORTED;
     }
@@ -141,7 +141,7 @@ static esp_err_t request_run(const char *cmd, char *resp, size_t resp_len,
 
     const char *head = (gv == OBD_GUARD_REWRITTEN) ? guarded : cmd;
 
-    /* async bring-up: never write mid-negotiation — wait within the
+    /* async bring-up: never write mid-negotiation, wait within the
        caller's own budget, then time out without touching the wire
        (boot-window callers like the autopid poller just retry) */
     if (!obd_core_bringup_wait(pdTICKS_TO_MS(timeout)))
@@ -158,7 +158,7 @@ static esp_err_t request_run(const char *cmd, char *resp, size_t resp_len,
         return err;
     }
 
-    /* obd_gate: this transaction is one bus conversation — serialize
+    /* obd_gate: this transaction is one bus conversation, serialize
        against the ESP-side ELM engines (released again on every exit
        path below; the fan-out's '>' detection may beat us to it) */
     (void)obd_gate_acquire(obd_chip_gate_owner, OBD_GATE_WAIT_MS);

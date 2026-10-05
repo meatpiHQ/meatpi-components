@@ -22,7 +22,7 @@
 
 /**
  * @file api_http_util.c
- * @brief Pure helpers for the HTTP API glue — no esp_http_server dependency,
+ * @brief Pure helpers for the HTTP API glue: no esp_http_server dependency,
  *        so the whole file host-tests on the IDF linux target.
  */
 #include <string.h>
@@ -36,7 +36,7 @@
 static bool key_is_password(const char *key)
 {
     /* secret-field suffixes: redacted in settings GETs, "" on PUT means
-     * keep-stored. `public_key` fields deliberately NOT here — peers'
+     * keep-stored. `public_key` fields deliberately NOT here: peers'
      * public keys are display data (vpn_manager) */
     static const char *const SUFFIXES[] =
         { "_password", "private_key", "preshared_key", "auth_key",

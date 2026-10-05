@@ -25,11 +25,11 @@
  * @brief WiCAN WebSocket channel owner (service component).
  *
  * Owns N named WebSocket CHANNELS (settings-defined, up to 4) served by
- * THE one httpd — it registers `/ws/...` routes with http_server_manager
+ * THE one httpd: it registers `/ws/...` routes with http_server_manager
  * (ownership inversion; it never starts a server). Each channel presents
  * the firmware's standard chunk-stream face (queue RX via subscribe,
  * send() TX), so a channel plugs into bridge_manager as an endpoint with
- * three-line glue: OBD↔WS, CAN↔WS, the command line over WS — all
+ * three-line glue: OBD↔WS, CAN↔WS, the command line over WS, all
  * configured bridges, no per-use code here.
  *
  * Semantics (mirroring socket_manager):
@@ -44,7 +44,7 @@
  *
  * Lifecycle: init (settings descriptor) between http_server_manager_init()
  * and settings_manager_start(); start() BEFORE http_server_manager_start()
- * (routes are buffered until the server starts — main's order already
+ * (routes are buffered until the server starts: main's order already
  * guarantees this).
  */
 #pragma once

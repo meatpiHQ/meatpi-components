@@ -56,7 +56,7 @@ typedef struct
     char ts_control_url[64];   /* "" = tailscale.com; host only      */
 } vpn_config_t;
 
-/* ---- vpn_manager_check.c — PURE (host-tested) ---------------------------- */
+/* ---- vpn_manager_check.c: PURE (host-tested) ---------------------------- */
 
 /* a WireGuard key is 32 bytes base64: exactly 44 chars, valid alphabet,
  * '=' terminated */
@@ -67,14 +67,14 @@ bool vpn_check_endpoint(const char *host);
  * human-readable reason (the settings on_validate message) */
 const char *vpn_check_config(const vpn_config_t *cfg);
 
-/* ---- vpn_manager_wg.c — esp_wireguard glue (state task ONLY) ------------- */
+/* ---- vpn_manager_wg.c: esp_wireguard glue (state task ONLY) ------------- */
 
 esp_err_t vpn_wg_up(const vpn_config_t *cfg);   /* init + connect      */
 void      vpn_wg_down(void);                    /* disconnect + reset  */
 bool      vpn_wg_peer_up(void);
 esp_err_t vpn_wg_set_default_route(void);
 
-/* ---- vpn_manager_ts.c — tailscale/microlink glue (state task ONLY) ------- */
+/* ---- vpn_manager_ts.c: tailscale/microlink glue (state task ONLY) ------- */
 
 esp_err_t vpn_ts_up(const vpn_config_t *cfg);   /* init + start        */
 void      vpn_ts_down(void);                    /* stop + destroy      */

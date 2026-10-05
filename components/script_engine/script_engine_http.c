@@ -188,7 +188,7 @@ static esp_err_t run_handler(httpd_req_t *req)
     return send_json(req, o);
 }
 
-/* POST /api/scripts/check {"src"} — compile only, nothing runs: the editor's
+/* POST /api/scripts/check {"src"}: compile only, nothing runs: the editor's
  * syntax check. {"ok":true} or {"ok":false,"error":"syntax_error: string:3: …"} */
 static esp_err_t check_handler(httpd_req_t *req)
 {
@@ -247,7 +247,7 @@ static esp_err_t check_handler(httpd_req_t *req)
 
 /* ---- list ---------------------------------------------------------------------- */
 
-/* GET /api/scripts — the .be files in /data/scripts (CRUD via /api/fs). */
+/* GET /api/scripts: the .be files in /data/scripts (CRUD via /api/fs). */
 static esp_err_t list_cb(const char *name, bool is_dir, size_t size,
                          void *ctx)
 {

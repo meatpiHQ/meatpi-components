@@ -23,7 +23,7 @@
 /**
  * @file j2534_server_settings.c
  * @brief settings_manager descriptor for j2534_server: field-table schema
- *        (source of truth for shape/ranges/defaults — including the
+ *        (source of truth for shape/ranges/defaults, including the
  *        allow_reflash / allow_lan safety gates) and on_apply (fills the
  *        boot-applied config and pushes the reflash gate into
  *        j2534_channel).
@@ -35,7 +35,7 @@
 
 static const settings_field_t FIELDS[] =
 {
-    /* Whole feature off by default — the port is opened only when a user
+    /* Whole feature off by default: the port is opened only when a user
      * deliberately enables it. */
     SETTINGS_BOOL("enabled", false),
     SETTINGS_INT("port", 1, 65535, 6809),
@@ -46,7 +46,7 @@ static const settings_field_t FIELDS[] =
      * reflash job. */
     SETTINGS_BOOL("allow_reflash", false),
     /* Interface exposure. Default false = accept tester connections only
-     * on WiCAN's own SoftAP and the USB-device (NCM) link — i.e. someone
+     * on WiCAN's own SoftAP and the USB-device (NCM) link, i.e. someone
      * physically on WiCAN's AP or plugged into the USB cable. When false a
      * connection arriving over WiFi-STA or a USB-Ethernet uplink (the
      * "shop LAN") is dropped, so the unauthenticated reflash channel is
@@ -55,8 +55,8 @@ static const settings_field_t FIELDS[] =
     SETTINGS_BOOL("allow_lan", false),
     /* Exclusive bus (boot default; runtime switch on the J2534 page /
      * POST /api/j2534). While a tester is attached the background pollers
-     * (autopid: PID polling + DTC scans) stay off the bus — obd_gate's
-     * diagnostics hold — so the tool's conversations never interleave
+     * (autopid: PID polling + DTC scans) stay off the bus (obd_gate's
+     * diagnostics hold) so the tool's conversations never interleave
      * with ours. ON by default (Ali 2026-09-16): a connected tool wants the
      * bus to itself; turn off to keep AutoPID telemetry flowing meanwhile. */
     SETTINGS_BOOL("exclusive", true),

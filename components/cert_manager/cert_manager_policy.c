@@ -22,7 +22,7 @@
 
 /**
  * @file cert_manager_policy.c
- * @brief PURE set-name validation, part mapping, and PEM plausibility —
+ * @brief PURE set-name validation, part mapping, and PEM plausibility:
  *        no filesystem, no RTOS; host-testable.
  */
 #include <string.h>
@@ -75,7 +75,7 @@ bool cm_part_from_field(const char *field, cert_manager_part_t *out)
         return false;
     }
 
-    /* the legacy multipart form's field names — preserved so the
+    /* the legacy multipart form's field names, preserved so the
      * existing UI form posts keep working */
     if (strcmp(field, "ca") == 0)
     {

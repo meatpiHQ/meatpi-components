@@ -44,7 +44,7 @@ static const char NOISE_PROTOCOL_NAME[] = "Noise_IK_25519_ChaChaPoly_BLAKE2s";
  * BLAKE2s Hash + HMAC-BLAKE2s
  *
  * Uses the RFC 7693 BLAKE2s implementation from wireguard-lwip.
- * Tailscale's Noise handshake requires BLAKE2s-256 — NOT SHA-256.
+ * Tailscale's Noise handshake requires BLAKE2s-256, NOT SHA-256.
  * Reference: tailscale/control/controlbase/handshake.go
  * ========================================================================== */
 
@@ -349,7 +349,7 @@ esp_err_t ml_noise_read_msg2(ml_noise_state_t *state, const uint8_t *msg, size_t
     noise_mix_key(state->ck, k, dh_output);
     memset(dh_output, 0, 32);
 
-    /* Decrypt payload (should be empty for IK — just 16-byte auth tag) */
+    /* Decrypt payload (should be empty for IK: just 16-byte auth tag) */
     size_t ciphertext_len = len - offset;
     if (chacha20poly1305_decrypt(k, 0, state->h, 32,
                                   msg + offset, ciphertext_len,

@@ -23,7 +23,7 @@
 /**
  * @file j2534_proto.h
  * @brief SAE J2534 constants + the WiCAN PassThru wire-protocol codec.
- *        PURE (no IDF types) — host-tested. This is the contract the
+ *        PURE (no IDF types): host-tested. This is the contract the
  *        companion Windows DLL and the device server both implement.
  *        See TASK_j2534_server.md §4.
  */
@@ -37,7 +37,7 @@
 extern "C" {
 #endif
 
-/* ---- J2534 protocol IDs (SAE J2534-1) — WiCAN supports CAN + ISO15765 -- */
+/* ---- J2534 protocol IDs (SAE J2534-1): WiCAN supports CAN + ISO15765 -- */
 enum {
     J2534_PROT_J1850VPW  = 1,
     J2534_PROT_J1850PWM  = 2,

@@ -25,7 +25,7 @@
  * @brief settings_manager descriptor for imu_manager: field-table schema
  *        (source of truth for shape/ranges/defaults), on_apply (parses into
  *        the boot-applied config read through the imu_settings_* getters),
- *        on_migrate (delegates to the pure imu_settings_migrate —
+ *        on_migrate (delegates to the pure imu_settings_migrate:
  *        imu_manager_migrate.c, host-tested).
  */
 #include "settings_manager.h"
@@ -39,7 +39,7 @@ static const settings_field_t FIELDS[] =
     SETTINGS_BOOL("enabled", true),
     SETTINGS_BOOL("smd", true),               /* sustained -> activity    */
     /* meatpi 2026-09-07: the IMU stays on, but anything a user reads as
-       sleep/wake related ships OFF and must not be twitchy once enabled —
+       sleep/wake related ships OFF and must not be twitchy once enabled,
        WoM defaults to off with a real-bump threshold; the web UI flags an
        enabled WoM on the Power Saving page (it only publishes imu.bump,
        it does NOT wake the device from sleep_manager's light sleep) */

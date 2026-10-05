@@ -24,7 +24,7 @@
  * @file rtc_manager_rx8130.c
  * @brief RX8130CE chip layer on the shared i2c_bus. Control-register
  *        bring-up values are the field-proven legacy ones (they configure
- *        the backup-capacitor charging path — do not "clean up").
+ *        the backup-capacitor charging path: do not "clean up").
  */
 #include "esp_log.h"
 

@@ -56,7 +56,7 @@ void j2534_channel_set_allow_reflash(bool allow)
     s_allow_reflash = allow;
 }
 
-/* UDS memory-transfer services — the ones that actually read/write ECU
+/* UDS memory-transfer services: the ones that actually read/write ECU
  * flash. Blocking any of these makes a reprogramming sequence impossible
  * (you cannot write memory without RequestDownload + TransferData). */
 static bool uds_is_reflash_sid(uint8_t sid)
@@ -76,7 +76,7 @@ static bool uds_is_reflash_sid(uint8_t sid)
 /* True if this write must be rejected because ECU flashing is disabled.
  * ISO15765: the UDS SID is data[0]. Raw CAN: data = [4-byte id][frame];
  * a hand-rolled ISO-TP single frame carries the SID after the PCI nibble
- * (SF: frame[1], FF: frame[2]) — checked so the CAN channel can't be used
+ * (SF: frame[1], FF: frame[2]), checked so the CAN channel can't be used
  * to smuggle a reflash past the ISO15765 gate. */
 static bool reflash_blocked(uint32_t protocol, const j2534_msg_t *msg)
 {

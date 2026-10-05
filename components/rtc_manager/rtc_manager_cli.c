@@ -22,7 +22,7 @@
 
 /**
  * @file rtc_manager_cli.c
- * @brief The component's CLI command (`rtc`) — registered into
+ * @brief The component's CLI command (`rtc`): registered into
  *        cmdline_manager by rtc_manager_register_cli() (main wires it
  *        in CLI compositions only). Legacy option interface preserved
  *        (-s/--sync, -r/--read, -i/--id); bare = the v6 summary. The

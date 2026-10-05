@@ -119,7 +119,7 @@ static esp_err_t serve_file(httpd_req_t *req, const http_asset_t *e,
 
         if (e->source_url == NULL || fetch == NULL)
         {
-            /* DEBUG: per-request path — scanners/bad links must not be able
+            /* DEBUG: per-request path, scanners/bad links must not be able
                to flood the log pipeline at WARN (§10 hot-path rule) */
             ESP_LOGD(TAG, "404 %s (no local file%s)", path,
                      e->source_url != NULL ? ", no fetcher wired" : "");

@@ -1,14 +1,14 @@
-# mqtt_manager — benchmarks
+# mqtt_manager: benchmarks
 
 > Status 2026-07-04: measured on the **composed main firmware** (all
 > radios + peripherals live), device on the bench AP (rpi001 hotspot,
 > ~2 m), broker = mosquitto on rpi001, QoS 0. Driven by
 > `tools/testbench/mqtt_bench.py` against the device's MQTT bench surface
 > (`main/main_bench.c`: `<prefix>/bench/cmd` burst + `/bench/echo`
-> bounce) — which also exercises the handler registry end to end.
+> bounce), which also exercises the handler registry end to end.
 > All rows use `publish_async` (the hot path).
 
-## 1. Drain ceiling (unpaced burst — the ring fills in ~40 ms, then the
+## 1. Drain ceiling (unpaced burst: the ring fills in ~40 ms, then the
    publisher task drains at link speed; drops are the DESIGN working:
    producer-side, counted, non-blocking)
 
@@ -31,7 +31,7 @@ message rate → **8.6× more bytes/s**. This is the measured proof of the
 | 1 KB | 198 msg/s (198 KB/s) | 10 s | **0** |
 | 512 B | 482 msg/s (241 KB/s) | 6 s | **0** |
 
-(Rates limited by the test's pacing tick, not the link — the burst rows
+(Rates limited by the test's pacing tick, not the link: the burst rows
 above are the true ceiling.)
 
 ## 3. Round trip (Pi → `bench/echo` → handler → `publish_async` →
@@ -45,7 +45,7 @@ above are the true ceiling.)
 
 A fully saturated 500 kbit/s bus ≈ 3.5 k frames/s ≈ 315 KB/s in the
 legacy JSON-array encoding (~90 B/frame, batched ~11 frames per 1 KB
-message ≈ 320 msg/s) — **under the measured 586 msg/s / 586 KB/s drain
+message ≈ 320 msg/s): **under the measured 586 msg/s / 586 KB/s drain
 ceiling at 1 KB**, with the 32 KB ring (~30 messages) riding out broker
 hiccups. Bigger batches (2–4 KB) more than double the byte headroom.
 Real busloads are far below saturation; PID-filtered publishing (the

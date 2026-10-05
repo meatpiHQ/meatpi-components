@@ -47,7 +47,7 @@
 #define DL_RING_LEN     2048  /* param ring (PSRAM)                     */
 #define DL_CAN_RING_MAX 8192 /* frame ring cap; ring_len setting picks
                                 the live size (static PSRAM, ~192 KB
-                                at cap — caps not rationing)           */
+                                at cap: caps not rationing)           */
 #define DL_DIR          "/sd/logs"
 #define DL_PREFIX_PARAM "dl_"
 #define DL_PREFIX_CAN   "can_"
@@ -109,7 +109,7 @@ typedef struct
 {
     const char *ext;                 /* ".db" / ".csv" / ".wdl" / …      */
     /* single_use: relative-timestamp / patched-header formats (mf4,
-     * blf, asc) can't be appended across boots — open_current always
+     * blf, asc) can't be appended across boots, open_current always
      * starts a fresh file for them */
     bool single_use;
     esp_err_t (*open)(void *ctx, const char *path, bool frames);
@@ -121,8 +121,8 @@ typedef struct
                        dl_param_entry_t *p);
     esp_err_t (*commit)(void *ctx);  /* commit / flush                   */
     uint64_t  (*bytes)(void *ctx);   /* approx bytes in the current file */
-    /* optional (ROBUSTNESS.md): "the last failure means the FILE is bad"
-     * — the writer sets such a file aside instead of retrying it forever */
+    /* optional (ROBUSTNESS.md): "the last failure means the FILE is bad",
+     * the writer sets such a file aside instead of retrying it forever */
     bool      (*corrupt)(void *ctx);
     /* optional: never resume a file bigger than this (0 = no limit); the
      * .wdl torn-tail check is a full read, so huge CAN logs start fresh */
@@ -145,14 +145,14 @@ extern const dl_engine_t dl_engine_blf;      /* data_logger_blf.c    */
 #define DL_AP_ASC     3
 #define DL_AP_JSONL   4
 
-/* engine contexts — one static instance per (engine kind × stream) is
+/* engine contexts: one static instance per (engine kind × stream) is
  * owned by data_logger.c; the structs live here so it can size them */
 typedef struct
 {
     void    *f;                  /* FILE*; void* keeps stdio out of
                                     the host-test build               */
     uint64_t bytes;
-    char    *buf;                /* 4 KB DMA-capable stdio buffer —
+    char    *buf;                /* 4 KB DMA-capable stdio buffer:
                                     lazy INTERNAL heap, open→close     */
     uint16_t next_id;            /* .wdl dictionary ids               */
     uint8_t  fmt;                /* DL_AP_*                           */
@@ -201,7 +201,7 @@ void dl_runtime_gate(bool on);
 /* frame-ring producers (data_logger_can.c drain task + CLI frametest) */
 esp_err_t dl_frame_push(const dl_record_t *rec);
 
-/* CAN stream lifecycle (data_logger_can.c) — settings snapshot applied
+/* CAN stream lifecycle (data_logger_can.c): settings snapshot applied
  * by data_logger.c's on_apply, task created by start when can_log */
 typedef struct
 {
@@ -247,7 +247,7 @@ bool dl_settings_is_configured(void); /* boot apply ran (standard §4.3) */
  *  table and the rings; on_apply calls this after parsing. */
 void dl_core_apply(const dl_cfg_t *cfg);
 
-/* ---- recovery helpers (data_logger_recover.c — PURE, host-tested) ---------- */
+/* ---- recovery helpers (data_logger_recover.c: PURE, host-tested) ---------- */
 size_t   dl_recover_text_keep(const char *buf, size_t len);
 size_t   dl_recover_wdl_scan(const uint8_t *buf, size_t len, bool *bad);
 bool     dl_recover_corrupt_name(const char *fname, char *out, size_t cap);
@@ -262,7 +262,7 @@ uint32_t dl_recover_crc32_update(uint32_t crc, const void *data, size_t len);
 esp_err_t dl_sq_salvage(const char *src, const char *dst, bool frames,
                         uint32_t budget_ms, uint32_t *rows_out);
 
-/* ---- data_logger_files.c — PURE (host-tested) ---------------------------- */
+/* ---- data_logger_files.c: PURE (host-tested) ---------------------------- */
 
 /* strict parse: <prefix><10 digits> + a known engine extension; any
  * known prefix (dl_/can_) is accepted */

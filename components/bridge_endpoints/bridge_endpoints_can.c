@@ -30,11 +30,11 @@
  *
  * multi_consumer since 2026-07-26 (mqtt_can v2 backlog): up to
  * BEP_CAN_MAX_SUBS bridges may sit on the jack at once (slcan + mqtt
- * simultaneously) — every subscriber gets a full copy of each RX chunk,
+ * simultaneously), every subscriber gets a full copy of each RX chunk,
  * TX from any bridge serializes through can_manager_send. ONE ingress
  * filter for the whole jack (bep_can_set_filter, mqtt_can's setting):
  * with several consumers attached the filter restricts what ALL of them
- * see — per-consumer filters are out of scope (documented in the README).
+ * see, per-consumer filters are out of scope (documented in the README).
  * The pump runs only while at least one bridge is subscribed.
  */
 #include <string.h>
@@ -71,7 +71,7 @@ void bep_can_set_filter(uint32_t filter, uint32_t mask, bool ext)
 {
     /* pre-bridge-start config (mqtt_can's 1:1 filter mapping, meatpi
        2026-07-22). mask==0 keeps the monitor-all default. Applies at
-       the FIRST subscribe — set before bridge_manager_start(). Jack-wide:
+       the FIRST subscribe: set before bridge_manager_start(). Jack-wide:
        every consumer sees the same (filtered) stream. */
     s_can_filter = filter;
     s_can_mask = mask;
@@ -106,8 +106,8 @@ static void can_pump_task(void *arg)
             /* COALESCE: pack whatever the bus already queued into the
              * same chunk (a chunk is a plain concatenation of wire
              * frames; every consumer loops via can_wire_decode_next).
-             * Lifts frame-bound transports — WS was 1 frame = 1 WS
-             * frame = ~676 fps — toward bus rate at zero added latency
+             * Lifts frame-bound transports (WS was 1 frame = 1 WS
+             * frame = ~676 fps) toward bus rate at zero added latency
              * (only frames ALREADY waiting are packed; an idle bus
              * still ships 1-frame chunks immediately). */
             while (c.len + CAN_WIRE_MAX <= BRIDGE_MANAGER_CHUNK_SIZE &&

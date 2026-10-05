@@ -1,4 +1,4 @@
-# restart_tracker — HTTP API reference
+# restart_tracker: HTTP API reference
 
 > **Implemented (2026-07-03)** by the `api_http` glue (on-target suite green).
 > Conventions: `components/HTTP_API.md` §1. 2026-10-05: the crash-loop
@@ -143,7 +143,7 @@ delivered as their `*_to_str` names, never raw numbers.
 - `planned_reason` values include `park_retry` (2026-10-05): a parked device
   started again, by `source` `park` (its timer) or `button`.
 - After a power cycle the ring restarts (PSRAM `.noinit` is only warm-reset
-  persistent); `boot_count` restarts at 1 — that is correct behavior, not loss.
+  persistent); `boot_count` restarts at 1: that is correct behavior, not loss.
   The brake's count restarts with it; the stored report stays.
 
 **Errors**: `503 {"error":"tracker state unavailable"}` if init never ran
@@ -201,6 +201,6 @@ through to the record.
 { "ok": true }
 ```
 then ≈1 s flush delay, then
-`restart_tracker_restart(USER_REQUEST, WEB_UI, flags)` — the reboot lands in
+`restart_tracker_restart(USER_REQUEST, WEB_UI, flags)`: the reboot lands in
 the next boot's history as `planned:true, source:"web_ui"`. Never a raw
 `esp_restart()`.

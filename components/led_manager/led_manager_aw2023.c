@@ -105,7 +105,7 @@ esp_err_t lm_aw2023_init(void)
        registers accept writes. The legacy 200 kHz legacy-i2c stack was
        slow enough by accident; this 400 kHz i2c_master path slammed
        LCTR immediately and the write was silently LOST (chip ACKs in
-       standby but ignores) — LED dark forever (bench 2026-07-19,
+       standby but ignores): LED dark forever (bench 2026-07-19,
        `led -d`: LCTR=0x00 with everything else applied). Delay, then
        verify the critical channel-enable write actually landed. */
     vTaskDelay(pdMS_TO_TICKS(2));
@@ -269,7 +269,7 @@ esp_err_t lm_aw2023_apply(const led_manager_state_t *s)
     }
 
     /* self-heal the channel enables: LCTR can come up empty (init-race,
-       see lm_aw2023_init) or be cleared by a chip-level event — without
+       see lm_aw2023_init) or be cleared by a chip-level event, without
        LE0..2 every PWM write below is invisible. Applies are rare, so
        one read is cheap; preserve FREQ/EXP. */
     uint8_t lctr = 0;

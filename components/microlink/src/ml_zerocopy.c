@@ -46,7 +46,7 @@ extern void wireguardif_network_rx(void *arg, struct udp_pcb *pcb,
 static void zc_send_in_tcpip(void *arg);
 
 /* ============================================================================
- * PCB Receive Callback (runs in tcpip_thread — FAST PATH)
+ * PCB Receive Callback (runs in tcpip_thread: FAST PATH)
  *
  * Packet classification order matters for performance:
  * 1. WireGuard (most frequent in streaming) → zero-copy inject
@@ -117,7 +117,7 @@ static void zc_pcb_recv_cb(void *arg, struct udp_pcb *pcb,
         if (device) {
             /* wireguardif_network_rx takes ownership of pbuf */
             wireguardif_network_rx(device, NULL, p, addr, port);
-            return;  /* DO NOT free — WG owns the pbuf now */
+            return;  /* DO NOT free: WG owns the pbuf now */
         }
         pbuf_free(p);
 
@@ -220,7 +220,7 @@ esp_err_t ml_zerocopy_init(microlink_t *ml) {
     /* Store the port so coord can advertise it in endpoints */
     ml->disco_local_port = ml->zc.local_port;
 
-    /* Mark disco_sock4 as unused — net_io won't select() on it */
+    /* Mark disco_sock4 as unused: net_io won't select() on it */
     ml->disco_sock4 = -1;
 
     ESP_LOGI(TAG, "Zero-copy WG active on port %d", ml->zc.local_port);
@@ -271,7 +271,7 @@ esp_err_t ml_zerocopy_send(microlink_t *ml, const uint8_t *data, size_t len,
     return ESP_OK;
 }
 
-/* TX callback — runs in tcpip_thread */
+/* TX callback: runs in tcpip_thread */
 static void zc_send_in_tcpip(void *arg) {
     ml_zc_tx_ctx_t *ctx = (ml_zc_tx_ctx_t *)arg;
     struct pbuf *p = pbuf_alloc(PBUF_TRANSPORT, ctx->len, PBUF_RAM);

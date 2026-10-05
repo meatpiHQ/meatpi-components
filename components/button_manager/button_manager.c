@@ -23,8 +23,8 @@
 /**
  * @file button_manager.c
  * @brief Lifecycle + the polled button task. NO interrupts by design
- *        (meatpi 2026-07-19): a 1 s gpio_get_level poll — the legacy
- *        config_mode.c cadence — is plenty for a human hold and immune
+ *        (meatpi 2026-07-19): a 1 s gpio_get_level poll (the legacy
+ *        config_mode.c cadence) is plenty for a human hold and immune
  *        to ISR/glitch classes.
  */
 #include "button_manager.h"
@@ -63,7 +63,7 @@ static void button_task(void *arg)
 
         if (btn_press_step(&press, pressed, btn_settings_hold_s()))
         {
-            ESP_LOGI(TAG, "long-press (%lus) — firing callback",
+            ESP_LOGI(TAG, "long-press (%lus): firing callback",
                      (unsigned long)btn_settings_hold_s());
 
             if (s_cb != NULL)
@@ -107,7 +107,7 @@ esp_err_t button_manager_start(void)
         return ESP_OK;
     }
 
-    /* plain polled input, pull-up, active low — NO interrupt */
+    /* plain polled input, pull-up, active low: NO interrupt */
     gpio_reset_pin(BUTTON_MANAGER_GPIO);
     gpio_set_direction(BUTTON_MANAGER_GPIO, GPIO_MODE_INPUT);
     gpio_set_pull_mode(BUTTON_MANAGER_GPIO, GPIO_PULLUP_ONLY);

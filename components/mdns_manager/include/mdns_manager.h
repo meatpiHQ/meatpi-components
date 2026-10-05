@@ -25,24 +25,24 @@
  * @brief WiCAN mDNS advertisement owner (feature component).
  *
  * Rewrite of the legacy `wc_mdns.c` with the ON-AIR CONTRACT the Home
- * Assistant integration discovers by — preserved exactly:
+ * Assistant integration discovers by, preserved exactly:
  *
  *  - hostname `wican_<device_id>` (→ `wican_<id>.local`)
  *  - default instance "wican web server"
  *  - service "WiCAN-WebServer" of type **`_wican._tcp` on port 80**
- *  - TXT keys: `mac` (STA MAC, colon-separated uppercase — HA's stable
+ *  - TXT keys: `mac` (STA MAC, colon-separated uppercase, HA's stable
  *    unique ID), `device_id`, `device_type`, `firmware`, `hardware`,
  *    `version`, `path`
  *
  * One deliberate improvement over legacy: the Pro build passed
- * zero-initialized (empty) version strings — the keys existed with ""
+ * zero-initialized (empty) version strings, the keys existed with ""
  * values. v6 keeps the SAME keys but fills `firmware`/`version` with
  * the real app version and `hardware` from Kconfig
- * (`WICAN_HW_VERSION`) — strictly more useful to HA, same schema.
+ * (`WICAN_HW_VERSION`): strictly more useful to HA, same schema.
  *
  * Device-contract v2 (2026-07-11, ha_webhooks/device-contract): a
  * SECOND service **`_meatpi._tcp` on port 80** is advertised in
- * parallel — the brand-wide discovery surface every MeatPi product
+ * parallel, the brand-wide discovery surface every MeatPi product
  * shares (integration 3.0 matches only `_meatpi`/`_wican` types). TXT:
  * `device_type` (Kconfig `WICAN_DEVICE_TYPE`, profile slug),
  * `device_id`, `mac`, `fw`, `api`.

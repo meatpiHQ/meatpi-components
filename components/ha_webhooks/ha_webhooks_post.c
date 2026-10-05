@@ -35,7 +35,7 @@
  *   - status        -> dev_status_manager getters   (RAM)
  *   - gps           -> usb_acm_cli_gps_get()        (RAM fix cache)
  * and the outbound HTTP goes through http_client_manager (its own task).
- * Stats updates are cache-only (no flash) — §2 corollary.
+ * Stats updates are cache-only (no flash): §2 corollary.
  *
  * The poster does NOT depend on autopid being enabled (2026-09-08): a
  * status-only push is a valid contract push and the HA integration's
@@ -66,7 +66,7 @@
 
 static const char *TAG = "ha_webhooks";
 
-/* 8192 words = 32 KB (PSRAM, cheap): 24 KB overflowed once gzip landed —
+/* 8192 words = 32 KB (PSRAM, cheap): 24 KB overflowed once gzip landed,
  * the ROM tdefl deflate keeps its Huffman/blocking locals on the CALLER's
  * stack (several KB under an already-deep poster frame). Bench-verify
  * stack_hw via /api/status/tasks after any change here. */
@@ -78,7 +78,7 @@ static const char *TAG = "ha_webhooks";
 #define HW_PAYLOAD_SCHEMA 1
 
 /* consecutive HTTP-403 cycles (HA identity rejection) before pushes
- * pause — the contract's "stop; needs user attention" device action.
+ * pause: the contract's "stop; needs user attention" device action.
  * Re-registration (POST /api/webhook) or reboot resumes. */
 #define HW_REJECT_LIMIT 3
 
@@ -128,12 +128,12 @@ static cJSON *build_status(void)
     }
 
     /* device_id: the HA integration binds/validates on this (coordinator
-       _validate_device_identity) — REQUIRED */
+       _validate_device_identity), REQUIRED */
     cJSON_AddStringToObject(s, "device_id",
                             dev_status_manager_device_id());
 
     /* identity for the device registry, device-type inference and the
-       update entity (contract v2 guarantees these in every push — the
+       update entity (contract v2 guarantees these in every push: the
        build_payload overlay keeps them alive through diff mode) */
     cJSON_AddStringToObject(s, "fw_version",
                             dev_status_manager_app_version());
@@ -457,7 +457,7 @@ static char *build_payload(bool full)
         cJSON_Delete(data);
     }
 
-    /* config (from the PSRAM cache — no flash) */
+    /* config (from the PSRAM cache: no flash) */
     char *cfg_json = NULL;
 
     if (autopid_config_json_dup(&cfg_json) == ESP_OK && cfg_json != NULL)
@@ -488,12 +488,12 @@ static char *build_payload(bool full)
     return body;
 }
 
-/* ---- gzip (ask #9 item 4: LTE data saver — JSON compresses 5-10x) ---------- */
+/* ---- gzip (ask #9 item 4: LTE data saver, JSON compresses 5-10x) ---------- */
 
 /**
  * gzip @p in via the ROM miniz compressor (zero flash cost; the ~166 KB
- * compressor state is a lazy one-time PSRAM alloc, reused — the poster
- * is the only caller). Returns a PSRAM buffer (caller frees) or NULL —
+ * compressor state is a lazy one-time PSRAM alloc, reused: the poster
+ * is the only caller). Returns a PSRAM buffer (caller frees) or NULL:
  * the caller then falls back to the uncompressed body.
  */
 static uint8_t *hw_gzip(const char *in, size_t in_len, size_t *out_len)
@@ -630,7 +630,7 @@ static bool post_failover(const hw_config_t *c, const void *body,
         if (r == ESP_OK && resp.status_code == 403)
         {
             /* the push contract: 403 = our device_id does not match the
-               configured device — the second URL is the SAME HA, so
+               configured device, the second URL is the SAME HA, so
                don't failover under a rejected identity */
             snprintf(err, HW_ERR_LEN, "http=403 identity rejected");
             *rejected = true;
@@ -691,7 +691,7 @@ static void poster_task(void *arg)
 
         if (s_reject_streak >= HW_REJECT_LIMIT)
         {
-            continue; /* identity rejected — paused until re-registration */
+            continue; /* identity rejected: paused until re-registration */
         }
 
         uint32_t now = xTaskGetTickCount() / configTICK_RATE_HZ;
@@ -701,7 +701,7 @@ static void poster_task(void *arg)
             continue;
         }
 
-        /* schedule on ATTEMPT, not success — a down endpoint must not be
+        /* schedule on ATTEMPT, not success: a down endpoint must not be
            retried every second (legacy lesson) */
         last_attempt = now;
 
@@ -713,7 +713,7 @@ static void poster_task(void *arg)
         }
 
         /* gzip (optional, either data mode): fall back to plain on any
-           compression failure — delivery beats savings */
+           compression failure, delivery beats savings */
         const void *send_buf = body;
         size_t send_len = strlen(body);
         uint8_t *gz = NULL;
@@ -746,7 +746,7 @@ static void poster_task(void *arg)
         free(gz);
         free(body);
 
-        /* update stats (cache only — no flash) */
+        /* update stats (cache only: no flash) */
         hw_stats_t st;
 
         hw_stats_get(&st);
@@ -772,7 +772,7 @@ static void poster_task(void *arg)
                 strlcpy(st.status, "rejected", sizeof(st.status));
                 ESP_LOGE(TAG,
                          "HA rejected our device identity (HTTP 403) %u "
-                         "times — pausing pushes until re-registration "
+                         "times, pausing pushes until re-registration "
                          "(was this device replaced?)",
                          (unsigned)s_reject_streak);
             }

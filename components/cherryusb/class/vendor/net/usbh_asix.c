@@ -827,7 +827,7 @@ int usbh_asix_eth_output(uint32_t buflen)
     g_asix_tx_buffer[2] = ~g_asix_tx_buffer[0];
     g_asix_tx_buffer[3] = ~g_asix_tx_buffer[1];
 
-    /* WICAN FIX (PROVENANCE.md): upstream precedence bug — `!` binds
+    /* WICAN FIX (PROVENANCE.md): upstream precedence bug, `!` binds
      * before `%`, so the condition parsed as (!(buflen+4)) % MPS == 0,
      * i.e. ALWAYS false: the 4-byte 00 00 ff ff terminator for
      * exact-multiple transfers was never appended (the Linux asix

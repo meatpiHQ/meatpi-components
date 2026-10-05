@@ -26,7 +26,7 @@
  *        data interface, wrapped as a named jack (bridge endpoint).
  *
  * Providers stay bridge-agnostic (obd_chip, can_manager, ble_manager,
- * cmdline_manager, socket_manager, websocket_manager) — this
+ * cmdline_manager, socket_manager, websocket_manager): this
  * component knows both sides and registers the jacks:
  *
  *   fixed (init):   obd  can  ble  cli  usb_obd
@@ -65,7 +65,7 @@ esp_err_t bridge_endpoints_init(void);
 esp_err_t bridge_endpoints_start(void);
 
 /** Configure the `can` jack's RX filter (mask==0 = monitor all, the
- *  default). Pre-bridge-start only — applies at the next subscribe.
+ *  default). Pre-bridge-start only: applies at the next subscribe.
  *  Used by mqtt_can's 1:1 filter mapping (meatpi 2026-07-22). */
 void bep_can_set_filter(uint32_t filter, uint32_t mask, bool ext);
 

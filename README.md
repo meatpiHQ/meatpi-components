@@ -29,7 +29,7 @@ habit, the standard wins.
 ## Testing
 
 Most components carry a `host_test/` unit suite that builds and runs on
-the ESP-IDF **`linux` target** — no hardware needed. CI runs all of
+the ESP-IDF **`linux` target**: no hardware needed. CI runs all of
 them on every push and pull request
 ([host-tests workflow](.github/workflows/host-tests.yml)).
 
@@ -56,26 +56,26 @@ exercised on MeatPi's hardware bench and are not part of this repo.
 ## Licensing
 
 - Most components are open source under **AGPL-3.0-or-later** (see
-  `LICENSE`). Commercial licensing is available — contact
+  `LICENSE`). Commercial licensing is available: contact
   ali@meatpi.com.
 - Some features of official MeatPi firmware builds come from optional
   add-on component packs that are not part of this repository. The
   attachment points are public (`ext_manager` boot hooks, provider
-  registries, the component-pack overlay in the consuming project) —
+  registries, the component-pack overlay in the consuming project):
   builds from this repo alone are fully functional without any pack.
 - Third-party components keep their original licenses:
 
   | Component | License / origin |
   |---|---|
-  | `berry` | MIT — berry-lang/berry |
-  | `cherryusb` | Apache-2.0 — CherryUSB (with local fixes) |
+  | `berry` | MIT: berry-lang/berry |
+  | `cherryusb` | Apache-2.0: CherryUSB (with local fixes) |
   | `esp_isotp` | Apache-2.0 + isotp-c (MIT) |
-  | `esp_wireguard` | BSD — Tomoyuki Sakurai |
-  | `microlink` | MIT — Malone Technologies LLC (Tailscale client, with local mods) |
+  | `esp_wireguard` | BSD: Tomoyuki Sakurai |
+  | `microlink` | MIT: Malone Technologies LLC (Tailscale client, with local mods) |
   | `sqlite3` | Public domain + Siara Logics shim |
-  | `wireguard_lwip` | BSD — Daniel Hope + Cryptography Research |
+  | `wireguard_lwip` | BSD: Daniel Hope + Cryptography Research |
 
 ## Contributing
 
-Contribution terms (CLA) are being finalized — until they are published,
+Contribution terms (CLA) are being finalized, until they are published,
 please open an issue before submitting code.

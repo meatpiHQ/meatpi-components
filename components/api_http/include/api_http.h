@@ -28,7 +28,7 @@
  * http_server_manager: settings (get/put/schema/list/submit), device status,
  * restart history + reboot, log-manager runtime knobs + crash-ring dump, and
  * the read-only filesystem browse endpoints. Core components never touch
- * HTTP — this glue depends DOWN on them (never the reverse).
+ * HTTP: this glue depends DOWN on them (never the reverse).
  *
  * Conventions implemented here (components/HTTP_API.md §1): JSON in/out,
  * GET never mutates, password redaction on reads ("" on PUT = keep stored),
@@ -53,7 +53,7 @@ extern "C" {
  *  http_server_manager_init(). */
 esp_err_t api_http_init(void);
 
-/** Lifecycle uniformity (§3); passive after init — both trivial. */
+/** Lifecycle uniformity (§3); passive after init: both trivial. */
 esp_err_t api_http_start(void);
 esp_err_t api_http_stop(void);
 

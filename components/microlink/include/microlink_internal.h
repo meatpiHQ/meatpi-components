@@ -221,7 +221,7 @@ typedef struct {
          * MapResponse "Peers" array is the AUTHORITATIVE list, so coord
          * brackets its adds with BEGIN/END and wg_mgr prunes any active
          * peer not re-added in between. ABORT cancels the sweep when an
-         * add was dropped (queue full) — pruning on partial data would
+         * add was dropped (queue full), pruning on partial data would
          * remove live peers. */
         ML_PEER_SYNC_BEGIN,
         ML_PEER_SYNC_END,
@@ -425,12 +425,12 @@ struct microlink_s {
 
     /* WiCAN: deferred initial netmap. Headscale answers Stream=false
      * full-map requests with an empty 200 (its mapSession.serve() only
-     * handles stream / endpoint-update / read-only) — the full map is
+     * handles stream / endpoint-update / read-only): the full map is
      * served as the first message of the Stream=true long-poll. */
     bool map_deferred_to_stream;
 
     /* The next map message that carries node/peer content is the FIRST
-     * of a new map session and therefore the AUTHORITATIVE peer set —
+     * of a new map session and therefore the AUTHORITATIVE peer set,
      * even when Headscale ships it without a "Peers" field (empty
      * tailnet) or as "PeersChanged". Drives the full-netmap
      * mark-and-sweep (BUG_TS_PHANTOM_PEERS.md). Coord task only. */
@@ -485,7 +485,7 @@ struct microlink_s {
     int  ctrl_port;
 
     /* WiCAN addition: server Noise key fetched from GET /key?v=N on
-     * custom coordinators (Headscale/Ionscale) — upstream README
+     * custom coordinators (Headscale/Ionscale), upstream README
      * documents this fetch but v2.1.0 never implemented it; the
      * Noise_IK handshake needs the server's static key upfront. */
     uint8_t custom_server_key[32];
@@ -517,7 +517,7 @@ esp_err_t ml_derp_queue_send(microlink_t *ml, const uint8_t *dest_key,
 /* ml_coord.c */
 void ml_coord_task(void *arg);
 
-/* WiCAN: pick a DERP region that exists in the parsed DERPMap — the
+/* WiCAN: pick a DERP region that exists in the parsed DERPMap, the
  * configured/home region if present, else the first usable map region,
  * else the compile-time default (real Tailscale). */
 uint16_t ml_effective_derp_region(microlink_t *ml);
@@ -586,7 +586,7 @@ esp_err_t ml_zerocopy_send(microlink_t *ml, const uint8_t *data, size_t len,
 uint64_t ml_get_time_ms(void);
 
 /* ============================================================================
- * Network Socket Wrappers — Route through AT sockets when cellular active
+ * Network Socket Wrappers: Route through AT sockets when cellular active
  *
  * These inline functions check ml_at_socket_is_ready() and route socket calls
  * to either the normal BSD socket API (WiFi/lwIP) or the AT socket bridge

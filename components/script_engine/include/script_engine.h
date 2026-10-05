@@ -22,7 +22,7 @@
 
 /**
  * @file script_engine.h
- * @brief Berry scripting for WiCAN — runs stored scripts against the
+ * @brief Berry scripting for WiCAN: runs stored scripts against the
  *        device bindings (uds.*, can.*, event.*, value.get, log, sleep).
  *
  * A script is Berry source on /data/scripts/<name>.be. One runs at a

@@ -23,7 +23,7 @@
 /**
  * @file socket_manager_policy.c
  * @brief Pure policy: backoff progression, accept decisions, config parsing
- *        and cross-item validation. No lwIP — host-tests on the linux target.
+ *        and cross-item validation. No lwIP: host-tests on the linux target.
  */
 #include <stdio.h>
 #include <string.h>
@@ -131,7 +131,7 @@ esp_err_t smp_validate_servers(const cJSON *servers, char *err,
 
         /* the web server's port: lwip SO_REUSEADDR lets a second LISTEN
            pcb bind it, and incoming SYNs then ALTERNATE between httpd
-           and the socket server — a nondeterministically dead UI/API
+           and the socket server: a nondeterministically dead UI/API
            (found live 2026-07-26, system_bench degraded leg). Refuse
            at validation; the device httpd is always :80. */
         if (cfg[count].enabled && !cfg[count].is_udp &&

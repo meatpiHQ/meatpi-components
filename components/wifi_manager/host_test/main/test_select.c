@@ -281,7 +281,7 @@ void test_duplicate_ssid_entries_are_independent(void)
 void test_roam_never_to_same_ssid(void)
 {
     /* connected on the office entry of a shared name: the home entry is
-     * the same AP with another password — no reason to leave */
+     * the same AP with another password, no reason to leave */
     char present[1][WM_SSID_LEN] = { "twin" };
     wm_network_t twins[2];
 

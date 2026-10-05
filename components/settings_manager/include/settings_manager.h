@@ -22,7 +22,7 @@
 
 /**
  * @file settings_manager.h
- * @brief WiCAN Settings Manager — public API.
+ * @brief WiCAN Settings Manager: public API.
  *
  * The Settings Manager owns settings persistence and validation for the whole
  * firmware. Components do not touch the filesystem: they register a descriptor
@@ -56,7 +56,7 @@ extern "C" {
  * Components author their schema as a C table of settings_field_t; the manager
  * generates the equivalent JSON Schema once at registration. JSON Schema
  * remains the single source of truth on the wire (validation +
- * GET /settings/<name>/schema) — the table is the authoring format. Since
+ * GET /settings/<name>/schema): the table is the authoring format. Since
  * rev 2.5 tables express bounded arrays of objects too, so every component
  * schema is a field table; raw .schema strings remain only as the manager's
  * internal wire format (and for tests).
@@ -78,7 +78,7 @@ struct settings_field
     int32_t               min;      /**< STRING: minLength; INT: minimum;        */
                                     /*   ARRAY: minItems (0 => none).            */
     int32_t               max;      /**< STRING: maxLength; INT: maximum;        */
-                                    /*   ARRAY: maxItems — REQUIRED, 1..16       */
+                                    /*   ARRAY: maxItems, REQUIRED, 1..16       */
                                     /*   (validator: bounded arrays only).       */
                                     /*   min == 0 && max == 0 => no bounds       */
                                     /*   (scalars only).                         */
@@ -89,7 +89,7 @@ struct settings_field
     bool                  required; /**< Adds the key to the "required" list.    */
     const char           *fmt;      /**< WiCAN extension, e.g. "file". Or NULL.  */
 
-    /* ARRAY only. Item objects' fields: scalar rows only — ONE nesting level,
+    /* ARRAY only. Item objects' fields: scalar rows only, ONE nesting level,
        matching the validator (settings_manager_schema.c). NULL items =>
        free-form objects (shape enforced by on_validate instead). def_json is
        the array's default as a JSON array literal; NULL => [] default.        */
@@ -98,13 +98,13 @@ struct settings_field
     const char             *def_json;
 };
 
-/* Row helpers — keep tables one line per field:
+/* Row helpers: keep tables one line per field:
  *   SETTINGS_STR("sta_ssid", 32, "")
  *   SETTINGS_STR_ENUM("mode", "off,sta,ap,apsta", "apsta")
  *   SETTINGS_INT("ap_channel", 1, 13, 6)
  *   SETTINGS_BOOL("ap_auto_disable", false)
  *   SETTINGS_ARRAY("servers", 4, SERVER_ITEM_FIELDS, "[{\"name\":\"obd0\"}]")
- * _REQ variants mark the key required — meaningful inside array items (a PUT
+ * _REQ variants mark the key required: meaningful inside array items (a PUT
  * of the top-level object always has every key filled from defaults first).  */
 #define SETTINGS_STR(k, maxlen, def) \
     { (k), SETTINGS_FIELD_STRING, 0, (maxlen), NULL, (def), 0, false, false, NULL, NULL, 0, NULL }
@@ -127,12 +127,12 @@ struct settings_field
 #define SETTINGS_INT_REQ(k, mn, mx, def) \
     { (k), SETTINGS_FIELD_INT, (mn), (mx), NULL, NULL, (def), false, true, NULL, NULL, 0, NULL }
 
-/* Stringize a JSON literal so array defaults are written as plain JSON —
+/* Stringize a JSON literal so array defaults are written as plain JSON:
  * no \" escaping (the preprocessor inserts the escapes; nested string
  * literals inside the JSON keep exactly their source spelling):
  *   SETTINGS_JSON([{"name":"obd0","proto":"tcp","port":35000}])
  * Inter-token whitespace collapses to single spaces, so it may span lines.
- * GOTCHA: each JSON string must stay ONE C token — adjacent-literal
+ * GOTCHA: each JSON string must stay ONE C token, adjacent-literal
  * concatenation ("a" "b") happens AFTER stringization and would leave two
  * separate quoted fragments in the JSON text (a parse error). */
 #define SETTINGS_JSON(...) #__VA_ARGS__
@@ -140,7 +140,7 @@ struct settings_field
 /* Bounded array of objects. item_fields is a settings_field_t[] of scalar
  * rows (its per-row defaults serve as UI "add row" prefill hints); def is a
  * JSON array literal (use SETTINGS_JSON) or NULL for []. SETTINGS_ARRAY_ANY
- * validates items as free-form objects — pair it with an on_validate that
+ * validates items as free-form objects: pair it with an on_validate that
  * enforces the shape. */
 #define SETTINGS_ARRAY(k, max_items, item_fields, def) \
     { (k), SETTINGS_FIELD_ARRAY, 0, (max_items), NULL, NULL, 0, false, false, NULL, \
@@ -175,7 +175,7 @@ typedef struct
 
     /**
      * Called ONCE, at boot, in settings_manager_start()'s context, before any
-     * component's _start(). Never called at runtime — settings changes persist
+     * component's _start(). Never called at runtime: settings changes persist
      * only and take effect after reboot (Coding Standard §4.2). If this fails,
      * the manager persists defaults and calls it once more with them (§4.3).
      */
@@ -212,7 +212,7 @@ void settings_manager_capacity(size_t *used, size_t *cap);
  * Per component: read + CRC-verify the file; if the stored version is older,
  * run on_migrate and re-validate; validate (schema + on_validate); on_apply.
  * Any failure falls back to defaults (persisted, logged). If on_apply rejects
- * even the defaults the component is left unconfigured and marked degraded —
+ * even the defaults the component is left unconfigured and marked degraded:
  * its _start() must then refuse with ESP_ERR_INVALID_STATE (§3). One broken
  * component never bricks boot; there are no retry loops or reboots here.
  */
@@ -225,7 +225,7 @@ esp_err_t settings_manager_stop(void);
 
 /**
  * @brief FACTORY RESET: delete every stored settings file. The running
- *        configuration is untouched — the caller MUST reboot (via
+ *        configuration is untouched: the caller MUST reboot (via
  *        restart_tracker, reason FACTORY_RESET) so the next boot's load
  *        pass finds nothing and applies pure factory defaults.
  *
@@ -257,13 +257,13 @@ esp_err_t settings_manager_get(const char *name, cJSON **out);
  * @brief Validate and persist a settings change. NEVER applies it.
  *
  * Reboot-to-apply (Coding Standard §4.2): @p in is the COMPLETE new settings
- * object (full replace — the transport's PUT semantics). Keys still missing
+ * object (full replace, the transport's PUT semantics). Keys still missing
  * after that are filled from the schema defaults, the result is validated
  * against the schema and on_validate, then persisted atomically. on_apply is
  * NOT called; the change takes effect at the next boot.
  *
  * If the result is byte-identical to what is already persisted, nothing is
- * written (flash-wear dedup) and @p changed reports false — the transport uses
+ * written (flash-wear dedup) and @p changed reports false: the transport uses
  * this to skip the post-submit reboot.
  *
  * @param err      Optional buffer receiving a human-readable failure reason,
@@ -279,7 +279,7 @@ esp_err_t settings_manager_set(const char *name, const cJSON *in,
 
 /**
  * @brief True if the boot fallback fired for @p name (stored settings could not
- *        be migrated/validated/applied and defaults were used — Coding Standard
+ *        be migrated/validated/applied and defaults were used, Coding Standard
  *        §4.3 steps 4–5). Transports add "degraded":true to GET responses from
  *        this; the manager never injects synthetic keys into settings objects.
  *        Unknown names return false.
@@ -288,7 +288,7 @@ bool settings_manager_is_degraded(const char *name);
 
 /**
  * @brief True when @p name's PENDING (persisted) object differs from what
- *        on_apply actually ran with at boot — i.e. a reboot is needed for the
+ *        on_apply actually ran with at boot, i.e. a reboot is needed for the
  *        saved settings to take effect. Exact: saving values back to the
  *        boot-applied state clears it. Unknown/unstarted names return false.
  *        Transports surface it as "pending_reboot" (UI: "restart to apply").
@@ -314,15 +314,15 @@ esp_err_t settings_manager_list(cJSON **out);
 /**
  * @brief Human-readable description of the last validation/IO failure.
  * @return A pointer to an internal buffer; valid until the next manager call.
- * @warning Shared across callers — under concurrent access (e.g. httpd workers)
+ * @warning Shared across callers: under concurrent access (e.g. httpd workers)
  *          prefer the err out-param on settings_manager_set().
  */
 const char *settings_manager_last_error(void);
 
 /**
  * @brief Export every registered component's settings for backup/transfer.
- * @param[out] out  Newly allocated `{"<name>":{"version":N,"data":{...}}, ...}`
- *                  — the PENDING values (get() semantics) plus each schema
+ * @param[out] out  Newly allocated `{"<name>":{"version":N,"data":{...}}, ...}`:
+ *                  the PENDING values (get() semantics) plus each schema
  *                  version, so an old backup restores through migrations.
  *                  Caller frees with cJSON_Delete().
  * @warning Values are exported VERBATIM, password fields included: a backup
@@ -340,7 +340,7 @@ esp_err_t settings_manager_export(cJSON **out);
  * reboot-to-apply, write-dedup). A @p version NEWER than the firmware's is
  * rejected with ESP_ERR_INVALID_VERSION ("update the firmware first").
  *
- * @param dry_run  Stop after validation, persist nothing — lets a transport
+ * @param dry_run  Stop after validation, persist nothing: lets a transport
  *                 check EVERY component first and make a restore
  *                 all-or-nothing.
  * @param err/err_len  Failure reason for the UI (may be NULL/0).

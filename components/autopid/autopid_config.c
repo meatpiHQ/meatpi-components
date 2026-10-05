@@ -22,13 +22,13 @@
 
 /**
  * @file autopid_config.c
- * @brief The PID/filter tables: JSON parse/validate (PURE — host-tested)
+ * @brief The PID/filter tables: JSON parse/validate (PURE, host-tested)
  *        + the /data/autopid/config.json load/save (target only).
  *
  * The tables live in a FILE, not settings: vehicle profiles carry far
  * more than the settings validator's 16-item array cap, and that cap is
  * right for settings (TASK_autopid.md §10). Corrupt/missing file = empty
- * tables + a warning — never a boot failure.
+ * tables + a warning: never a boot failure.
  */
 #include "autopid_private.h"
 
@@ -54,7 +54,7 @@ static const char *TAG = "autopid";
 /* PSRAM cache of the last-loaded raw config JSON, so a PSRAM-stack
  * consumer (ha_webhooks poster) can read the config section WITHOUT
  * touching flash (§2 corollary). Populated on every load, read via
- * autopid_config_json_dup(). Its own lock — independent of autopid's
+ * autopid_config_json_dup(). Its own lock: independent of autopid's
  * table lock in autopid.c. */
 static char             *s_raw_json;
 static SemaphoreHandle_t s_raw_lock;
@@ -370,7 +370,7 @@ esp_err_t ap_config_parse(const char *json, ap_config_t *cfg, char *err,
         }
 
         ap_init_sanitize(pid->cmd); /* profile/custom PIDs can carry AT
-                                       commands — spare the EEPROM here
+                                       commands: spare the EEPROM here
                                        too, not just in init strings */
         ap_init_sanitize(pid->init);
 
@@ -452,7 +452,7 @@ esp_err_t ap_config_parse(const char *json, ap_config_t *cfg, char *err,
 
         if (f->monitor_ms < 50 || f->monitor_ms > 60000)
         {
-            /* the window HOLDS the chip (MONITOR claim) — keep it sane */
+            /* the window HOLDS the chip (MONITOR claim): keep it sane */
             cfg_err(err, err_len, "%s: monitor_ms 50..60000%.0d", owner,
                     0);
             goto out;
@@ -512,7 +512,7 @@ esp_err_t autopid_config_load(ap_config_t *cfg)
 
     if (filesystem_size(AP_CONFIG_PATH, &size) != ESP_OK || size == 0)
     {
-        ESP_LOGW(TAG, "no config file (%s) — empty tables",
+        ESP_LOGW(TAG, "no config file (%s): empty tables",
                  AP_CONFIG_PATH);
         memset(cfg, 0, sizeof(*cfg));
         return ESP_ERR_NOT_FOUND;
@@ -558,7 +558,7 @@ esp_err_t autopid_config_load(ap_config_t *cfg)
 
     if (err != ESP_OK)
     {
-        ESP_LOGE(TAG, "config file invalid: %s — empty tables", perr);
+        ESP_LOGE(TAG, "config file invalid: %s, empty tables", perr);
     }
     else
     {

@@ -83,7 +83,7 @@ static int add_pid(const char *name, int group, uint32_t period_ms,
 void test_sched_one_request_per_pid_per_period(void)
 {
     /* FIX #1 REGRESSION: a PID with FIVE parameters is scheduled exactly
-       once per period — parameters are not schedulable units at all */
+       once per period, parameters are not schedulable units at all */
     cfg_reset();
 
     int g = add_group("default", true, 1000);
@@ -106,7 +106,7 @@ void test_sched_one_request_per_pid_per_period(void)
         runs++;
     }
 
-    /* 10 s at 1 Hz = 10 runs (+1 for the t=0 run) — NOT 5x that */
+    /* 10 s at 1 Hz = 10 runs (+1 for the t=0 run), NOT 5x that */
     TEST_ASSERT_INT_WITHIN(1, 10, runs);
 }
 
@@ -467,7 +467,7 @@ void test_filter_frame_shapes(void)
                                       &n));
 
     /* the REAL bench shape: chip appends "<DATA ERROR" after
-       byte-perfect data — markers are skipped, bytes kept (legacy) */
+       byte-perfect data: markers are skipped, bytes kept (legacy) */
     const char *marked = "123 DE AD BE EF 11 22 33 44 <DATA ERROR";
 
     TEST_ASSERT_TRUE(ap_filter_frame(marked, strlen(marked), 0x123, out,
@@ -545,7 +545,7 @@ void test_filter_stream_duplicates_first_wins(void)
                                         sizeof(out), &n));
     TEST_ASSERT_EQUAL_HEX8(0x01, out[0]);   /* first frame, not last */
 
-    /* a FRESH window (new init) sees the newest traffic — feeding the
+    /* a FRESH window (new init) sees the newest traffic, feeding the
        remaining stream again matches the next frame */
     ap_flt_stream_init(&st);
 
@@ -560,7 +560,7 @@ void test_filter_stream_duplicates_first_wins(void)
 void test_filter_stream_mixed_dlc_bus(void)
 {
     /* other ids with all kinds of DLCs (1..8 bytes) around a SHORT
-       (DLC 2) target frame — line length never confuses the match */
+       (DLC 2) target frame: line length never confuses the match */
     const char *stream =
         "100 01\r"
         "200 01 02 03\r"
@@ -584,7 +584,7 @@ void test_filter_short_dlc_expression_bounds(void)
 {
     /* the runner's per-parameter behavior on a short frame: B0 works,
        B6/[B0:B3] beyond the 2 captured bytes = INVALID_SIZE (the
-       Phase-0 bounds hardening — legacy read past the buffer here);
+       Phase-0 bounds hardening: legacy read past the buffer here);
        the out-of-range parameter is SKIPPED, never cached as garbage */
     const char *line = "123 AA BB <DATA ERROR";
     uint8_t out[AP_PAYLOAD_MAX];
@@ -613,7 +613,7 @@ void test_filter_short_dlc_expression_bounds(void)
 void test_filter_stream_truncation_recovers(void)
 {
     /* an overlong garbage line (>160 chars, e.g. corrupted burst) must
-       be dropped WHOLE — and the next line still parses */
+       be dropped WHOLE, and the next line still parses */
     char stream[420];
     size_t w = 0;
 
@@ -644,7 +644,7 @@ void test_filter_stream_truncation_recovers(void)
 
 void test_config_filter_monitor_bounds(void)
 {
-    /* ~1 MB struct (2048-param pool) — STATIC, never on the task stack
+    /* ~1 MB struct (2048-param pool): STATIC, never on the task stack
      * (the linux-port task stack is FreeRTOS-sized; x86-64 frames blew
      * it and the suite segfaulted in CI, 2026-07-27; §2 discipline) */
     static ap_config_t cfg;
@@ -789,7 +789,7 @@ void test_config_parse_happy(void)
         "{\"name\":\"rpm_raw\",\"expression\":\"[B2:B3]\"}]}],"
         "\"filters\":[{\"frame_id\":666,\"monitor_ms\":800,"
         "\"parameters\":[{\"name\":\"soc\",\"expression\":\"B4/2\"}]}]}";
-    /* ~1 MB struct (2048-param pool) — STATIC, never on the task stack
+    /* ~1 MB struct (2048-param pool): STATIC, never on the task stack
      * (the linux-port task stack is FreeRTOS-sized; x86-64 frames blew
      * it and the suite segfaulted in CI, 2026-07-27; §2 discipline) */
     static ap_config_t cfg;
@@ -814,7 +814,7 @@ void test_config_parse_rejects_bad_expression(void)
     const char *json =
         "{\"pids\":[{\"name\":\"x\",\"cmd\":\"0105\",\"parameters\":["
         "{\"name\":\"t\",\"expression\":\"[B3:B0]\"}]}]}";
-    /* ~1 MB struct (2048-param pool) — STATIC, never on the task stack
+    /* ~1 MB struct (2048-param pool): STATIC, never on the task stack
      * (the linux-port task stack is FreeRTOS-sized; x86-64 frames blew
      * it and the suite segfaulted in CI, 2026-07-27; §2 discipline) */
     static ap_config_t cfg;
@@ -828,7 +828,7 @@ void test_config_parse_rejects_bad_expression(void)
 
 void test_config_parse_rejects_unknown_group_and_dupes(void)
 {
-    /* ~1 MB struct (2048-param pool) — STATIC, never on the task stack
+    /* ~1 MB struct (2048-param pool): STATIC, never on the task stack
      * (the linux-port task stack is FreeRTOS-sized; x86-64 frames blew
      * it and the suite segfaulted in CI, 2026-07-27; §2 discipline) */
     static ap_config_t cfg;
@@ -854,7 +854,7 @@ void test_config_parse_rejects_unknown_group_and_dupes(void)
 
 void test_config_parse_empty_and_garbage(void)
 {
-    /* ~1 MB struct (2048-param pool) — STATIC, never on the task stack
+    /* ~1 MB struct (2048-param pool): STATIC, never on the task stack
      * (the linux-port task stack is FreeRTOS-sized; x86-64 frames blew
      * it and the suite segfaulted in CI, 2026-07-27; §2 discipline) */
     static ap_config_t cfg;
@@ -910,7 +910,7 @@ void test_init_sanitize(void)
     ap_init_sanitize(buf);
     TEST_ASSERT_EQUAL_STRING("ATM0", buf);
 
-    /* monitor commands are NOT memory: ATMA, ATMR hh, ATMT hh —
+    /* monitor commands are NOT memory: ATMA, ATMR hh, ATMT hh,
        even with a '1' in their argument */
     strcpy(buf, "ATMA;ATMR 11;ATMT 1A;AT MA");
     ap_init_sanitize(buf);
@@ -951,7 +951,7 @@ void test_init_sanitize(void)
     ap_init_sanitize(buf);
     TEST_ASSERT_EQUAL_STRING("ATS1;ATSH7E0;ATTP6", buf);
 
-    /* any AT..S..P run is claimed as ATSP (legacy behavior — there is
+    /* any AT..S..P run is claimed as ATSP (legacy behavior: there is
        no other AT S*P* command for it to collide with) */
     strcpy(buf, "AT SPACES");
     ap_init_sanitize(buf);
@@ -979,12 +979,12 @@ void test_init_sanitize(void)
 
 void test_config_parse_sanitizes_cmd_and_init(void)
 {
-    /* profile/custom PIDs can carry AT commands in cmd as well as init —
+    /* profile/custom PIDs can carry AT commands in cmd as well as init:
        both must leave ap_config_parse EEPROM-safe */
     const char *json =
         "{\"pids\":[{\"name\":\"w\",\"cmd\":\"ATSP6\","
         "\"init\":\"ATM1;atsp7\"}]}";
-    /* ~1 MB struct (2048-param pool) — STATIC, never on the task stack
+    /* ~1 MB struct (2048-param pool): STATIC, never on the task stack
      * (the linux-port task stack is FreeRTOS-sized; x86-64 frames blew
      * it and the suite segfaulted in CI, 2026-07-27; §2 discipline) */
     static ap_config_t cfg;
@@ -997,7 +997,7 @@ void test_config_parse_sanitizes_cmd_and_init(void)
     TEST_ASSERT_EQUAL_STRING("ATM0;ATTP7", cfg.pids[0].init);
 }
 
-/* ---- DTC codec (autopid_dtc_codec.c — TASK_dtc.md §4) ------------------- */
+/* ---- DTC codec (autopid_dtc_codec.c: TASK_dtc.md §4) ------------------- */
 
 void test_dtc_format_all_letters(void)
 {
@@ -1178,7 +1178,7 @@ void test_dtc_clear_mode_parse(void)
                       ap_dtc_clear_mode_parse("sometimes", NULL));
 }
 
-/* ---- DTC database importer (autopid_dtc_db_codec.c — TASK_dtc_db §2) ---- */
+/* ---- DTC database importer (autopid_dtc_db_codec.c: TASK_dtc_db §2) ---- */
 
 static char g_scratch[4096];
 static ap_dtc_db_item_t g_items[64];
@@ -1350,7 +1350,7 @@ void test_dtcdb_search_match(void)
     TEST_ASSERT_TRUE(ap_dtc_db_match("P0420", "x", 1, NULL));
 }
 
-/* ---- DBC codec (autopid_dbc_codec.c — TASK_dbc.md) ----------------------- */
+/* ---- DBC codec (autopid_dbc_codec.c: TASK_dbc.md) ----------------------- */
 
 static ap_dbc_msg_t g_msgs[16];
 static ap_dbc_sig_t g_sigs[32];
@@ -1528,7 +1528,7 @@ void test_dbc_expr_unsupported(void)
     const char *reason = NULL;
     ap_dbc_sig_t s;
 
-    /* simple mux (m<N> / M) now COMPILES — only extended is refused */
+    /* simple mux (m<N> / M) now COMPILES: only extended is refused */
     s = mk_sig("mux_ext", 0, 8, true, false, 1, 0);
     s.mux = 3;
     TEST_ASSERT_EQUAL(ESP_ERR_NOT_SUPPORTED,
@@ -1588,7 +1588,7 @@ void test_resp_multi_ecu_payloads(void)
     TEST_ASSERT_EQUAL(4, ecus[2].len);
     TEST_ASSERT_EQUAL_HEX8(0x55, ecus[2].payload[3]);
 
-    /* headers off — single indistinguishable payload */
+    /* headers off: single indistinguishable payload */
     n = ap_resp_to_payloads("41 05 5A\r", ecus, AP_RESP_ECUS_MAX);
     TEST_ASSERT_EQUAL(1, n);
     TEST_ASSERT_EQUAL_HEX32(UINT32_MAX, ecus[0].header);
@@ -1613,7 +1613,7 @@ void test_resp_multi_ecu_payloads(void)
     /* 29-bit responders (ISO 15765-4 extended, contiguous-hex header
        shape "18DAF1xx") group per-ECU the same way. The byte-SPACED
        29-bit shape ("18 DA F1 10 ...") is indistinguishable from data
-       bytes at line level — a pre-existing parser property, same as
+       bytes at line level: a pre-existing parser property, same as
        the legacy lowest-responder rule (documented, TASK_dtc §13.1). */
     const char *resp29 =
         "18DAF118 04 43 01 01 33\r"
@@ -1646,7 +1646,7 @@ void test_dtc_merge_codes_dedup(void)
     TEST_ASSERT_EQUAL(3, n);
 }
 
-/* ---- freeze frame (mode 02) — TASK_dtc §14 ------------------------------- */
+/* ---- freeze frame (mode 02): TASK_dtc §14 ------------------------------- */
 
 void test_frz_dtc_parse(void)
 {
@@ -1738,7 +1738,7 @@ void test_frz_decode_values(void)
 
 void test_filter_stream_feed_ex_resume(void)
 {
-    /* one chunk carrying two matching frames — feed_ex resumes
+    /* one chunk carrying two matching frames: feed_ex resumes
        mid-chunk so the second frame (another mux page) isn't lost */
     ap_flt_stream_t st;
     const char *chunk = "123 01 02 03\r123 04 05 06\r123 07";
@@ -1874,7 +1874,7 @@ void test_dbc_mux_cond(void)
 void test_dbc_muxed_value_crosscheck(void)
 {
     /* a muxed signal's VALUE expression compiles exactly like a plain
-       one — cross-check it against the reference decoder */
+       one: cross-check it against the reference decoder */
     ap_dbc_sig_t s = mk_sig("mx", 8, 12, true, false, 0.1, -10);
 
     s.mux = 1;
@@ -1888,7 +1888,7 @@ void test_config_parse_mux_param(void)
         "{\"filters\":[{\"frame_id\":291,\"monitor_ms\":800,"
         "\"parameters\":[{\"name\":\"gear\",\"expression\":\"B1\","
         "\"mux_expr\":\"B0&15\",\"mux_val\":2}]}]}";
-    /* ~1 MB struct (2048-param pool) — STATIC, never on the task stack
+    /* ~1 MB struct (2048-param pool): STATIC, never on the task stack
      * (the linux-port task stack is FreeRTOS-sized; x86-64 frames blew
      * it and the suite segfaulted in CI, 2026-07-27; §2 discipline) */
     static ap_config_t cfg;

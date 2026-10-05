@@ -64,7 +64,7 @@ static wsm_channel_t s_ch[WEBSOCKET_MANAGER_MAX_CHANNELS] EXT_RAM_BSS_ATTR;
 static SemaphoreHandle_t s_lock;
 static StaticSemaphore_t s_lock_buf; /* internal: FreeRTOS object */
 
-/* route table handed to httpd — must outlive the server */
+/* route table handed to httpd: must outlive the server */
 static httpd_uri_t s_uris[WEBSOCKET_MANAGER_MAX_CHANNELS] EXT_RAM_BSS_ATTR;
 
 /* ---- client table helpers (under s_lock) -------------------------------------- */
@@ -110,7 +110,7 @@ static bool client_add(wsm_channel_t *ch, int fd)
     return false;
 }
 
-/* ---- handshake gate (IDF v6: the uri handler is NOT called at handshake —
+/* ---- handshake gate (IDF v6: the uri handler is NOT called at handshake,
  * the pre-handshake callback is the sanctioned hook, and it can refuse
  * BEFORE the 101 goes out) --------------------------------------------------------- */
 
@@ -367,7 +367,7 @@ esp_err_t wsm_ws_send(int idx, const uint8_t *data, size_t len)
         .len = len,
     };
 
-    /* snapshot the client list, then send OUTSIDE the lock — network
+    /* snapshot the client list, then send OUTSIDE the lock: network
      * sends under s_lock starve the RX handler at high TX rates
      * (measured: bidirectional WS throughput collapsed) */
     int fds[WEBSOCKET_MANAGER_MAX_CLIENTS];

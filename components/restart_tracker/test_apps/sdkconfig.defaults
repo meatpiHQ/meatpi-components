@@ -1,5 +1,5 @@
 # Coding Standard rev 2.1 (§7): on-device test apps build against the MAIN
-# firmware's partition table — no private fork.
+# firmware's partition table, no private fork.
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="../../../wican_pro_partitions_table.csv"
 # Flash size matches the main firmware / WiCAN Pro hardware (16 MB).
@@ -9,7 +9,7 @@ CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_OCT=y
 CONFIG_SPIRAM_SPEED_80M=y
 CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
-# The tracker state is EXT_RAM_NOINIT_ATTR (survives warm resets) — matches main.
+# The tracker state is EXT_RAM_NOINIT_ATTR (survives warm resets): matches main.
 CONFIG_SPIRAM_ALLOW_NOINIT_SEG_EXTERNAL_MEMORY=y
 # Memtest writes ALL of PSRAM at boot and would wipe the .noinit state
 # (restart history / crash ring) - off, matching the main firmware.

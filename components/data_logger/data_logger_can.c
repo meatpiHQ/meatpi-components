@@ -25,10 +25,10 @@
  * @brief The CAN frames stream's front end: a static queue subscribed
  *        into can_manager's RX fan-out (drop-oldest) and a small drain
  *        task that tags frames into the frame ring. The writer task
- *        does all storage — this file never touches a file.
+ *        does all storage: this file never touches a file.
  *
  * The drain task's stack is PSRAM (it only moves queue → ring, no
- * flash, no SD — §2 corollary doesn't apply). Subscription retries
+ * flash, no SD: §2 corollary doesn't apply). Subscription retries
  * lazily: can_manager may be disabled, or the bus may come up after
  * data_logger_start() (subscribe requires a running bus).
  *
@@ -160,7 +160,7 @@ esp_err_t dl_can_start(void)
     return (s_task != NULL) ? ESP_OK : ESP_FAIL;
 }
 
-/* synthetic frames straight into the ring — engine benchmarks without
+/* synthetic frames straight into the ring: engine benchmarks without
  * a bus (CLI `logger frametest <n>`, bench harness) */
 esp_err_t dl_can_test_push(int n)
 {

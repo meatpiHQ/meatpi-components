@@ -1,6 +1,6 @@
 /**
  * @file test_main.c
- * @brief Host suite for can_core_filter — the pure CAN frame filter/mask
+ * @brief Host suite for can_core_filter: the pure CAN frame filter/mask
  *        match, id parse (11/29-bit), byte/byte-string parse, and hex-id
  *        formatting. This is the RX-dispatch logic can_manager and the
  *        ELM327 CAN path rely on (can_core.c:can_subscription_matches_

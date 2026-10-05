@@ -24,8 +24,8 @@
  * @file led_manager.h
  * @brief WiCAN RGB status LED owner (service component).
  *
- * Owns the AW2023 I2C LED controller (shared bus via i2c_bus) and — more
- * importantly — the ARBITRATION over it: the LED is one shared resource
+ * Owns the AW2023 I2C LED controller (shared bus via i2c_bus) and (more
+ * importantly) the ARBITRATION over it: the LED is one shared resource
  * many components want ("I'm idle", "OTA in progress", "error"), so raw
  * color calls would fight. Instead, clients set an INDICATION at a fixed
  * priority; the highest occupied priority owns the LED. Clearing a
@@ -35,7 +35,7 @@
  *
  * Example (the OTA case this was designed for): idle = solid blue at
  * PRIO_IDLE; ota_manager's session (via main's glue) sets fast-blinking
- * red at PRIO_CRITICAL — every lower-priority set during the update is
+ * red at PRIO_CRITICAL: every lower-priority set during the update is
  * stored but not shown; when the session ends and CRITICAL clears, the
  * stored state below becomes visible again.
  *
@@ -54,7 +54,7 @@
 extern "C" {
 #endif
 
-/** Fixed priority ladder, lowest first. Keep it small and semantic —
+/** Fixed priority ladder, lowest first. Keep it small and semantic:
  *  a new use case picks the level that matches its urgency. */
 typedef enum
 {
@@ -104,7 +104,7 @@ esp_err_t led_manager_set(led_manager_prio_t prio,
 esp_err_t led_manager_clear(led_manager_prio_t prio);
 
 /** Pre-settings direct color (2026-07-19): brings the chip up if needed
- *  and shows a solid color — the SAFE-MODE / boot-button-feedback path,
+ *  and shows a solid color, the SAFE-MODE / boot-button-feedback path,
  *  usable before (or without) the settings pass and start(). Normal
  *  indications go through the arbiter (led_manager_set), never this. */
 esp_err_t led_manager_boot_color(uint8_t r, uint8_t g, uint8_t b);
@@ -122,11 +122,11 @@ esp_err_t led_manager_active(led_manager_prio_t *prio,
 
 /** Register the `led` CLI command with cmdline_manager. Called
  *  INTERNALLY on the settings boot apply when the `cli` setting is true
- *  (default) — main no longer wires it. */
+ *  (default): main no longer wires it. */
 esp_err_t led_manager_register_cli(void);
 
 /** Register the /api/led routes (GET active indication; PUT/DELETE drive
- *  the ALERT priority — the user slot). Main calls this only in HTTP
+ *  the ALERT priority: the user slot). Main calls this only in HTTP
  *  compositions (the *_register_http pattern). */
 esp_err_t led_manager_register_http(void);
 

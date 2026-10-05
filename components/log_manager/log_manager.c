@@ -76,7 +76,7 @@ static lm_level_slot_t s_levels[LM_MAX_LEVELS] EXT_RAM_BSS_ATTR;
 static size_t s_sink_count;
 static size_t s_level_count;
 
-/* crash ring: PSRAM .noinit — survives warm resets (restart_tracker pattern).
+/* crash ring: PSRAM .noinit, survives warm resets (restart_tracker pattern).
  * ONE object so the buffer can never link at PSRAM addr 0 on its own: the
  * header's mspi_tuning_guard leads and absorbs the boot-time tuning writes. */
 static EXT_RAM_NOINIT_ATTR struct
@@ -232,7 +232,7 @@ static void log_task(void *arg)
 }
 
 /* health counters: every E/W line since boot. The bench asserts a clean
-   boot logs ZERO errors — the generic net for silent degradations (every
+   boot logs ZERO errors: the generic net for silent degradations (every
    "table full", "not registered", "failed, continuing" is an ESP_LOGE/W
    that used to scroll past unseen; meatpi 2026-07-19). */
 static volatile uint32_t s_count_err;
@@ -292,7 +292,7 @@ static int lm_vprintf(const char *fmt, va_list args)
 
     if (xPortInIsrContext())
     {
-        return len; /* §9.5: no logging from ISRs — drop, never lock */
+        return len; /* §9.5: no logging from ISRs, drop, never lock */
     }
 
     char lvl = line_level(line, (size_t)len);

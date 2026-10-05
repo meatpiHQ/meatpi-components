@@ -83,7 +83,7 @@ static void key_to_base64(const uint8_t *key, char *b64, size_t b64_size) {
 }
 
 /* ============================================================================
- * UDP Send Helper — routes via BSD socket or zero-copy PCB
+ * UDP Send Helper: routes via BSD socket or zero-copy PCB
  *
  * All direct DISCO/WG UDP sends go through this function.
  * dest_ip is HOST byte order, dest_port is HOST byte order.
@@ -195,7 +195,7 @@ static err_t wg_udp_output_cb(uint32_t dest_ip, uint16_t dest_port,
              (int)dest_port,
              len >= 1 ? data[0] : -1);
 
-    /* Use raw PCB to send — safe from any thread context */
+    /* Use raw PCB to send: safe from any thread context */
     if (!s_wg_output_pcb) return ERR_CONN;
 
     struct pbuf *p = pbuf_alloc(PBUF_TRANSPORT, len, PBUF_RAM);
@@ -259,7 +259,7 @@ static esp_err_t wg_init_interface(microlink_t *ml) {
     IP4_ADDR(&netif->gw.u_addr.ip4, 0, 0, 0, 0);
 
     /* Use tcpip_input so decrypted packets are posted to the TCPIP thread.
-     * Required for TCP (esp_http_server sockets) — ip_input from the wg_mgr
+     * Required for TCP (esp_http_server sockets): ip_input from the wg_mgr
      * thread accesses TCP PCB state without synchronization.  The WG output
      * callback uses raw udp_sendto (not BSD sendto) to avoid deadlock. */
     netif->input = tcpip_input;
@@ -280,7 +280,7 @@ static esp_err_t wg_init_interface(microlink_t *ml) {
         s_wg_output_pcb = udp_new();
         if (s_wg_output_pcb) {
             /* Set source port to 51820 (matching DISCO socket) WITHOUT calling
-             * udp_bind — avoids registering for input which would steal WG
+             * udp_bind: avoids registering for input which would steal WG
              * responses from the DISCO BSD socket. udp_sendto uses local_port. */
             s_wg_output_pcb->local_port = 51820;
             /* DSCP 46 (EF) → WMM AC_VO for low-latency WiFi scheduling */
@@ -377,7 +377,7 @@ static int add_peer(microlink_t *ml, const ml_peer_update_t *update) {
     /* Peer allowlist filter: don't waste WG slots on non-allowed peers.
      * Still process updates for existing peers (they may become allowed later). */
     if (!ml_config_peer_is_allowed(ml->config_httpd, update->vpn_ip)) {
-        return -1;  /* Silently skip — peer not in allowlist */
+        return -1;  /* Silently skip: peer not in allowlist */
     }
 
     /* Check if peer already exists */
@@ -394,7 +394,7 @@ static int add_peer(microlink_t *ml, const ml_peer_update_t *update) {
             }
         }
 
-        /* Peer table full — evict LRU non-priority peer if incoming peer is priority */
+        /* Peer table full: evict LRU non-priority peer if incoming peer is priority */
         if (idx < 0 && ml->config.priority_peer_ip != 0 &&
             update->vpn_ip == ml->config.priority_peer_ip) {
             uint64_t oldest_ms = UINT64_MAX;
@@ -548,7 +548,7 @@ static int add_peer(microlink_t *ml, const ml_peer_update_t *update) {
 
     /* Send CallMeMaybe to trigger peer-initiated handshake (NAT traversal).
      * Skip on cellular: our endpoints are behind carrier-grade NAT and
-     * unreachable — all traffic goes through DERP relay. */
+     * unreachable, all traffic goes through DERP relay. */
     if (!ml_at_socket_is_ready()) {
         disco_send_call_me_maybe(ml, idx);
     }
@@ -594,7 +594,7 @@ static void remove_peer_at(microlink_t *ml, int idx) {
         wireguardif_remove_peer(netif, (u8_t)ml->peers[idx].wg_peer_index);
     }
 
-    /* Drop the NVS cache entry too — otherwise the boot-time preload
+    /* Drop the NVS cache entry too, otherwise the boot-time preload
      * resurrects the peer forever (BUG_TS_PHANTOM_PEERS.md) */
     ml_peer_nvs_remove(ml->peers[idx].public_key);
 
@@ -1001,7 +1001,7 @@ static void process_disco_pong(microlink_t *ml, const ml_rx_packet_t *pkt,
                              (int)((pkt->src_ip >> 24) & 0xFF), (int)((pkt->src_ip >> 16) & 0xFF),
                              (int)((pkt->src_ip >> 8) & 0xFF), (int)(pkt->src_ip & 0xFF),
                              (int)pkt->src_port, p->hostname);
-                    /* First direct path discovery — send a one-shot handshake
+                    /* First direct path discovery: send a one-shot handshake
                      * via direct UDP. Do NOT use wireguardif_connect() which
                      * sets peer->active=true and causes infinite handshake
                      * retries (every 5s) when the peer has us trimmed.
@@ -1211,7 +1211,7 @@ static void process_wg_packet(microlink_t *ml, const ml_rx_packet_t *pkt) {
         return;
     }
     pbuf_take(p, pkt->data, pkt->len);
-    free(pkt->data);  /* Original data no longer needed — pbuf has its own copy */
+    free(pkt->data);  /* Original data no longer needed: pbuf has its own copy */
 
     /* Build source address */
     ip_addr_t addr;
@@ -1222,7 +1222,7 @@ static void process_wg_packet(microlink_t *ml, const ml_rx_packet_t *pkt) {
         ip4_addr_set_u32(ip_2_ip4(&addr), htonl(pkt->src_ip));
     }
 
-    /* Call WG RX handler — pbuf is PBUF_RAM so data survives async delivery */
+    /* Call WG RX handler: pbuf is PBUF_RAM so data survives async delivery */
     wireguardif_network_rx(device, NULL, p, &addr, pkt->src_port);
 }
 
@@ -1495,7 +1495,7 @@ static void disco_periodic_probes(microlink_t *ml) {
         /* Heartbeat on active direct paths (every HEARTBEAT interval).
          * MUST use force=true because HEARTBEAT_MS (3s) < PING_INTERVAL_MS (5s),
          * so the rate limiter would always block heartbeat pings.
-         * Heartbeats are NEVER throttled — they're time-critical for trust_until_ms. */
+         * Heartbeats are NEVER throttled: they're time-critical for trust_until_ms. */
         if (p->has_direct_path &&
             now - p->last_ping_sent_ms > ml->t_disco_heartbeat_ms) {
             disco_send_ping_to_peer(ml, i, true);
@@ -1598,7 +1598,7 @@ void ml_wg_mgr_task(void *arg) {
                 disco_send_call_me_maybe(ml, i);
                 cmm_count++;
             }
-            ESP_LOGI(TAG, "STUN complete — sent CallMeMaybe to %d peers", cmm_count);
+            ESP_LOGI(TAG, "STUN complete: sent CallMeMaybe to %d peers", cmm_count);
         }
 
         /* Process DISCO packets */
@@ -1617,7 +1617,7 @@ void ml_wg_mgr_task(void *arg) {
                     .via_derp = false,
                 };
                 process_disco_packet(ml, &disco_pkt);
-                /* Don't free — data is in the ring buffer, not heap-allocated */
+                /* Don't free: data is in the ring buffer, not heap-allocated */
                 tail = (tail + 1) % ML_ZC_DISCO_RING_SIZE;
                 head = __atomic_load_n(&ml->zc.rx_head, __ATOMIC_ACQUIRE);
             }

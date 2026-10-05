@@ -116,7 +116,7 @@ esp_err_t em_template_render(const char *tpl, const em_event_t *ev,
                 memcpy(name, tpl + 2, nlen);
                 name[nlen] = '\0';
 
-                /* pull values can be large (autopid.data snapshots) —
+                /* pull values can be large (autopid.data snapshots):
                    render straight into the remaining output space */
                 if (w >= out_len - 1)
                 {

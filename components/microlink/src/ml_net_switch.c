@@ -1,6 +1,6 @@
 /**
  * @file ml_net_switch.c
- * @brief MicroLink Network Switching — WiFi Primary + Cellular Fallback
+ * @brief MicroLink Network Switching: WiFi Primary + Cellular Fallback
  *
  * Full stop/start cycle approach:
  *   1. Try WiFi first (with timeout)
@@ -261,7 +261,7 @@ static esp_err_t vpn_start(void)
         return err;
     }
 
-    /* Wait for connection — large tailnets (200+ peers) over cellular can take
+    /* Wait for connection: large tailnets (200+ peers) over cellular can take
      * 3-4 minutes to download the full MapResponse via AT socket bridge.
      * Use 180s for cellular, 60s for WiFi. */
     int timeout_ticks = (s_ctx.active_transport == ML_NET_WIFI) ? 120 : 360;
@@ -310,7 +310,7 @@ static void health_timer_cb(TimerHandle_t timer)
                  (unsigned long)s_ctx.health_fail_count);
 
         if (s_ctx.health_fail_counter >= s_ctx.health_fail_count) {
-            ESP_LOGE(TAG, "Health check threshold reached — triggering network switch");
+            ESP_LOGE(TAG, "Health check threshold reached, triggering network switch");
             s_ctx.health_fail_counter = 0;
 
             if (s_ctx.active_transport == ML_NET_WIFI) {
@@ -373,7 +373,7 @@ static void net_switch_task(void *arg)
         }
     }
 
-    /* WiFi failed — try cellular */
+    /* WiFi failed: try cellular */
     ESP_LOGW(TAG, "WiFi path failed, falling back to cellular");
     wifi_stop();
     goto try_cellular;
@@ -452,7 +452,7 @@ state_loop:
                 /* Try WiFi without tearing down cellular yet */
                 s_ctx.state = ML_NET_SW_WIFI_CONNECTING;
 
-                /* Temporarily try WiFi — if it fails, stay on cellular */
+                /* Temporarily try WiFi: if it fails, stay on cellular */
                 esp_err_t wifi_err = wifi_start();
                 if (wifi_err == ESP_OK) {
                     /* WiFi is back! Tear down cellular and switch */

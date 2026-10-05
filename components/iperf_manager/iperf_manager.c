@@ -53,7 +53,7 @@ esp_err_t iperf_manager_start(void)
         return ESP_ERR_INVALID_STATE; /* standard §4.3 step 5 */
     }
 
-    return ESP_OK; /* passive — sessions start from the CLI */
+    return ESP_OK; /* passive: sessions start from the CLI */
 }
 
 esp_err_t iperf_manager_stop(void)

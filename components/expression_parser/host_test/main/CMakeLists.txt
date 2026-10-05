@@ -1,4 +1,4 @@
-# The whole component is pure — the host test compiles it directly.
+# The whole component is pure: the host test compiles it directly.
 set(comp_dir "${CMAKE_CURRENT_LIST_DIR}/../..")
 
 idf_component_register(

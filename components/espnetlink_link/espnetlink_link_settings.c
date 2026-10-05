@@ -25,7 +25,7 @@
  * @brief settings_manager descriptor "espnetlink" (standard §4.1), v2.
  *
  * v1 (2026-08-22, dev only): enabled(false) ssid host gps_poll_s
- * health_poll_s cli — manual pairing only.
+ * health_poll_s cli, manual pairing only.
  * v2: enabled defaults TRUE (the dongle is plug-and-play), + mode,
  * auto_pair, device_id, cut_retries. The migration (espnetlink_link_
  * migrate.c, host-tested) flips a v1 `enabled` that was merely the old
@@ -56,7 +56,7 @@ static const settings_field_t FIELDS[] =
        (wifi_modem) cut the data lines; false = manual pair only */
     SETTINGS_BOOL("auto_pair", true),
     /* the ESPNetLink's AP SSID (what "we are on the dongle" means);
-       joining it is wifi_manager's job — see espnetlink_link_pair() */
+       joining it is wifi_manager's job, see espnetlink_link_pair() */
     SETTINGS_STR ("ssid", 32, ""),
     /* the paired dongle's device_id (12 hex); informational + "changed?" */
     SETTINGS_STR ("device_id", 12, ""),

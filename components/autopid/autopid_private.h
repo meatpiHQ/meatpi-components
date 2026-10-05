@@ -37,13 +37,13 @@
 extern "C" {
 #endif
 
-/* ---- pool bounds (generous by design — meatpi 2026-07-06: PSRAM is
+/* ---- pool bounds (generous by design: meatpi 2026-07-06: PSRAM is
         plentiful; caps exist for static allocation, not rationing) -------- */
 #define AP_MAX_GROUPS   32
 #define AP_MAX_PIDS     512
 #define AP_MAX_FILTERS  128
 #define AP_MAX_PARAMS   2048   /* pooled across all PIDs + filters          */
-#define AP_PARAMS_PER   256    /* per PID/filter — published vehicle
+#define AP_PARAMS_PER   256    /* per PID/filter: published vehicle
                                   profiles decode up to 192 values from ONE
                                   DID (Xpeng cell voltages; Hyundai/Kia BMS
                                   DIDs carry 20–32), so 16 rejected every
@@ -152,7 +152,7 @@ typedef struct
     uint16_t    n_params;
 } ap_config_t;
 
-/* ---- pure: scheduler (autopid_sched.c — host-tested) ----------------------
+/* ---- pure: scheduler (autopid_sched.c, host-tested) ----------------------
  * The PID is the scheduling unit; entries cover pids then filters
  * (entry index i: i < n_pids -> pid i; else filter i - n_pids).          */
 
@@ -166,7 +166,7 @@ typedef struct
 typedef struct
 {
     ap_sched_slot_t slots[AP_MAX_PIDS + AP_MAX_FILTERS];
-    /* runtime (EPHEMERAL) group state — autopid_group_set() */
+    /* runtime (EPHEMERAL) group state: autopid_group_set() */
     bool    group_enabled[AP_MAX_GROUPS];
     int32_t group_period_override[AP_MAX_GROUPS]; /* <0 = none             */
     /* per-type enables from settings knobs */
@@ -233,7 +233,7 @@ void ap_sched_ran(ap_sched_t *st, const ap_config_t *cfg, int i,
 bool ap_sched_entry_enabled(const ap_sched_t *st, const ap_config_t *cfg,
                             int i);
 
-/* ---- cache (autopid_cache.c — target; slot index == param pool index) ----- */
+/* ---- cache (autopid_cache.c: target; slot index == param pool index) ----- */
 #ifndef AUTOPID_HOST_TEST
 #include "cJSON.h"
 void  ap_cache_init(void);
@@ -244,7 +244,7 @@ cJSON *ap_cache_snapshot(const ap_config_t *cfg);
 cJSON *ap_cache_detail(const ap_config_t *cfg);
 int   ap_cache_find(const ap_config_t *cfg, const char *param);
 
-/* External (injected) values — named samples that are NOT config-slot
+/* External (injected) values: named samples that are NOT config-slot
  * bound (GPS from the ESPNetLink dongle). Merged into snapshot/get so
  * they ride the same autopid_data push, ${autopid.*} pulls, value sink,
  * and autopid.param events as polled parameters. */
@@ -269,7 +269,7 @@ esp_err_t ap_core_group_json(cJSON *arr);   /* append group states       */
 uint16_t ap_core_sub_floor_count(void);     /* PIDs configured 1..49 ms  */
 void ap_core_scan_pause(bool on);           /* std scan owns the chip    */
 
-/* settings (autopid_settings.c — standard §4.1) */
+/* settings (autopid_settings.c: standard §4.1) */
 esp_err_t ap_settings_register(void);       /* the "autopid" descriptor  */
 bool ap_settings_is_configured(void);       /* boot apply ran (§4.3)     */
 int  ap_settings_pause_below_mv(void);      /* 0 = never pause           */
@@ -286,7 +286,7 @@ uint32_t ap_core_min_event_interval_ms(void);
 void ap_core_set_enabled(bool enabled);
 void ap_core_set_type_enabled(int type, bool enabled);
 
-/* event_manager glue (autopid_events.c — Phase 3) */
+/* event_manager glue (autopid_events.c: Phase 3) */
 void ap_events_register(void);              /* sources/action/values     */
 void ap_events_reset(void);                 /* clear emission memory     */
 void ap_events_param(const ap_param_t *prm, uint16_t slot, int group,
@@ -298,7 +298,7 @@ void ap_events_scan_done(uint16_t found);
 void ap_events_vehicle_changed(const char *vin, const char *name, bool known);
 void ap_events_vehicle_evicted(const char *vin, const char *name); /* store */
 
-/* chip-facing runner (autopid_runner.c — poller-task context) */
+/* chip-facing runner (autopid_runner.c: poller-task context) */
 bool ap_runner_run(const ap_pid_t *pid, int pid_index,
                    const ap_param_t *params);
 /** The publish half of a poll, shared with the J1939 runner: every enabled
@@ -354,11 +354,11 @@ void ap_guard_last_reason(char *out, size_t cap); /* why the last job was
                                                      refused            */
 void ap_guard_status_json(cJSON *obj);  /* adds "bus_guard": {...}         */
 
-/* ATMA filter window (autopid_filter.c — poller-task context) */
+/* ATMA filter window (autopid_filter.c: poller-task context) */
 bool ap_runner_run_filter(const ap_filter_t *f, const ap_param_t *params);
 
 /** One-shot test-a-PID through the real runner choreography (§11):
- *  type init chain, per-PID init, ATCRA, request, ATCRA off — exactly
+ *  type init chain, per-PID init, ATCRA, request, ATCRA off, exactly
  *  what a poll of that PID sends (@p type: AP_PID_*, -1 = unknown; it
  *  decides the borrowed-header rule). Caller pauses the poller around it
  *  (ap_core_scan_pause). `transcript` (may be NULL) receives one line
@@ -408,7 +408,7 @@ const char *autopid_std_scan_path(void);    /* /data/autopid/std_scan.json */
 #endif
 
 
-/* ---- pure: standard-PID helpers (autopid_std.c — host-tested) -------------
+/* ---- pure: standard-PID helpers (autopid_std.c, host-tested) -------------
  * ap_std_expression maps a legacy table row (bit_start counts within the
  * headers-on buffer [PCI, mode, PID, A, B, ...]) to a v6 expression over
  * our payload (echo included, no PCI): byte = bit_start/8 - 1.
@@ -443,7 +443,7 @@ esp_err_t ap_config_parse(const char *json, ap_config_t *cfg, char *err,
  *  with no RAM twin (ATPP/ATSD/ATCV/STWBR): config parse refuses those. */
 void ap_init_sanitize(char *str);
 
-/* ---- pure: bus guard (autopid_bus_guard.c — host-tested) -------------------
+/* ---- pure: bus guard (autopid_bus_guard.c, host-tested) -------------------
  * May the OBD chip transmit on a protocol, given what the native
  * controller heard on the bus (can_manager_probe)? A request on a pinned
  * CAN protocol at the wrong bitrate destroys the bus traffic; the chip's
@@ -528,11 +528,11 @@ size_t ap_guard_reason(const ap_bus_t *bus, char proto, bool pinned,
  * ISO-TP multi-line ("014" + "0: 49 02 .." + "1: .."), headers-on frames
  * ("7E8 06 41 00 ..") incl. ISO-TP single/first/consecutive reassembly
  * from the lowest-ID responder. Payload INCLUDES the service/PID echo
- * bytes — user expressions index from B0 = 0x41 (legacy semantics).   */
+ * bytes: user expressions index from B0 = 0x41 (legacy semantics).   */
 esp_err_t ap_resp_to_payload(const char *resp, uint8_t *payload,
                              size_t payload_max, size_t *out_len);
 
-#define AP_RESP_ECUS_MAX 8      /* 7E8..7EF — the functional-response set */
+#define AP_RESP_ECUS_MAX 8      /* 7E8..7EF: the functional-response set */
 
 typedef struct
 {
@@ -552,14 +552,14 @@ int ap_resp_to_payloads(const char *resp, ap_resp_ecu_t *out,
 /** One ATMA monitor line -> frame data bytes when it carries @p frame_id
  *  (legacy-compatible header shapes: contiguous "7E8"/"18DAF110" or the
  *  id split into 2-hex byte tokens). Expressions index from B0 = first
- *  DATA byte (no id echo — the legacy filter frame-of-reference). PURE. */
+ *  DATA byte (no id echo: the legacy filter frame-of-reference). PURE. */
 bool ap_filter_frame(const char *line, size_t len, uint32_t frame_id,
                      uint8_t *payload, size_t payload_max,
                      size_t *out_len);
 
 /** Incremental ATMA stream collector: feed raw monitor bytes in ANY
  *  chunking; returns true the moment a completed line carries
- *  @p frame_id (first match wins — repeats of the id in the same
+ *  @p frame_id (first match wins: repeats of the id in the same
  *  window are simply never reached). Overlong lines are truncated
  *  safely; non-matching/noise lines are skipped. PURE. */
 typedef struct
@@ -576,7 +576,7 @@ bool ap_flt_stream_feed(ap_flt_stream_t *st, const uint8_t *bytes,
 
 /** ap_flt_stream_feed that reports how many input bytes were consumed
  *  when a frame matched (up to and including its line terminator), so
- *  the caller can resume mid-chunk and capture EVERY matching frame —
+ *  the caller can resume mid-chunk and capture EVERY matching frame:
  *  a multiplexed message needs more than the first one. On false the
  *  whole chunk was consumed. */
 bool ap_flt_stream_feed_ex(ap_flt_stream_t *st, const uint8_t *bytes,

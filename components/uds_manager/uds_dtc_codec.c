@@ -20,7 +20,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-/** @file uds_dtc_codec.c — PURE (no I/O); see uds_dtc.h / TASK_dtc §12. */
+/** @file uds_dtc_codec.c: PURE (no I/O); see uds_dtc.h / TASK_dtc §12. */
 #include "uds_dtc.h"
 
 #include <ctype.h>

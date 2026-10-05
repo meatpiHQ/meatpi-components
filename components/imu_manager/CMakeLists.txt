@@ -9,7 +9,7 @@ idf_component_register(
          "icm42670/icm42670.c"
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "." "icm42670"
-    # Feature: owns the ICM-42670 IMU on the shared bus (i2c_bus) —
+    # Feature: owns the ICM-42670 IMU on the shared bus (i2c_bus),
     # SMD/WoM detectors POLLED via INT_STATUS2 (no ISR, no GPIO dep) ->
     # activity state + subscriber events. /api/imu and the `imu` command
     # are optional (main wires them). icm42670/ = vendored espressif

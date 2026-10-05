@@ -32,7 +32,7 @@
  *          RESTART      "RESTARTING" then esp_restart() (reboot-to-apply)
  *          STATUS       "STATUS enabled=. sta=. ip=... ap=. clients=N
  *                        ap_ch=. radio_ch=." (ap_ch = softAP config channel,
- *                       radio_ch = actual home channel — S8 channel follow)
+ *                       radio_ch = actual home channel: S8 channel follow)
  *          SCAN         "SCANJSON {...}"
  *
  *        Prints "HIL READY" once the console is up. wifi_manager runs at

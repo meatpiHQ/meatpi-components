@@ -22,7 +22,7 @@
 
 /**
  * @file es_detect.c
- * @brief Pure card-detect debouncer — no GPIO, host-tested.
+ * @brief Pure card-detect debouncer: no GPIO, host-tested.
  */
 #include <string.h>
 

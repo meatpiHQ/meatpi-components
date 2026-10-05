@@ -22,7 +22,7 @@
 
 /**
  * @file dev_status_manager_cli.c
- * @brief The component's CLI commands (`version`, `status`) —
+ * @brief The component's CLI commands (`version`, `status`),
  *        registered into cmdline_manager by
  *        dev_status_manager_register_cli() (main wires it in CLI
  *        compositions only, like the *_register_http pattern).
@@ -113,7 +113,7 @@ static int cmd_faults(int argc, char **argv)
                        (unsigned long)faults[i].count, faults[i].detail);
     }
 
-    cmdline_printf("%d fault code(s) — clear with `faults -c`\nOK\n", n);
+    cmdline_printf("%d fault code(s): clear with `faults -c`\nOK\n", n);
     return 0;
 }
 

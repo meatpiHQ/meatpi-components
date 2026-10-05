@@ -22,7 +22,7 @@
 
 /**
  * @file log_sinks_cli.c
- * @brief The `logsinks` CLI command — registered on the settings apply
+ * @brief The `logsinks` CLI command: registered on the settings apply
  *        (§6b). Bare = per-sink counter table (the conservation surface
  *        the bench asserts); `logsinks flush` = event-driven file flush;
  *        `logsinks emit <n> [gap_ms]` = numbered INFO lines (the bench's

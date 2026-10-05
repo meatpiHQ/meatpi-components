@@ -1,4 +1,4 @@
-# settings_manager — HTTP API reference
+# settings_manager: HTTP API reference
 
 > **Implemented (2026-07-03)** by the `api_http` glue (on-target suite green); this
 > component never touches HTTP. Conventions: `components/HTTP_API.md` §1.
@@ -19,13 +19,13 @@ page (2026-07-05; was plain names before).
 ```
 
 - `pending_reboot:true` = the persisted (pending) object differs from what
-  the boot pass actually applied — the UI shows "restart to apply". Exact:
+  the boot pass actually applied: the UI shows "restart to apply". Exact:
   saving the boot-applied values back clears it.
 
 ## GET /api/settings/{name}
 
 Current settings object. After a save these are the **pending** (post-reboot)
-values — that is what the UI should display.
+values: that is what the UI should display.
 
 **Response 200** (example: `wifi_manager`)
 ```json
@@ -38,10 +38,10 @@ values — that is what the UI should display.
 }
 ```
 
-- Password-typed keys (`*_password`) are **redacted to ""** — never returned.
+- Password-typed keys (`*_password`) are **redacted to ""**: never returned.
 - `degraded:true` (boot pass fell back to defaults, §4.3 steps 4–5) and
   `pending_reboot:true` (persisted values differ from the boot-applied
-  ones) are injected by the transport — not stored keys; PUT strips them
+  ones) are injected by the transport, not stored keys; PUT strips them
   if a UI echoes them back.
 
 **Errors**: `404 {"error":"unknown component"}`.
@@ -50,10 +50,10 @@ values — that is what the UI should display.
 
 **Full-object replace** (standard §6): send the complete object; omitted
 optional keys are filled from schema defaults, then the whole document is
-validated (schema + `on_validate`). **Never applies** — values take effect
+validated (schema + `on_validate`). **Never applies**: values take effect
 after the submit reboot.
 
-**Request** — the complete settings object. A redacted password field sent as
+**Request**: the complete settings object. A redacted password field sent as
 `""` means "keep the stored value".
 
 **Response 200**
@@ -75,7 +75,7 @@ submit endpoint uses this to skip the reboot).
 The JSON Schema (source of truth for shape/types/ranges/defaults) so the UI
 renders forms without per-component code.
 
-**Response 200** — the schema document verbatim, e.g.
+**Response 200**: the schema document verbatim, e.g.
 ```json
 { "type": "object", "properties": { "ap_channel": { "type": "integer",
   "minimum": 1, "maximum": 13, "default": 6 } } }
@@ -103,7 +103,7 @@ device-to-device transfer (2026-07-05). Served with a
 - Values are the **pending** (post-reboot) objects, like GET
   `/api/settings/{name}`, plus each component's schema `version` (restores
   from older firmware run through `on_migrate`).
-- **NOT redacted**: password fields ship verbatim — a backup that loses
+- **NOT redacted**: password fields ship verbatim, a backup that loses
   secrets cannot transfer a working configuration. The UI must treat the
   file as sensitive (this is the ONE settings GET that returns secrets).
 
@@ -115,7 +115,7 @@ whole document with per-component errors and the device is untouched.
 Components this firmware doesn't know are skipped and reported (a backup
 from a newer firmware with extra components still restores the rest).
 
-**Response 200** — persisted; reboots (submit semantics) iff anything changed
+**Response 200**: persisted; reboots (submit semantics) iff anything changed
 ```json
 { "restored": 12, "skipped": ["future_component"], "reboot": true }
 ```
@@ -124,7 +124,7 @@ from a newer firmware with extra components still restores the rest).
 ```json
 { "error": "backup rejected",
   "errors": { "wifi_manager": "ap_channel: above maximum 13",
-              "obd_chip": "backup is v3 but this firmware has v2 — update the firmware first" },
+              "obd_chip": "backup is v3 but this firmware has v2: update the firmware first" },
   "skipped": [] }
 ```
 Also `400 {"error":"not a WiCAN settings backup"}` when the body lacks
@@ -133,18 +133,18 @@ Also `400 {"error":"not a WiCAN settings backup"}` when the body lacks
 ## POST /api/settings/factory_reset
 
 Wipe the settings partition back to factory defaults (2026-07-05; the CLI
-`factoryreset` equivalent — scope is settings ONLY: `/data` certs/files,
-SD and NVS untouched). Requires the explicit confirm token — the UI's
+`factoryreset` equivalent: scope is settings ONLY: `/data` certs/files,
+SD and NVS untouched). Requires the explicit confirm token: the UI's
 "are you sure" dialog supplies it; a stray POST can never wipe a device.
 
 **Request** `{ "confirm": "factory-reset" }`
 
-**Response 200** `{ "reboot": true }` — then reboots (≈1 s) via
+**Response 200** `{ "reboot": true }`, then reboots (≈1 s) via
 `restart_tracker_restart(FACTORY_RESET, WEB_UI)` into factory defaults
 (fresh device = onboarding AP).
 
 **Errors**: `400 {"error":"confirmation required: {\"confirm\":\"factory-reset\"}"}`
-(missing/wrong token — nothing wiped), `500 {"error":"wipe failed"}`.
+(missing/wrong token, nothing wiped), `500 {"error":"wipe failed"}`.
 
 ## POST /api/settings/submit
 
@@ -157,5 +157,5 @@ this once).
 ```
 then, iff any PUT in the batch reported `changed:true`: wait ≈1 s (response
 flush), reboot via `restart_tracker_restart(CONFIG_APPLY, CONFIG_SERVER)`.
-`{"reboot":false}` (no reboot) when nothing changed — the no-op-submit rule
+`{"reboot":false}` (no reboot) when nothing changed: the no-op-submit rule
 (§4.2).

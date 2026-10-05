@@ -25,7 +25,7 @@
  * @brief WiCAN TLS certificate-set owner (service component).
  *
  * Owns named certificate SETS (rewrite of the legacy cert_manager) on
- * the filesystem: `/data/certs/<set>/` holding up to three PEM parts —
+ * the filesystem: `/data/certs/<set>/` holding up to three PEM parts,
  * `ca.pem` (broker/server verification), `client.crt` + `client.key`
  * (mutual TLS). Consumers (mqtt_manager's `cert_set` setting today; VPN
  * or HTTPS clients later) borrow NUL-terminated, PSRAM-cached contents
@@ -33,8 +33,8 @@
  *
  * Upload/list/delete via `/api/certs` (own routes, HTTP_API.md §6g).
  * Parts are validated as PEM at upload. **There is deliberately no HTTP
- * read-back — key material never leaves the device.** (v1 trust note:
- * the generic `/api/fs` browser can still reach `/data/certs` — same
+ * read-back: key material never leaves the device.** (v1 trust note:
+ * the generic `/api/fs` browser can still reach `/data/certs`, same
  * AP-trust model as the rest of the API until the auth story; revisit
  * together.)
  */
@@ -78,7 +78,7 @@ esp_err_t cert_manager_stop(void);
 /**
  * Borrow a part's content: NUL-terminated PEM in PSRAM, loaded on first
  * use and cached until the set changes. @p len_out (nullable) receives
- * strlen+1 — the length TLS configs want for PEM. The pointer stays
+ * strlen+1: the length TLS configs want for PEM. The pointer stays
  * valid until the set is deleted/re-uploaded; consumers that connect at
  * start() and never re-read (mqtt) are safe by construction.
  * ESP_ERR_NOT_FOUND when the set or part doesn't exist.

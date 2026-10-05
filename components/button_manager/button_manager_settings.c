@@ -24,7 +24,7 @@
  * @file button_manager_settings.c
  * @brief settings_manager descriptor for button_manager: field-table
  *        schema (source of truth) and on_apply into the boot-applied
- *        config. No CLI commands — no `cli` key.
+ *        config. No CLI commands: no `cli` key.
  */
 #include "settings_manager.h"
 
@@ -34,7 +34,7 @@ static const settings_field_t FIELDS[] =
 {
     SETTINGS_BOOL("enabled", true),
     /* seconds of continuous hold (1 s poll ticks) that enter config
-       mode — the legacy CONFIG_MODE_HOLD_SECONDS */
+       mode: the legacy CONFIG_MODE_HOLD_SECONDS */
     SETTINGS_INT("hold_s", 1, 30, 5),
 };
 

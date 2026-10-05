@@ -43,7 +43,7 @@
 #define SM_RESLEEP_MAX      6        /* OBD re-sleeps before recovery  */
 #define SM_AUTOPID_IDLE_MS  20000u
 
-/* ---- sleep_manager_policy.c — PURE (host-tested) -------------------------- */
+/* ---- sleep_manager_policy.c: PURE (host-tested) -------------------------- */
 
 typedef enum
 {

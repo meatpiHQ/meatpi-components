@@ -1,6 +1,6 @@
 # can_manager
 
-Owner of the native CAN (TWAI) bus — WiCAN Pro TX=GPIO2 / RX=GPIO1 /
+Owner of the native CAN (TWAI) bus: WiCAN Pro TX=GPIO2 / RX=GPIO1 /
 STDBY=GPIO38 (Kconfig `WICAN_CAN_*`). Wraps ONE shared `can_core`
 handle (adopted code, see its PROVENANCE.md); every consumer
 registers into it: add-on AT engines, autopid's `elm327` backend,
@@ -72,7 +72,7 @@ stand for.
 
 ## Surfaces
 
-- `GET /api/can` — status + stats (HTTP_API §6e10): `state` (`detecting` /
+- `GET /api/can`: status + stats (HTTP_API §6e10): `state` (`detecting` /
   `listening` / `mismatch` until the link has its verdict, then `running` /
   `bus_off` / `recovering`; `stopped` while the bus is down), `listen_only`,
   `verified`, `baud_auto`, `baud_detected`, the bus-off/recovery counters,
@@ -84,7 +84,7 @@ stand for.
   `tx_refused`, `err{stuff,form,bit,ack,other}`, `probe{}`, and
   `subscribers[]` (`idx`, `name`, `drops`) of `subscribers_max`.
 - `can` CLI (`can -z` zeroes counters; `can send <id> [hexbytes] [-r]`
-  transmits one frame — 3 hex digits = 11-bit id, more = 29-bit).
+  transmits one frame: 3 hex digits = 11-bit id, more = 29-bit).
 - C API: `can_manager_core_handle()` (the shared handle),
   `can_manager_send()`, `can_manager_tx_ready()`,
   `can_manager_subscribe_queue()` (drop-oldest frame fan-out, 16 slots),
@@ -228,11 +228,11 @@ conservation bench holds the listener to that
 ## Bus-off recovery (2026-07-10)
 
 A transmit-error cascade (shorted bus, baud-mismatch collisions) drives
-TEC to 256 and the TWAI controller goes BUS-OFF — before this it stayed
+TEC to 256 and the TWAI controller goes BUS-OFF: before this it stayed
 down until reboot. Now `can_core`'s RX task services TWAI alerts:
 `twai_initiate_recovery()` immediately on BUS_OFF (hardware waits for
 128×11 recessive bits, i.e. completes only once the bus is sane), then
-an automatic `twai_start()` after a policy backoff — immediate for an
+an automatic `twai_start()` after a policy backoff: immediate for an
 isolated fault, 1→2→4…30 s cap when re-offending within 60 s (pure
 policy in `can_core_recovery.c`, host-tested). Episodes are counted
 in `/api/can` (`bus_off`/`recoveries`) and `can`; the web UI Status
@@ -260,7 +260,7 @@ counters and traffic after recovery).
 - stop() parks TWAI and drives the transceiver into standby; main's
   sleep-prepare calls it (after ext_manager_stop, before storage).
 - The ESP TWAI transceiver and the MIC3624 are two nodes on the SAME
-  vehicle CAN — legal; traffic policy between autopid-via-MIC and
+  vehicle CAN: legal; traffic policy between autopid-via-MIC and
   native-CAN consumers is the user's call in v1.
 - Memory: the can_core RX task (internal 4 KB) exists only while
   `enabled` (or while a probe / watch listens); statics negligible.

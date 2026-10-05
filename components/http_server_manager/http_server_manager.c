@@ -329,7 +329,7 @@ esp_err_t http_server_manager_start(void)
      * with a few hundred bytes of locals + littlefs/lfs + esp_flash
      * bounce-buffer + (with lwip core locking) an inline und_transmit
      * send all stack on this task. Overflow corrupts the HEAP (httpd's
-     * stack is heap-allocated) — found 2026-07-08 as LoadProhibited
+     * stack is heap-allocated): found 2026-07-08 as LoadProhibited
      * heap-walks under /api/autopid/dbc/add and (earlier, misattributed
      * to RAM pressure) the DTC clear's usb_net_device semaphore
      * corruption. 8 KB held until 2026-07-11, when the deepest path

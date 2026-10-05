@@ -15,7 +15,7 @@ if(DEFINED ENV{WICAN_BENCH_PSK})
     target_compile_definitions(${COMPONENT_LIB} PRIVATE
         BENCH_STA_PASS="$ENV{WICAN_BENCH_PSK}")
 else()
-    message(WARNING "WICAN_BENCH_PSK not set — bench app will be built "
+    message(WARNING "WICAN_BENCH_PSK not set: bench app will be built "
                     "with a placeholder STA password and will NOT join "
                     "the bench AP")
 endif()

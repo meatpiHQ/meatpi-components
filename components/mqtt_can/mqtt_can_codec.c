@@ -25,7 +25,7 @@
  * @brief PURE codec (no I/O, no FreeRTOS): legacy-JSON batch encoder,
  *        fragmented-stream object reassembler, tx parser. Host-tested.
  *
- * Encode is hand-rolled snprintf (deterministic, heap-free — this runs
+ * Encode is hand-rolled snprintf (deterministic, heap-free: this runs
  * per batch at CAN rates); the low-rate tx parse uses cJSON.
  */
 #include "mqtt_can_codec.h"
@@ -68,7 +68,7 @@ int mc_batch_add_chunk(mc_batch_t *b, const uint8_t *chunk, size_t len)
 
         if (used == 0)
         {
-            break;              /* malformed tail — stop, keep what fits */
+            break;              /* malformed tail: stop, keep what fits */
         }
 
         off += used;

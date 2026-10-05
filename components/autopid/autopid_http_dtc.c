@@ -320,7 +320,7 @@ esp_err_t dtc_clear_post_handler(httpd_req_t *req)
     {
         cJSON_Delete(root);
         return ap_http_send_error(req, "400 Bad Request",
-                          "confirm:true required — mode 04 clears ALL "
+                          "confirm:true required: mode 04 clears ALL "
                           "codes + readiness monitors");
     }
 

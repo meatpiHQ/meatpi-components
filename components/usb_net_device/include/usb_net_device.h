@@ -32,10 +32,10 @@
  * the web UI, and the TCP bridges.
  *
  * Class selection (usb_host_manager's `device_class` setting):
- *  - NCM   — CDC-NCM, the class Windows 10/11 binds natively (UsbNcm.sys).
+ *  - NCM:    CDC-NCM, the class Windows 10/11 binds natively (UsbNcm.sys).
  *            Windows 11 24H2 REMOVED the legacy RNDIS driver, so this is
  *            the default and the one to test first.
- *  - RNDIS — legacy fallback for pre-24H2 Windows.
+ *  - RNDIS: legacy fallback for pre-24H2 Windows.
  *
  * Ownership: usb_host_manager owns the role/mux decision and calls this in
  * `role=device`; this component owns the device stack, the netif, and the
@@ -68,7 +68,7 @@ typedef struct
     usb_net_device_class_t device_class;
     esp_ip4_addr_t ip;      /* WiCAN's address on the USB link; 0 = default
                              * 192.168.82.1 (the DHCP pool + gateway follow;
-                             * NOT .80.x — that's the WiFi AP subnet) */
+                             * NOT .80.x: that's the WiFi AP subnet) */
     esp_ip4_addr_t netmask; /* 0 = 255.255.255.0 */
 } usb_net_device_config_t;
 

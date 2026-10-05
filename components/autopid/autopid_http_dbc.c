@@ -250,6 +250,6 @@ esp_err_t dbc_add_handler(httpd_req_t *req)
 }
 
 /* POST /api/autopid/group {"name":"...","enabled":bool[,"period_ms":N]}
- * Runtime (non-persisted) group toggle — the HTTP twin of the
+ * Runtime (non-persisted) group toggle: the HTTP twin of the
  * `autopid.group` event action (API-first §1b: anything a rule can do,
  * a client can do). Used by the bench to claim OBD exclusivity. */

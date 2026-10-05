@@ -191,7 +191,7 @@ static void add_items(cJSON *o, const ap_dtc_report_t *r)
     }
 }
 
-/** The freeze frame (§14) — absent when none was captured. */
+/** The freeze frame (§14): absent when none was captured. */
 static void add_freeze(cJSON *o, const ap_dtc_report_t *r)
 {
     if (!r->frz_present)
@@ -269,7 +269,7 @@ static cJSON *report_json(bool with_desc)
     }
 
     /* database enrichment: {"desc":{"P0420":"Catalyst …"}} for every
-       report code with a hit (arrays stay untouched — no breakage) */
+       report code with a hit (arrays stay untouched, no breakage) */
     if (with_desc && r->valid)
     {
         ap_dtc_db_desc_map(o, "desc", r);

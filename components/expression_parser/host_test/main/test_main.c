@@ -102,7 +102,7 @@ void test_legacy_ranges_unsigned(void)
 
 void test_legacy_ranges_signed(void)
 {
-    /* container by span — the exact legacy semantics */
+    /* container by span: the exact legacy semantics */
     expect_value("S0", -1.0);
     expect_value("S2", -16.0);
     expect_value("S16", (double)(int8_t)0xEF);
@@ -141,7 +141,7 @@ void test_legacy_error_cases(void)
 
 void test_docs_formulas(void)
 {
-    /* engine RPM: [B0:B1]/4 — with this payload (0xFF00) */
+    /* engine RPM: [B0:B1]/4, with this payload (0xFF00) */
     expect_value("[B0:B1]/4", (double)0xFF00 / 4.0);
     /* coolant temp: B0-40 */
     expect_value("B0-40", 255.0 - 40.0);
@@ -256,7 +256,7 @@ void test_check_dry_run_semantics(void)
     char err[64] = "";
 
     /* division by a byte value must NOT fail in the dry run (values are
-       fake zeros) — that is precisely why eval and check share a core */
+       fake zeros): that is precisely why eval and check share a core */
     TEST_ASSERT_EQUAL(ESP_OK,
                       expression_parser_check("100/B3", NULL, err,
                                               sizeof(err)));

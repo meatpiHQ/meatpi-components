@@ -75,7 +75,7 @@ typedef struct
     em_op_t      op;
     em_operand_t val;           /* unused for `changed`                   */
     /* "${autopid.SOC}": a LIVE value rendered when the rule fires (then
-       key is empty) — conditions on state the trigger does not carry
+       key is empty), conditions on state the trigger does not carry
        (2026-09-17, the Rules Builder) */
     char         value[EM_VALUE_LEN];
 } em_when_t;
@@ -93,7 +93,7 @@ typedef struct
     char         with_json[EM_WITH_MAX];    /* serialized object or ""    */
     uint32_t     cooldown_ms;
     /* a "while" rule: the action is applied when the conditions come
-       true and reversed (run with "undo":true) when they stop holding —
+       true and reversed (run with "undo":true) when they stop holding,
        on the next trigger event, or on the 1 s live re-check */
     bool         undo;
 } em_rule_t;
@@ -124,7 +124,7 @@ typedef struct
 } em_timer_cfg_t;
 
 /* ---- pure: rules parse (event_manager_rules.c) + evaluation
-        (event_manager_eval.c) — both host-tested ------------------------------ */
+        (event_manager_eval.c), both host-tested ------------------------------ */
 
 /** Parse+shape-validate the rules array. Registry-existence checks are
  *  the caller's (they need the live registries). */
@@ -145,7 +145,7 @@ bool em_rule_when(const em_rule_t *r, const em_event_t *ev,
 bool em_rule_cooldown_ok(const em_rule_t *r, em_rule_state_t *st,
                          int64_t now_us);
 
-/* ---- pure: templates (event_manager_template.c — host-tested) --------------- */
+/* ---- pure: templates (event_manager_template.c, host-tested) --------------- */
 
 /** Resolver for names not carried by the event (pull values): renders
  *  the value into @p out as a string. May be NULL. */
@@ -156,7 +156,7 @@ typedef esp_err_t (*em_tpl_resolver_t)(const char *name, char *out,
  * Substitute ${key} in @p tpl: event kv first (+ builtins `ts` = ts_us,
  * `source`, `name`), then @p resolver, else the literal `null`.
  * Event values render raw (f64 %g, i64 decimal, bool true/false,
- * strings verbatim — the template author adds JSON quotes).
+ * strings verbatim: the template author adds JSON quotes).
  * ESP_ERR_INVALID_SIZE when @p out overflows.
  */
 esp_err_t em_template_render(const char *tpl, const em_event_t *ev,
@@ -177,7 +177,7 @@ bool em_rule_when_ex(const em_rule_t *r, const em_event_t *ev,
 bool em_rule_has_live(const em_rule_t *r);
 
 /** The between-events re-check of an ACTIVE undo rule: only its
- *  live-value conditions (never `changed`, never trigger fields — those
+ *  live-value conditions (never `changed`, never trigger fields, those
  *  move only with a new event), against the stored last_ev. True when
  *  there is nothing live to re-check. */
 bool em_rule_live_holds(const em_rule_t *r, const em_rule_state_t *st,
@@ -211,7 +211,7 @@ em_step_t em_rule_decide(const em_rule_t *r, em_rule_state_t *st,
 void em_rule_applied(const em_rule_t *r, em_rule_state_t *st);
 
 /** The dispatcher's periodic pass over ACTIVE while-rules with live
- *  conditions: true (and st->active cleared) when the undo is due — the
+ *  conditions: true (and st->active cleared) when the undo is due, the
  *  caller runs the action with undo against st->last_ev. */
 bool em_rule_recheck(const em_rule_t *r, em_rule_state_t *st,
                      em_tpl_resolver_t resolver);

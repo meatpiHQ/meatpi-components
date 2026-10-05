@@ -1,5 +1,5 @@
 # Coding Standard rev 2.1 (§7): on-device test apps build against the MAIN
-# firmware's partition table — no private fork.
+# firmware's partition table, no private fork.
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="../../../wican_pro_partitions_table.csv"
 # Flash size matches the main firmware / WiCAN Pro hardware (16 MB).

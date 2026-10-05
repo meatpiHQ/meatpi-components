@@ -7,7 +7,7 @@ idf_component_register(
          "mqtt_manager_events.c"
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "."
-    # Feature: owns THE one MQTT client (esp-mqtt is a MANAGED component —
+    # Feature: owns THE one MQTT client (esp-mqtt is a MANAGED component,
     # un-bundled in IDF v6, see idf_component.yml); consumers publish
     # through it (direct or the never-blocking async ring) and register
     # topic-filter handlers into it.

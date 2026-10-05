@@ -26,29 +26,29 @@
  *
  * Owns the ICM-42670-P IMU (shared bus via i2c_bus; vendored espressif
  * driver) and runs BOTH of its motion detectors side by side. The
- * detector task POLLS INT_STATUS2 every 200 ms — the bits latch until
+ * detector task POLLS INT_STATUS2 every 200 ms: the bits latch until
  * read, so nothing is missed and there is no ISR (meatpi's call: safer,
  * and nothing here is time-critical; the chip's INT1 pin stays wired
  * but unused):
  *
- *  - SMD (DMP/APEX, needs SUSTAINED motion) drives the ACTIVITY state —
+ *  - SMD (DMP/APEX, needs SUSTAINED motion) drives the ACTIVITY state:
  *    "the vehicle is moving": ACTIVE (+ DEV_STATUS_BIT_MOTION) until
  *    quiet for `stationary_s` → STATIONARY. Sleep/drive logic consumes
  *    the dev-status bit.
  *  - WoM (per-sample threshold, PREVIOUS-sample reference so a slope or
- *    orientation change can't latch it) catches single bumps — door
+ *    orientation change can't latch it) catches single bumps: door
  *    open/close, a knock, vibration. It does NOT touch the activity
  *    state; it is published as an EVENT.
  *
  * EVENTS: any component subscribes a queue (`imu_manager_event_t` items)
- * and reacts — send a CAN frame on a door slam, an MQTT alert on motion,
+ * and reacts, send a CAN frame on a door slam, an MQTT alert on motion,
  * whatever the product wants. Fan-out is drop-and-count per subscriber
  * (never blocks the detector task); WOM publishes are throttled so
  * driving vibration can't flood the queues. Activity transitions are
  * published too, so most consumers never need to poll.
  *
  * The accel runs permanently in low-power mode feeding both detectors
- * (reads work anytime); the gyro stays OFF in v1 — nothing consumes it,
+ * (reads work anytime); the gyro stays OFF in v1: nothing consumes it,
  * and it dominates the chip's power budget.
  */
 #pragma once
@@ -103,7 +103,7 @@ imu_manager_activity_t imu_manager_activity(void);
 /**
  * Attach a subscriber queue (items imu_manager_event_t, caller-owned).
  * Every motion event is fanned out to every subscriber with a
- * zero-timeout send — a full queue drops THAT subscriber's copy (counted,
+ * zero-timeout send: a full queue drops THAT subscriber's copy (counted,
  * never blocks the detector). Up to IMU_MANAGER_MAX_SUBSCRIBERS;
  * ESP_ERR_NO_MEM when the table is full.
  */
@@ -116,7 +116,7 @@ esp_err_t imu_manager_read_accel(float *ax, float *ay, float *az);
 /** Die temperature in °C. */
 esp_err_t imu_manager_read_temp(float *temp);
 
-/** WHO_AM_I (0x67 for ICM-42670-P) — diagnostics. */
+/** WHO_AM_I (0x67 for ICM-42670-P): diagnostics. */
 esp_err_t imu_manager_device_id(uint8_t *id);
 
 /** Register GET /api/imu (composition root calls it in HTTP builds). */
@@ -124,7 +124,7 @@ esp_err_t imu_manager_register_http(void);
 
 /** Register the `imu` CLI command with cmdline_manager. Called
  *  INTERNALLY on the settings boot apply when the `cli` setting is true
- *  (default) — main no longer wires it. */
+ *  (default): main no longer wires it. */
 esp_err_t imu_manager_register_cli(void);
 
 #ifdef __cplusplus

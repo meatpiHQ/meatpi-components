@@ -23,7 +23,7 @@
 /**
  * @file settings_manager_schema.c
  * @brief WiCAN settings schema validator. A clean subset of JSON Schema plus the
- *        format:"file" extension. Pure logic — host-testable on the linux target.
+ *        format:"file" extension. Pure logic: host-testable on the linux target.
  *
  * Supported keywords:
  *   type        string | integer | number | boolean | object | array
@@ -36,10 +36,10 @@
  *               sm_schema_collect_defaults; not a validation constraint)
  *   required    array of keys that must be present
  *   format      "file" -> value names a file on the FS (existence is checked)
- *   items       (arrays) schema applied to every element — a scalar schema,
+ *   items       (arrays) schema applied to every element: a scalar schema,
  *               or type:"object" with its own properties/required (one level
  *               of nesting; arrays inside array items are not supported)
- *   maxItems    (arrays) REQUIRED bound, <= 16 — bounded arrays only, so the
+ *   maxItems    (arrays) REQUIRED bound, <= 16, bounded arrays only, so the
  *               transports and the on-disk envelope stay small
  *   minItems    (arrays) optional lower bound
  */
@@ -213,7 +213,7 @@ static esp_err_t check_property(const char *key, const cJSON *prop_schema,
         }
 
         /* bounded arrays ONLY: a schema without maxItems is an authoring
-           bug — fail loudly rather than accept unbounded input */
+           bug, fail loudly rather than accept unbounded input */
         const cJSON *max_i = cJSON_GetObjectItemCaseSensitive(prop_schema,
                                                               "maxItems");
         const cJSON *min_i = cJSON_GetObjectItemCaseSensitive(prop_schema,
@@ -298,7 +298,7 @@ static esp_err_t check_property(const char *key, const cJSON *prop_schema,
 }
 
 /* required + per-property validation of one object against a parsed schema
-   node (the document root, or an array's items schema — one nesting level). */
+   node (the document root, or an array's items schema: one nesting level). */
 static esp_err_t check_object_node(const cJSON *schema_node, const cJSON *data,
                                    bool (*file_exists)(const char *name),
                                    char *err, size_t err_len)

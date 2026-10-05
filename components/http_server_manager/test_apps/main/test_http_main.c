@@ -2,7 +2,7 @@
  * @file test_http_main.c
  * @brief On-target test app for http_server_manager. Self-contained: serves on
  *        the lwIP loopback interface and asserts via esp_http_client against
- *        127.0.0.1 — no external network or instruments required.
+ *        127.0.0.1, no external network or instruments required.
  *
  * Covers: API route beats catch-all, embedded serving + MIME + ETag/304,
  * filesystem serving, fetch-on-miss via an injected stub fetcher, 404, and

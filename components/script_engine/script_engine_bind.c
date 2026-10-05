@@ -22,7 +22,7 @@
 
 /**
  * @file script_engine_bind.c
- * @brief The device bindings exposed to Berry scripts — the scripting
+ * @brief The device bindings exposed to Berry scripts: the scripting
  *        API (SCRIPTING.md). v1 surface:
  *
  *   log(msg)                     -> print to the run output + log
@@ -123,9 +123,9 @@ static int b_millis(bvm *vm)
 
 /* ---- the exclusive-bus hold ------------------------------------------------- */
 /* `exclusive` setting: a script's first ECU access asks the background
- * pollers (autopid: PID polling + DTC scans) off the bus — obd_gate's
+ * pollers (autopid: PID polling + DTC scans) off the bus (obd_gate's
  * diagnostics hold, refcounted against the UDS Tool's and J2534's own
- * holds — and waits for their ack (autopid loops within 500 ms) so the
+ * holds) and waits for their ack (autopid loops within 500 ms) so the
  * first request lands on a quiet bus. Released by the runner after the
  * run (se_bus_hold_release). Runs are serialized, plain statics suffice. */
 static const int s_bus_token;
@@ -321,7 +321,7 @@ static int b_dtc_clear(bvm *vm)
 }
 
 /** dtc_desc(code) -> database description string, or nil. PSRAM-cache
- *  lookup only — no flash, no budget concern. */
+ *  lookup only: no flash, no budget concern. */
 static int b_dtc_desc(bvm *vm)
 {
     if (be_top(vm) < 1 || !be_isstring(vm, 1))
@@ -443,7 +443,7 @@ static void obd_reflash_gate(bvm *vm, uint8_t sid)
     }
 }
 
-/* accept only /sd/... paths, no '..' — keeps script file I/O off the
+/* accept only /sd/... paths, no '..': keeps script file I/O off the
  * internal-flash littlefs (PSRAM-stack cache trap) and out of traversal */
 static bool obd_path_ok(const char *p)
 {
@@ -483,7 +483,7 @@ static void obd_set_outcome_globals(bvm *vm, int ok,
     be_pop(vm, 1);
 }
 
-/* obd_claim(tx, rx[, ext]) — arms tester-present + holds the transport
+/* obd_claim(tx, rx[, ext]): arms tester-present + holds the transport
  * until obd_release() or script end (auto-release). */
 static int b_obd_claim(bvm *vm)
 {

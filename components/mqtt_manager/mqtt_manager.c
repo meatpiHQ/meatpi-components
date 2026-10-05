@@ -56,7 +56,7 @@ static const char *TAG = "mqtt_manager";
 _Static_assert(sizeof(((mm_config_t *)0)->cert_set) ==
                CERT_MANAGER_NAME_MAX + 1, "mm_config_t.cert_set size");
 
-/* legacy on-wire contract — byte-identical payloads */
+/* legacy on-wire contract: byte-identical payloads */
 #define MM_STATUS_ONLINE  "{\"status\": \"online\"}"
 #define MM_STATUS_OFFLINE "{\"status\": \"offline\"}"
 
@@ -90,7 +90,7 @@ static TaskHandle_t s_task;
 static StaticTask_t s_tcb;                            /* internal: FreeRTOS */
 static StackType_t s_stack[3072] EXT_RAM_BSS_ATTR;
 
-/* async publish path: bounded PSRAM ring drained by the publisher task —
+/* async publish path: bounded PSRAM ring drained by the publisher task,
  * ALL socket blocking lives here, never in a producer */
 static RingbufHandle_t s_ring;
 static TaskHandle_t s_pub_task;

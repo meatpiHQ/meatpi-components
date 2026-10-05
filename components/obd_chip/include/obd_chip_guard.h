@@ -38,7 +38,7 @@
  *             protocol change sticks)  -> ATM0
  *   refused (no RAM-only twin; the raw path answers the ELM "?"):
  *     ATPP .. SV/ON/OFF  programmable parameters (0C/0F re-baud the UART:
- *                        a bricked link) — ATPPS (the summary READ) passes
+ *                        a bricked link), ATPPS (the summary READ) passes
  *     ATSD hh            store data byte
  *     ATCV dddd          voltage calibration
  *     STWBR              write UART baud rate (STN dialect)
@@ -67,7 +67,7 @@ typedef enum
 
 /**
  * Scan @p len bytes of chip-bound text (a command, a ';'-separated init
- * chain, or a raw bridge chunk — NUL termination not required) and
+ * chain, or a raw bridge chunk: NUL termination not required) and
  * rewrite ATSP -> ATTP / ATM1 -> ATM0 in place. Returns BLOCKED as soon as
  * a refused command is found (the buffer may be partially rewritten then).
  */

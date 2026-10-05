@@ -127,7 +127,7 @@ void test_collect_defaults(void)
 
 /* ---- bounded arrays (added 2026-07-03 for socket_manager/bridge_manager) --- */
 
-/* array of flat objects — the servers/bridges shape */
+/* array of flat objects: the servers/bridges shape */
 static const char *ARR_SCHEMA =
 "{\"type\":\"object\",\"properties\":{"
   "\"servers\":{\"type\":\"array\",\"maxItems\":4,\"items\":{"

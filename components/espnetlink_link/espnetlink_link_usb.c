@@ -24,13 +24,13 @@
  * @file espnetlink_link_usb.c
  * @brief The USB side of the zero-touch pairing: drives the pure state
  *        machine (espnetlink_link_core.c) from usb_host_manager's status
- *        and performs its actions — HTTP to the dongle at 192.168.7.1
+ *        and performs its actions, HTTP to the dongle at 192.168.7.1
  *        over the NCM link (the netif's subnet route; no default-route
  *        games), the settings store, the data-line cut, VBUS recovery,
  *        and the one reboot-to-apply after a new key.
  *
  * Derived, not event-driven: every tick (link task, 1 s) reads
- * usb_host_manager_status() — an NCM link up with an IP and the
+ * usb_host_manager_status(), an NCM link up with an IP and the
  * ESPNetLink's VID/PID is the "attach" edge; its loss is the "drop".
  * Budget (contract §1): dongle boot -> cut in <= 10 s; identify + key +
  * cut are three small HTTP round-trips on a freshly enumerated link.
@@ -234,7 +234,7 @@ static espnl_sm_event_t act_get_key(void)
     s_sm.reboot_pending = changed;
     ESP_LOGI(TAG, "credentials ok: '%s' (%s, wifi slot %d)%s", creds.ssid,
              creds.device_id, slot,
-             changed ? " — stored; reboot after the cut" : " — unchanged");
+             changed ? ", stored; reboot after the cut" : ", unchanged");
     return ESPNL_EV_OK;
 }
 
@@ -268,7 +268,7 @@ static espnl_sm_event_t act_post_cut(void)
 }
 
 /* GET /api/settings/<component>; when `key` differs from `want`, PUT the
- * full object back with key=want (§6: full-object replace — the
+ * full object back with key=want (§6: full-object replace, the
  * transport's synthetic GET keys are stripped server-side, "" passwords
  * keep the stored value). Takes ownership of `want`.
  * Returns 1 = changed (submit needed), 0 = already right, -1 = error,
@@ -309,7 +309,7 @@ static int ensure_dongle_setting(const char *path, const char *key,
     {
         /* the GET returns the PERSISTED (staged) document: a value that
          * matches but carries pending_reboot=true was staged by an
-         * earlier pass whose submit never landed — without a submit the
+         * earlier pass whose submit never landed, without a submit the
          * dongle would run the OLD value forever (bench-hit 2026-08-25:
          * an interrupted class change left class=ncm staged over a live
          * RNDIS device). Report "changed" so the caller submits. */
@@ -364,7 +364,7 @@ static int ensure_dongle_setting(const char *path, const char *key,
 /* usb_ncm / usb_rndis mode: make the dongle's USB link an internet path.
  * Two settings on the dongle side: `lte_upstream_pppos.ncm_share` (its USB
  * DHCP offers router/DNS + NAPT) and `usb_dev_ethernet.class` (which USB
- * Ethernet class it presents — must match our mode). Read both; when
+ * Ethernet class it presents: must match our mode). Read both; when
  * either differs, PUT + submit ONCE (the dongle reboots once to apply). */
 static espnl_sm_event_t act_ensure_share(void)
 {
@@ -400,7 +400,7 @@ static espnl_sm_event_t act_ensure_share(void)
     if (r == -2)
     {
         /* pre-2026-08-25 dongle firmware: the class is compile-time there
-         * (NCM). The uplink still works — just not as the asked class. */
+         * (NCM). The uplink still works: just not as the asked class. */
         if (cls != NULL && strcmp(cls, "ncm") != 0)
         {
             ESP_LOGW(TAG, "dongle firmware cannot select the USB class "
@@ -448,8 +448,8 @@ static espnl_sm_event_t act_ensure_share(void)
         return ESPNL_EV_FAIL;
     }
 
-    ESP_LOGI(TAG, "dongle USB uplink reconfigured (class %s, ncm_share on) "
-             "— it reboots to apply", cls != NULL ? cls : "ncm");
+    ESP_LOGI(TAG, "dongle USB uplink reconfigured (class %s, ncm_share on), "
+             "it reboots to apply", cls != NULL ? cls : "ncm");
     if (!unsupported)
     {
         espnl_status_set_last_error("");

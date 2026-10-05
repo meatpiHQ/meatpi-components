@@ -1,7 +1,7 @@
 /**
  * @file test_session.c
  * @brief Host tests for the pure OTA session state machine: every
- *        transition rule, error latching, and backend-call accounting —
+ *        transition rule, error latching, and backend-call accounting,
  *        against a recorder backend (no esp_ota).
  */
 #include <string.h>

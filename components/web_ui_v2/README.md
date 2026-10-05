@@ -1,6 +1,6 @@
 # web_ui_v2
 
-The **v2** built-in web app — a self-contained, responsive single-page
+The **v2** built-in web app: a self-contained, responsive single-page
 application that covers every `/api` + `/ws` feature. Like v6 it is
 **API-first**: just another client, no privileged paths.
 
@@ -10,8 +10,8 @@ application that covers every `/api` + `/ws` feature. Like v6 it is
 
 | Option | What compiles |
 |---|---|
-| **v2** (default) | this component — one gzipped `index.html` |
-| **v6** | `components/web_ui` — the legacy ES-module pages |
+| **v2** (default) | this component: one gzipped `index.html` |
+| **v6** | `components/web_ui`: the legacy ES-module pages |
 | **None** | headless: `/api` + `/ws` only, no UI blob in flash |
 
 Only the selected UI is embedded; `main` calls both `web_ui_v2_register()`
@@ -23,16 +23,16 @@ Set it with `idf.py menuconfig` or in `sdkconfig.defaults`:
 CONFIG_WICAN_WEBUI_V2=y     # or CONFIG_WICAN_WEBUI_V6=y / CONFIG_WICAN_WEBUI_NONE=y
 ```
 
-## Design — "WiCAN Pro" (2026-07-10)
+## Design: "WiCAN Pro" (2026-07-10)
 
 The visual system and information architecture come from **meatpi's
 claude.ai/design project "WiCAN Pro configuration interface"**
 (`WiCAN Pro.dc.html`, imported via the design MCP) and are implemented
 over the existing SPA engine. One file, zero dependencies (no framework,
-no CDN — the JetBrains Mono stack falls back to system monospace). It is
+no CDN: the JetBrains Mono stack falls back to system monospace). It is
 gzipped at build time (`gzip_asset.py`) and embedded (~39 KB gz).
 
-- **Shell**: 58 px header — meatpi WiCAN Pro logo · connection pill
+- **Shell**: 58 px header, meatpi WiCAN Pro logo · connection pill
   (pulse dot, device id, IP, AP/STA tag) · theme toggle · a header
   **Submit Changes** button that batches settings PUTs + submit (the
   old apply-bar semantics, incl. the unsaved-changes guard).
@@ -44,10 +44,10 @@ gzipped at build time (`gzip_asset.py`) and embedded (~39 KB gz).
 - **Theme**: light-default per the design, full dark theme, follows the
   OS and a manual toggle (persisted).
 - **Schema-driven settings**: forms are generated from
-  `GET /api/settings/<name>/schema`, grouped into the design's cards —
+  `GET /api/settings/<name>/schema`, grouped into the design's cards,
   new firmware fields appear with no UI change.
 
-## UX audit (2026-09-05) — the rules every page now follows
+## UX audit (2026-09-05): the rules every page now follows
 
 Screenshot-driven pass over all 23 routes on desktop and a Pixel-class
 phone against a live WiCAN Pro (`tools/webui_preview` smoke + probes
@@ -55,7 +55,7 @@ green afterwards). What changed, and what to keep doing:
 
 - **Phones render the desktop layout.** The viewport meta is
   `width=1024` (not `device-width`): a phone lays the page out at
-  1024 CSS px and zooms to fit — exactly Chrome's "Desktop site" — so
+  1024 CSS px and zooms to fit (exactly Chrome's "Desktop site") so
   the sidebar + cards look the same everywhere and nobody has to tick
   that box (meatpi request). Pinch-zoom stays on. The ≤ 860 px
   responsive rules remain for narrow desktop windows only.
@@ -64,22 +64,22 @@ green afterwards). What changed, and what to keep doing:
   `PLACEHOLDER` maps (a `"component.key"` entry beats a bare `key`),
   with `flabel()` as the fallback (sentence case, acronyms upper-cased,
   `_s/_ms/_min/_dbm` → "(s)" etc.). New firmware fields still appear
-  automatically — add a dictionary line when the generated label reads
+  automatically: add a dictionary line when the generated label reads
   badly. Enum values are shown as words (`apsta` → "Access point +
   Station") while the stored value stays the raw enum.
 - **Controls by type.** Booleans are toggle switches (`switchCtl`),
   never Enable/Disable dropdowns. Bounded integers with a span ≤ 1500
   and every `*_mv` voltage are a slider + number pair (`sliderCtl`;
-  volts with 0.05 V steps, stored as mV) — `NO_SLIDER` lists the
+  volts with 0.05 V steps, stored as mV): `NO_SLIDER` lists the
   exceptions (ports, "-1 = forever" counters). Secrets come back
   redacted (`""` = keep on PUT), so password inputs carry an
-  "unchanged — type to replace" placeholder instead of looking empty.
+  "unchanged: type to replace" placeholder instead of looking empty.
 - **Layout.** `.frow` labels top-align to the control's first line
   (tall controls keep their label at the top); help text sits under the
   control column; number inputs cap at 240 px; two-column card grids
   use `.cols2` (collapses < 700 px).
 - **One save model, one button.** The header **Submit Changes** button
-  is the only "apply" affordance for staged settings — the per-card
+  is the only "apply" affordance for staged settings: the per-card
   "Submit to apply" badges were removed (meatpi). Only cards that write
   to the device immediately are marked (`liveBadge`, e.g. Parameters).
 - **Sub-tabs on long pages** (`tabbedPage(container, base, tabs, sub)`):
@@ -90,7 +90,7 @@ green afterwards). What changed, and what to keep doing:
   · Settings), Rules & Events (Rules · Live events · Triggers & actions).
   Every pane is built once; a tab click only toggles visibility and
   rewrites the hash with `history.replaceState` (no `hashchange`, so the
-  page is NOT re-run — staged edits and live pollers survive), while
+  page is NOT re-run, staged edits and live pollers survive), while
   `#/<page>/<tab>` deep-links land on that tab via the router's `sub`.
 - **Sidebar accordion (2026-09-06).** The sub-tabs live in the sidebar:
   a section that has them shows a chevron, and while it is the active
@@ -98,11 +98,11 @@ green afterwards). What changed, and what to keep doing:
   `grid-template-rows` 0fr→1fr, honours `prefers-reduced-motion`); every
   other section stays collapsed (meatpi: "when I click Settings the
   sub-tabs drop under Settings"). `NAV[].sub` is the ONE list of tab ids
-  + labels — `tabbedPage()` reads its labels from there (and warns when
+  + labels: `tabbedPage()` reads its labels from there (and warns when
   a page passes a tab id that is missing from it), so adding a tab means
   adding it to `NAV` and passing `{id, el}` from the page. Clicking a
   sub-tab of the page that is already open calls the page's registered
-  `show()` (`subNav`) — an in-place pane switch, no route, staged edits
+  `show()` (`subNav`): an in-place pane switch, no route, staged edits
   kept; clicking the open section's own button goes to its first tab the
   same way; anything else routes to `#/<page>/<tab>`. The in-page
   `.subtabs` strip is `display:none` on the sidebar layout and only
@@ -139,11 +139,11 @@ green afterwards). What changed, and what to keep doing:
   event. Add/Save validates (name `[A-Za-z0-9_]{1,15}`, unique, ≤ 4
   conditions, ≤ 4 timers) before the modal closes and stages the
   `event_manager` settings for Submit. `probe_rules.mjs` covers it.
-  once to drop `null`/`false` children — conditional children
+  once to drop `null`/`false` children: conditional children
   (`cond ? el : null`) used to print the word "null" on the page.
 - **Automate split by concern (2026-09-06).** The old "Behaviour" tab
   mixed the master switch with per-PID-group settings. Now the
-  **Settings** tab (card "Automate settings" — meatpi preferred that
+  **Settings** tab (card "Automate settings": meatpi preferred that
   over "Polling") holds `enabled`, the pause rules and, under advanced,
   the event rate limit / console flag; each PID group's
   own switch, init chain and (standard) protocol head that group's pane
@@ -176,8 +176,8 @@ green afterwards). What changed, and what to keep doing:
   Parameters tab (it used to drop every group row silently with the
   error on the hidden Settings tab; reproduced by aborting one request
   with Playwright). The pause threshold is one
-  "Pause polling" choice — *below the Power Saving sleep voltage* /
-  *below a voltage I choose* / *never* — mapped onto the firmware's
+  "Pause polling" choice (*below the Power Saving sleep voltage* /
+  *below a voltage I choose* / *never*) mapped onto the firmware's
   `pause_below_mv` (0 = no fixed threshold) + `pause_follow_sleep`; the
   custom slider runs 12.0–14.5 V in 0.1 V steps (a 12 V vehicle
   battery) instead of the schema's 0–30 V (meatpi). Every autopid form
@@ -193,19 +193,19 @@ green afterwards). What changed, and what to keep doing:
   bounded in the FIRMWARE schema for a 12 V battery (sleep 12.0–14.0 V,
   chip sleep 12.0–14.0 V, chip wake 12.0–15.0 V and forced above sleep
   by `on_validate`, pause ≤ 14.5 V), the sleep delay is 1–30 min, the
-  periodic check-in ≥ 5 min and the chip's sleep hold ≤ 60 min — each
+  periodic check-in ≥ 5 min and the chip's sleep hold ≤ 60 min: each
   with a schema bump + clamping migration, so stored values never
   degrade a component; all voltage sliders step 0.1 V; the periodic
   wake interval only shows once periodic wake-up is on; the DTC clear
   mode dropdown uses words; the DBC monitor-window and UDS timeout
   boxes carry bounds; IMU sensitivity/threshold rows explain their
-  units. Bench note: the Logs page's sink chips toggle sinks LIVE — a
+  units. Bench note: the Logs page's sink chips toggle sinks LIVE, a
   crawler must not click them (they are in its deny list now).
 - **Sleep-off safeguards (meatpi 2026-09-06, the pre-v6 reminder).**
   Sleep mode ships ON with a 5 min delay and a 12.0–14.0 V threshold
-  (firmware floor 12.0 V). While sleep is off — on the device, or
-  staged in the form — a permanent warning chip sits in the header
-  ("Sleep mode off — the vehicle battery can drain", links to Power
+  (firmware floor 12.0 V). While sleep is off (on the device, or
+  staged in the form) a permanent warning chip sits in the header
+  ("Sleep mode off: the vehicle battery can drain", links to Power
   Saving); `paintSleepWarn()` runs from `renderSubmit()`, at boot and
   on every reconnect (`refreshSleep()` reads `/api/sleep`). Submitting
   settings while sleep will be off replaces the plain restart confirm
@@ -221,7 +221,7 @@ green afterwards). What changed, and what to keep doing:
   shows a warning with an **Enable WiCAN console** button when the
   selected terminal (console → `/ws/cli`, ELM327 → `/ws/obd`) is not
   bridged; the button stages the channel + `br_cli`/`br_obd` bridge
-  (parking any other bridge on that interface — single-consumer rule)
+  (parking any other bridge on that interface: single-consumer rule)
   for the header Submit. A refused socket prints why instead of a bare
   "[disconnected]". Verified end to end on hardware (enable → Submit →
   reboot → Connect → `help`).
@@ -235,7 +235,7 @@ green afterwards). What changed, and what to keep doing:
   `/api/info` (`/api/status` has none); USB page ordered status →
   settings → console.
 - Logger page rework (2026-09-06): the status reads the real card
-  state (`/api/status` `sdcard_mounted` + `/api/fs/info`) — one chip per
+  state (`/api/status` `sdcard_mounted` + `/api/fs/info`): one chip per
   state (Off / Recording / Paused / Waiting for storage / No SD card)
   and per-stream figures instead of a flat list of dashes; settings
   split into Logger settings · Vehicle parameters · CAN frames (each
@@ -247,7 +247,7 @@ green afterwards). What changed, and what to keep doing:
   on the page with the write-locked active files marked "in use";
   Files deep-links (`#/files/sd/logs`).
 - Dashboard rework (2026-09-06): the header chip shows the real state
-  (Automate off / Polling / Paused on battery / Not polling — the old
+  (Automate off / Polling / Paused on battery / Not polling, the old
   page never noticed Automate was off because `/api/autopid` has no
   `enabled`; it reads `/api/status` `autopid_enabled` now); a strip with
   one switch per polling group (runtime `/api/autopid/group`, labelled
@@ -256,21 +256,21 @@ green afterwards). What changed, and what to keep doing:
   class icon, a sparkline of the last ~2 minutes, the bar over the
   parameter's min/max from Automate (session autoscale only when unset,
   and it says so), the PID / filter / "External (GPS)" source and the
-  value's age — stale values fade. Empty states link to Automate →
+  value's age: stale values fade. Empty states link to Automate →
   Settings / Parameters. Vehicle-profile import normalises the
   mis-encoded degree sign (`\uFFFD` → `°`).
 - Dashboard customisation (2026-09-06): Customise puts a gear on every
-  tile — widget (automatic · number · bar · dial · trend · chart), range
+  tile, widget (automatic · number · bar · dial · trend · chart), range
   (the parameter's min/max from Automate, or custom), warn below / above
-  (amber value and dial arc), decimals, width (1–2 columns), hide — and
+  (amber value and dial arc), decimals, width (1–2 columns), hide, and
   the tiles drag to reorder; the layout is ONE file on the device
   (`/data/dashboard.json`, written through `/api/fs/upload`) so every
   phone and PC sees the same dashboard, and Reset layout deletes it.
   Charts use uPlot 1.6.31 (MIT), NOT embedded: the page downloads the
   pinned build from cdn.jsdelivr.net, checks size + FNV-1a, stores it
   under `/data/cache/www` (or `/sd/cache/www` when flash is short; with
-  neither it says an SD card is needed) and loads it from `/cache/www/`
-  — the `/cache/*` → `/data/cache` and `/sdcache/*` → `/sd/cache` prefix
+  neither it says an SD card is needed) and loads it from `/cache/www/`:
+  the `/cache/*` → `/data/cache` and `/sdcache/*` → `/sd/cache` prefix
   assets `web_ui_v2.c` registers (MIME by extension, ETag/304,
   max-age 3600). Anything under cache/ is re-creatable.
 - Dashboard history from the logger (user request 2026-09-06): a chart
@@ -280,10 +280,10 @@ green afterwards). What changed, and what to keep doing:
   `/api/logger/export?name=<param>` (cursor walked from the newest file
   that starts before the window); binary `.wdl` and SQLite `.db` files
   are fetched whole through `/api/fs/download` (the file being written is
-  read after pausing the logger's gate, resumed right after — unpaused it
+  read after pausing the logger's gate, resumed right after, unpaused it
   answers 409 `file in use`, which the page retries for a few seconds
   because a SQLite commit in flight delays the release) and decoded
-  in the browser — the `.wdl` reader mirrors `tools/wdl_dump.py`, SQLite
+  in the browser: the `.wdl` reader mirrors `tools/wdl_dump.py`, SQLite
   uses sql.js 1.14.2 (WebAssembly, 690 KB, MIT) installed on demand under
   `cache/www` exactly like the chart library (`DASH_RES` registry: pinned
   size + FNV-1a, internal flash first, SD card fallback, "insert an SD
@@ -296,10 +296,10 @@ green afterwards). What changed, and what to keep doing:
 - WiFi Network card (2026-09-06): while the station is not connected and
   the last attempts failed, a plain-language line says which network,
   why (`/api/wifi/status` `sta_attempt`: reason + failure streak) and what
-  the firmware does next (other networks first, then this one again — the
+  the firmware does next (other networks first, then this one again, the
   timed ban is gone), with the hint to correct the password here.
   Probe: `probe_wifi_why.mjs`.
-- Size budget (2026-09-06): the build now minifies index.html —
+- Size budget (2026-09-06): the build now minifies index.html,
   `gzip_asset.py` runs rjsmin/rcssmin (vendored under `tools/`,
   Apache-2.0, pure Python, so the IDF Python is enough) before gzipping:
   91.6 KB → 82.0 KB gzipped WITH the dashboard customisation and the
@@ -311,7 +311,7 @@ green afterwards). What changed, and what to keep doing:
   `obd_chip` settings card. Its fields (auto sleep, monitor policy, the
   chip's sleep thresholds) only confused users, and the chip UART baud is
   now a firmware constant (`OBD_CHIP_BAUD`; obd_chip settings v3 drops a
-  stored value) — a user changing it would break the chip and claim
+  stored value): a user changing it would break the chip and claim
   warranty. The group stays reachable through the settings API / CLI /
   backup; the UI keeps no labels, enums or formatters for it.
 - Motion defaults + Power Saving flag (meatpi 2026-09-07): the IMU stays
@@ -323,12 +323,12 @@ green afterwards). What changed, and what to keep doing:
   SMD is off; the help text no longer claims a knock wakes the device.
   Probe: `probe_power_flag.mjs`.
 - Last wake-up on Status (meatpi 2026-09-07): the System card names this
-  boot's cause in plain words from `/api/restart/history` — "Battery
-  voltage recovered — woke from sleep", "Periodic check-in — woke from
+  boot's cause in plain words from `/api/restart/history`: "Battery
+  voltage recovered, woke from sleep", "Periodic check-in, woke from
   sleep" (new restart_tracker reason `periodic_wake`; sleep_manager used
   to file check-ins as power_wake), "Restart requested · web UI",
   "Settings applied", "Firmware update", or the chip's own reset cause
-  ("Power-on", "Crash (panic) — unexpected", watchdogs, brown-out).
+  ("Power-on", "Crash (panic), unexpected", watchdogs, brown-out).
   Motion slots in once wake-on-motion exists. Probe:
   `probe_wake_source.mjs` (the mock's last record is
   `__mockState.lastRestart`).
@@ -345,7 +345,7 @@ green afterwards). What changed, and what to keep doing:
   description; the logger's active file (`/api/logger` dir/file while
   running) is marked "in use" with Delete disabled and a hint to pause
   logging; non-empty folders and in-use files get plain-language errors.
-  Bug found on the way: the old page's New folder never worked — it
+  Bug found on the way: the old page's New folder never worked, it
   posted the path as a JSON body while `/api/fs/mkdir` reads `?path=`
   like every other fs route (bench-verified 2026-09-07).
   Probe: `probe_files.mjs` (the mock lists `__mockState.files` / `dirs`
@@ -613,12 +613,12 @@ shown as unavailable), DECODING (DBC files, upload), SETTINGS FILE
 TEC/REC; page-header connection chip + Connect/Disconnect. Speaks **slcan
 over `/ws/can`**; chunk `web/monitor.js`) · Terminal (console `/ws/cli` or
 ELM327 `/ws/obd`) · Advanced (IMU only: radio arbitration moved to Settings,
-WiFi on 2026-09-07 — no OBD chip card
+WiFi on 2026-09-07, no OBD chip card
 since 2026-09-07)
 · System (reboot · backup/restore · restart history · factory reset ·
 **Certificates** (cert_manager sets: list w/ part flags, per-part PEM
-upload via raw `/api/certs/upload?set&type` — NOT the api() JSON
-wrapper — delete w/ confirm; key material is write-only by design; the
+upload via raw `/api/certs/upload?set&type`, NOT the api() JSON
+wrapper: delete w/ confirm; key material is write-only by design; the
 MQTT and Home Assistant `cert_set` fields become dropdowns fed from
 `/api/certs` via `certSetPicker()`, which MUST share the settingsForm's
 staged values object) · OTA with progress) · VPN (settings + keygen +
@@ -631,7 +631,7 @@ Console for manual commands, serialized against the poll via a shared
 `nlBusy` latch so they never 409 each other) · About.
 TOOLS: Trouble Codes (scan/describe/clear + databases) · DBC Signals ·
 Rules & Events · **Scripts** (2026-09-07: Editor · Examples · Reference ·
-Settings — the Editor tab is a full-width "Stored scripts" table (name,
+Settings, the Editor tab is a full-width "Stored scripts" table (name,
 size, Open · Run · Download · Delete per row, the open one highlighted;
 meatpi: a stacked side list was not intuitive) above an editor card whose
 header names the open file and carries the Saved / Unsaved / Running
@@ -644,7 +644,7 @@ shows under the output; CodeMirror 5 (highlighting via a simple-mode
 Berry grammar, line numbers, bracket matching, autocomplete of the
 bindings + globals + keywords, Ctrl-S / Ctrl-Enter / Ctrl-Space /
 Ctrl-/) is an on-demand library in the same `UI_RES` registry as uPlot
-and sql.js — nine files under `cache/www`, a plain textarea until it is
+and sql.js: nine files under `cache/www`, a plain textarea until it is
 installed; the Examples gallery and the whole Reference (bindings with
 Insert, globals, a Berry primer, the rule recipe, error hints, limits)
 are rendered from `GET /api/scripts/reference` + `/examples`, so the page
@@ -659,7 +659,7 @@ preview, in-use marking; chunk `web/files.js`) · Logs · System Monitor
 (tasks/CPU/heap/temp) · All Settings
 (every component).
 
-## Connections card (Settings page — the bridge builder)
+## Connections card (Settings page: the bridge builder)
 
 Pure settings composition, ZERO firmware surface: each row is
 [interface ▾] ⇄ [connection ▾] with contextual fields (TCP/UDP → port,
@@ -673,7 +673,7 @@ can't model (hand-made relay pairings) show read-only with a pointer to
 All Settings. Everything applies through the header Submit
 (reboot-to-apply).
 
-## Preview + tests WITHOUT a device — `tools/webui_preview/` (2026-07-13)
+## Preview + tests WITHOUT a device: `tools/webui_preview/` (2026-07-13)
 
 The committed harness mocks the whole `/api` + `/ws` surface in-page:
 

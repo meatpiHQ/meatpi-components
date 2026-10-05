@@ -1,11 +1,11 @@
 # data_logger
 
 Generic record logger (successor of legacy `obd_logger`): producers
-push timestamped records; this component owns storage on the SD card —
+push timestamped records; this component owns storage on the SD card,
 batching, file rotation, retention, and the storage-engine choice.
 **Two streams** since 2026-07-09 (TASK addendum): numeric params and
 raw CAN frames, each with its own format, file series, rotation and
-retention — their rates and tooling differ wildly (autopid ≤ ~19
+retention, their rates and tooling differ wildly (autopid ≤ ~19
 samples/s vs a 500 kbit/s bus peaking ~4,000 fps).
 
 ## Model
@@ -16,8 +16,8 @@ data_logger_register_param("autopid", "rpm", &rpm);   /* once, cheap */
 data_logger_write(rpm, 850.0);                        /* never blocks */
 ```
 
-Records land in PSRAM rings (drop-oldest + counter); one writer task —
-the only file toucher, PSRAM stack (SD-only IO) — drains both rings in
+Records land in PSRAM rings (drop-oldest + counter); one writer task,
+the only file toucher, PSRAM stack (SD-only IO), drains both rings in
 batches. A yanked card parks the writer while the rings keep
 absorbing; producers never stall. Params and frames have SEPARATE
 rings so a CAN flood can never evict param records (frame ring sized
@@ -36,7 +36,7 @@ by `ring_len`).
   logging). `can_filter`/`can_mask`/`can_ext` (hex strings) select
   ids; empty filter = ALL frames. One small drain task moves the
   subscription queue into the frame ring.
-- **rules**: the `logger.write {source?, name, value}` event action —
+- **rules**: the `logger.write {source?, name, value}` event action,
   any event's values, user-selected (see Events below).
 
 ## Storage engines (`format` / `can_format` settings)
@@ -47,7 +47,7 @@ open at once). Params: `sqlite | csv | binary | jsonl`. CAN:
 
 | format | file | streams | why |
 |---|---|---|---|
-| `sqlite` | `.db` (`params`+`records` / `frames` tables) | both | legacy-compatible `.db` tooling; ~700 rows/s tuned — CAN only for filtered/slow streams |
+| `sqlite` | `.db` (`params`+`records` / `frames` tables) | both | legacy-compatible `.db` tooling; ~700 rows/s tuned: CAN only for filtered/slow streams |
 | `csv` | `.csv` (`ts_ms,source.name,value` / `ts_ms,id,ext,rtr,dlc,data`) | both | spreadsheet/pandas friendly |
 | `binary` | `.wdl` packed + inline dictionary | both | THE busy-bus option (~170× sqlite); convert offline: `tools/wdl_dump.py --to csv\|candump\|trc\|text` |
 | `mf4` | `.mf4` MDF 4.10 (ASAM) | CAN | the bus-logging standard: asammdf / CANoe / MATLAB / INCA (CANedge-style). CAN_DataFrame channel group; readable to the last commit (in-place DT/CG patching) |
@@ -57,17 +57,17 @@ open at once). Params: `sqlite | csv | binary | jsonl`. CAN:
 | `jsonl` | `.jsonl` one JSON object per line | both | universal (jq / pandas / anything) |
 
 mf4/blf/asc are **single-use** (relative timestamps / patched headers):
-every boot/rotation starts a fresh file — no cross-boot append. PEAK
+every boot/rotation starts a fresh file, no cross-boot append. PEAK
 TRC stays offline (`wdl_dump.py --to trc`) unless users ask.
 
 Files live in `/sd/logs`, rotate at `max_file_mb` / `can_max_file_mb`,
-and the oldest are deleted beyond `max_files` / `can_max_files` —
+and the oldest are deleted beyond `max_files` / `can_max_files`:
 retention is per stream (prefix-scoped) and spans engine switches.
 Zero-padded epoch names make lexical order = age order.
 Browse/download/delete via the existing `/api/fs` routes. The ACTIVE
 file of each stream is write-locked (`CONFIG_FATFS_FS_LOCK`,
 2026-07-09): downloading or deleting it fails with an error instead of
-corrupting the card (unlink-while-open = orphaned FAT chains) — pause
+corrupting the card (unlink-while-open = orphaned FAT chains), pause
 via `/api/logger/gate` (closes + flushes both files) or wait for
 rotation, then fetch. Rotated files are always free.
 
@@ -85,28 +85,28 @@ format-enum ADDITIONS are schema-compatible (no version bump).
 
 ## Events (event_manager)
 
-Sources: `logger.rotated {file}` (both streams — the prefix tells them
+Sources: `logger.rotated {file}` (both streams, the prefix tells them
 apart), `logger.error {count}`.
 Actions:
-- `logger.enable` / `logger.disable` — rule-driven gating ("log only
+- `logger.enable` / `logger.disable`: rule-driven gating ("log only
   while driving"). Paused keeps filling the rings, so an enable rule
   also lands the newest pre-trigger records.
   A gate change notifies the writer task (2026-09-06), so the files close
-  or reopen right away instead of after the `flush_ms` nap — the export
+  or reopen right away instead of after the `flush_ms` nap: the export
   relies on that to read the active file.
-- `logger.write {source?, name, value}` — rule-selected values into
+- `logger.write {source?, name, value}`: rule-selected values into
   the params stream, e.g. `match autopid.param -> logger.write
   {"source":"autopid","name":"${param}","value":"${value}"}`.
 
 ## Surfaces
 
-- `GET /api/logger` — status JSON: param-stream fields at the top
+- `GET /api/logger`: status JSON: param-stream fields at the top
   level (enabled/running/paused/storage_ok, file, rows, files,
   written/dropped/errors/rotations) + a `can{}` block (enabled, file,
   file_rows, files, queued, frames_written, frames_dropped,
   rotations).
-- `GET /api/logger/export?stream=params&since=<cursor>&limit=N[&name=<param>]`
-  — incremental pull of the params stream (jsonl and, since 2026-09-06, csv —
+- `GET /api/logger/export?stream=params&since=<cursor>&limit=N[&name=<param>]`:
+  incremental pull of the params stream (jsonl and, since 2026-09-06, csv:
   400 for the other engines, whose files the UI fetches whole through
   `/api/fs/download`):
   `{"ts":<epoch ms>,"param":"<source>.<name>","value":n}` lines, then a
@@ -118,16 +118,16 @@ Actions:
   by the whole window but the cursor by the kept part, so a second window
   in one response started mid-record). The web dashboard's chart tiles
   backfill from it.
-- `POST /api/logger/gate` `{"enabled":bool}` — runtime (non-persisted)
+- `POST /api/logger/gate` `{"enabled":bool}`: runtime (non-persisted)
   gate for BOTH streams; the HTTP twin of the `logger.enable`/
   `logger.disable` event actions. Resets on reboot.
-- CLI `logger` — both streams' status; `logger test <rows>` queues
+- CLI `logger`: both streams' status; `logger test <rows>` queues
   synthetic `test.value` records, `logger frametest <n>` synthetic
   frames (engine throughput without a bus).
 
 ## Robustness (power cuts, crashes, corrupt files)
 
-See `ROBUSTNESS.md` (2026-09-07) — the fail-case matrix and what each
+See `ROBUSTNESS.md` (2026-09-07): the fail-case matrix and what each
 case costs. In short: sqlite commits are atomic (the port syncs again,
 `journal_mode=PERSIST` + `synchronous=FULL`); text and `.wdl` files get
 their torn tail cut on resume; a corrupt file is set aside as
@@ -141,11 +141,11 @@ planned restart close the files first.
 
 ## Testing
 
-- Host: `host_test/` (20 tests — file-name/prefix rules, hex filter
+- Host: `host_test/` (20 tests, file-name/prefix rules, hex filter
   parse, `.wdl` + csv frame-encoder golden vectors, and the recovery
   helpers: torn text/.wdl tails, set-aside names, salvage sanity, CRC).
 - Live: `tools/testbench/data_logger_bench.py` (`test.ps1` stage
-  `live datalog`) — the full format matrix with CONTENT validation
+  `live datalog`), the full format matrix with CONTENT validation
   (python sqlite3 / csv / wdl_dump byte-exact vs PCAN-sent frames),
   the autopid sink leg, the id filter leg, rotation/retention, the
   runtime gate, and the paced CAN-rate benchmark. CAN legs self-skip
@@ -157,7 +157,7 @@ Legacy toggled `journal_mode` per store call and got the DELETE-journal
 worst case; setting the pragmas once + batching was the 5.6× fix
 (`BENCHMARKS.md`: legacy 130 → tuned 724 rows/s; littlefs-on-SD
 rejected, 7–13× slower everywhere). Until 2026-09-07 the port also
-compiled out xSync and ran `journal_mode=MEMORY` — fast, but a power cut
+compiled out xSync and ran `journal_mode=MEMORY`: fast, but a power cut
 mid-commit corrupted the file. Now: sync on, `journal_mode=PERSIST`,
 `synchronous=FULL` (ROBUSTNESS.md case 1); the extra fsyncs are paid
 for by the 5 s default batch.
@@ -167,7 +167,7 @@ for by the 5 s default batch.
 PSRAM: ~250 KB static (param ring 12 KB + frame ring 192 KB at the
 8192 cap + writer 10 KB + drain 3 KB stacks + registries + CAN queue)
 plus ALL sqlite heap (SQLITE_CONFIG_MALLOC → PSRAM). Internal: 4 KB
-DMA-capable stdio buffer PER OPEN append-engine file (lazy heap —
+DMA-capable stdio buffer PER OPEN append-engine file (lazy heap,
 allocated at open, freed at close; must be DMA-capable or sdmmc
 bounce-buffer allocs fail under pressure) + FreeRTOS objects. The
 writer/drain PSRAM stacks are safe because they only touch the SD

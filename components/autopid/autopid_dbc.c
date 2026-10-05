@@ -29,10 +29,10 @@
  *        selected signals to expressions, merges them into
  *        /data/autopid/config.json as filter parameters, DRY-RUNS the
  *        result through ap_config_parse, then atomically saves and
- *        live-reloads — nothing is stored on a validation failure.
+ *        live-reloads: nothing is stored on a validation failure.
  *
  * File I/O only from internal-stack contexts (boot = main task,
- * store/delete/add = httpd) — the §2-corollary rule.
+ * store/delete/add = httpd): the §2-corollary rule.
  */
 #include <ctype.h>
 #include <stdio.h>
@@ -853,7 +853,7 @@ esp_err_t ap_dbc_add(const char *db, const cJSON *signals,
         return ESP_ERR_NO_MEM;
     }
 
-    static ap_config_t s_dry EXT_RAM_BSS_ATTR;  /* 400+ KB — not stack  */
+    static ap_config_t s_dry EXT_RAM_BSS_ATTR;  /* 400+ KB, not stack  */
     char perr[96];
 
     if (ap_config_parse(body, &s_dry, perr, sizeof(perr)) != ESP_OK)

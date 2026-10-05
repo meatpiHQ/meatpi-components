@@ -1,4 +1,4 @@
-# microlink — vendored component (Tailscale for ESP32)
+# microlink: vendored component (Tailscale for ESP32)
 
 Vendored 2026-07-07 from https://github.com/CamM2325/microlink tag
 **v2.1.0** (MIT, Malone Technologies LLC). Production Tailscale client:
@@ -6,7 +6,7 @@ ts2021 control plane, WireGuard data plane, DERP/DISCO/STUN, MagicDNS.
 Sole consumer: `vpn_manager` (type "tailscale"). Design +
 decisions: `vpn_manager/TASK_tailscale.md`.
 
-**Testing:** no local unit suite — vendored upstream code isn't forked into
+**Testing:** no local unit suite, vendored upstream code isn't forked into
 a parallel test tree. Its config server (12 routes) + the ts2021/WireGuard/
 DERP stack are validated through `vpn_manager` on the bench
 (`TS TARGET PASS`, end-to-end MapResponse + WireGuard data plane).
@@ -17,7 +17,7 @@ DERP stack are validated through `vpn_manager` on the bench
    `components/wireguard_lwip`; it was PROMOTED to a top-level
    `components/wireguard_lwip` and is now shared with `esp_wireguard`
    (both VPN types, one data plane, one set of `wireguardif_*`/crypto
-   symbols — the private esp_wireguard copies were deleted to avoid a
+   symbols: the private esp_wireguard copies were deleted to avoid a
    link-time clash). `wireguardif_fini()` was re-added to that shared
    copy for esp_wireguard's teardown (upstream microlink had only
    `wireguardif_shutdown`).
@@ -25,19 +25,19 @@ DERP stack are validated through `vpn_manager` on the bench
 3. **HTTP config server NOT compiled.** `ml_config_httpd.c` (its own
    web config UI + NVS settings brain + the temperature-sensor dep)
    is Kconfig-gated OFF (`CONFIG_ML_ENABLE_CONFIG_HTTPD=n`, upstream
-   default) and dropped from SRCS — WiCAN owns config via
+   default) and dropped from SRCS: WiCAN owns config via
    settings_manager + web_ui (Standard §4, one config brain). The
    header ships inline stubs for that build, so the core compiles
    against them unchanged.
 4. **`control_url` config field** added to `microlink_config_t` +
-   `microlink_init` — Headscale/Ionscale host override that upstream
+   `microlink_init`: Headscale/Ionscale host override that upstream
    only exposed through the (now-absent) config UI's NVS layer.
 5. **Internal-RAM (DONE):** microlink is PSRAM-first (handle, cJSON
    hooks, H2/JSON buffers). 3 of the 4 task stacks moved to PSRAM via
    `ml_start_psram_task()` in `microlink.c` (net_io 8K / derp_tx 14K /
    coord 12K = 34 KB off internal; static-create with internal
    `StaticTask_t` TCBs, stacks freed in destroy). `wg_mgr` stays
-   INTERNAL (it writes the peer cache to NVS — §2 corollary). All of
+   INTERNAL (it writes the peer cache to NVS: §2 corollary). All of
    microlink is runtime-allocated on init, so it costs ZERO while
    tailscale is disabled (vpn_manager only inits it when
    `type=tailscale`). See ARCHITECTURE §12b + wican-internal-ram-budget.
@@ -58,7 +58,7 @@ DERP stack are validated through `vpn_manager` on the bench
 9. **Netmap-on-stream (Headscale compatibility), 2026-07-07.**
    Headscale never answers `Stream=false` full-map requests (its
    `mapSession.serve()` handles only stream / endpoint-update /
-   read-only; the reply is an empty 200) — upstream stalled forever at
+   read-only; the reply is an empty 200): upstream stalled forever at
    FETCH_PEERS. Changes in `ml_coord.c`:
    - Empty MapResponse tolerated (`map_deferred_to_stream`), and
      END_STREAM is now also detected on HEADERS frames so the empty
@@ -71,11 +71,11 @@ DERP stack are validated through `vpn_manager` on the bench
      expiry all parse from streamed maps too; DERP connect is
      requested as soon as a streamed map delivers the DERPMap.
    - Long-poll messages are reassembled as `[4-byte LE length][JSON]`
-     (ts2021 map-stream framing) in a PSRAM buffer — one message may
+     (ts2021 map-stream framing) in a PSRAM buffer: one message may
      span many Noise/H2 frames.
 10. **H2 frame accumulation in the long-poll path.** Upstream parsed
     H2 frames only within a single decrypted Noise frame; an H2 frame
-    spanning two Noise frames (any MapResponse > ~4 KB — i.e. every
+    spanning two Noise frames (any MapResponse > ~4 KB, i.e. every
     real netmap) lost its tail and desynced the stream. Persistent
     64 KB PSRAM accumulator (`h2_acc_buf`); only complete H2 frames
     are consumed, partial tails wait for the next read.
@@ -83,7 +83,7 @@ DERP stack are validated through `vpn_manager` on the bench
 11. **Effective DERP region** (`ml_effective_derp_region`): if the
     configured/home region isn't in the parsed DERPMap (custom
     coordinators serve their own region IDs), adopt the map's first
-    usable region — used for dialing AND advertised as
+    usable region: used for dialing AND advertised as
     `NetInfo.PreferredDERP` (upstream hardcoded region 9/Dallas and
     then dialed the public derp9e.tailscale.com, which is useless
     against Headscale's embedded DERP).
@@ -98,7 +98,7 @@ DERP stack are validated through `vpn_manager` on the bench
     ~15 KB largest block; vpn_state (6 KB, created first) + an 8 KB
     wg_mgr no longer fit one region and microlink_start failed
     ("Failed to create wg_mgr task"). Watermark measured under a live
-    tunnel (registration + map + ICMP + HTTP): wg_mgr uses ~3 KB —
+    tunnel (registration + map + ICMP + HTTP): wg_mgr uses ~3 KB,
     4.1 KB headroom at 7 KB. vpn_manager's state task went 7168→6144
     the same day (3.9 KB headroom measured).
 
@@ -106,5 +106,5 @@ DERP stack are validated through `vpn_manager` on the bench
 
 `microlink.h` public API, `src/ml_*.c` (coord/derp/net_io/wg_mgr/stun/
 noise/h2/udp/tcp/peer_nvs/zerocopy), `nacl_box.c`/`x25519.c` crypto,
-cellular (`ml_cellular.c`/`ml_at_socket.c`/`ml_net_switch.c` — built
+cellular (`ml_cellular.c`/`ml_at_socket.c`/`ml_net_switch.c`: built
 but unused on WiCAN; ML_ENABLE_CELLULAR=n). x25519-license.txt kept.

@@ -30,7 +30,7 @@
  *   tx: {"bus":0,"type":"tx","frame":[...]}   (parsed, "ts" ignored)
  *
  * Sizing: everything lives inside the translator ctx (BM_CTX_MAX 4096;
- * NEVER on the 4 KB pump stack — the 2026-07-22 stack-audit lesson).
+ * NEVER on the 4 KB pump stack: the 2026-07-22 stack-audit lesson).
  * Worst-case frame JSON ≈ 91 B → 24-frame batch ≈ 2.2 KB.
  */
 #pragma once

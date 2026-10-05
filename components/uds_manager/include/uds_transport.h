@@ -27,8 +27,8 @@
  *        loop / NRC decode / tester-present live in uds_manager above).
  *
  * Implementations:
- *   uds_transport_obd   — obd_chip AT (MIC3624), always available.
- *   uds_transport_isotp — raw UDS PDU over the registered ISO-TP
+ *   uds_transport_obd:    obd_chip AT (MIC3624), always available.
+ *   uds_transport_isotp: raw UDS PDU over the registered ISO-TP
  *                         provider (can_isotp.h) on can_manager.
  *
  * The shared AT-hex helpers below are pure and host-tested.
@@ -86,7 +86,7 @@ char uds_at_protocol(bool ext_id);
 
 /** The same with @p skip_setup: the caller knows the chip is still in this
  *  address' setup (nobody else wrote to it since), so only the request
- *  line goes out — one request = one AT round-trip. */
+ *  line goes out, one request = one AT round-trip. */
 esp_err_t uds_at_transceive_ex(uds_at_request_fn req_fn,
                                const uds_addr_t *addr,
                                const uint8_t *req, size_t req_len,

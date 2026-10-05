@@ -1,4 +1,4 @@
-# restart_tracker — on-target test app
+# restart_tracker: on-target test app
 
 Self-driving, **one step per boot**, the step number kept in PSRAM
 `.noinit`. Builds against the main partition table (standard rev 2.1), and
@@ -73,7 +73,7 @@ which only stage B calls while a panic is handled (the place to fault or
 hang), `xPortInterruptedFromISRContext()` and `esp_restart_noos()` (cycle
 counts: the time stage B takes, `RT MEASURE stage_b_us`).
 
-## Expected result — serial markers
+## Expected result: serial markers
 
 ```
 BOOT count=1 seq=1 reason=poweron planned=0

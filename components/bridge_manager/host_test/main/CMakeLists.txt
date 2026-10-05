@@ -1,5 +1,5 @@
 # Host test compiles the pure config layer + the translator CONTRACT (via a
-# line-splitter test codec defined in the test) — no FreeRTOS runtime use,
+# line-splitter test codec defined in the test): no FreeRTOS runtime use,
 # so it runs on the linux target.
 set(comp_dir "${CMAKE_CURRENT_LIST_DIR}/../..")
 

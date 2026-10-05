@@ -23,7 +23,7 @@
 /**
  * @file ble_manager_pack.c
  * @brief Pure helpers: the legacy TX packing math, identity derivations and
- *        TX-power clamping. No BT stack — host-tests on the linux target.
+ *        TX-power clamping. No BT stack: host-tests on the linux target.
  */
 #include <stdio.h>
 #include <stdbool.h>
@@ -65,7 +65,7 @@ bool blm_pack_fill(uint8_t *buf, size_t *buf_len, size_t max_data,
 
 void blm_ident_name(const char *device_id, char *name, size_t name_len)
 {
-    /* legacy ble_uid format "WiC_<12-hex MAC>" (legacy main.c) — with the
+    /* legacy ble_uid format "WiC_<12-hex MAC>" (legacy main.c), with the
        serial = name+7 rule below this also makes 2A25 byte-identical to
        legacy (last 9 hex chars). Was "WiCAN_<id>" until the 2026-07-18
        defaults pass restored legacy parity. */
@@ -74,7 +74,7 @@ void blm_ident_name(const char *device_id, char *name, size_t name_len)
 
 void blm_ident_serial(const char *dev_name, char *serial, size_t serial_len)
 {
-    /* legacy verbatim: serial = dev_name + 7 — this is what existing tools
+    /* legacy verbatim: serial = dev_name + 7, this is what existing tools
        read from characteristic 2A25, so it stays byte-identical */
     size_t name_len = strlen(dev_name);
 

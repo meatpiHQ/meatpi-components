@@ -22,7 +22,7 @@
 
 /**
  * @file script_engine_events.c
- * @brief event_manager glue: the `script.run {name}` action — run a
+ * @brief event_manager glue: the `script.run {name}` action, run a
  *        stored /data/scripts script when a rule fires. Rules may also
  *        use the sugar body `{"on":"…","script":"name"}` (the parser
  *        rewrites it to this action).

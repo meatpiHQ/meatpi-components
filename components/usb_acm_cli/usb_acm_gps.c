@@ -23,7 +23,7 @@
 /**
  * @file usb_acm_gps.c
  * @brief Pure parser for the ESPNetLink `gps -p -j` response. No deps
- *        (no cJSON) — the dongle emits a FLAT JSON object, so a keyed
+ *        (no cJSON): the dongle emits a FLAT JSON object, so a keyed
  *        numeric scan is enough and it stays host-testable.
  */
 #include "usb_acm_gps.h"
@@ -32,7 +32,7 @@
 #include <string.h>
 
 /* Find `"key":` and read the number after it. The leading quote makes the
- * key unambiguous — `"lat":` never matches inside `"cached_lat":`. */
+ * key unambiguous: `"lat":` never matches inside `"cached_lat":`. */
 static bool find_num(const char *json, const char *quoted_key, double *out)
 {
     const char *p = strstr(json, quoted_key);
@@ -104,7 +104,7 @@ bool usb_acm_gps_parse(const char *json, usb_acm_gps_t *out)
 
     if (!find_true(obj, "\"valid\":"))
     {
-        return false; /* no live fix — do not report a cached position */
+        return false; /* no live fix: do not report a cached position */
     }
 
     double d;

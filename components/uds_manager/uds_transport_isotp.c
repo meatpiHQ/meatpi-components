@@ -22,7 +22,7 @@
 
 /**
  * @file uds_transport_isotp.c
- * @brief backend "isotp" — RAW UDS PDU over the registered ISO-TP
+ * @brief backend "isotp": RAW UDS PDU over the registered ISO-TP
  *        provider (can_isotp.h) on can_manager's native CAN. The most
  *        capable path: multi-frame UDS, no ELM round-trips. One
  *        session, re-opened when the address changes. Without a
@@ -105,7 +105,7 @@ static void unbind_locked(void)
 }
 
 /* esp_timer task: skip (and retry later) while a transaction holds
-   the lock — never block the timer task */
+   the lock: never block the timer task */
 static void idle_close_cb(void *arg)
 {
     (void)arg;
@@ -216,7 +216,7 @@ static esp_err_t isotp_transceive(const uds_addr_t *addr,
        (obd_gate.h), so a stuck side can never brick the other */
     obd_gate_acquire(&s_gate_token, OBD_GATE_WAIT_MS);
 
-    /* Drain any stale reassembled message before sending — otherwise a
+    /* Drain any stale reassembled message before sending, otherwise a
      * late/previous response (or bus cross-talk on this rx_id) is read
      * back immediately and every reply comes out shifted by one. A large
      * stale message returns OVERFLOW into our small buffer but is still
@@ -302,7 +302,7 @@ const uds_transport_t *uds_transport_isotp(void)
     return &T;
 }
 
-/* ---- raw PDU surface (script obd_isotp_tx/rx — no UDS semantics) ----------- */
+/* ---- raw PDU surface (script obd_isotp_tx/rx: no UDS semantics) ----------- */
 
 esp_err_t uds_isotp_tx(const uds_addr_t *addr,
                        const uint8_t *data, size_t len, uint32_t timeout_ms)

@@ -1,4 +1,4 @@
-# esp_isotp — vendored component
+# esp_isotp: vendored component
 
 Espressif upstream **esp_isotp v0.1.1** (isotp-c based), copied into
 an earlier meatpi project and adopted here 2026-07-07 with it. Uses the

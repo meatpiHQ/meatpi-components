@@ -26,7 +26,7 @@
  *
  * Input is exactly what obd_chip_request() returns (echo + prompt already
  * stripped; '\r'/'\n' line endings preserved). Output is the byte payload
- * user expressions index into — INCLUDING the service/PID echo bytes
+ * user expressions index into, INCLUDING the service/PID echo bytes
  * (B0 = 0x41 for a mode-01 response), matching the legacy evaluator's
  * frame-of-reference so published profile expressions keep working.
  *
@@ -36,7 +36,7 @@
  *                              then indexed 8-byte rows; trimmed to length)
  *   7E8 06 41 00 BE 7F B8 13   headers on, single frame (PCI 0x0L)
  *   7E8 10 14 49 02 01 ..      headers on, ISO-TP first (0x1L LL) +
- *   7E8 21 ..                  consecutive (0x2N) — reassembled from the
+ *   7E8 21 ..                  consecutive (0x2N): reassembled from the
  *                              LOWEST responder ID only (legacy rule)
  *   18 DA F1 58 07 62 F4 00 .. headers on, 29-bit: the chip prints the id
  *                              as FOUR byte tokens (bench 2026-10-03).
@@ -62,7 +62,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
-/* The line table is ~5.6 KB — far too big for a task stack (a 6144-byte
+/* The line table is ~5.6 KB: far too big for a task stack (a 6144-byte
    job stack silently overflowed on it, 2026-07-22; the 2026-07-22 static
    stack audit then showed EVERY caller was budgeting for it). One shared
    PSRAM table behind a mutex instead: response assembly is a
@@ -120,7 +120,7 @@ bool ap_payload_matches_cmd(const char *cmd, const uint8_t *payload,
 
     if (n_want == 0)
     {
-        return true; /* AT/ST/VT — nothing to verify */
+        return true; /* AT/ST/VT: nothing to verify */
     }
 
     /* positive responses echo (service | 0x40) then the identifier */
@@ -195,7 +195,7 @@ static size_t assemble_header_frames(const ap_line_t *lines, int n_lines,
         }
         else
         {
-            /* no PCI (11-bit non-ISO-TP data) — take the raw bytes */
+            /* no PCI (11-bit non-ISO-TP data): take the raw bytes */
             start = 0;
             count = bn;
         }
@@ -348,7 +348,7 @@ int ap_resp_to_payloads(const char *resp, ap_resp_ecu_t *out,
 
     if (!lines[0].has_header)
     {
-        /* headers off — responders are indistinguishable; assemble the
+        /* headers off: responders are indistinguishable; assemble the
            single-payload shapes from the lines already collected (NOT
            a nested ap_resp_to_payload call: its ~5.6 KB line table on
            top of ours is exactly the stack-overflow shape that

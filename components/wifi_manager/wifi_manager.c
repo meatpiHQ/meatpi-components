@@ -132,7 +132,7 @@ static wifi_auth_mode_t ap_authmode(const wm_config_t *cfg)
 
 /* ---- STA config helpers --------------------------------------------------- */
 
-/* v6: per-network STA addressing — configure the netif for THIS
+/* v6: per-network STA addressing, configure the netif for THIS
    candidate before its connect attempt (each network may live on a
    different LAN, so a fallback carries its own static/DHCP choice).
    esp_netif still raises IP_EVENT_STA_GOT_IP for a static netif when
@@ -297,7 +297,7 @@ static void leave_scan_mode(bool switched)
 
 /* connect-in-flight guard (2026-07-19, caught by the HIL error budgets):
  * the reconnect task's 5 s cadence re-selected and re-applied the STA
- * config while the PREVIOUS esp_wifi_connect was still pending — the
+ * config while the PREVIOUS esp_wifi_connect was still pending, the
  * driver refuses with an ERROR log ("sta is connecting, cannot set
  * config") and the manager retried, self-healing but noisy on every
  * multi-candidate walk. Cleared by got-ip / disconnected; the timeout
@@ -308,7 +308,7 @@ static int64_t s_connect_started_ms;
 
 /* One INFO line per transition when the pick is an entry that has been
  * rejecting us and nothing better is visible ("keep trying: best
- * chance") — never per cycle (§10 hot path). */
+ * chance"): never per cycle (§10 hot path). */
 static bool s_last_resort;
 
 static void note_last_resort(int idx)
@@ -329,7 +329,7 @@ static void note_last_resort(int idx)
 
 /* roam-to-preferred trial: we LEAVE a working network to try a better
  * one; if that attempt is rejected, one strike deprioritises it and we
- * go straight back — no three-strike dance every roam interval */
+ * go straight back: no three-strike dance every roam interval */
 typedef enum
 {
     WM_ROAM_IDLE = 0,
@@ -361,7 +361,7 @@ static bool select_and_connect(void)
 
     if (cfg->sta_count == 1)
     {
-        /* single network: no scan, and no deferral either — a network
+        /* single network: no scan, and no deferral either, a network
          * that keeps rejecting us is still our best chance (a wrong
          * password here may be right back home; meatpi 2026-09-06) */
         (void)wm_select_sequential(&s_select, cfg->sta, cfg->sta_count,
@@ -371,7 +371,7 @@ static bool select_and_connect(void)
 
         /* stamp BEFORE the call: a fast DISCONNECTED (e.g. NO_AP_FOUND
          * from the driver's cached scan) can land in the event task and
-         * clear the guard before esp_wifi_connect() even returns — the
+         * clear the guard before esp_wifi_connect() even returns: the
          * late stamp then blocked the next WM_CONNECT_INFLIGHT_MS worth
          * of cycles per attempt (bench 2026-08-22, ESPNetLink AP coming
          * up ~10 s after the WiCAN's first attempt) */
@@ -406,7 +406,7 @@ static bool select_and_connect(void)
 
     if (pick < 0)
     {
-        /* scan failed OR nothing visible matched: rotate blind —
+        /* scan failed OR nothing visible matched: rotate blind,
          * hidden SSIDs never appear in scan results (their records
          * carry an empty name) and dense airspace can truncate the
          * record table past a configured network */
@@ -433,7 +433,7 @@ static bool select_and_connect(void)
 
         /* stamp BEFORE the call: a fast DISCONNECTED (e.g. NO_AP_FOUND
          * from the driver's cached scan) can land in the event task and
-         * clear the guard before esp_wifi_connect() even returns — the
+         * clear the guard before esp_wifi_connect() even returns: the
          * late stamp then blocked the next WM_CONNECT_INFLIGHT_MS worth
          * of cycles per attempt (bench 2026-08-22, ESPNetLink AP coming
          * up ~10 s after the WiCAN's first attempt) */
@@ -454,8 +454,8 @@ static bool select_and_connect(void)
 /* ---- event handling --------------------------------------------------------- */
 
 /* A disconnect that ends an ATTEMPT (we never got an IP) counts as a
- * failed attempt whatever the reason — wrong password, an AP that never
- * finishes the handshake, a full AP, a refused association — except
+ * failed attempt whatever the reason (wrong password, an AP that never
+ * finishes the handshake, a full AP, a refused association) except
  * "not found" (visibility, not a failure) and our own leave (2026-09-06,
  * meatpi: "three failed attempts in a row: try the others first"). The
  * memory only reorders candidates, so a strike costs nothing when the
@@ -475,7 +475,7 @@ static uint32_t     s_last_roam_ms;
  * Untrusted (shared/office) networks must not expose configuration: when
  * the CURRENT STA network is marked untrusted, inbound admin requests
  * that arrived VIA the STA address are refused. The device's own AP and
- * the USB link classify as non-STA and keep full admin — that is the
+ * the USB link classify as non-STA and keep full admin: that is the
  * recovery path. Outbound clients (autopid HTTP posts, MQTT) don't go
  * through httpd and are unaffected. Wired into http_server_manager's
  * request gate by main (composition root). */
@@ -547,7 +547,7 @@ bool wifi_manager_http_request_allowed(int sockfd)
    softAP beacons move there no matter what its config says. Mirror the real
    channel into the AP config so it survives a STA drop (no hop back to the
    stale configured channel) and so status/scan behaviour stay consistent.
-   The STA config's own channel field is a scan hint we never set — the
+   The STA config's own channel field is a scan hint we never set: the
    associated AP record is the authoritative source. */
 static void sync_ap_channel_to_sta(void)
 {
@@ -585,7 +585,7 @@ static void on_sta_got_ip(const ip_event_got_ip_t *event)
     s_sta_ever_connected = true;
     s_connect_started_ms = 0; /* attempt concluded */
 
-    /* which candidate did we land on? (drives roam-to-preferred) — the
+    /* which candidate did we land on? (drives roam-to-preferred): the
      * attempt's entry index; the name walk stays as the fallback */
     s_connected_idx = -1;
 
@@ -633,7 +633,7 @@ static void on_sta_got_ip(const ip_event_got_ip_t *event)
         s_callbacks.sta_connected();
     }
 
-    /* v6: custom DNS override in DHCP mode — the lease just overwrote
+    /* v6: custom DNS override in DHCP mode, the lease just overwrote
        MAIN DNS, so re-assert the user's server on every got-ip. (For a
        static network the client is stopped; the attempt set it once.) */
     bool cur_static = s_connected_idx >= 0 &&
@@ -823,10 +823,10 @@ static void wm_event_handler(void *arg, esp_event_base_t base,
                 }
                 break;
 
-            /* NOTE: no sync at WIFI_EVENT_STA_CONNECTED — the driver
+            /* NOTE: no sync at WIFI_EVENT_STA_CONNECTED, the driver
                still holds its "connecting" state there and REFUSES
                esp_wifi_set_config with an ERROR log (racy: sometimes
-               accepted, usually not — caught by the HIL error budgets
+               accepted, usually not, caught by the HIL error budgets
                2026-07-19). The got-ip sync below always lands; the AP
                beacons on the right channel either way (hardware). */
 
@@ -836,11 +836,11 @@ static void wm_event_handler(void *arg, esp_event_base_t base,
 
             case WIFI_EVENT_HOME_CHANNEL_CHANGE:
                 /* upstream router CSA moves the STA (and radio) without a
-                   reassociation — follow it here too. Only while FULLY
+                   reassociation: follow it here too. Only while FULLY
                    connected: the event also fires mid-connect (channel
                    switch precedes association) where esp_wifi_set_config
                    is refused with a driver ERROR log ("sta is
-                   connecting") — and boot-clean error counts are
+                   connecting"), and boot-clean error counts are
                    load-bearing now (health net). The association case is
                    covered by WIFI_EVENT_STA_CONNECTED above. */
                 if (s_status.sta_connected)
@@ -1005,7 +1005,7 @@ static void reconnect_task(void *arg)
             continue;
         }
 
-        /* don't yank the radio's channel while someone is on our AP —
+        /* don't yank the radio's channel while someone is on our AP,
          * except for the first association of the boot, and never for
          * longer than WM_AP_CLIENT_MAX_PAUSES (wm_sta_pause_for_ap_clients) */
         if (wm_sta_pause_for_ap_clients(s_status.ap_station_count,
@@ -1042,7 +1042,7 @@ static void reconnect_task(void *arg)
 
         if (select_and_connect())
         {
-            /* count only REAL attempts — deferred cycles (banned/idle)
+            /* count only REAL attempts: deferred cycles (banned/idle)
              * must not burn through a finite sta_max_retry */
             s_status.sta_retry_count++;
             backoff_loops =
@@ -1135,7 +1135,7 @@ static esp_err_t apply_ap_side(const wm_config_t *cfg)
 
     esp_netif_ip_info_t ip = { 0 };
     /* AP gateway IP (v4, configurable). A blank/invalid setting parsed
-       to 0 in on_apply; fall back to the legacy WiCAN 192.168.0.10 —
+       to 0 in on_apply; fall back to the legacy WiCAN 192.168.0.10:
        the classic ELM327-WiFi-adapter address that OBD apps expect
        (192.168.0.10:35000; meatpi 2026-07-18 defaults pass). A /24 is
        assumed; the DHCP pool follows the gateway automatically. */
@@ -1157,7 +1157,7 @@ esp_err_t wifi_manager_config_ap(void)
     /* the ONE sanctioned runtime mode change (meatpi 2026-07-19: button
        long-press = "let me configure the device"): bring the AP up with
        the boot-applied AP config regardless of the running mode. The
-       reverse direction is deliberately absent — config mode ends with
+       reverse direction is deliberately absent: config mode ends with
        a reboot back into the configured mode (reboot-to-apply, §4.2). */
     const wm_config_t *cfg = wm_settings_config();
 
@@ -1168,7 +1168,7 @@ esp_err_t wifi_manager_config_ap(void)
 
     if (s_status.ap_started)
     {
-        return ESP_OK; /* already serving — nothing to do */
+        return ESP_OK; /* already serving: nothing to do */
     }
 
     wifi_mode_t mode = WIFI_MODE_AP;
@@ -1388,7 +1388,7 @@ esp_err_t wifi_manager_start(void)
         return err;
     }
 
-    /* AP channel bandwidth (v4) — after start so the interface exists */
+    /* AP channel bandwidth (v4): after start so the interface exists */
     if (cfg->mode == WM_MODE_AP || cfg->mode == WM_MODE_APSTA)
     {
         esp_wifi_set_bandwidth(WIFI_IF_AP,

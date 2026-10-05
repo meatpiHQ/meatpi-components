@@ -35,7 +35,7 @@
  *  - se_obd_request / isotp tx/rx REQUIRE the claim (scripts must be
  *    explicit about owning the bus conversation).
  *  - se_obd_autorelease(): called by the runner after EVERY script run
- *    (normal end, error, kill) — a script can never leak the claim.
+ *    (normal end, error, kill), a script can never leak the claim.
  *    The hard time cap on a hold is the script runtime budget itself,
  *    which the runner already enforces.
  */
@@ -49,7 +49,7 @@
  * the ISO-TP PDU under the transport's 8192 payload ceiling) */
 #define SE_OBD_XFER_MAX_BLOCK 4096
 
-/* standard reflected CRC-32 (poly 0xEDB88320) — matches zlib.crc32 and
+/* standard reflected CRC-32 (poly 0xEDB88320): matches zlib.crc32 and
  * esp_rom_crc32_le, so the ECU's checkMemory compare agrees */
 static uint32_t se_crc32(uint32_t crc, const uint8_t *p, size_t n)
 {

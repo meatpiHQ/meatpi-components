@@ -1,4 +1,4 @@
-# Host test compiles ONLY the pure policy layer — no httpd.
+# Host test compiles ONLY the pure policy layer: no httpd.
 set(comp_dir "${CMAKE_CURRENT_LIST_DIR}/../..")
 
 idf_component_register(

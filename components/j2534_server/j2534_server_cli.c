@@ -22,7 +22,7 @@
 
 /**
  * @file j2534_server_cli.c
- * @brief `j2534` console command — status snapshot.
+ * @brief `j2534` console command: status snapshot.
  */
 #include "cmdline_manager.h"
 

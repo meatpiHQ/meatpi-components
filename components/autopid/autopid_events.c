@@ -30,7 +30,7 @@
  * autopid.param emission is ON CHANGE + per-parameter
  * `min_event_interval_ms` (settings; schema minimum 10 ms): a value
  * that keeps repeating emits nothing; a changing value emits at most
- * once per interval. Poller/filter task context — publish never blocks.
+ * once per interval. Poller/filter task context: publish never blocks.
  */
 #include <math.h>
 #include <stdio.h>
@@ -54,7 +54,7 @@ typedef struct
 
 static ap_emit_slot_t s_emit[AP_MAX_PARAMS] EXT_RAM_BSS_ATTR;
 
-/* the ONE value sink (data_logger's autopid_log path — main wires it);
+/* the ONE value sink (data_logger's autopid_log path: main wires it);
  * fed every accepted sample ahead of the event gating below */
 static autopid_value_sink_t s_value_sink;
 
@@ -116,7 +116,7 @@ void ap_events_external(const char *name, const char *unit, double value,
 {
     /* injected values (GPS) take the SAME downstream as a polled sample:
        fire the value sink every time, emit autopid.param on change. The
-       on-change/rate gating lives in ap_ext_put's `changed` flag — no
+       on-change/rate gating lives in ap_ext_put's `changed` flag: no
        s_emit slot (externals aren't config-indexed). */
     if (s_value_sink != NULL)
     {
@@ -288,7 +288,7 @@ static esp_err_t act_dtc_clear(const cJSON *with, const em_event_t *trigger)
     const cJSON *codes = cJSON_GetObjectItemCaseSensitive(with, "codes");
     const cJSON *mode = cJSON_GetObjectItemCaseSensitive(with, "mode");
 
-    /* dispatcher context: NEVER touch the bus here — queue the job */
+    /* dispatcher context: NEVER touch the bus here, queue the job */
     return ap_dtc_clear_queue(
         cJSON_IsString(codes) ? codes->valuestring : NULL,
         cJSON_IsString(mode) ? mode->valuestring : NULL);
@@ -381,7 +381,7 @@ static esp_err_t value_read(const char *name, char *out, size_t out_len)
                                                : ESP_ERR_INVALID_SIZE;
     }
 
-    /* ${autopid.<param>} — the cached value */
+    /* ${autopid.<param>}: the cached value */
     if (strncmp(name, "autopid.", 8) == 0)
     {
         double value = 0;

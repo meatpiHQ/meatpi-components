@@ -22,7 +22,7 @@
 
 /**
  * @file wifi_manager_suspend.c
- * @brief Runtime per-interface suspension — the actuation surface for
+ * @brief Runtime per-interface suspension: the actuation surface for
  *        interface_manager's wireless arbitration (meatpi 2026-07-05:
  *        BLE connect suspends STA / AP-vs-BLE exclusivity). EPHEMERAL:
  *        settings stay untouched, a reboot (or resume) restores the

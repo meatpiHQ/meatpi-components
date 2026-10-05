@@ -28,12 +28,12 @@
  * partition) and presents one path-based interface. Callers use logical
  * paths; the component routes them to the right backend:
  *
- *   /data/...   internal flash (LittleFS) — firmware-managed data
- *   /sd/...     SD card via external_storage — bulk/web/log data
+ *   /data/...   internal flash (LittleFS): firmware-managed data
+ *   /sd/...     SD card via external_storage: bulk/web/log data
  *
  * Pinned behaviors (ARCHITECTURE.md §5, REVIEW.md §6.1):
  *   - Path namespace: a path is addressed by its logical prefix above. There
- *     is no transparent fallback — a caller that wants SD data asks for /sd.
+ *     is no transparent fallback: a caller that wants SD data asks for /sd.
  *   - SD absent / backend unavailable: operations return
  *     ESP_ERR_INVALID_STATE. (v1 ships the internal backend only; /sd is
  *     reserved and unavailable until external_storage exists.)
@@ -48,8 +48,8 @@
  *
  * Memory (Coding Standard §2, ARCHITECTURE §12): read/write data is bounced
  * through an internal-RAM scratch buffer (cache-off during flash ops), so
- * caller buffers may live in PSRAM. Do not call ANY operation here —
- * reads included — from a task whose stack is in PSRAM: littlefs reads go
+ * caller buffers may live in PSRAM. Do not call ANY operation here
+ * (reads included) from a task whose stack is in PSRAM: littlefs reads go
  * through esp_partition_read, which also disables the flash cache
  * (asserts in spi_flash_disable_interrupts_caches_and_other_cpu;
  * bench-proven 2026-07-07 via the event dispatcher). Marshal to an
@@ -99,7 +99,7 @@ esp_err_t filesystem_write(const char *path, const void *data, size_t len);
 
 /* ---- streaming writes (big files: downloads, future streamed uploads) ----
  * Same atomicity as filesystem_write, chunk by chunk: open targets a
- * TEMP sibling, commit fsync+renames it over @p path, abort deletes it —
+ * TEMP sibling, commit fsync+renames it over @p path, abort deletes it,
  * an interrupted stream never leaves a torn file. ONE stream at a time
  * (ESP_ERR_INVALID_STATE when busy). write_chunk serializes with other
  * fs ops per chunk, so a long stream doesn't starve them. The §2
@@ -117,11 +117,11 @@ void filesystem_write_abort(filesystem_wstream_t *ws);
 
 /* ---- the ASYNC pipe on top of a wstream (big transfers) ------------------
  * PRODUCER/WRITER overlap: async_chunk copies the producer's bytes into
- * one of two internal 32 KB PSRAM slots and returns — the filesystem's
+ * one of two internal 32 KB PSRAM slots and returns, the filesystem's
  * own INTERNAL-stack writer task drains slots to the media concurrently,
  * so network receive and media writes overlap (the slower side sets the
  * pace). The producer's task never performs flash writes (its stack may
- * be PSRAM). async_end drains, then commits (fsync+rename) or aborts —
+ * be PSRAM). async_end drains, then commits (fsync+rename) or aborts:
  * the same never-a-torn-file guarantee. */
 
 esp_err_t filesystem_write_async_begin(filesystem_wstream_t *ws);
@@ -155,7 +155,7 @@ esp_err_t filesystem_list(const char *dir_path, filesystem_list_cb_t cb,
                           void *ctx);
 
 /**
- * Validated streaming open (for chunked serving — http_server_manager).
+ * Validated streaming open (for chunked serving: http_server_manager).
  * Returns NULL on invalid path, unavailable backend, or fopen failure.
  * NOTE: streaming writes bypass the atomic-replace guarantee; prefer
  * filesystem_write() for anything that must survive a power cut.
@@ -180,7 +180,7 @@ esp_err_t filesystem_sd_set_mounted(bool mounted);
 
 /** Register the `fs` CLI command with cmdline_manager. Called
  *  INTERNALLY on the settings boot apply when the `cli` setting is true
- *  (default) — main no longer wires it. */
+ *  (default): main no longer wires it. */
 esp_err_t filesystem_register_cli(void);
 
 /** Register the settings descriptor ({cli}). Init runs before

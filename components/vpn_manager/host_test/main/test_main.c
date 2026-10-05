@@ -109,7 +109,7 @@ static void ts_setup(void)
 
 static void test_tailscale_valid_configs(void)
 {
-    /* official coordinator: auth key alone is enough — no WG fields */
+    /* official coordinator: auth key alone is enough, no WG fields */
     ts_setup();
     TEST_ASSERT_NULL(vpn_check_config(&s_cfg));
 
@@ -142,7 +142,7 @@ static void test_tailscale_rejects(void)
     strcpy(s_cfg.ts_auth_key, "short");
     TEST_ASSERT_NOT_NULL(vpn_check_config(&s_cfg));
 
-    /* control_url must be a clean host[:port] — no scheme, no spaces */
+    /* control_url must be a clean host[:port]: no scheme, no spaces */
     ts_setup();
     strcpy(s_cfg.ts_control_url, "http://10.42.0.1:8080");
     TEST_ASSERT_NOT_NULL(vpn_check_config(&s_cfg));

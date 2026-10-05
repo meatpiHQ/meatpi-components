@@ -38,10 +38,10 @@
  *    PSRAM stack). A `blocking` action instead runs on a bounded WORKER
  *    POOL (PSRAM stacks) so a slow network/bus call can't stall the
  *    dispatcher. Either way a handler MUST NOT touch flash/LittleFS
- *    (standard §2 corollary — all these stacks are PSRAM); network calls
+ *    (standard §2 corollary: all these stacks are PSRAM); network calls
  *    use their component's existing timeouts.
  *
- * All timestamps are esp_timer 64-bit µs — the 32-bit tick types never
+ * All timestamps are esp_timer 64-bit µs: the 32-bit tick types never
  * appear here (meatpi 2026-07-06).
  */
 #pragma once
@@ -119,7 +119,7 @@ typedef struct
     /* true = a SLOW action (network/bus round-trip). It runs on the
        bounded worker pool instead of the dispatcher, so it can't stall
        other events. Like every action, run() MUST NOT touch flash (the
-       workers are PSRAM stacks — §2 corollary). Default false = inline. */
+       workers are PSRAM stacks: §2 corollary). Default false = inline. */
     bool        blocking;
     /* true = the action can be reversed: a rule with `undo:true` (a
        "while" rule) calls run() again with "undo":true added to `with`
@@ -133,7 +133,7 @@ typedef struct
 
 /** Register settings ("event_manager") + log descriptors, create the
  *  queue. Call EARLY in main's init pass (before components that declare
- *  sources/actions is not required — declares are static writes — but
+ *  sources/actions is not required (declares are static writes) but
  *  before settings_manager_start). */
 esp_err_t event_manager_init(void);
 
@@ -151,7 +151,7 @@ esp_err_t event_manager_register_action(const em_action_t *action);
  * Register a pull-value provider: templates resolve `${<name>}` through
  * it at dispatch time (dispatcher context, bounded; NO flash access).
  * The provider RENDERS the value as a string (numbers formatted by the
- * owner — templates paste raw). A @p name ending in '.' registers a
+ * owner: templates paste raw). A @p name ending in '.' registers a
  * PREFIX: `${autopid.rpm}` resolves through the "autopid." provider,
  * which receives the FULL name. Exact names win over prefixes.
  */
@@ -173,7 +173,7 @@ em_kv_t em_kv_bool(const char *key, bool v);
 em_kv_t em_kv_str(const char *key, const char *v);   /* truncates at 47 */
 
 /**
- * Enabled rules' `match` values for one selector/key — how a source
+ * Enabled rules' `match` values for one selector/key: how a source
  * derives its pre-filter (the hot-source rule): mqtt asks for
  * (`"mqtt.rx"`, `"topic"`) at start and subscribes ONLY those topics.
  * Valid after the settings boot pass. @return entries written.

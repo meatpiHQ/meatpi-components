@@ -26,14 +26,14 @@
  *        filter's CAN id and evaluate every enabled parameter from it.
  *
  * Flow per scheduled filter entry (poller-task context):
- *   ATCRA<id>  (COMMAND transaction — hardware-filters the monitor)
+ *   ATCRA<id>  (COMMAND transaction: hardware-filters the monitor)
  *   claim MONITOR -> subscribe -> "ATMA" -> collect lines until a
  *   matching frame or monitor_ms elapses -> SPACE stop -> drain to the
  *   '>' prompt -> release -> unsubscribe -> ap_runner_reset() (the
  *   window changed ATCRA/monitor state under the PID runner).
  *
  * While the window is open, other chip masters' ap_be()->request()
- * fails fast with ESP_ERR_INVALID_STATE (v1 "manual" arbitration) —
+ * fails fast with ESP_ERR_INVALID_STATE (v1 "manual" arbitration):
  * windows should be short (default 1000 ms) and scheduled sparsely.
  */
 #include <math.h>
@@ -67,7 +67,7 @@ static StaticQueue_t s_q_buf;                       /* internal object   */
 static uint8_t s_q_store[AP_FLT_Q_LEN * sizeof(obd_chunk_t)]
     EXT_RAM_BSS_ATTR;
 
-/* per-parameter captured frame — a multiplexed message carries each
+/* per-parameter captured frame: a multiplexed message carries each
    parameter's data in a DIFFERENT frame (mux page), so the window
    collects one frame per parameter instead of one per filter */
 typedef struct
@@ -81,7 +81,7 @@ static flt_slot_t s_slot[AP_PARAMS_PER] EXT_RAM_BSS_ATTR; /* poller task */
 
 /** Stop the monitor and drain until the prompt. A lingering monitor
  *  poisons every later transaction (any byte terminates it and the
- *  "STOPPED" lands in someone else's response window) — so retry the
+ *  "STOPPED" lands in someone else's response window), so retry the
  *  stop once before giving up. */
 static void window_close(void)
 {
@@ -201,7 +201,7 @@ bool ap_runner_run_filter(const ap_filter_t *f, const ap_param_t *params)
                     continue;
                 }
 
-                /* a chunk can carry several frames — resume mid-chunk
+                /* a chunk can carry several frames: resume mid-chunk
                    after every match (mux pages arrive back to back) */
                 size_t off = 0;
 

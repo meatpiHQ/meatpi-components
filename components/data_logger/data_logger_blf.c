@@ -22,15 +22,15 @@
 
 /**
  * @file data_logger_blf.c
- * @brief Vector BLF storage engine — ubiquitous in Vector shops,
+ * @brief Vector BLF storage engine: ubiquitous in Vector shops,
  *        python-can-readable. Byte layout comes from the PURE builders
  *        in data_logger_files.c (host-tested); this file is only the
  *        container buffering + FILE plumbing.
  *
  * Layout: the 144-byte "LOGG" file header (object count / sizes / end
- * time — re-written on every commit so a torn file reads to the last
+ * time, re-written on every commit so a torn file reads to the last
  * commit) followed by LOG_CONTAINER objects (compressionMethod=0,
- * UNCOMPRESSED v1 — python-can reads method 0; a zlib variant via the
+ * UNCOMPRESSED v1: python-can reads method 0; a zlib variant via the
  * ESP ROM miniz is the v2 candidate) each holding concatenated
  * 48-byte CAN_MESSAGE objects. Messages accumulate in a PSRAM buffer
  * and flush as one container per commit (or when the buffer fills).
@@ -53,7 +53,7 @@ static const char *TAG = "data_logger";
 #define BLF_BUF_SZ  4096
 #define BLF_CONT_SZ 32768 /* container payload cap (PSRAM) */
 
-/* one engine instance can exist (CAN stream only) — the container
+/* one engine instance can exist (CAN stream only): the container
  * accumulator can be a static PSRAM buffer */
 static uint8_t s_cont[BLF_CONT_SZ] EXT_RAM_BSS_ATTR;
 

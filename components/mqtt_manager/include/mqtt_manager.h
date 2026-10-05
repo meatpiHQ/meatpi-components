@@ -24,9 +24,9 @@
  * @file mqtt_manager.h
  * @brief WiCAN MQTT client owner (feature component).
  *
- * Owns THE one MQTT client (esp-mqtt, managed component — un-bundled in
+ * Owns THE one MQTT client (esp-mqtt, managed component, un-bundled in
  * IDF v6): broker connection, reconnect, TLS, and the device's status
- * contract. Other components don't create clients — they publish through
+ * contract. Other components don't create clients: they publish through
  * this one and register topic-filter HANDLERS into it (ownership
  * inversion, Architecture §2). autopid, bridges, alerts (battery/IMU
  * events → MQTT) all build on this surface later.
@@ -34,7 +34,7 @@
  * Preserved legacy on-wire contract:
  *  - status topic `<prefix>/status`, retained `{"status": "online"}` on
  *    connect and a retained LWT `{"status": "offline"}` (byte-identical
- *    payloads to the legacy firmware — dashboards keep working);
+ *    payloads to the legacy firmware, dashboards keep working);
  *  - default prefix `wican/<device_id>`; keepalive 30 s; auto-reconnect
  *    every 5 s.
  *
@@ -62,7 +62,7 @@ extern "C" {
 #define MQTT_MANAGER_MAX_HANDLERS 8
 
 /**
- * Message delivery callback. Runs in the esp-mqtt event task — keep it
+ * Message delivery callback. Runs in the esp-mqtt event task: keep it
  * SHORT and copy data out (queue it to your own task for real work).
  * Payloads larger than the RX buffer (4 KB) arrive fragmented and are
  * dropped+counted in v1.
@@ -83,22 +83,22 @@ esp_err_t mqtt_manager_stop(void);
 /** Connected to the broker right now (mirrors the dev-status bit). */
 bool mqtt_manager_connected(void);
 
-/** The resolved topic prefix ("wican/<id>" unless overridden) — consumers
+/** The resolved topic prefix ("wican/<id>" unless overridden): consumers
  *  build their topics on it. Valid after the settings boot pass. */
 const char *mqtt_manager_topic_prefix(void);
 
 /**
  * THREADING MODEL (any task may call anything here):
  *  - `publish()` is the DIRECT path: thread-safe (esp-mqtt's internal
- *    lock) but the socket write happens in YOUR context — it can stall
+ *    lock) but the socket write happens in YOUR context, it can stall
  *    milliseconds on a congested link. Fine for occasional messages
  *    (status, alerts, command responses).
  *  - `publish_async()` is the HOT path: copies into a bounded PSRAM ring
- *    and returns immediately — it NEVER blocks and never touches the
+ *    and returns immediately, it NEVER blocks and never touches the
  *    network in your context; a dedicated publisher task drains the ring.
  *    Ring full / broker down → the message is dropped and counted
  *    (mqtt_manager_stats), your task keeps its deadline. CAN-rate
- *    producers use this — and BATCH upstream (many frames → one payload,
+ *    producers use this, and BATCH upstream (many frames → one payload,
  *    the legacy JSON-array pattern): the per-publish cost, not bytes, is
  *    what limits message rate.
  */
@@ -124,7 +124,7 @@ esp_err_t mqtt_manager_stats(mqtt_manager_stats_t *out);
 
 /**
  * Register a handler for an MQTT topic FILTER (`+`/`#` wildcards, MQTT
- * spec matching). Subscribed on (re)connect — and immediately when
+ * spec matching). Subscribed on (re)connect, and immediately when
  * already connected. Registrations live for the firmware's lifetime
  * (≤ MQTT_MANAGER_MAX_HANDLERS; ESP_ERR_NO_MEM when full). @p filter
  * must outlive the firmware (string literal / static).

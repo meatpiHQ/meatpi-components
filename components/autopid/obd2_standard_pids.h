@@ -21,7 +21,7 @@
  */
 
 // Vendored from components/autopid_legacy/obd2_standard_pids.h (legacy
-// wican-fw) 2026-07-06 for autopid Phase 2 — DATA ONLY, byte-identical
+// wican-fw) 2026-07-06 for autopid Phase 2: DATA ONLY, byte-identical
 // table. bit_start convention is legacy's headers-on buffer
 // [PCI, mode, PID, A, B, ...]: our payload drops the PCI, so
 // payload byte = bit_start/8 - 1 (see ap_std_expression). Rows with

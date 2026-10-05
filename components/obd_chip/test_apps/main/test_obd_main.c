@@ -1,14 +1,14 @@
 /**
  * @file test_obd_main.c
  * @brief On-target test app for obd_chip against the LIVE bench (chip +
- *        ECU simulator at 500k/11-bit — components/obd_chip_manager/
+ *        ECU simulator at 500k/11-bit: components/obd_chip_manager/
  *        test_apps/README.md documents the bench).
  *
  * Self-driving markers up to TEST DONE, then:
- *   - a USB bridge (UART2 <-> chip via subscribe/send — the production
+ *   - a USB bridge (UART2 <-> chip via subscribe/send: the production
  *     passthrough shape) keeps running for pytest/PCAN scenarios
  *   - the console accepts "FWUPDATE" (chip firmware update from the
- *     embedded vendor file — EXCLUSIVE, minutes) and "VERSION"
+ *     embedded vendor file: EXCLUSIVE, minutes) and "VERSION"
  */
 #include <stdio.h>
 #include <string.h>
@@ -143,7 +143,7 @@ void app_main(void)
 
     err = obd_chip_start(); /* async: launches wake/negotiate/RX bring-up */
 
-    /* bring-up runs on its own task since 2026-07-26 — wait for the
+    /* bring-up runs on its own task since 2026-07-26: wait for the
        outcome before asserting (worst case: hard reset + full baud walk
        + first-boot provisioning) */
     for (int i = 0; i < 100 && err == ESP_OK && !obd_chip_ready(); i++)
@@ -232,7 +232,7 @@ void app_main(void)
     /* ---- real monitor session: ATMA, stop byte, then commands work ---------- */
     ESP_ERROR_CHECK(obd_chip_claim(OBD_CHIP_CLAIM_MONITOR, pdMS_TO_TICKS(500)));
     obd_chip_send((const uint8_t *)"ATMA\r", 5);
-    vTaskDelay(pdMS_TO_TICKS(500)); /* stream (bus may be quiet — fine) */
+    vTaskDelay(pdMS_TO_TICKS(500)); /* stream (bus may be quiet: fine) */
     obd_chip_monitor_stop();        /* SPACE, never CR */
     vTaskDelay(pdMS_TO_TICKS(200));
     ESP_ERROR_CHECK(obd_chip_release());
@@ -287,7 +287,7 @@ void app_main(void)
         {
             bool force = (strstr(line, "FORCE") != NULL);
 
-            printf("FWUPDATE starting (force=%d) — several minutes\n", force);
+            printf("FWUPDATE starting (force=%d): several minutes\n", force);
             err = obd_chip_firmware_update(FW_FS_PATH, force);
             printf("FWUPDATE done err=%s\n", esp_err_to_name(err));
 

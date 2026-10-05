@@ -36,14 +36,14 @@ static const settings_field_t FIELDS[] =
     SETTINGS_BOOL("enabled", false),
     SETTINGS_INT("max_runtime_ms", 100, 120000, 10000),
     /* Gates the UDS reflash services (0x34/0x35/0x36/0x37 +
-     * obd_transfer_file) from scripts — mirrors j2534's allow_reflash,
+     * obd_transfer_file) from scripts: mirrors j2534's allow_reflash,
      * default OFF: a script can diagnose freely but cannot reprogram an
      * ECU unless this is explicitly enabled. */
     SETTINGS_BOOL("allow_reflash", false),
     /* Exclusive bus for scripts (Ali 2026-09-16, ON by default): from a
      * script's first ECU access (uds/uds_ext, obd_claim, obd_request,
      * obd_isotp_tx/rx) to the end of the run, the background pollers
-     * (autopid: PID polling + DTC scans) stay off the bus — obd_gate's
+     * (autopid: PID polling + DTC scans) stay off the bus, obd_gate's
      * diagnostics hold, independent of the UDS Tool page's switch. */
     SETTINGS_BOOL("exclusive", true),
     SETTINGS_BOOL("cli", true),

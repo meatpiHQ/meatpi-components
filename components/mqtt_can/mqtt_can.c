@@ -26,7 +26,7 @@
  *        endpoint, the `canmqtt` translator registration, CLI.
  *
  * Gate placement (meatpi 2026-07-22: "both tx and Rx safety gate"):
- * BOTH gates live in the ENDPOINT — allow_rx guards the outbound
+ * BOTH gates live in the ENDPOINT, allow_rx guards the outbound
  * publish (bus traffic leaving the device), allow_tx guards the
  * inbound handler (broker messages reaching the bus side). The
  * translator stays pure. Everything gate-blocked is COUNTED.
@@ -232,7 +232,7 @@ static esp_err_t ep_send(const uint8_t *d, size_t l)
     return err;
 }
 
-/** esp-mqtt event task: keep short — gate, split into bridge chunks,
+/** esp-mqtt event task: keep short, gate, split into bridge chunks,
  *  queue. The canmqtt encode ctx reassembles fragments (its normal
  *  stream model), so chunk boundaries are free. */
 static void sub_handler(const char *topic, const uint8_t *data,
@@ -409,7 +409,7 @@ static esp_err_t tr_flush(void *vctx, bridge_sink_fn_t sink,
 {
     canmqtt_ctx_t *ctx = vctx;
 
-    /* the encode-direction ctx never accumulates a batch — this is a
+    /* the encode-direction ctx never accumulates a batch: this is a
        no-op there by construction */
     return emit_batch(ctx, sink, sink_arg);
 }
@@ -420,7 +420,7 @@ esp_err_t mqtt_can_start(void)
 {
     /* jack + codec register UNCONDITIONALLY: bridge settings rows
        naming mqtt0/canmqtt must validate whether or not this component
-       is enabled (found by the first bench run — the bridge PUT was
+       is enabled (found by the first bench run: the bridge PUT was
        rejected with "unknown endpoint 'mqtt0'" on a disabled build).
        `enabled` gates the ATTACH (ep_subscribe) instead. */
     expand_topic(s_pub_topic, s_pub_full, sizeof(s_pub_full));

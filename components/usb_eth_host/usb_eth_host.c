@@ -53,7 +53,7 @@ static uint16_t g_active_vid;
 static uint16_t g_active_pid;
 /* on_eth_ip_up / on_eth_ip_lost are a balanced PAIR for the policy layer:
  * lwIP does not post IP_EVENT_ETH_LOST_IP when a netif is simply stopped
- * and destroyed (USB unplug / the ESPNetLink's data-line cut — bench
+ * and destroyed (USB unplug / the ESPNetLink's data-line cut, bench
  * 2026-08-24: usb_host_manager kept "uplink up" after the dongle cut), so
  * the lost edge is derived from this flag on every teardown path. */
 static bool g_ip_reported_up;
@@ -386,7 +386,7 @@ static void usb_eth_host_restore_after_overlap(const char *reason)
 }
 
 /** Other netifs' DHCP clients (e.g. a WiFi STA cycling through failed
- *  associations) CLEAR lwIP's global resolver list on lease loss —
+ *  associations) CLEAR lwIP's global resolver list on lease loss,
  *  taking the USB uplink's DNS with them. While the USB uplink holds
  *  an address, refill slot 0 whenever it goes empty; a valid different
  *  server (a connected WiFi lease) is left alone. */
@@ -441,11 +441,11 @@ static void usb_eth_host_on_eth_got_ip(void *handler_args, esp_event_base_t base
 
     /* Tethered-uplink DNS: the adapter's DHCP server offers a resolver
      * (the ESPNetLink tether offers its DNS proxy = the gateway), but
-     * the lease's DNS only lands on THIS netif — lwIP's GLOBAL resolver
+     * the lease's DNS only lands on THIS netif: lwIP's GLOBAL resolver
      * table (the one getaddrinfo actually reads) stays empty and every
      * lookup fails with the USB link as the only uplink. Feed it
      * directly; fall back to the gateway when the lease carried no DNS
-     * option, and arm the guard timer (see usb_eth_host_dns_guard_cb —
+     * option, and arm the guard timer (see usb_eth_host_dns_guard_cb:
      * other netifs' DHCP clients CLEAR the global list on lease loss,
      * bench-proven with a scanning-but-unconnected WiFi STA). */
     {
@@ -622,9 +622,9 @@ static void usb_eth_host_apply_gpio(const usb_eth_host_gpio_t *gpio_cfg, bool en
 
     if (enable)
     {
-        /* Power ON only — NO power-cycle (2026-08-24 change). The rail's
+        /* Power ON only: NO power-cycle (2026-08-24 change). The rail's
          * board pull-up means an attached device (the ESPNetLink dongle)
-         * may have been running for a long time — power-cycling it here
+         * may have been running for a long time, power-cycling it here
          * rebooted it and killed its GPS fix on every host start / WiCAN
          * reboot. The v6 cycle existed for the "already attached = no
          * fresh connect edge for the DWC2" worry, but on this board the

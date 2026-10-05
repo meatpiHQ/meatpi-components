@@ -22,7 +22,7 @@
 
 /**
  * @file autopid.h
- * @brief AutoPID — scheduled OBD PID polling into a live parameter cache.
+ * @brief AutoPID: scheduled OBD PID polling into a live parameter cache.
  *
  * The v6 rewrite of the legacy autopid (TASK_autopid.md): the PID is the
  * scheduling unit (one request updates ALL its parameters), no transports
@@ -54,7 +54,7 @@ esp_err_t autopid_start(void);
 esp_err_t autopid_stop(void);
 
 /**
- * Runtime group control — EPHEMERAL (the log-level pattern): settings/
+ * Runtime group control: EPHEMERAL (the log-level pattern): settings/
  * config decide boot state; event rules re-assert context after reboot
  * (driving/charging, TASK_event_manager §5b). @p period_override_ms < 0
  * keeps the group's configured period; 0 = high-fidelity max rate.
@@ -68,7 +68,7 @@ esp_err_t autopid_group_set(const char *group, bool enabled,
 esp_err_t autopid_group_restore(const char *group);
 
 /**
- * The live value snapshot as a cJSON object — the LEGACY autopid_data
+ * The live value snapshot as a cJSON object: the LEGACY autopid_data
  * shape ({"ParamName": value, ...}) so existing dashboards keep working;
  * additional packagings are additional formatters over the same cache.
  * Caller frees.
@@ -77,7 +77,7 @@ esp_err_t autopid_snapshot(cJSON **out);
 
 /**
  * Duplicate the last-loaded config JSON (`/data/autopid/config.json`) from
- * a PSRAM cache — NO flash I/O, so a PSRAM-stack consumer (the ha_webhooks
+ * a PSRAM cache: NO flash I/O, so a PSRAM-stack consumer (the ha_webhooks
  * poster) can include the config section safely (§2 corollary). Caller
  * frees @p out. ESP_ERR_INVALID_STATE before any config has loaded.
  */
@@ -90,7 +90,7 @@ esp_err_t autopid_get_value(const char *param, double *out_value,
                             int64_t *out_ts_us);
 
 /**
- * Publish an EXTERNAL named value into the live cache — a sample that is
+ * Publish an EXTERNAL named value into the live cache: a sample that is
  * not a polled OBD parameter (GPS from the ESPNetLink dongle, wired in
  * main from usb_acm_cli's GPS sink). It joins `autopid_snapshot()`
  * (→ the HA autopid_data push + `${autopid.data}`), fires the value sink
@@ -104,10 +104,10 @@ esp_err_t autopid_publish_external(const char *name, const char *unit,
 
 /**
  * Value sink: called for EVERY accepted sample (post-plausibility-
- * clamp), BEFORE the on-change/min_event_interval event gating —
+ * clamp), BEFORE the on-change/min_event_interval event gating,
  * `changed` compares against the last EMITTED value. Poller/filter
  * task context: the sink MUST NOT block or touch storage directly
- * (queue/ring pushes only). ONE sink; autopid stays storage-ignorant —
+ * (queue/ring pushes only). ONE sink; autopid stays storage-ignorant:
  * main wires it (e.g. `autopid_set_value_sink(data_logger_autopid_sink)`).
  * NULL unregisters.
  */
@@ -137,12 +137,12 @@ typedef struct
 
 esp_err_t autopid_stats(autopid_stats_t *out);
 
-/** True while the poller runs AND an ECU answered within the last 30 s —
+/** True while the poller runs AND an ECU answered within the last 30 s:
  *  the device-contract `ecu_status` source (ha_webhooks). */
 bool autopid_ecu_online(void);
 
 /** Reload /data/autopid/config.json into the pools and restart the
- *  scheduler over the new tables (the PUT /api/autopid/config path —
+ *  scheduler over the new tables (the PUT /api/autopid/config path:
  *  the config FILE applies live; the settings KNOBS stay reboot-to-apply). */
 esp_err_t autopid_reload_config(void);
 
@@ -162,18 +162,18 @@ bool autopid_dtc_scanning(void);
  *  Caller frees. */
 esp_err_t autopid_dtc_report(cJSON **out);
 
-/** Conditional mode-04 clear (SYNC, seconds of bus I/O — never call from
+/** Conditional mode-04 clear (SYNC, seconds of bus I/O: never call from
  *  the event dispatcher). @p codes = CSV ("P0420,P0171") or NULL;
  *  @p mode = "always"|"if_any"|"if_only" or NULL (default: always
  *  without codes, if_any with). Mode 04 clears ALL codes + readiness
- *  monitors — the condition gates the wipe, it cannot narrow it.
+ *  monitors: the condition gates the wipe, it cannot narrow it.
  *  @p out_cleared true when the condition held and 44 was confirmed. */
 esp_err_t autopid_dtc_clear(const char *codes, const char *mode,
                             bool *out_cleared);
 
 /** Look @p code up in the uploaded DTC databases (TASK_dtc_db.md;
  *  name-order priority, first hit wins). ESP_ERR_NOT_FOUND when no db
- *  carries it. Lookup is PSRAM-cache only (no flash) — safe from any
+ *  carries it. Lookup is PSRAM-cache only (no flash): safe from any
  *  task. */
 esp_err_t autopid_dtc_desc(const char *code, char *out, size_t out_cap);
 
@@ -182,7 +182,7 @@ esp_err_t autopid_dtc_desc(const char *code, char *out, size_t out_cap);
 esp_err_t autopid_register_http(void);
 
 /** Register the `autopid` console command (called internally on the
- *  settings boot apply when the `cli` setting is true — Standard §6b). */
+ *  settings boot apply when the `cli` setting is true: Standard §6b). */
 esp_err_t autopid_register_cli(void);
 
 #ifdef __cplusplus

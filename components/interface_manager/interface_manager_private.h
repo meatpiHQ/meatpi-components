@@ -50,7 +50,7 @@ extern "C" {
  *     drive" signal outranks a lingering AP association).
  *
  * Future rules (USB-connected kills both radios, ...) extend the input
- * struct + this function — nothing else changes. */
+ * struct + this function: nothing else changes. */
 
 typedef struct
 {

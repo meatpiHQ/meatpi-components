@@ -1,4 +1,4 @@
-# Host test compiles ONLY the pure config checks — no wireguard, no
+# Host test compiles ONLY the pure config checks: no wireguard, no
 # RTOS, no netif.
 set(comp_dir "${CMAKE_CURRENT_LIST_DIR}/../..")
 

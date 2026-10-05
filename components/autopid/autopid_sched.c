@@ -25,7 +25,7 @@
  * @brief PURE scheduler (host-tested): the PID is the scheduling unit.
  *
  * Fix #1 from TASK_autopid.md by construction: one slot per PID (or
- * filter) — parameters do not exist here, so the same PID can never be
+ * filter), parameters do not exist here, so the same PID can never be
  * requested once per parameter the way legacy did. Time base is the
  * caller's 64-bit µs clock (esp_timer on target, a fake in host tests).
  */

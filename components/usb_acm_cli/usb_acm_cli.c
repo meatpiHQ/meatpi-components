@@ -63,12 +63,12 @@ static const char *TAG = "usb_acm_cli";
 #define ACM_MAX_SUBS    2
 
 /* Request/response termination: the ESPNetLink console ends every
- * response with its prompt — that is the END marker. Quiet time is
+ * response with its prompt, that is the END marker. Quiet time is
  * only a FALLBACK for prompt-less output, and it must be LAZY: the
  * modem legs go silent mid-response (`lte -j` pauses >700 ms between
  * "iccid": and the value while it runs the AT query), not just
  * between echo and payload. The original 150 ms quiet-settle raced
- * even `ver`'s echo→body gap — the web-UI "no reply" bug. */
+ * even `ver`'s echo→body gap: the web-UI "no reply" bug. */
 #define ACM_PROMPT            "esp>"
 #define ACM_QUIET_FALLBACK_MS 2000
 
@@ -246,7 +246,7 @@ static void rx_task(void *arg)
 void usbh_cdc_acm_run(struct usbh_cdc_acm *cdc_acm_class)
 {
     /* An ESP32-S3's ROM/bootloader USB-Serial-JTAG (303A:1001) is on the
-     * pads for ~1.5 s after a power-on — the ESPNetLink's app detaches
+     * pads for ~1.5 s after a power-on: the ESPNetLink's app detaches
      * it before its real composite device (303A:4007) enumerates. Never
      * bind it: the DTR/RTS line sequence below is exactly what resets
      * the chip (espnetlink-fw docs, 2026-08-23). */
@@ -259,7 +259,7 @@ void usbh_cdc_acm_run(struct usbh_cdc_acm *cdc_acm_class)
     }
 
     /* no xStreamBufferReset here: the RX task may be mid-send (it is the
-     * buffer's one writer) — usb_acm_cli_command() drains stale bytes
+     * buffer's one writer), usb_acm_cli_command() drains stale bytes
      * reader-side before every request instead */
     s_acm = cdc_acm_class;
     (void)usbh_cdc_acm_set_line_state(cdc_acm_class, true, true); /* DTR+RTS */
@@ -312,7 +312,7 @@ esp_err_t usb_acm_cli_command(const char *line, char *resp, size_t resp_cap,
 
     /* Flush stale RX by DRAINING, never xStreamBufferReset: the RX task
      * is a concurrent WRITER, and reset is not safe against an in-flight
-     * send (stream buffers support exactly one reader + one writer — and
+     * send (stream buffers support exactly one reader + one writer, and
      * this command path is the one reader). resp doubles as scratch. */
     while (xStreamBufferReceive(s_rx_sb, resp, resp_cap - 1, 0) > 0)
     {
@@ -464,7 +464,7 @@ esp_err_t usb_acm_cli_gps_get(usb_acm_gps_t *out)
     }
 
     /* no live console fix: ask the other GPS source (espnetlink_link's
-     * HTTP poll — the WiFi-modem topology has no console at all) */
+     * HTTP poll, the WiFi-modem topology has no console at all) */
     if (!out->valid && s_gps_fallback != NULL)
     {
         usb_acm_gps_t alt;
@@ -488,7 +488,7 @@ static void gps_task(void *arg)
     (void)arg;
     static char resp[768]; /* lte -j is the biggest; gps -p -j ~410 B */
 
-    /* the task never exits — stop() just idles it (s_gps_run false), so
+    /* the task never exits: stop() just idles it (s_gps_run false), so
      * a stop()/start() cycle can't lose the poll to a teardown race */
     while (true)
     {
@@ -504,14 +504,14 @@ static void gps_task(void *arg)
         if (usb_acm_cli_command("gps -p -j", resp, sizeof(resp), &rn,
                                 3000) != ESP_OK)
         {
-            continue; /* console busy this round — try again next tick */
+            continue; /* console busy this round: try again next tick */
         }
 
         usb_acm_gps_t fix;
 
         if (!usb_acm_gps_parse(resp, &fix))
         {
-            /* no live fix — mark the cache invalid so readers see no-fix */
+            /* no live fix: mark the cache invalid so readers see no-fix */
             xSemaphoreTake(s_gps_lock, portMAX_DELAY);
             s_gps.valid = false;
             s_gps_stamp_ms = now_ms();
@@ -591,7 +591,7 @@ esp_err_t usb_acm_cli_start(void)
     (void)bridge_manager_register_endpoint(&EP);
 
     /* GPS poll task: caches the dongle's fix + feeds the autopid publisher.
-     * PSRAM stack — it only does USB + a pure parse (no flash). */
+     * PSRAM stack: it only does USB + a pure parse (no flash). */
     if (s_gps_task == NULL)
     {
         s_gps_run = true;

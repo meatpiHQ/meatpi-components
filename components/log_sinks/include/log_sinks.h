@@ -24,14 +24,14 @@
  * @file log_sinks.h
  * @brief External log sinks (service component): the network/file
  *        registrants log_manager deliberately doesn't own (standard §9.3,
- *        Architecture §3 — the log pipeline has no network or filesystem
+ *        Architecture §3, the log pipeline has no network or filesystem
  *        dependency; the sinks live HERE).
  *
  * Four sinks, each behind its own default-false settings gate:
- *  - "tcp":  a live log-tail TCP server on the device (nc <ip> 5515) —
+ *  - "tcp":  a live log-tail TCP server on the device (nc <ip> 5515),
  *            the j2534_server ownership model: own listener, own port.
  *  - "udp":  push to a configured collector host:port (one datagram per
- *            batch of lines) — the classic remote-syslog shape.
+ *            batch of lines), the classic remote-syslog shape.
  *  - "ws":   text frames on the websocket_manager `ws_log` channel
  *            (`/ws/log`) for the web UI / browser tooling.
  *  - "file": batched, rotation-bounded plain-text log files on the SD
@@ -41,13 +41,13 @@
  *
  * Pipeline contract: every sink's log_manager write callback only copies
  * the line into a per-sink PSRAM record ring (drop-oldest, counted) and
- * notifies a flusher task — the log task is never blocked by a socket,
+ * notifies a flusher task: the log task is never blocked by a socket,
  * a slow client, or the SD card (§9.5). Two flushers: one network task
  * (PSRAM stack) for tcp/udp/ws, one file writer (internal stack).
  *
  * Sinks register with log_manager at start() and show up in
  * `GET /api/logs/status` / `PUT /api/logs/sink` automatically; those
- * runtime toggles pause/resume a RUNNING sink (ephemeral, §9.4) — engine
+ * runtime toggles pause/resume a RUNNING sink (ephemeral, §9.4): engine
  * bring-up itself is reboot-to-apply via the "log_sinks" settings.
  */
 #pragma once
@@ -64,7 +64,7 @@ extern "C" {
 
 /** Per-sink pipeline counters (conservation: in == out + dropped +
  *  still-buffered; `in` counts only lines accepted while the sink had a
- *  consumer — see README). */
+ *  consumer, see README). */
 typedef struct
 {
     bool     enabled;   /* settings gate (engine configured at boot)     */

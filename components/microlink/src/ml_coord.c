@@ -111,10 +111,10 @@ static int coord_recv(microlink_t *ml, uint8_t *buf, size_t len) {
         if (n <= 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 if (recvd == 0) {
-                    /* No data consumed yet — timeout is fine, caller can retry */
+                    /* No data consumed yet: timeout is fine, caller can retry */
                     return -1;
                 }
-                /* Partial data consumed — we MUST finish this read or the
+                /* Partial data consumed: we MUST finish this read or the
                  * Noise frame stream will be misaligned. Retry with backoff. */
                 if (++retries > 300) {  /* ~3 seconds */
                     ESP_LOGE(TAG, "coord_recv partial timeout: %d/%d bytes",
@@ -186,7 +186,7 @@ static int noise_recv(microlink_t *ml, ml_noise_state_t *noise,
     uint8_t *ciphertext = ml_psram_malloc(ct_len);
     if (!ciphertext) return -1;
 
-    /* Header already consumed — payload read MUST complete or stream
+    /* Header already consumed: payload read MUST complete or stream
      * alignment is permanently lost. Retry EAGAIN (coord_recv returns -1
      * with errno==EAGAIN if recvd==0 on first byte). */
     int payload_retries = 0;
@@ -289,7 +289,7 @@ static int s_server_extra_data_len = 0;
 /* ============================================================================
  * WiCAN addition: fetch the coordinator's Noise public key (custom
  * servers only). Plain HTTP GET /key?v=%d on the same port-80 dial the
- * ts2021 upgrade uses — Noise provides the crypto for the control
+ * ts2021 upgrade uses: Noise provides the crypto for the control
  * session itself; the key document is public information.
  * Response contains: "publicKey":"mkey:<64 hex>"
  * ========================================================================== */
@@ -377,7 +377,7 @@ out:
 static int do_noise_handshake(microlink_t *ml, ml_noise_state_t *noise) {
     int64_t t_noise_start = esp_timer_get_time();
 
-    /* Initialize Noise state with our machine key and the server key —
+    /* Initialize Noise state with our machine key and the server key,
      * hardcoded Tailscale default, or fetched from /key for custom
      * coordinators (WiCAN addition, see fetch_custom_server_key) */
     if (ml->ctrl_host[0] != '\0') {
@@ -818,7 +818,7 @@ static int do_register(microlink_t *ml, ml_noise_state_t *noise) {
     cJSON_AddStringToObject(hostinfo, "OSVersion", "ESP-IDF");
     cJSON_AddStringToObject(hostinfo, "GoArch", "arm");
 
-    /* NetInfo inside Hostinfo — control plane reads PreferredDERP from here
+    /* NetInfo inside Hostinfo: control plane reads PreferredDERP from here
      * to populate Node.HomeDERP for other peers */
     {
         cJSON *netinfo = cJSON_CreateObject();
@@ -1063,7 +1063,7 @@ static int do_register(microlink_t *ml, ml_noise_state_t *noise) {
                 }
             }
         }
-        /* Parse self-node DERP region — try modern HomeDERP (int) first,
+        /* Parse self-node DERP region: try modern HomeDERP (int) first,
          * then fall back to legacy DERP string (format: "127.3.3.40:REGION") */
         cJSON *home_derp = cJSON_GetObjectItem(node, "HomeDERP");
         if (home_derp && cJSON_IsNumber(home_derp) && home_derp->valueint > 0) {
@@ -1142,7 +1142,7 @@ static void parse_peers_from_map_response(microlink_t *ml, cJSON *root) {
     }
 
     /* Deferred-map stream (Headscale): the first content-bearing message
-     * is the complete netmap no matter how it spells the peer set — it
+     * is the complete netmap no matter how it spells the peer set, it
      * may use "PeersChanged", or omit the field entirely when the
      * tailnet has no other nodes. Either way it is authoritative. */
     if (ml->first_map_pending &&
@@ -1152,7 +1152,7 @@ static void parse_peers_from_map_response(microlink_t *ml, cJSON *root) {
         if (!peers || !cJSON_IsArray(peers)) {
             /* Complete map with no peers: prune everything we carry
              * (NVS-cached peers from a previous life). */
-            ESP_LOGI(TAG, "First map of stream carries no peers — sweeping");
+            ESP_LOGI(TAG, "First map of stream carries no peers, sweeping");
             if (queue_peer_action(ml, ML_PEER_SYNC_BEGIN)) {
                 (void)queue_peer_action(ml, ML_PEER_SYNC_END);
             }
@@ -1166,11 +1166,11 @@ static void parse_peers_from_map_response(microlink_t *ml, cJSON *root) {
 
     int count = cJSON_GetArraySize(peers);
     ESP_LOGI(TAG, "MapResponse: %d peers%s", count,
-             full_map ? " (full map — mark-and-sweep)" : "");
+             full_map ? " (full map: mark-and-sweep)" : "");
 
     /* Full map: bracket the adds so wg_mgr can prune peers the control
      * server no longer lists (removed while we were offline, NVS-cached
-     * phantoms after a control-server rebuild — BUG_TS_PHANTOM_PEERS.md).
+     * phantoms after a control-server rebuild: BUG_TS_PHANTOM_PEERS.md).
      * If any add fails to queue the sweep is aborted: pruning against a
      * partial add-set would remove live peers. */
     bool sweep = full_map && queue_peer_action(ml, ML_PEER_SYNC_BEGIN);
@@ -1227,7 +1227,7 @@ static void parse_peers_from_map_response(microlink_t *ml, cJSON *root) {
             }
         }
 
-        /* DERP region — try modern HomeDERP (int) first, then legacy DERP string */
+        /* DERP region: try modern HomeDERP (int) first, then legacy DERP string */
         cJSON *peer_home_derp = cJSON_GetObjectItem(peer, "HomeDERP");
         if (peer_home_derp && cJSON_IsNumber(peer_home_derp) && peer_home_derp->valueint > 0) {
             update->derp_region = (uint16_t)peer_home_derp->valueint;
@@ -1286,7 +1286,7 @@ static void parse_peers_from_map_response(microlink_t *ml, cJSON *root) {
     }
 
 check_removed:
-    /* Handle PeersRemoved — array of nodekey strings (long-poll delta updates) */
+    /* Handle PeersRemoved: array of nodekey strings (long-poll delta updates) */
     cJSON *removed = cJSON_GetObjectItem(root, "PeersRemoved");
     if (removed && cJSON_IsArray(removed)) {
         int rm_count = cJSON_GetArraySize(removed);
@@ -1315,7 +1315,7 @@ check_removed:
         }
     }
 
-    /* Handle PeersChangedPatch — lightweight endpoint-only updates */
+    /* Handle PeersChangedPatch: lightweight endpoint-only updates */
     cJSON *patches = cJSON_GetObjectItem(root, "PeersChangedPatch");
     if (patches && cJSON_IsObject(patches)) {
         ESP_LOGI(TAG, "PeersChangedPatch: processing lightweight updates");
@@ -1331,7 +1331,7 @@ check_removed:
                     if (strncmp(hex, "nodekey:", 8) == 0) hex += 8;
                     hex_to_bytes(hex, update->public_key, 32);
 
-                    /* Parse DERP region if present — try DERPRegion (int) first,
+                    /* Parse DERP region if present: try DERPRegion (int) first,
                      * then legacy DERP string */
                     cJSON *patch_derp_region = cJSON_GetObjectItem(patch, "DERPRegion");
                     if (patch_derp_region && cJSON_IsNumber(patch_derp_region) && patch_derp_region->valueint > 0) {
@@ -1411,8 +1411,8 @@ static int add_endpoints_to_json(microlink_t *ml, cJSON *root) {
         }
     }
 
-    /* PPP endpoint (cellular) — use STUN-discovered public IP as our endpoint */
-    /* (PPP netif doesn't have a useful local IP for peers — it's behind CGNAT) */
+    /* PPP endpoint (cellular): use STUN-discovered public IP as our endpoint */
+    /* (PPP netif doesn't have a useful local IP for peers: it's behind CGNAT) */
 
     /* STUN public endpoint (IPv4) */
     if (ml->stun_public_ip != 0) {
@@ -1430,7 +1430,7 @@ static int add_endpoints_to_json(microlink_t *ml, cJSON *root) {
         count++;
     }
 
-    /* STUN public endpoint (IPv6) — only include if it's a real IPv6 address,
+    /* STUN public endpoint (IPv6): only include if it's a real IPv6 address,
      * not an IPv4-mapped IPv6 (::ffff:x.x.x.x) which is redundant with IPv4. */
     if (ml->stun_has_ipv6) {
         const uint8_t *a = ml->stun_public_ip6;
@@ -1466,7 +1466,7 @@ uint16_t ml_effective_derp_region(microlink_t *ml) {
             return home;
         }
     }
-    /* Home region not in the map (custom coordinator) — first usable */
+    /* Home region not in the map (custom coordinator): first usable */
     for (int i = 0; i < ml->derp_region_count; i++) {
         if (!ml->derp_regions[i].avoid && ml->derp_regions[i].node_count > 0) {
             return ml->derp_regions[i].region_id;
@@ -1522,7 +1522,7 @@ static void process_map_json(microlink_t *ml, cJSON *map_json) {
                     }
                 }
             }
-            /* Parse self-node DERP region — try modern HomeDERP (int) first,
+            /* Parse self-node DERP region: try modern HomeDERP (int) first,
              * then fall back to legacy DERP string (format: "127.3.3.40:REGION") */
             cJSON *home_derp = cJSON_GetObjectItem(node, "HomeDERP");
             if (home_derp && cJSON_IsNumber(home_derp) && home_derp->valueint > 0) {
@@ -1583,7 +1583,7 @@ static void process_map_json(microlink_t *ml, cJSON *map_json) {
             cJSON *expired = cJSON_GetObjectItem(node, "Expired");
             if (expired && cJSON_IsTrue(expired)) {
                 ml->key_expired = true;
-                ESP_LOGW(TAG, "Node key is EXPIRED — re-registration needed");
+                ESP_LOGW(TAG, "Node key is EXPIRED: re-registration needed");
             } else {
                 ml->key_expired = false;
             }
@@ -1593,7 +1593,7 @@ static void process_map_json(microlink_t *ml, cJSON *map_json) {
     /* Parse peers */
     parse_peers_from_map_response(ml, map_json);
 
-    /* Extract DERPMap if present — parse all regions and nodes */
+    /* Extract DERPMap if present: parse all regions and nodes */
     cJSON *derp_map = cJSON_GetObjectItem(map_json, "DERPMap");
     if (derp_map) {
         cJSON *regions = cJSON_GetObjectItem(derp_map, "Regions");
@@ -1718,7 +1718,7 @@ static int do_fetch_peers(microlink_t *ml, ml_noise_state_t *noise) {
     cJSON_AddItemToObject(root, "Hostinfo", hostinfo);
 
     /* NetInfo: tell control plane our preferred DERP region and NAT type.
-     * MUST be inside Hostinfo — the control plane reads Hostinfo.NetInfo.PreferredDERP
+     * MUST be inside Hostinfo: the control plane reads Hostinfo.NetInfo.PreferredDERP
      * to populate Node.HomeDERP for other peers. */
     cJSON *netinfo = cJSON_CreateObject();
     if (netinfo) {
@@ -1791,7 +1791,7 @@ static int do_fetch_peers(microlink_t *ml, ml_noise_state_t *noise) {
 
     /* Read all Noise frames and accumulate decrypted H2 data.
      * Scan for H2 END_STREAM flag (0x01) on DATA frames to know when the
-     * response is complete — without this, we wait for the full recv timeout
+     * response is complete, without this, we wait for the full recv timeout
      * (60s) before proceeding, which dominates connection time on cellular. */
     bool got_end_stream = false;
     for (int read_count = 0; read_count < 200; read_count++) {
@@ -1829,7 +1829,7 @@ static int do_fetch_peers(microlink_t *ml, ml_noise_state_t *noise) {
             if (scan_pos + 9 + f_len > h2_total) break;  /* Incomplete frame */
 
             if ((f_type == 0x00 || f_type == 0x01) && (f_flags & 0x01)) {
-                /* DATA or HEADERS frame with END_STREAM — response done.
+                /* DATA or HEADERS frame with END_STREAM: response done.
                  * WiCAN: Headscale answers Stream=false full-map requests
                  * with a HEADERS-only empty 200; without this we sit out
                  * the full 60s recv timeout. */
@@ -1920,8 +1920,8 @@ static int do_fetch_peers(microlink_t *ml, ml_noise_state_t *noise) {
     if (json_total == 0) {
         /* WiCAN: Headscale never answers Stream=false full-map requests
          * (empty 200). The full netmap arrives as the first message of
-         * the Stream=true long-poll instead — proceed. */
-        ESP_LOGW(TAG, "Empty MapResponse — deferring netmap to the long-poll stream");
+         * the Stream=true long-poll instead, proceed. */
+        ESP_LOGW(TAG, "Empty MapResponse: deferring netmap to the long-poll stream");
         ml->map_deferred_to_stream = true;
         free(resp_buf);
         return 0;
@@ -2022,7 +2022,7 @@ static int do_start_long_poll(microlink_t *ml, ml_noise_state_t *noise) {
     }
 
     /* NetInfo: tell control plane our preferred DERP region and NAT type.
-     * MUST be inside Hostinfo — the control plane reads Hostinfo.NetInfo.PreferredDERP
+     * MUST be inside Hostinfo: the control plane reads Hostinfo.NetInfo.PreferredDERP
      * to populate Node.HomeDERP for other peers. */
     cJSON *netinfo = cJSON_CreateObject();
     if (netinfo) {
@@ -2081,7 +2081,7 @@ static int do_start_long_poll(microlink_t *ml, ml_noise_state_t *noise) {
     ESP_LOGI(TAG, "Streaming MapRequest sent on stream 5");
 
     /* Deferred-netmap path (Headscale): the stream's first content
-     * message IS the full map — but it may omit "Peers" entirely (empty
+     * message IS the full map, but it may omit "Peers" entirely (empty
      * tailnet) or ship the set as "PeersChanged". Arm the authoritative
      * first-map sweep so NVS-cached peers the server no longer knows
      * get pruned (BUG_TS_PHANTOM_PEERS.md). */
@@ -2122,11 +2122,11 @@ static int do_send_endpoint_update(microlink_t *ml, ml_noise_state_t *noise) {
     /* Stream=false so control plane PROCESSES our endpoints (Version >= 68) */
     cJSON_AddBoolToObject(root, "Stream", false);
     cJSON_AddBoolToObject(root, "KeepAlive", true);
-    /* OmitPeers=true — we don't need peers back, just updating our endpoints */
+    /* OmitPeers=true: we don't need peers back, just updating our endpoints */
     cJSON_AddBoolToObject(root, "OmitPeers", true);
     cJSON_AddStringToObject(root, "Compress", "");
 
-    /* Hostinfo (required — control plane reads NetInfo from here) */
+    /* Hostinfo (required: control plane reads NetInfo from here) */
     cJSON *hostinfo = cJSON_CreateObject();
     if (hostinfo) {
         const char *dev_name = (ml->config.device_name && ml->config.device_name[0]) ? ml->config.device_name : microlink_default_device_name();
@@ -2191,7 +2191,7 @@ static int do_send_endpoint_update(microlink_t *ml, ml_noise_state_t *noise) {
     free(h2_buf);
 
     ESP_LOGI(TAG, "Endpoint update sent on H2 stream %lu", (unsigned long)sid);
-    /* Response body is discarded — server may send empty response or
+    /* Response body is discarded: server may send empty response or
      * we'll consume it in the next poll_map_update() iteration.
      * Only the HTTP status code matters (200 = success). */
     return 0;
@@ -2209,7 +2209,7 @@ static int poll_map_update(microlink_t *ml, ml_noise_state_t *noise) {
     int sel = ml_select_fds(ml->coord_sock + 1, &readfds, NULL, NULL, &tv);
     if (sel <= 0) return 0;  /* No data available or error */
 
-    /* Data available — set short recv timeout for partial frame safety */
+    /* Data available: set short recv timeout for partial frame safety */
     struct timeval tv_recv = { .tv_sec = 2, .tv_usec = 0 };
     ml_setsockopt(ml->coord_sock, SOL_SOCKET, SO_RCVTIMEO, &tv_recv, sizeof(tv_recv));
 
@@ -2228,7 +2228,7 @@ static int poll_map_update(microlink_t *ml, ml_noise_state_t *noise) {
 
     /* Append this decrypted Noise frame to the persistent H2 buffer and
      * walk COMPLETE H2 frames from its front. A partial H2 frame stays
-     * buffered for the next noise_recv — parsing it early loses the
+     * buffered for the next noise_recv, parsing it early loses the
      * tail and desyncs the H2 stream (lost every full netmap > ~4KB). */
     if (!ml->h2_acc_buf) {
         ml->h2_acc_buf = ml_psram_malloc(ML_H2_ACC_SIZE);
@@ -2258,13 +2258,13 @@ static int poll_map_update(microlink_t *ml, ml_noise_state_t *noise) {
         uint32_t f_stream = ((frame_buf[pos + 5] & 0x7F) << 24) | (frame_buf[pos + 6] << 16) |
                              (frame_buf[pos + 7] << 8) | frame_buf[pos + 8];
 
-        if (pos + 9 + (int)f_len > acc_len) break;  /* Incomplete — keep for next recv */
+        if (pos + 9 + (int)f_len > acc_len) break;  /* Incomplete: keep for next recv */
         pos += 9;
 
         if (f_type == 0x00) {  /* DATA frame */
             total_data_bytes += f_len;
             if (f_stream == 5) {
-                /* Long-poll MapResponse data (stream 5) — append to the
+                /* Long-poll MapResponse data (stream 5): append to the
                  * reassembly buffer; messages are [4B LE length][JSON]
                  * and may span multiple Noise/H2 frames. */
                 data_stream_id = f_stream;
@@ -2284,12 +2284,12 @@ static int poll_map_update(microlink_t *ml, ml_noise_state_t *noise) {
                     }
                 }
             } else if (f_len > 0) {
-                /* Endpoint update response (stream 7+) — discard body */
+                /* Endpoint update response (stream 7+): discard body */
                 ESP_LOGD(TAG, "H2 stream %lu DATA: %lu bytes (discarded)",
                          (unsigned long)f_stream, (unsigned long)f_len);
             }
         } else if (f_type == 0x06 && f_len == 8 && !(f_flags & 0x01)) {
-            /* HTTP/2 PING from server — respond with PONG (same payload, ACK flag) */
+            /* HTTP/2 PING from server: respond with PONG (same payload, ACK flag) */
             uint8_t pong[17];
             pong[0] = 0x00; pong[1] = 0x00; pong[2] = 0x08;
             pong[3] = 0x06; pong[4] = 0x01;
@@ -2298,7 +2298,7 @@ static int poll_map_update(microlink_t *ml, ml_noise_state_t *noise) {
             noise_send(ml, noise, pong, sizeof(pong));
             ESP_LOGI(TAG, "Sent HTTP/2 PONG in response to server PING");
         } else if (f_type == 0x04 && !(f_flags & 0x01)) {
-            /* HTTP/2 SETTINGS from server — respond with SETTINGS ACK */
+            /* HTTP/2 SETTINGS from server: respond with SETTINGS ACK */
             uint8_t settings_ack[9] = {0x00, 0x00, 0x00, 0x04, 0x01, 0x00, 0x00, 0x00, 0x00};
             noise_send(ml, noise, settings_ack, sizeof(settings_ack));
         }
@@ -2327,7 +2327,7 @@ static int poll_map_update(microlink_t *ml, ml_noise_state_t *noise) {
         noise_send(ml, noise, wu_buf, wu_len);
     }
 
-    /* NOTE: frame_buf aliases ml->h2_acc_buf here — do not free it. */
+    /* NOTE: frame_buf aliases ml->h2_acc_buf here, do not free it. */
 
     /* Drain complete [4B LE length][JSON] messages from the reassembly
      * buffer. Keepalives are tiny "{}" messages; the first message of a
@@ -2343,7 +2343,7 @@ static int poll_map_update(microlink_t *ml, ml_noise_state_t *noise) {
             ml->map_stream_len = 0;
             break;
         }
-        if (4 + msg_len > ml->map_stream_len) break;  /* Incomplete — wait */
+        if (4 + msg_len > ml->map_stream_len) break;  /* Incomplete: wait */
 
         char *json = (char *)b + 4;
         char saved = json[msg_len];
@@ -2370,7 +2370,7 @@ static int poll_map_update(microlink_t *ml, ml_noise_state_t *noise) {
     }
 
     if (processed > 0 && !ml->derp.connected && ml->derp_region_count > 0) {
-        /* Deferred-netmap path: the DERPMap just arrived on the stream —
+        /* Deferred-netmap path: the DERPMap just arrived on the stream,
          * ask the DERP I/O task to connect now. */
         ESP_LOGI(TAG, "DERPMap available from stream, requesting DERP connect");
         xEventGroupSetBits(ml->events, ML_EVT_DERP_CONNECT_REQ);
@@ -2535,7 +2535,7 @@ void ml_coord_task(void *arg) {
 
             /* Signal DERP I/O task to connect (connection now owned by I/O task).
              * WiCAN: if the netmap was deferred to the stream we have no
-             * DERPMap yet — poll_map_update() requests the DERP connect
+             * DERPMap yet: poll_map_update() requests the DERP connect
              * once the first streamed map delivers it. */
             if (!ml->map_deferred_to_stream && !ml->derp.connected) {
                 xEventGroupSetBits(ml->events, ML_EVT_DERP_CONNECT_REQ);
@@ -2613,7 +2613,7 @@ void ml_coord_task(void *arg) {
                                 ESP_LOGI(TAG, "Sent STUN to fallback for NAT type detection");
                             }
                         } else if (!ml->stun_nat_checked) {
-                            /* Second STUN result (fallback) — compare ports */
+                            /* Second STUN result (fallback): compare ports */
                             ml->stun_secondary_port = pub_port;
                             ml->stun_nat_checked = true;
                             if (ml->stun_public_port != pub_port) {
@@ -2627,7 +2627,7 @@ void ml_coord_task(void *arg) {
                                          "(direct connections possible)", pub_port);
                             }
                         } else {
-                            /* Periodic re-probe — update primary result */
+                            /* Periodic re-probe: update primary result */
                             ml->stun_public_ip = pub_ip;
                             ml->stun_public_port = pub_port;
                             ml->stun_retry_count = 0;
@@ -2694,7 +2694,7 @@ void ml_coord_task(void *arg) {
                     }
                 }
 
-                /* Periodic STUN re-probe (every 23s) — fresh probe sequence */
+                /* Periodic STUN re-probe (every 23s): fresh probe sequence */
                 static uint64_t last_stun_ms = 0;
                 if (now - last_stun_ms > ml->t_stun_interval_ms) {
                     ml->stun_retry_count = 1;
@@ -2739,7 +2739,7 @@ void ml_coord_task(void *arg) {
                     last_derp_keepalive_ms = now;
                 }
 
-                /* Key expiry check (every 60s) — re-register if expired */
+                /* Key expiry check (every 60s): re-register if expired */
                 if (ml->key_expiry_epoch > 0 || ml->key_expired) {
                     static uint64_t last_expiry_check_ms = 0;
                     if (now - last_expiry_check_ms > 60000) {
@@ -2750,7 +2750,7 @@ void ml_coord_task(void *arg) {
                                 state = COORD_RECONNECTING;
                                 break;
                             } else {
-                                ESP_LOGE(TAG, "Key expired but no auth_key — manual re-provisioning needed!");
+                                ESP_LOGE(TAG, "Key expired but no auth_key: manual re-provisioning needed!");
                             }
                         }
                         /* Warn 1 hour before expiry (rough uptime-based check) */

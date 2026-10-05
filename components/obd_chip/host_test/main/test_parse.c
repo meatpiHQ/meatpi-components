@@ -1,6 +1,6 @@
 /**
  * @file test_parse.c
- * @brief Unit tests for the pure response framing / classification —
+ * @brief Unit tests for the pure response framing / classification,
  *        including chunk-boundary re-splits and the real-car long-response
  *        fixture (the cases where the actual bugs live).
  */
@@ -73,7 +73,7 @@ void test_bytes_after_prompt_not_consumed(void)
 void test_unsolicited_noise_interleaves_into_window(void)
 {
     /* broadcast contract: monitor frames landing inside the transaction
-       window are part of what the chip printed — kept verbatim, and the
+       window are part of what the chip printed, kept verbatim, and the
        prompt still terminates cleanly */
     run_split("0100", "7E8 06 41 00 BE 3F A8 13\r41 00 FF FF FF FF\r\r>", 7);
     TEST_ASSERT_NOT_NULL(strstr(s_out, "41 00 FF FF FF FF"));
@@ -200,7 +200,7 @@ void test_eeprom_guard(void)
     expect_rewrite("ATSP6\r", "ATTP6\r");
     expect_rewrite("ATM1", "ATM0");
     expect_rewrite("at m 1", "AT M 0");
-    /* a ';'-separated init chain (autopid) — every token is a boundary */
+    /* a ';'-separated init chain (autopid): every token is a boundary */
     expect_rewrite("ATZ;ATSP6;atm1;ATSH7DF;atsp7", "ATZ;ATTP6;ATM0;ATSH7DF;ATTP7");
     /* the Renault Zoe profile init, verbatim */
     expect_rewrite("ATE0;ATH1;ATSP7;ATS0;ATM0;ATAT1;ATFCSM1;ATCP18;",

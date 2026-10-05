@@ -23,7 +23,7 @@
 /**
  * @file http_client_manager.c
  * @brief The request engine: per-request esp_http_client instances (the
- *        thread-safety model — no shared client), the concurrency
+ *        thread-safety model, no shared client), the concurrency
  *        limiter, capped PSRAM responses, cert_set TLS, and the atomic
  *        download path (see include/http_client_manager.h).
  */
@@ -457,7 +457,7 @@ esp_err_t http_client_manager_download(const char *url,
     while (err == ESP_OK)
     {
         /* read into our buffer while filesystem's writer task flushes
-         * the previous chunk — receive and media write overlap */
+         * the previous chunk: receive and media write overlap */
         int r = esp_http_client_read(client, (char *)s_dl_buf,
                                      sizeof(s_dl_buf));
 

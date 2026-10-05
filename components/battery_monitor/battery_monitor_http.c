@@ -23,7 +23,7 @@
 /**
  * @file battery_monitor_http.c
  * @brief The optional /api/battery route (§9.1: feature components
- *        register their own domain routes) — main calls
+ *        register their own domain routes), main calls
  *        battery_monitor_register_http() only in HTTP compositions, so
  *        the ADC code carries no HTTP dependency.
  */

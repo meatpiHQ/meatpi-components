@@ -22,7 +22,7 @@
 
 /**
  * @file data_destinations.h
- * @brief Data destinations — cyclic delivery of the live AutoPID
+ * @brief Data destinations: cyclic delivery of the live AutoPID
  *        parameter set to MQTT topics, HTTP/HTTPS endpoints and the ABRP
  *        (Iternio) telemetry API (feature component).
  *
@@ -88,13 +88,13 @@ esp_err_t data_destinations_stop(void);
  * link state and one entry per configured destination with its counters
  * (`success`, `fail`, `skipped_offline`, `consecutive_failures`,
  * `backoff_s`, `next_in_s`, `last_status`, `last_error[_time]`,
- * `last_ok_time`) — secrets are never included. Caller frees.
+ * `last_ok_time`): secrets are never included. Caller frees.
  */
 esp_err_t data_destinations_status(cJSON **out);
 
 /**
  * Deliver destination @p name ONCE, now, regardless of its cycle or
- * backoff (SYNCHRONOUS: seconds under a bad network — never call from
+ * backoff (SYNCHRONOUS: seconds under a bad network, never call from
  * the event dispatcher). The delivery runs on the poster task's stack
  * (TLS needs it); the caller blocks up to ~20 s. ESP_ERR_NOT_FOUND for
  * an unknown name, ESP_ERR_INVALID_STATE while another test is in
@@ -108,7 +108,7 @@ esp_err_t data_destinations_test(const char *name,
 esp_err_t data_destinations_register_http(void);
 
 /** Register the `destinations` console command (called internally on
- *  the settings boot apply when the `cli` setting is true — Standard §6b). */
+ *  the settings boot apply when the `cli` setting is true: Standard §6b). */
 esp_err_t data_destinations_register_cli(void);
 
 #ifdef __cplusplus

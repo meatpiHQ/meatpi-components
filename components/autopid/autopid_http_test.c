@@ -44,7 +44,7 @@
 #include "autopid_private.h"
 #include "autopid_http_private.h"
 
-/* test-a-PID (§11): one-shot through the REAL runner path — the ws
+/* test-a-PID (§11): one-shot through the REAL runner path, the ws
    console can't reproduce init/rxheader/expression handling */
 esp_err_t test_post_handler(httpd_req_t *req)
 {
@@ -124,7 +124,7 @@ esp_err_t test_post_handler(httpd_req_t *req)
     }
 
     /* "type": prepend the type init chain the poller sends when it
-       switches to this PID's type — the shot then IS a poll of that PID */
+       switches to this PID's type, the shot then IS a poll of that PID */
     int tidx = -1;
 
     if (cJSON_IsString(type))

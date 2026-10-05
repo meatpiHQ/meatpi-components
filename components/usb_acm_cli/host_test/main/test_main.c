@@ -1,6 +1,6 @@
 /**
  * @file test_main.c
- * @brief Host suite for usb_acm_gps_parse — the ESPNetLink `gps -p -j`
+ * @brief Host suite for usb_acm_gps_parse: the ESPNetLink `gps -p -j`
  *        JSON → fix mapping that GPS values ride into autopid (HA push /
  *        data_logger / dashboard / event rules). Fixtures are real
  *        captures from a BG95-M5 dongle.
@@ -24,7 +24,7 @@ static const char *FIX_WRAPPED =
     "\"cached_lat\":-37.905350,\"cached_lon\":145.145047,"
     "\"cached_alt\":88.8}\r\r\nOK\r\r\nesp> \r\nOK\r\nwican> ";
 
-/* no live fix — the indoor default: valid:false but a cached position
+/* no live fix: the indoor default: valid:false but a cached position
  * present. Must NOT be reported (a cached position is not "current"). */
 static const char *NO_FIX =
     "{\"valid\":false,\"lat\":0.0000000,\"lon\":0.0000000,"
@@ -60,7 +60,7 @@ void test_no_fix_is_rejected(void)
 
 void test_lat_not_confused_with_cached_lat(void)
 {
-    /* the leading quote in "lat": must not match inside "cached_lat": —
+    /* the leading quote in "lat": must not match inside "cached_lat":
      * a cached_lat FIRST in the object would otherwise be read as lat */
     static const char *reordered =
         "{\"cached_lat\":11.111111,\"cached_lon\":22.222222,"

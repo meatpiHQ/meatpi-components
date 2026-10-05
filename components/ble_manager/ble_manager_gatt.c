@@ -23,11 +23,11 @@
 /**
  * @file ble_manager_gatt.c
  * @brief The Bluedroid GATT server: attribute tables, GAP/GATTS handlers,
- *        advertising and security — the ON-AIR CONTRACT, preserved verbatim
+ *        advertising and security, the ON-AIR CONTRACT, preserved verbatim
  *        from the legacy ble.c (UUIDs, permissions, adv/conn parameters,
  *        security block). Deliberately dropped vs legacy: the sideways
  *        wifi/config-server calls on connect (policy belongs to the
- *        composition root — dev_status bits carry the signal instead).
+ *        composition root, dev_status bits carry the signal instead).
  */
 #include <string.h>
 
@@ -415,7 +415,7 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event,
             break;
 
         case ESP_GAP_BLE_PASSKEY_NOTIF_EVT:
-            /* IO_CAP_OUT: the static passkey is "displayed" (never logged —
+            /* IO_CAP_OUT: the static passkey is "displayed" (never logged,
                standard §10: no secrets in logs) */
             break;
 
@@ -505,7 +505,7 @@ static void gatts_event_handler(esp_gatts_cb_event_t event,
             }
             else if (param->write.handle == s_fff0_handles[IDX_CHAR_FFF2_VAL])
             {
-                /* the data pipe: DEBUG only — this is the hot path (§10) */
+                /* the data pipe: DEBUG only, this is the hot path (§10) */
                 ESP_LOGD(TAG, "rx %d bytes", param->write.len);
                 blm_core_on_rx(param->write.value, param->write.len);
             }
@@ -645,7 +645,7 @@ esp_err_t blm_gatt_stack_up(const char *dev_name)
 
     esp_ble_gatt_set_local_mtu(517); /* legacy */
 
-    /* security block — byte-identical to legacy */
+    /* security block: byte-identical to legacy */
     esp_ble_auth_req_t auth_req = ESP_LE_AUTH_REQ_SC_MITM_BOND;
     esp_ble_io_cap_t iocap = ESP_IO_CAP_OUT;
     uint8_t key_size = 16;

@@ -22,7 +22,7 @@
 
 /**
  * @file espnetlink_link_core.h
- * @brief Pure helpers (no IDF deps) — host-tested: the dongle's JSON
+ * @brief Pure helpers (no IDF deps): host-tested: the dongle's JSON
  *        documents, the VID/PID identity, and the zero-touch pairing
  *        state machine as a transition table the engine drives.
  */
@@ -54,8 +54,8 @@ bool espnl_core_is_espnetlink(uint16_t vid, uint16_t pid);
 
 /* ---- link mode --------------------------------------------------------- */
 
-/* Mirrors the public espnetlink_mode_t (espnetlink_link.h) value-for-value
- * — kept separate so this header stays IDF-free for the host tests. */
+/* Mirrors the public espnetlink_mode_t (espnetlink_link.h) value-for-value:
+ * kept separate so this header stays IDF-free for the host tests. */
 typedef enum
 {
     ESPNL_CORE_MODE_WIFI_MODEM = 0,
@@ -64,14 +64,14 @@ typedef enum
 } espnl_core_mode_t;
 
 /** Settings-token decode ("wifi_modem"/"usb_ncm"/"usb_rndis"); anything
- *  else — including NULL — is the wifi_modem default. */
+ *  else (including NULL) is the wifi_modem default. */
 espnl_core_mode_t espnl_core_mode_from_str(const char *s);
 
 /** The settings token for a mode (never NULL). */
 const char *espnl_core_mode_str(espnl_core_mode_t mode);
 
 /** The dongle-side `usb_dev_ethernet.class` value this mode needs
- *  ("ncm"/"rndis"), or NULL for wifi_modem (class irrelevant — cut). */
+ *  ("ncm"/"rndis"), or NULL for wifi_modem (class irrelevant: cut). */
 const char *espnl_core_mode_usb_class(espnl_core_mode_t mode);
 
 /* ---- documents --------------------------------------------------------- */

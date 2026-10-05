@@ -31,7 +31,7 @@
  * validate -> persist via the one set() pipeline; a dry_run stops before
  * persisting so a transport can make a whole restore all-or-nothing.
  *
- * Values are exported VERBATIM — including password fields. Redaction is
+ * Values are exported VERBATIM, including password fields. Redaction is
  * a transport decision; a backup that loses secrets cannot transfer a
  * configuration to another device.
  */
@@ -135,7 +135,7 @@ esp_err_t settings_manager_restore(const char *name, uint32_t version,
     if (version > e->desc.version)
     {
         sm_unlock();
-        err_put(err, err_len, "backup is v%u but this firmware has v%u — "
+        err_put(err, err_len, "backup is v%u but this firmware has v%u: "
                  "update the firmware first", (unsigned)version,
                  (unsigned)e->desc.version);
         return ESP_ERR_INVALID_VERSION;

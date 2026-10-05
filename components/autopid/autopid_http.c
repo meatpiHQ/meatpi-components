@@ -22,13 +22,13 @@
 
 /**
  * @file autopid_http.c
- * @brief The /api/autopid routes (own-routes pattern, §9.1) — main calls
+ * @brief The /api/autopid routes (own-routes pattern, §9.1): main calls
  *        autopid_register_http() only in HTTP compositions.
  *
- * GET  /api/autopid          — live cache + groups + stats (the dashboard)
- * GET  /api/autopid/data     — the LEGACY-shape {"Name": value} snapshot
- * GET  /api/autopid/config   — the PID/filter tables file, verbatim
- * PUT  /api/autopid/config   — validate -> atomic save -> LIVE reload
+ * GET  /api/autopid:           live cache + groups + stats (the dashboard)
+ * GET  /api/autopid/data:      the LEGACY-shape {"Name": value} snapshot
+ * GET  /api/autopid/config:    the PID/filter tables file, verbatim
+ * PUT  /api/autopid/config:    validate -> atomic save -> LIVE reload
  *                              (the config FILE applies live; settings
  *                              knobs stay reboot-to-apply; the save also
  *                              lands in the current car's tables file)

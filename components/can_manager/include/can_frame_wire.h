@@ -22,7 +22,7 @@
 
 /**
  * @file can_frame_wire.h
- * @brief The bridge-internal CAN-frame chunk format — one CAN frame packed
+ * @brief The bridge-internal CAN-frame chunk format: one CAN frame packed
  *        into a bridge_chunk_t payload. Shared, dependency-free, header-only:
  *        the `can` bridge endpoint and every CAN translator (slcan/gvret/
  *        realdash) use exactly this one definition so there is no drift.
@@ -126,7 +126,7 @@ static inline bool can_wire_decode(const uint8_t *in, size_t len,
 }
 
 /** Decode the frame at the START of a possibly-COALESCED buffer (a
- *  coalesced chunk is a plain concatenation of wire frames — the `can`
+ *  coalesced chunk is a plain concatenation of wire frames: the `can`
  *  endpoint pump packs several per bridge chunk since 2026-07-18).
  *  Returns bytes consumed, 0 on short/malformed. Consumers loop:
  *      size_t off = 0, n;

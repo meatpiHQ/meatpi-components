@@ -519,7 +519,7 @@ elm327_err_t can_drv_create(can_core_handle_t *handle, uint32_t baud_kbps,
         /* SINGLE SHOT. Not -1 (retry for ever): a tx nobody ACKs, or on
            a mismatched-baud bus, parks the node error-passive (TEC pinned
            at 128, never bus-off) spewing ~1800 error frames/s UNTIL the
-           next driver bounce — the reconfig hammer surfaced it
+           next driver bounce: the reconfig hammer surfaced it
            2026-07-22. This read 512 ("~130 ms of attempts") until
            2026-10-02: the field is an int8_t, 512 truncated to 0, and on
            this controller every value but -1 is single shot

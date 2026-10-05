@@ -30,7 +30,7 @@
 
 #include "esp_log.h"
 
-/* boot timing: esp_timer is absent from the linux host-test harness —
+/* boot timing: esp_timer is absent from the linux host-test harness,
    the per-component latency log is a no-op there */
 #if __has_include("esp_timer.h")
 #include "esp_timer.h"
@@ -44,7 +44,7 @@
 static const char *TAG = "settings_manager";
 
 /* Steps 1-3 of the boot sequence (Coding Standard §4.3): produce the validated
-   pre-apply object for @p e — stored data, migrated data, or defaults. Always
+   pre-apply object for @p e, stored data, migrated data, or defaults. Always
    returns an object (defaults duplicate at worst; empty object on OOM). */
 static cJSON *boot_load(sm_entry_t *e, cJSON *defs)
 {
@@ -113,7 +113,7 @@ static cJSON *boot_load(sm_entry_t *e, cJSON *defs)
         return (d != NULL) ? d : cJSON_CreateObject();
     }
 
-    /* Valid stored data. Persist ONLY if migration or fill changed it —
+    /* Valid stored data. Persist ONLY if migration or fill changed it:
        an unconditional save here rewrote every component's file to flash
        on EVERY boot: ~130 ms × 37 components = 4.8 s of an 8 s boot,
        plus needless flash wear (found 2026-07-19, per-component boot
@@ -166,7 +166,7 @@ esp_err_t settings_manager_start(void)
             sm_persist(e, e->current);
 
             /* 5. Defaults also rejected: component bug. Leave unconfigured and
-                  KEEP BOOTING — its _start() must refuse (§3). No retry loops,
+                  KEEP BOOTING: its _start() must refuse (§3). No retry loops,
                   no reboot: those boot-loop. */
             if (e->desc.on_apply(e->current) != ESP_OK)
             {
@@ -184,7 +184,7 @@ esp_err_t settings_manager_start(void)
         cJSON_Delete(defs);
 
         /* boot-latency map: this pass dominated boot at 4.8 s of an 8 s
-           boot (2026-07-19) — keep the per-component cost visible */
+           boot (2026-07-19), keep the per-component cost visible */
         uint32_t ms = (uint32_t)((SM_NOW_US() - t0) / 1000);
 
         if (ms >= 100 && t0 != 0)

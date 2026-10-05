@@ -16,7 +16,7 @@ bits, uptime), `battery_monitor` (the status block's voltage).
 The Automate → Data destinations page of the web UI edits the table;
 `GET /api/destinations` shows the live counters and `POST
 /api/destinations/test` delivers one destination now (the Test
-button). Everything else — conditions, templates, event-driven pushes —
+button). Everything else (conditions, templates, event-driven pushes)
 stays with the rules engine (`event_manager` `timer.tick` →
 `mqtt.publish` / `http.post`), which this component does not replace.
 
@@ -36,7 +36,7 @@ stays with the rules engine (`event_manager` `timer.tick` →
   DUE: MQTT needs the broker connected, HTTP/HTTPS/ABRP need a network
   (`DEV_STATUS_NETWORK_CONNECTED_MASK`, i.e. STA or USB-Ethernet). A
   down link is a **skipped lap** (`skipped_offline`, next lap after the
-  link returns delivers) — never a failure, never a backoff, and it
+  link returns delivers): never a failure, never a backoff, and it
   logs ONE `W` per outage (`<name>: no network - waiting`) + one `I`
   when the link is back, so a car out of WiFi range does not fill the
   log.
@@ -74,7 +74,7 @@ stays with the rules engine (`event_manager` `timer.tick` →
   `{"status":"ok"}`; any other `status` is a failure even on HTTP 200
   (`last_error` = `abrp: error ["missing utc"]`). Checked against the
   Iternio doc 2026-09-19: values are passed through UNCONVERTED, so the
-  vehicle profile must already use ABRP's units and signs — `power` in
+  vehicle profile must already use ABRP's units and signs, `power` in
   kW with driving positive / charging NEGATIVE, `current` in A,
   `tire_pressure_*` in kPa, `odometer`/`est_battery_range` in km;
   `is_charging`/`is_dcfc`/`is_parked` become 0/1 (booleans and
@@ -82,7 +82,7 @@ stays with the rules engine (`event_manager` `timer.tick` →
   (30 s+ is discouraged) and speed/power/is_charging at least every
   10 s: the poster walks the table sequentially, so a slow or failing
   HTTP row in the same table delays the ABRP row by its request time
-  (up to the 6 s timeout) — keep ABRP's table short or its neighbours
+  (up to the 6 s timeout): keep ABRP's table short or its neighbours
   healthy. Verified on the bench against a mock Iternio endpoint
   (`tools/testbench/actors/dd_receiver.py`); the live service needs a
   real user token + api_key (`data_destinations_bench.py --abrp-token
@@ -109,12 +109,12 @@ make the order non-critical).
 
 ## Settings (`/api/settings/data_destinations`, version 1, reboot-to-apply)
 
-`enabled` (master, default true — an empty table is quiet), `cli`
+`enabled` (master, default true: an empty table is quiet), `cli`
 (true), `destinations[]` (≤ 8 flat items):
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `name` | string 1..15, required | — | unique id; the UI's row key and the test/CLI handle |
+| `name` | string 1..15, required | - | unique id; the UI's row key and the test/CLI handle |
 | `type` | `mqtt` \| `http` \| `https` \| `abrp`, required | `mqtt` | |
 | `enabled` | bool | true | pause without deleting |
 | `url` | string ≤ 255 | `""` | MQTT topic (`~/autopid` when empty), URL (a bare host gets the type's scheme; `https` refuses `http://`), ABRP endpoint (Iternio's when empty) |
@@ -135,7 +135,7 @@ make the order non-critical).
 API-key modes without `auth_token`, basic without `basic_username`,
 duplicate names → rejected with the reason (`dest1: url required`).
 Secrets: `auth_token`, `api_key`, `basic_password` come back `""` on
-GET and an empty PUT value keeps the stored one — `api_http` matches
+GET and an empty PUT value keeps the stored one, `api_http` matches
 array rows by `name` (rows may be reordered or deleted), then by index.
 
 ## Files
@@ -158,15 +158,15 @@ state; internal RAM: the TCB, two static semaphores, ~100 B of flags.
 Heap (PSRAM, transient per delivery): the snapshot JSON (≤ ~6 KB for a
 192-parameter profile), the first HTTP push's `config` copy (the PID
 tables, up to ~100 KB for the widest profiles), ABRP form body ≤ 3 ×
-the tlm JSON, one http_client_manager response ≤ 4 KB. Flash: none —
+the tlm JSON, one http_client_manager response ≤ 4 KB. Flash: none,
 counters are RAM only.
 
 ## Testing
 
-- Host: `.\test.ps1 host data_destinations` — 17 Unity tests
+- Host: `.\test.ps1 host data_destinations`, 17 Unity tests
   (`host_test/README.md`).
 - Bench: `python tools/testbench/system/data_destinations_bench.py`
-  (`DATA DEST PASS`) — MQTT / HTTP / HTTPS with a cert set (and without:
+  (`DATA DEST PASS`), MQTT / HTTP / HTTPS with a cert set (and without:
   the bundle must refuse the bench CA) / mutual TLS / a mock ABRP with
   the token + api_key + tlm contract; the server-down backoff, the
   broker-down and WiFi-down / reconnect scenarios, counters and the

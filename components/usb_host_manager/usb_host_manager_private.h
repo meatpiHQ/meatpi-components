@@ -37,7 +37,7 @@
 
 #include "usb_host_manager.h"
 
-/* ---- usb_host_manager_presence.c — PURE (host-tested) --------------------- */
+/* ---- usb_host_manager_presence.c: PURE (host-tested) --------------------- */
 
 /* ID-pin debouncer (the external_storage detect pattern): presence =
  * level LOW; an edge is reported only after N consecutive samples

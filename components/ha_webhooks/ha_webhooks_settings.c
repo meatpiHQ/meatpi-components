@@ -24,7 +24,7 @@
  * @file ha_webhooks_settings.c
  * @brief settings_manager descriptor for ha_webhooks: field-table schema
  *        (source of truth for shape/ranges/defaults) and on_apply. The
- *        applied config is handed to ha_webhooks.c via hw_config_store —
+ *        applied config is handed to ha_webhooks.c via hw_config_store:
  *        the cache lives THERE because the /api/webhook URL push mutates
  *        it at runtime (hw_config_apply_live), not only at boot.
  */
@@ -44,7 +44,7 @@ static const settings_field_t HW_FIELDS[] =
     SETTINGS_STR ("url2",              HW_URL_LEN - 1, ""),
     SETTINGS_INT ("interval_s",        1, 3600, 60), /* contract: 1..3600 */
     SETTINGS_STR_ENUM("data_mode",     "changed,full", "changed"),
-    SETTINGS_BOOL("gzip",              false), /* v2: gzip the push body —
+    SETTINGS_BOOL("gzip",              false), /* v2: gzip the push body,
         works in BOTH data modes; off by default (HA integrations older
         than 2026-07-10 can't inflate)                                    */
     SETTINGS_BOOL("manual_override",   false),

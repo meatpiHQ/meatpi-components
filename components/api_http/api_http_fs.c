@@ -23,10 +23,10 @@
 /**
  * @file api_http_fs.c
  * @brief The UI file manager (filesystem/HTTP_API.md): browse (list/info),
- *        DOWNLOAD any file (logs, configs — streamed), UPLOAD any file
+ *        DOWNLOAD any file (logs, configs, streamed), UPLOAD any file
  *        (multipart from the HTML form or raw body; atomic via
  *        filesystem_write), delete, mkdir. Write surface enabled
- *        2026-07-04 (meatpi's call — v1 AP-mode trust model, auth later).
+ *        2026-07-04 (meatpi's call: v1 AP-mode trust model, auth later).
  *
  * Path safety is the filesystem component's own validation (no "..",
  * known prefixes); the settings partition is not reachable through it.
@@ -176,7 +176,7 @@ static esp_err_t fs_download_handler(httpd_req_t *req)
     if (f == NULL)
     {
         /* an existing file that will not open is held by a writer (FATFS
-           FS_LOCK: the data logger's active file) — say so; "invalid path"
+           FS_LOCK: the data logger's active file), say so; "invalid path"
            sent clients chasing the wrong cause (2026-09-07) */
         return filesystem_exists(path)
                    ? api_send_error(req, "409 Conflict", "file in use")
@@ -219,7 +219,7 @@ static esp_err_t fs_download_handler(httpd_req_t *req)
 /* ---- upload: POST /api/fs/upload?path=/data/x ------------------------------------- */
 
 /* STREAMED through filesystem's async pipe (writer task): bytes are
- * handed off as they arrive and media writes overlap the next receive —
+ * handed off as they arrive and media writes overlap the next receive,
  * no size cap beyond free space, and the same ATOMIC temp+rename
  * guarantee (a power cut mid-upload never leaves a torn file). One
  * stream at a time (a concurrent download/upload gets 503). */

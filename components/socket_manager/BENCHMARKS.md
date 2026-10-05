@@ -1,9 +1,9 @@
-# socket_manager — benchmarks (spec §7, required deliverable)
+# socket_manager: benchmarks (spec §7, required deliverable)
 
 > Status 2026-07-03 (evening bench session): **first Wi-Fi numbers measured**
 > via the `bridge_manager/test_apps_bench` composition (wifi + socket +
 > bridge + obd on the real bench; driven from rpi001 by
-> `tools/testbench/socket_bench.py` against the echo bridge on :3334 — note
+> `tools/testbench/socket_bench.py` against the echo bridge on :3334: note
 > every byte crosses the bridge pump twice, so these are conservative
 > full-chain numbers, not raw lwIP). RF context: rpi001 hotspot
 > (Pi 5 + RTL8822CU), RSSI −47 dBm, ~2 m. Firmware: data-path working tree,
@@ -19,7 +19,7 @@ RTL8822CU hotspot).
 1. Loopback numbers: extend `test_apps` with the load loop (markers print
    `LOOPBACK-TCP kbytes_per_s=`), or take scenario 1 from the committed app.
 2. Wi-Fi numbers: flash a wifi_manager + socket_manager composition
-   (the Phase-8 main app once composed — until then reuse the HIL app plan),
+   (the Phase-8 main app once composed, until then reuse the HIL app plan),
    join the bench AP, then from rpi001 or the PC run
    `tools/testbench/socket_bench.py` (committed):
 
@@ -34,7 +34,7 @@ python tools/testbench/socket_bench.py --host <dut-ip> --port 35000 \
 
 | Path | Payload | Up KB/s | Down KB/s | Bidir KB/s | Commit | Date | RF |
 |---|---|---|---|---|---|---|---|
-| loopback | 128 B chunks | — | — | — | | | n/a |
+| loopback | 128 B chunks | - | - | - | | | n/a |
 | Wi-Fi (echo bridge = 2× pump) | 128 B chunks | 223.8 | 223.8 (echo) | ~448 aggregate | data-path tree | 2026-07-03 | −47 dBm |
 
 ### 2. UDP throughput + loss at increasing offered load
@@ -52,7 +52,7 @@ python tools/testbench/socket_bench.py --host <dut-ip> --port 35000 \
 
 | Path | Clients | Per-client KB/s | Aggregate KB/s | Commit | Date |
 |---|---|---|---|---|---|
-| Wi-Fi (echo bridge) | 4 | 7.8 / 13.6 / 14.0 / 11.2 | 46.7 in (≈187 out: every input echoes to ALL 4 clients — fan-out TX is O(clients), measured) | data-path tree | 2026-07-03 |
+| Wi-Fi (echo bridge) | 4 | 7.8 / 13.6 / 14.0 / 11.2 | 46.7 in (≈187 out: every input echoes to ALL 4 clients, fan-out TX is O(clients), measured) | data-path tree | 2026-07-03 |
 
 ### 5. Concurrent servers (OBD-TCP + GVRET-TCP + UDP active)
 

@@ -51,8 +51,8 @@ static uint8_t s_q_store[4 * sizeof(battery_monitor_event_t)]
 static TaskHandle_t s_task;
 static StaticTask_t s_tcb;                 /* internal: FreeRTOS object */
 static StackType_t s_stack[3584] EXT_RAM_BSS_ATTR; /* 2560 left exactly
-                              512 B headroom (stack audit 2026-07-22)
-                              — one dip from silent PSRAM corruption */
+                              512 B headroom (stack audit 2026-07-22):
+                              one dip from silent PSRAM corruption */
 
 static void drain_task(void *arg)
 {

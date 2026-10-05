@@ -1,4 +1,4 @@
-# web_ui_v2 — the v2 single-page app, embedded (gzipped) and served by the
+# web_ui_v2: the v2 single-page app, embedded (gzipped) and served by the
 # http_server_manager catch-all. Compiled only when CONFIG_WICAN_WEBUI_V2 is
 # selected (the Kconfig choice); otherwise this is an empty component so the
 # build + main's web_ui_v2_register() stub still link.

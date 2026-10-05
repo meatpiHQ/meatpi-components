@@ -1,4 +1,4 @@
-# Host test compiles ONLY the pure parse/framing module — no UART/GPIO deps.
+# Host test compiles ONLY the pure parse/framing module: no UART/GPIO deps.
 set(comp_dir "${CMAKE_CURRENT_LIST_DIR}/../..")
 
 idf_component_register(

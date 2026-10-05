@@ -32,7 +32,7 @@
 #error "include autopid_private.h, not this fragment"
 #endif
 
-/* ---- pure: DBC codec (autopid_dbc_codec.c — host-tested; TASK_dbc.md) ----
+/* ---- pure: DBC codec (autopid_dbc_codec.c, host-tested; TASK_dbc.md) ----
  * Parse the BO_/SG_/SIG_VALTYPE_ subset; compile signals into
  * expression_parser expressions over filter payloads (B0 = first frame
  * data byte). Unsupported signals stay LISTED with a reason.           */
@@ -48,7 +48,7 @@ typedef struct
     uint32_t id;                /* 29-bit masked                        */
     bool     ext;
     bool     mux_complex;       /* extended multiplexing (SG_MUL_VAL_,
-                                   m<N>M, or >1 switch) — unsupported   */
+                                   m<N>M, or >1 switch), unsupported   */
     uint8_t  dlc;
     char     name[AP_DBC_NAME_LEN];
 } ap_dbc_msg_t;
@@ -82,7 +82,7 @@ esp_err_t ap_dbc_expr(const ap_dbc_sig_t *s, char *out, size_t out_cap,
 /** Multiplex precondition for @p s. Plain / M-switch signals: ESP_OK
  *  with expr_out = "" (no condition). m<N> signals: compiles the
  *  message's M switch as a RAW unsigned slice into @p expr_out and sets
- *  @p val_out = N — the runner evaluates the slice per frame and only
+ *  @p val_out = N: the runner evaluates the slice per frame and only
  *  applies the signal expression when it equals N. Extended
  *  multiplexing (mux 3 / msg.mux_complex) and switchless m<N> signals
  *  are ESP_ERR_NOT_SUPPORTED with @p reason set. */
@@ -91,11 +91,11 @@ esp_err_t ap_dbc_mux_cond(const ap_dbc_sig_t *s, const ap_dbc_msg_t *msgs,
                           char *expr_out, size_t expr_cap,
                           float *val_out, const char **reason);
 
-/** Reference decoder — host cross-check ONLY. */
+/** Reference decoder: host cross-check ONLY. */
 double ap_dbc_decode_ref(const ap_dbc_sig_t *s, const uint8_t data[8]);
 
 #ifndef AUTOPID_HOST_TEST
-/* DBC store + cache + add-to-filters (autopid_dbc.c — TASK_dbc.md §4-5) */
+/* DBC store + cache + add-to-filters (autopid_dbc.c: TASK_dbc.md §4-5) */
 void ap_dbc_init(void);                      /* autopid_init context     */
 void ap_dbc_load_all(void);                  /* internal-stack ONLY (fs) */
 esp_err_t ap_dbc_store(const char *name, const char *raw, size_t raw_len,

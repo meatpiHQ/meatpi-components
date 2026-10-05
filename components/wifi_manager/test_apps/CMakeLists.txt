@@ -4,7 +4,7 @@ set(EXTRA_COMPONENT_DIRS "${CMAKE_CURRENT_LIST_DIR}/../..")
 # Standard §7 (rev 2.1): inherit the MAIN firmware's config, then the
 # small test-only overlay in this directory. (Retrofitted 2026-07-06:
 # without this, a reconfigure regenerates sdkconfig WITHOUT newer root
-# options — e.g. HTTPD_WS_SUPPORT — and components added since then
+# options, e.g. HTTPD_WS_SUPPORT, and components added since then
 # fail to compile, because every component in components/ builds in
 # every test app.)
 set(SDKCONFIG_DEFAULTS "${CMAKE_CURRENT_LIST_DIR}/../../../sdkconfig.defaults;${CMAKE_CURRENT_LIST_DIR}/sdkconfig.defaults")

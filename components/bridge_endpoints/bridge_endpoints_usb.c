@@ -44,7 +44,7 @@ static const char *TAG = "bridge_endpoints";
 #define USB_UART      UART_NUM_2
 #define USB_TX_PIN    17
 #define USB_RX_PIN    18
-#define USB_BAUD      2000000 /* matches the OBD chip side (meatpi) —
+#define USB_BAUD      2000000 /* matches the OBD chip side (meatpi):
                                  no bottleneck through the passthrough */
 
 static QueueHandle_t s_usb_sub;

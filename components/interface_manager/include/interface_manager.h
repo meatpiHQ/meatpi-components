@@ -28,20 +28,20 @@
  * 2026-07-05, generalizing the legacy wireless modes):
  *
  *  - sta_ble_handover: a BLE client connecting means the user is in the
- *    car — STA is suspended for the drive; when the BLE client leaves
+ *    car, STA is suspended for the drive; when the BLE client leaves
  *    (back home, phone BLE off) STA reconnects and BLE keeps
  *    advertising. (The legacy "sta+BLE" mode.)
  *  - ap_ble_exclusive: AP and BLE both advertise while idle; the side
- *    the user connects to wins — a BLE client suspends the AP, an AP
+ *    the user connects to wins: a BLE client suspends the AP, an AP
  *    station stops BLE. The loser returns when the winner disconnects.
  *    BLE wins a tie.
  *
- * Future rules (e.g. USB-connected turns both radios off) land here —
+ * Future rules (e.g. USB-connected turns both radios off) land here:
  * this component is the one place interface on/off decisions live.
  *
  * Mechanics: a small task polls the dev-status bits + AP station count
  * (debounced), evaluates the PURE rule table, and diffs the result
- * against the current suspensions — actuating via wifi_manager's
+ * against the current suspensions, actuating via wifi_manager's
  * runtime suspend/resume and ble_manager stop/start. Everything is
  * EPHEMERAL: settings are never touched, a reboot restores the
  * configured baseline.

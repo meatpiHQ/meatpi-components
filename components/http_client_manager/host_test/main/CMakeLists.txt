@@ -1,4 +1,4 @@
-# Host test compiles ONLY the pure auth/url helpers — no esp_http_client.
+# Host test compiles ONLY the pure auth/url helpers: no esp_http_client.
 set(comp_dir "${CMAKE_CURRENT_LIST_DIR}/../..")
 
 idf_component_register(

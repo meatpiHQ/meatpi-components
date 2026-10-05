@@ -1,4 +1,4 @@
-# Host test compiles ONLY the pure mailbox ring — no RTOS, no esp_isotp
+# Host test compiles ONLY the pure mailbox ring: no RTOS, no esp_isotp
 # (which REQUIRES esp_driver_twai and cannot build for linux).
 set(comp_dir "${CMAKE_CURRENT_LIST_DIR}/../..")
 

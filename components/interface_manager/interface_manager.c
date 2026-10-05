@@ -50,7 +50,7 @@ static bool s_started;
 static TaskHandle_t s_task;
 static StaticTask_t s_tcb; /* internal: FreeRTOS object */
 /* INTERNAL stack: actuations can end in esp_wifi mode changes (possible
- * NVS writes) and BLE stack setup — §2 corollary territory */
+ * NVS writes) and BLE stack setup, §2 corollary territory */
 static StackType_t s_stack[4096];
 
 /* what the policy currently holds suspended (device-side truth) */
@@ -65,7 +65,7 @@ static void gather_inputs(im_inputs_t *in)
 
     in->mode_has_sta = wifi_manager_mode_has_sta();
     in->mode_has_ap = wifi_manager_mode_has_ap();
-    /* the CONFIGURED truth — stable while we hold the stack stopped
+    /* the CONFIGURED truth: stable while we hold the stack stopped
        (the BLE_ENABLED bit tracks the running state, not the config) */
     in->ble_enabled = ble_manager_is_enabled();
     in->ble_connected = (bits & DEV_STATUS_BIT_BLE_CONNECTED) != 0;

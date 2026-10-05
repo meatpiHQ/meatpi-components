@@ -1,4 +1,4 @@
-# mqtt_can — CAN ⇄ MQTT bridge building blocks
+# mqtt_can: CAN ⇄ MQTT bridge building blocks
 
 Legacy WiCAN's raw-frames-over-MQTT, rebuilt as bridge parts (meatpi
 2026-07-22: "a bridge with configurable tx and Rx topics … both tx and
@@ -17,7 +17,7 @@ Design + rulings + test plan: `TASK_mqtt_can.md`.
 - publish (device→broker), default topic `~/can/rx`
   (`~` = mqtt_manager's topic prefix, `wican/<device_id>`):
   `{"bus":"0","type":"rx","ts":34610,"frame":[{"id":123,"dlc":8,
-  "rtr":false,"extd":false,"data":[1,…,8]},…]}` — frames batched.
+  "rtr":false,"extd":false,"data":[1,…,8]},…]}`, frames batched.
 - subscribe (broker→device), default `~/can/tx`: same shape,
   `"type":"tx"`; `ts` tolerated, `bus` number or string, `extd`
   implied for id > 0x7FF.
@@ -53,18 +53,18 @@ never silent.
   reassembler (fragment-safe, brace/string-aware, oversize counted)
   → parse → frames onto the bus.
 - The whole codec state lives in the translator ctx (`BM_CTX_MAX`
-  4096) — nothing big on the 4 KB pump stack (stack-audit rule).
+  4096): nothing big on the 4 KB pump stack (stack-audit rule).
 - `can` jack is **multi_consumer since 2026-07-26** (the v2 backlog
-  item): slcan-on-can and mqtt-on-can run SIMULTANEOUSLY — the jack's
+  item): slcan-on-can and mqtt-on-can run SIMULTANEOUSLY, the jack's
   pump fans each RX chunk out to every subscribed bridge (up to 4).
   Caveat: the jack has ONE ingress filter (this component's `filter`
-  setting via `bep_can_set_filter`) — with several consumers attached
+  setting via `bep_can_set_filter`), with several consumers attached
   it restricts what ALL of them see. Verified live: CANFAN BENCH.
 
 ## Memory
 
 PSRAM: none beyond the shared bridge ctx slots. Internal: statics
-< 1 KB (topics + stats). No task of its own — rides the bridge pump
+< 1 KB (topics + stats). No task of its own: rides the bridge pump
 and the esp-mqtt event task (handler only queues chunks).
 
 ## Tests
@@ -72,6 +72,6 @@ and the esp-mqtt event task (handler only queues chunks).
 Host `host_test` 11/11 (legacy-exact strings incl. both documented
 legacy examples, worst-case batch sizing vs `MC_JSON_MAX`, fragmented/
 noisy/oversized tx streams, parse rejects). Live:
-`tools/testbench/mqtt_can_bench_test.py` (→ `MQTT CAN BENCH PASS`) —
+`tools/testbench/mqtt_can_bench_test.py` (→ `MQTT CAN BENCH PASS`),
 gates-closed leg FIRST, conservation-checked RX at rate, byte-exact TX
 round-trip via PCAN, custom-topics leg.

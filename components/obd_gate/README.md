@@ -5,7 +5,7 @@ TWO OBD requesters on the SAME physical CAN bus: the MIC3624 chip
 (`obd_chip`, driven by apps over BLE/TCP/WS/USB) and any ESP-side
 requester on the TWAI controller (an add-on pack's virtual ELM jacks).
 Both address the ECU the same way and both hear every
-response — when two request/response conversations OVERLAP, a requester
+response: when two request/response conversations OVERLAP, a requester
 attributes the other's response to its own request. Bench-measured with
 the gate off: 12 cross-attributed responses in 16 s of concurrent
 polling (a driving app + autopid = bad data, meatpi 2026-07-11).
@@ -33,13 +33,13 @@ at. Cost: four small files with their own host suite (14 tests).
 
 - `obd_gate_acquire(owner, wait_ms)` blocks (10 ms poll) while another
   owner holds the gate, then TAKES it anyway (counted `steals` + a
-  throttled WARN) — a wedged holder can never brick the other side.
+  throttled WARN): a wedged holder can never brick the other side.
 - A hold auto-expires after `OBD_GATE_HOLD_MS` (2 s): a holder that never
   releases (e.g. a monitor command with no `'>'` prompt) self-clears.
 - Re-acquire by the current holder extends the hold (multi-step
   conversations stay owned).
 - **Fairness**: the first owner refused while the gate is held becomes
-  the WAITER and owns the next turn — without this, a tight requester
+  the WAITER and owns the next turn, without this, a tight requester
   loop starves a 10 ms poller (measured live: the chip's TCP client
   re-won the gate 14 consecutive cycles). The reservation lapses
   `OG_RESERVE_MS` (500 ms) after the waiter's last poll.
@@ -50,14 +50,14 @@ at. Cost: four small files with their own host suite (14 tests).
 - **obd_chip**: `obd_chip_send()` acquires when the buffer carries a CR
   (a command submission); `obd_chip_request()` brackets its transaction.
   Released when the RX fan-out sees the `'>'` prompt at line start (or
-  by hold expiry — monitor-class commands).
+  by hold expiry: monitor-class commands).
 - **ESP-side engines** (add-on pack jacks): optional
-  `gate_acquire/gate_release/gate_ctx` callbacks in the engine config —
+  `gate_acquire/gate_release/gate_ctx` callbacks in the engine config,
   acquire just before an OBD request is transmitted on CAN, release when
   the request's response window ends
   (`obd_gate_engine_acquire/release`, ctx = the engine instance).
 - NOT yet gated: direct ISO-TP requesters (uds `isotp` transport,
-  j2534 ISO15765 channels) — diagnostic tools, rarely concurrent with
+  j2534 ISO15765 channels): diagnostic tools, rarely concurrent with
   a driving app; they can adopt `obd_gate_acquire` later.
 
 ## Diagnostics hold (the tools' "Exclusive bus" option, 2026-09-16)
@@ -66,12 +66,12 @@ A second, independent policy in the same component: an ESP-side diagnostic
 tool (the UDS Tool, the J2534 PassThru server, a running script's ECU
 bindings) with its Exclusive bus switch
 on asks the background bus pollers (autopid: PID polling AND DTC scans) to
-stay off the bus while it is in use — not "who speaks next" (the gate above)
+stay off the bus while it is in use, not "who speaks next" (the gate above)
 but "who may speak at all". `obd_gate_diag_hold(owner, on)` is refcounted by
 owner identity (up to 4 holders; pure core `obd_gate_diag.c`, host-tested);
 autopid's poller calls `obd_gate_diag_held()` every loop, pauses, and
 acknowledges with `obd_gate_diag_ack(true)`; a tool waits for that ack
-(`obd_gate_diag_wait_ack`, up to 700 ms — autopid loops within 500 ms) before
+(`obd_gate_diag_wait_ack`, up to 700 ms: autopid loops within 500 ms) before
 its first request, so the bus is really quiet. The ack resets when the last
 holder leaves. Independent of the `enabled` setting. Lives here because
 autopid depends on uds_manager (a direct call would be a dependency cycle)
@@ -85,7 +85,7 @@ and both requesters already depend on this policy component.
 
 ## Dependencies
 
-`settings_manager`, `log_manager`, `esp_timer` — the gate sits BELOW
+`settings_manager`, `log_manager`, `esp_timer`: the gate sits BELOW
 both requester sides; they point down at it (no cycle).
 
 ## Memory footprint (measured shape, trivial)
@@ -105,6 +105,6 @@ Internal `.bss`: one `og_core_t` (~40 B) + spinlock. No tasks, no heap.
   cross-attribution is visible). Asserts gate ON = zero overlapping
   request windows + zero cross-PID data + both sides progress; gate
   OFF = overlaps occur. Bench gotcha baked in: clients set `ATST64`
-  (400 ms) — the ELM default response timeout (100 ms) races the ECU
+  (400 ms), the ELM default response timeout (100 ms) races the ECU
   delay with a 20 ms margin and the gate's turn-taking phase jitter
   eats it.

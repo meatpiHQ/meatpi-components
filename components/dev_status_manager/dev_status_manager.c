@@ -596,7 +596,7 @@ esp_err_t dev_status_manager_temperature(float *out_c)
 const char *dev_status_manager_device_id(void)
 {
     /* legacy hw_config_get_device_id formula: 12 lowercase hex chars of the
-       SoftAP MAC — the one device identity every derived name builds on
+       SoftAP MAC, the one device identity every derived name builds on
        (BLE name "WiCAN_<id>", STA hostname "wican_<id>", AP SSID) */
     static char s_id[13];
 

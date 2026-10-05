@@ -6,14 +6,14 @@
  *     ordered, lossless pumping and measures the pump ceiling (chunks/s +
  *     MB/s, printed for BENCHMARKS.md scenario 1).
  *  2. OVERFLOW: with a deliberately slow dst, the producing side's bounded
- *     queue fills — chunks drop-and-count at the PRODUCER (never blocking
+ *     queue fills, chunks drop-and-count at the PRODUCER (never blocking
  *     it), the pump survives, accounting stays exact.
  *  3. SOCKET E2E: a real TCP client on the lwIP loopback talks through
- *     socket_manager("tcp0") <-> bridge <-> "echo" stub endpoint — the full
+ *     socket_manager("tcp0") <-> bridge <-> "echo" stub endpoint, the full
  *     production path (socket -> bridge -> endpoint -> back) in one device.
  *
  * Config is persisted BEFORE the settings boot pass (set() then
- * settings_manager_start() — reboot-to-apply without a reboot).
+ * settings_manager_start(): reboot-to-apply without a reboot).
  */
 #include <stdio.h>
 #include <string.h>
@@ -316,10 +316,10 @@ void app_main(void)
     printf("START ok=%d\n", err == ESP_OK);
     vTaskDelay(pdMS_TO_TICKS(500));
 
-    /* runtime PUTs are strict (registry-aware on_validate) — an unknown
+    /* runtime PUTs are strict (registry-aware on_validate): an unknown
      * endpoint must be rejected AND must not clobber the live config.
      * (Pre-start sets are deliberately lenient: dynamic jacks register
-     * between the boot pass and start — do NOT probe this before start,
+     * between the boot pass and start, do NOT probe this before start,
      * a lenient accept would overwrite the good config.) */
     cfg = cJSON_Parse(
         "{\"bridges\":[{\"name\":\"bad\",\"a\":\"nope\",\"b\":\"dst\","
@@ -387,7 +387,7 @@ void app_main(void)
            (unsigned)bstats.a2b_chunks, (unsigned)bstats.b2a_chunks,
            (unsigned)bstats.send_errors);
 
-    /* ---- leg 4: concurrency — 4 bridges under equal offered load (§3) --- */
+    /* ---- leg 4: concurrency, 4 bridges under equal offered load (§3) --- */
     {
         bridge_chunk_t mchunk = { .len = BRIDGE_MANAGER_CHUNK_SIZE };
 

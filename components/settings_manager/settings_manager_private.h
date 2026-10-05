@@ -46,7 +46,7 @@ extern "C" {
  * Supported keywords: type (string|integer|number|boolean|object), minimum,
  * maximum, minLength, maxLength, enum, required, and the WiCAN extension
  * format:"file". For format:"file", @p file_exists is consulted (may be NULL,
- * in which case the existence check is skipped — used on the host).
+ * in which case the existence check is skipped: used on the host).
  *
  * @param err      Buffer for a human-readable failure reason. May be NULL.
  * @return ESP_OK if valid, ESP_ERR_INVALID_ARG otherwise.
@@ -124,7 +124,7 @@ typedef struct
 {
     settings_descriptor_t desc;       /* copied by value; pointers stay borrowed */
     cJSON                *current;     /* live settings, owned by the manager     */
-    cJSON                *applied;     /* what on_apply RAN WITH at boot, owned —  */
+    cJSON                *applied;     /* what on_apply RAN WITH at boot, owned:  */
                                        /* current != applied -> reboot pending     */
     cJSON                *schema;      /* parsed schema, owned (for get_schema)    */
     char                 *schema_owned;/* generated from desc.fields, owned; NULL  */

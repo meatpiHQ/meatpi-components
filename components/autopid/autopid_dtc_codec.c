@@ -30,7 +30,7 @@
  *
  * Inputs are ap_resp_to_payload() output (service echo byte first);
  * ap_payload_matches_cmd() has already guarded cross-talk upstream, but
- * every parser re-checks its service byte — a codec must not rely on
+ * every parser re-checks its service byte: a codec must not rely on
  * its caller's discipline.
  */
 #include "autopid_private.h"
@@ -370,7 +370,7 @@ void ap_dtc_report_src(ap_dtc_report_t *r, uint32_t ecu, bool mil,
 bool ap_dtc_parse_mil(const uint8_t *payload, size_t len, bool *mil,
                       uint8_t *count)
 {
-    /* 41 01 AA BB CC DD — A7 = MIL, A6..A0 = stored-DTC count */
+    /* 41 01 AA BB CC DD: A7 = MIL, A6..A0 = stored-DTC count */
     if (payload == NULL || len < 3 || payload[0] != 0x41 ||
         payload[1] != 0x01)
     {
@@ -511,12 +511,12 @@ bool ap_dtc_clear_allowed(const char present[][AP_DTC_CODE_LEN],
     }
 }
 
-/* ---- freeze frame (mode 02) — TASK_dtc §14 ---------------------------------- */
+/* ---- freeze frame (mode 02): TASK_dtc §14 ---------------------------------- */
 
 bool ap_frz_dtc(const uint8_t *payload, size_t len,
                 char out[AP_DTC_CODE_LEN])
 {
-    /* [0x42, 0x02, frame, hi, lo] — echo-validated (cross-talk guard) */
+    /* [0x42, 0x02, frame, hi, lo]: echo-validated (cross-talk guard) */
     if (payload == NULL || len < 5 || payload[0] != 0x42 ||
         payload[1] != 0x02)
     {

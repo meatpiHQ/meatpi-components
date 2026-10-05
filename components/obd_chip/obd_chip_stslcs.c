@@ -23,7 +23,7 @@
 /**
  * @file obd_chip_stslcs.c
  * @brief PURE STSLCS sleep-config parsing + the boot provisioning
- *        policy (ported from legacy main/obd.c — the sscanf patterns
+ *        policy (ported from legacy main/obd.c: the sscanf patterns
  *        ARE the accepted line grammar). No IDF deps; host-tested.
  */
 #include <math.h>
@@ -196,7 +196,7 @@ bool obd_stslcs_needs_provision(const obd_stslcs_t *c, float wake_v,
 {
     /* the legacy reprogram condition: any autonomous control left ON,
        or stored thresholds/time differ from the settings. Voltage
-       compare needs an epsilon here — the chip echoes text, we hold
+       compare needs an epsilon here: the chip echoes text, we hold
        millivolt-derived floats. */
     return c->uart_wake.en == 1 || c->uart_sleep.en == 1 ||
            c->vl_wake.en == 1 || c->vl_sleep.en == 1 ||

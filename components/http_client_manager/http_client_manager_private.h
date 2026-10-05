@@ -22,7 +22,7 @@
 
 /**
  * @file http_client_manager_private.h
- * @brief Internal contract: the PURE auth/url helpers (host-testable —
+ * @brief Internal contract: the PURE auth/url helpers (host-testable,
  *        no esp_http_client, no RTOS).
  */
 #pragma once

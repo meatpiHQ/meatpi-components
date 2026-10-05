@@ -22,7 +22,7 @@
 
 /**
  * @file usb_acm_cli.h
- * @brief CDC-ACM host console — the espnetlink (LTE dongle) management
+ * @brief CDC-ACM host console: the espnetlink (LTE dongle) management
  *        interface. The dongle is a composite device: its RNDIS side is
  *        the LTE data path (usb_eth_host), its CDC-ACM side is an
  *        AT-command console (signal strength, modem status, SMS). This
@@ -30,7 +30,7 @@
  *        driver and exposes it three ways:
  *          - `POST /api/usb/acm/cmd` (send a line, collect the response),
  *          - the `acm` CLI,
- *          - a bridge_manager endpoint `acm` (raw passthrough — bridge
+ *          - a bridge_manager endpoint `acm` (raw passthrough: bridge
  *            any transport to the modem console).
  *
  * The USB host itself is owned by usb_host_manager/usb_eth_host; this
@@ -60,7 +60,7 @@ bool usb_acm_cli_connected(void);
 
 /**
  * The last GPS fix from the dongle's periodic `gps -p -j` poll (cache
- * read — never issues USB, never blocks). @p out->valid is false when no
+ * read: never issues USB, never blocks). @p out->valid is false when no
  * device is attached or there is no live fix; @p out->age_ms is the age
  * of a valid fix. ESP_ERR_INVALID_ARG on NULL.
  */
@@ -68,7 +68,7 @@ esp_err_t usb_acm_cli_gps_get(usb_acm_gps_t *out);
 
 /**
  * Sink invoked after each GPS poll refresh (poll-task context) with the
- * freshly parsed fix — main wires it to the autopid publisher so GPS
+ * freshly parsed fix: main wires it to the autopid publisher so GPS
  * becomes first-class autopid parameters. The sink MUST NOT block or
  * touch storage. NULL unregisters. ONE sink.
  */
@@ -77,7 +77,7 @@ void usb_acm_cli_set_gps_sink(usb_acm_gps_sink_t sink);
 
 /**
  * Secondary fix provider consulted by usb_acm_cli_gps_get() (and so by
- * `GET /api/gps`) whenever the console cache has no live fix — main
+ * `GET /api/gps`) whenever the console cache has no live fix: main
  * wires espnetlink_link's HTTP-polled cache here so the WiFi-modem
  * topology (USB data cut, no console) serves the same route. Same
  * getter contract as usb_acm_cli_gps_get(). NULL unregisters.

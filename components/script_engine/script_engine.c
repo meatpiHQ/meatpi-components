@@ -53,7 +53,7 @@
 static const char *TAG = "script_engine";
 
 /* The Berry interpreter + a binding's call chain (uds_request → isotp,
- * etc.) is deep — it overflows a 4 KB httpd worker stack. Scripts run on
+ * etc.) is deep: it overflows a 4 KB httpd worker stack. Scripts run on
  * a dedicated runner task with a big PSRAM stack (the VM heap is PSRAM
  * and no v1 binding touches flash, so §2 corollary permits it). */
 #define SE_RUNNER_STACK (12 * 1024)
@@ -85,7 +85,7 @@ static esp_err_t s_run_result;
 /* Cooperative budget: the bindings call this at every I/O point (uds,
  * sleep, can, …) and it raises a Berry exception if the script was
  * killed or ran past max_runtime_ms. A pure-CPU spin isn't preempted in
- * v1 (enable BE_USE_DEBUG_HOOK for that) — real scripts do I/O. */
+ * v1 (enable BE_USE_DEBUG_HOOK for that): real scripts do I/O. */
 void se_check_budget(bvm *vm)
 {
     if (s_kill)
@@ -258,11 +258,11 @@ void script_engine_kill(void)
 
 /* ---- stored scripts (/data/scripts/<name>.be) ------------------------------- */
 
-/* se_script_name_ok moved to script_engine_name.c (pure — host-tested) */
+/* se_script_name_ok moved to script_engine_name.c (pure: host-tested) */
 
 /* Load /data/scripts/<name>[.be] into a fresh PSRAM buffer. MUST run on
  * an internal-RAM stack: littlefs reads go through esp_partition_read,
- * which disables the flash cache — a PSRAM stack asserts in
+ * which disables the flash cache, a PSRAM stack asserts in
  * spi_flash_disable_interrupts_caches_and_other_cpu (§2 corollary
  * applies to READS too; bench-proven 2026-07-07). */
 static esp_err_t load_script(const char *name, char **out_src)
@@ -308,7 +308,7 @@ static esp_err_t load_script(const char *name, char **out_src)
     return ESP_OK;
 }
 
-/* One-shot internal-stack loader — the marshal for PSRAM-stack callers
+/* One-shot internal-stack loader: the marshal for PSRAM-stack callers
  * (the event dispatcher). Transient 4 KB internal alloc; script-run
  * frequency is human-scale, task churn is irrelevant. */
 typedef struct

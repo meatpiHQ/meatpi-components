@@ -1,4 +1,4 @@
-# Host test compiles ONLY the pure core — no esp_cache/esp_timer needed,
+# Host test compiles ONLY the pure core: no esp_cache/esp_timer needed,
 # so it runs on the linux target.
 set(comp_dir "${CMAKE_CURRENT_LIST_DIR}/../..")
 

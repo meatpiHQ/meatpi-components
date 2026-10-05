@@ -77,7 +77,7 @@ static uint32_t s_drops;
 static cm_line_asm_t s_ep_asm;
 
 /* async exec face: whole lines + their sink, run by the dispatcher
- * task (BLE — the NimBLE host task must never exec inline) */
+ * task (BLE: the NimBLE host task must never exec inline) */
 typedef struct
 {
     cmdline_output_fn_t out;
@@ -96,7 +96,7 @@ static QueueSetHandle_t s_q_set;
 static TaskHandle_t s_task;
 static StaticTask_t s_tcb;         /* internal: FreeRTOS object */
 /* INTERNAL stack (§2 corollary): handlers call arbitrary component
-   code — filesystem_info() walks LittleFS on internal FLASH, which a
+   code: filesystem_info() walks LittleFS on internal FLASH, which a
    PSRAM-stack task may not do (cache-off assert; hit live via `fs`).
    5 KB: measured 2.7 KB peak incl. the LittleFS walk. */
 static StackType_t s_stack[5120];
@@ -166,7 +166,7 @@ esp_err_t cmdline_manager_exec_line(const char *line,
     }
     else if (err == ESP_ERR_INVALID_ARG)
     {
-        /* empty/whitespace line — nothing ran */
+        /* empty/whitespace line: nothing ran */
     }
     else if (err == ESP_OK && ret != 0)
     {
@@ -545,7 +545,7 @@ esp_err_t cmdline_manager_start(void)
         return ESP_OK;
     }
 
-    s_started = true; /* before the tasks — they exec immediately */
+    s_started = true; /* before the tasks: they exec immediately */
     s_task = xTaskCreateStatic(dispatcher_task, "cli_dispatch",
                                sizeof(s_stack) / sizeof(s_stack[0]),
                                NULL, 4, s_stack, &s_tcb);

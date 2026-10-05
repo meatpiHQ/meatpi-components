@@ -24,9 +24,9 @@
  * @file obd_chip_settings.c
  * @brief Settings descriptor ("obd_chip", field table, reboot-to-apply §4.2):
  *        auto-sleep, the monitor arbitration policy (reserved; v1 implements
- *        "manual" only — task §5 open question) and the chip's stored sleep
+ *        "manual" only: task §5 open question) and the chip's stored sleep
  *        thresholds. The UART baud is NOT a setting since v3 (OBD_CHIP_BAUD,
- *        meatpi 2026-09-07), and the web UI shows none of these fields —
+ *        meatpi 2026-09-07), and the web UI shows none of these fields:
  *        they stay reachable through the settings API / CLI / backup.
  */
 #include <stdlib.h>
@@ -44,18 +44,18 @@
 /* clang-format off */
 static const settings_field_t OBD_FIELDS[] =
 {
-    /* no "baud": the UART speed is fixed (OBD_CHIP_BAUD) — v3, 2026-09-07 */
+    /* no "baud": the UART speed is fixed (OBD_CHIP_BAUD), v3, 2026-09-07 */
     SETTINGS_BOOL    ("auto_sleep",     false),
     /* legacy parity (Ali 2026-07-26): a chip not at the packaged fw
        version is auto-flashed to it after bring-up */
     SETTINGS_BOOL    ("auto_update",    true),
     SETTINGS_STR_ENUM("monitor_policy", "manual,auto_interrupt", "manual"),
     /* chip sleep-config provisioning (defaults = the legacy fallbacks;
-       the chip's autonomous controls stay OFF — the future sleep_manager
+       the chip's autonomous controls stay OFF: the future sleep_manager
        arms them) */
     /* user-facing ranges (meatpi 2026-09-06, 12 V battery): wake while
        charging (12.0–15.0 V), sleep once the engine is off (12.0–14.0 V),
-       hold at most an hour — wake must sit above sleep (on_validate) */
+       hold at most an hour, wake must sit above sleep (on_validate) */
     SETTINGS_INT     ("wake_voltage_mv",  12000, 15000, 13500),
     SETTINGS_INT     ("sleep_voltage_mv", 12000, 14000, 13200),
     SETTINGS_INT     ("sleep_time_min",   1, 60, 2),
@@ -131,7 +131,7 @@ static esp_err_t obd_on_validate(const cJSON *settings, char *err,
 
 static esp_err_t obd_settings_migrate(uint32_t from_version, cJSON *settings)
 {
-    /* v1 -> v2 (2026-09-06): tighter user-facing ranges + wake > sleep —
+    /* v1 -> v2 (2026-09-06): tighter user-facing ranges + wake > sleep,
        clamp / lift what a device has stored instead of degrading it */
     if (from_version < 2 && settings != NULL)
     {
@@ -150,7 +150,7 @@ static esp_err_t obd_settings_migrate(uint32_t from_version, cJSON *settings)
         }
     }
 
-    /* v2 -> v3 (2026-09-07): the UART baud is fixed (OBD_CHIP_BAUD) — drop a
+    /* v2 -> v3 (2026-09-07): the UART baud is fixed (OBD_CHIP_BAUD), drop a
        stored value so nothing can ever feed a stale one back */
     if (from_version < 3 && settings != NULL)
     {

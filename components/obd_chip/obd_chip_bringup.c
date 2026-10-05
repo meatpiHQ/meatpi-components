@@ -50,7 +50,7 @@ static bool bare_probe(const char *cmd, char *resp, size_t resp_len,
 {
     /* static: the accumulator's 4 KB response buffer was over half the
        8 KB main-task stack at boot (2026-07-22 stack audit). Safe as a
-       static — bare_probe is boot-provisioning only, before the RX
+       static: bare_probe is boot-provisioning only, before the RX
        task exists, single-threaded by construction. */
     static obd_resp_acc_t acc EXT_RAM_BSS_ATTR;
     uint8_t buf[OBD_CHIP_CHUNK_SIZE];
@@ -83,7 +83,7 @@ static bool bare_probe(const char *cmd, char *resp, size_t resp_len,
 /**
  * Boot chip provisioning (legacy main/obd.c obd_init, meatpi 2026-07-04:
  * "follow legacy init"): read STSLCS; ensure sleep control is NATIVE
- * (ATPP 0E) and the stored VL thresholds/time match settings — with all
+ * (ATPP 0E) and the stored VL thresholds/time match settings, with all
  * autonomous controls left OFF (the future sleep_manager arms them);
  * persist the 2M default baud (ATPP 0F SV 95). Any change ends in ATZ +
  * re-bring-up. Runs on the bare UART, echo already off. Log-and-degrade.
@@ -144,7 +144,7 @@ static void chip_provision(const obd_config_t *cfg)
     if (reset_needed)
     {
         /* ATZ reboots the chip at its (possibly new) default baud with
-           echo back on — re-run the tail of the bring-up */
+           echo back on: re-run the tail of the bring-up */
         obd_uart_write((const uint8_t *)"ATZ\r", 4);
         vTaskDelay(pdMS_TO_TICKS(1500));
         obd_uart_set_baud(OBD_CHIP_BAUD);
@@ -204,7 +204,7 @@ static bool chip_soft_reset(char *resp, size_t resp_len)
     return false;
 }
 
-/** The full wake/reset/negotiate/provision sequence — the pre-2026-07-26
+/** The full wake/reset/negotiate/provision sequence: the pre-2026-07-26
  *  synchronous obd_chip_start() body, run by the bring-up task in
  *  obd_chip.c. @p active_baud: the baud the chip answers at (written as the
  *  sequence learns it). ESP_OK = the chip is up and the RX task runs. */

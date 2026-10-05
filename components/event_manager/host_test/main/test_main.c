@@ -299,7 +299,7 @@ void test_live_value_kinds(void)
 
 /* ---- scenario harness (2026-09-17): the engine's per-event decision replayed
    over scripted event sequences and live-value drifts, tallying what each
-   rule would have done — rule COMBINATIONS, not single calls ------------ */
+   rule would have done: rule COMBINATIONS, not single calls ------------ */
 static em_rule_state_t s_scn_st[EM_RULES_MAX];
 static int s_runs[EM_RULES_MAX];
 static int s_undos[EM_RULES_MAX];
@@ -523,7 +523,7 @@ void test_scn_match_isolates_other_parameters(void)
 void test_scn_state_in_match_never_undoes(void)
 {
     /* the documented trap: a while-rule whose trigger STATE sits in
-       `match` never sees the opposite event, so it never undoes — the
+       `match` never sees the opposite event, so it never undoes, the
        builder writes states into `when` for exactly this reason */
     scn_reset();
     TEST_ASSERT_EQUAL(ESP_OK, parse(

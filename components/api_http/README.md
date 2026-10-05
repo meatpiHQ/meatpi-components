@@ -1,10 +1,10 @@
-# api_http — the device HTTP API glue (Phase 7)
+# api_http: the device HTTP API glue (Phase 7)
 
 Implements the core components' `/api` routes on top of `http_server_manager`
 per **`components/HTTP_API.md`** (conventions + route map) and the
 per-component endpoint references. Core components never touch HTTP; this
 glue depends **down** on them (Architecture §10). Feature components
-(`wifi_manager`, …) register their own routes — not here.
+(`wifi_manager`, …) register their own routes, not here.
 
 ## API
 
@@ -23,7 +23,7 @@ glue depends **down** on them (Architecture §10). Feature components
 - **`/api/status`** (`dev_status_manager/HTTP_API.md`): every named bit,
   `network_connected`, uptime, version/partition, boot counters.
 - **`/api/info`** (`dev_status_manager/HTTP_API.md`): device identity for
-  the HA integration's control-API check (device-contract v2 ask #1) —
+  the HA integration's control-API check (device-contract v2 ask #1),
   `device_type`/`model`/`hw_version`/`fw_version`/`device_id`/`mac`/
   `api_level`.
 - **`/api/ota/upload` + `/api/ota/status`** (`ota_manager/HTTP_API.md`):
@@ -33,7 +33,7 @@ glue depends **down** on them (Architecture §10). Feature components
 - **`/api/restart/history` + `POST /api/restart`**
   (`restart_tracker/HTTP_API.md`): forensics ring newest-first with
   `*_to_str` names; reboot responds `{"ok":true}` first, then
-  `restart_tracker_restart(USER_REQUEST, WEB_UI, flags)` — never raw
+  `restart_tracker_restart(USER_REQUEST, WEB_UI, flags)`: never raw
   `esp_restart()`. The history also carries each record's crash note,
   `mode` and `settled`, the crash-loop `brake` and the stored crash
   `report` (2026-10-05).
@@ -48,7 +48,7 @@ glue depends **down** on them (Architecture §10). Feature components
   validation is the component's own (400/404/503 mapping).
 
 Registration order matters once: exact URIs (`/api/settings/submit`,
-`/api/settings`) register before the `/api/settings/*` wildcards — the
+`/api/settings`) register before the `/api/settings/*` wildcards: the
 wildcard matcher takes the first hit.
 
 ## Reboot semantics
@@ -61,12 +61,12 @@ down anyway).
 ## Dependencies
 
 `http_server_manager`, `settings_manager`, `dev_status_manager`,
-`restart_tracker`, `log_manager`, `filesystem` — all private;
-`espressif/cjson` (managed, private — the public header exposes only
+`restart_tracker`, `log_manager`, `filesystem`: all private;
+`espressif/cjson` (managed, private: the public header exposes only
 `esp_err_t`). Init order: after `http_server_manager_init()`, before
-`http_server_manager_start()` (later also works — routes install live).
+`http_server_manager_start()` (later also works, routes install live).
 
-## Memory footprint (estimated — measure before release)
+## Memory footprint (estimated: measure before release)
 
 | Where | What | ~Size |
 |---|---|---|
@@ -77,9 +77,9 @@ down anyway).
 
 ## Tests
 
-- **Host (`host_test/`, 7 tests)**: the pure utility layer — password
+- **Host (`host_test/`, 7 tests)**: the pure utility layer, password
   redaction/unredaction (`""` keeps stored), settings route parsing
   (name/schema/rejects), log-level mapping.
 - **Target (`test_apps/`)**: full composed stack on the lwIP loopback,
-  TWO-PHASE (reboots once through the real submit path) — see
+  TWO-PHASE (reboots once through the real submit path), see
   `test_apps/README.md`. **Green on hardware 2026-07-03.**

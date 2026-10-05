@@ -58,7 +58,7 @@ typedef struct
     char     cert_set[HW_CERTSET_LEN]; /* cert_manager set; "" = bundle   */
 } hw_config_t;
 
-/** Runtime stats — RAM only, never persisted (poster has no flash). */
+/** Runtime stats: RAM only, never persisted (poster has no flash). */
 typedef struct
 {
     char     status[HW_STATUS_LEN];  /* "ok" / "failed" / "disabled" /
@@ -99,7 +99,7 @@ void hw_stats_set(const hw_stats_t *in);
 esp_err_t hw_poster_start(void);
 void      hw_poster_stop(void);
 
-/** Force the NEXT post to be a full snapshot (drop the diff caches) — a
+/** Force the NEXT post to be a full snapshot (drop the diff caches): a
  *  newly-registered HA needs the whole picture, not a diff against stale
  *  state. Called on a URL push. */
 void      hw_poster_resync(void);

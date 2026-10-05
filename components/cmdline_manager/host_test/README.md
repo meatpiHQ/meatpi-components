@@ -1,6 +1,6 @@
 # cmdline_manager host tests
 
-Covers the PURE byte-stream→line assembler (`cmdline_manager_line.c`) —
+Covers the PURE byte-stream→line assembler (`cmdline_manager_line.c`):
 the piece every transport's chunking runs through: whole lines, CRLF
 (no bogus empty line from the `\n` tail), lines split across chunks,
 several lines batched in one chunk, bare-newline skipping, and

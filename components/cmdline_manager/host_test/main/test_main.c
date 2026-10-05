@@ -1,6 +1,6 @@
 /**
  * @file test_main.c
- * @brief Host tests for cmdline_manager's pure line assembler — every
+ * @brief Host tests for cmdline_manager's pure line assembler: every
  *        transport chunking pattern (whole lines, split lines, CRLF,
  *        batches, oversize floods) must come out as clean lines.
  *        Expected: 6 Tests 0 Failures 0 Ignored.
@@ -69,7 +69,7 @@ static void test_split_across_chunks(void)
 {
     const char *line = NULL;
 
-    /* transports chunk arbitrarily — "ver" now, "sion\n" later */
+    /* transports chunk arbitrarily: "ver" now, "sion\n" later */
     cm_line_feed(&s_asm, (const uint8_t *)"ver", 3, &line);
     TEST_ASSERT_NULL(line);
     cm_line_feed(&s_asm, (const uint8_t *)"sion\n", 5, &line);

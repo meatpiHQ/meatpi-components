@@ -23,7 +23,7 @@
 /**
  * @file log_sinks_settings.c
  * @brief settings_manager descriptor for log_sinks: field-table schema
- *        (every sink gate defaults FALSE — the device ships with no log
+ *        (every sink gate defaults FALSE, the device ships with no log
  *        byte leaving the box) and on_apply into the boot-applied config.
  */
 #include <stdio.h>

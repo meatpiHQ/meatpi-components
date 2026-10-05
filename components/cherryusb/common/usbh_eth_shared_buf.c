@@ -11,7 +11,7 @@
 
 /*
  * WiCAN change (meatpiHQ dynamic-shared-buffer, extended 2026-07-07):
- * the shared eth pool is HEAP-BACKED and refcounted — allocated from
+ * the shared eth pool is HEAP-BACKED and refcounted, allocated from
  * internal DMA-capable RAM on the first eth-class connect, freed on
  * the last disconnect, so the ~(RX+TX+CTRL+INT) bytes are only
  * consumed while a USB-ethernet adapter is actually attached.
@@ -25,7 +25,7 @@ uint8_t *g_usbh_eth_shared_ctrl_buffer;
 
 /* single-owner, not refcounted: this hardware runs ONE eth class at a
  * time (the shared pool's premise), and a connect that fails after
- * allocating never gets a disconnect — idempotent alloc + always-free
+ * allocating never gets a disconnect: idempotent alloc + always-free
  * can't strand the pool the way a refcount can */
 static bool s_allocated;
 

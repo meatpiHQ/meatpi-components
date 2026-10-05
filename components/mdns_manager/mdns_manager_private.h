@@ -32,7 +32,7 @@
 
 #include "esp_err.h"
 
-/** 6 MAC bytes -> "AA:BB:CC:DD:EE:FF" (the legacy TXT `mac` format —
+/** 6 MAC bytes -> "AA:BB:CC:DD:EE:FF" (the legacy TXT `mac` format,
  *  colon-separated UPPERCASE; HA uses it as the stable unique ID).
  *  False when @p out can't hold 18 bytes. */
 bool mm_format_mac(const uint8_t mac[6], char *out, size_t cap);

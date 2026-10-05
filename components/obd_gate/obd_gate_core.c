@@ -22,7 +22,7 @@
 
 /**
  * @file obd_gate_core.c
- * @brief Pure gate state machine (host-tested — no RTOS, time injected).
+ * @brief Pure gate state machine (host-tested: no RTOS, time injected).
  *        Single holder + a one-deep next-turn reservation for fairness
  *        (see the og_core_try contract in obd_gate_private.h).
  */
@@ -45,7 +45,7 @@ bool og_core_try(og_core_t *g, const void *owner, int64_t now_ms,
     {
         if (now_ms < g->deadline_ms)
         {
-            /* held by someone else: register as (or stay) the waiter —
+            /* held by someone else: register as (or stay) the waiter,
                first blocked owner takes the next turn */
             if (g->waiter == owner || !reservation_live(g, now_ms))
             {
@@ -56,7 +56,7 @@ bool og_core_try(og_core_t *g, const void *owner, int64_t now_ms,
             return false;
         }
 
-        g->expiries++;   /* stale hold — reap it */
+        g->expiries++;   /* stale hold: reap it */
         g->owner = NULL; /* so the reservation applies below too */
     }
 

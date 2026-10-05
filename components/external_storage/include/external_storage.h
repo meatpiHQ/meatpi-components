@@ -26,14 +26,14 @@
  *
  * Owns the SD card as a DEVICE: card-detect supervision (hot-plug), the
  * SDMMC 4-bit host, and mounting the card's FAT filesystem at the `/sd`
- * VFS root. It knows nothing about what is stored — file access goes
+ * VFS root. It knows nothing about what is stored: file access goes
  * through the `filesystem` component (`/sd/...` logical paths), which the
  * composition root wires to this component's mount events.
  *
  * Hot-plug: a detect task debounces the card-detect pin; insertion mounts
  * (+ publishes DEV_STATUS_BIT_SDCARD_MOUNTED + fires the event callback),
  * removal unmounts and clears. A yanked card degrades /sd operations to
- * ESP_ERR_INVALID_STATE — never a crash.
+ * ESP_ERR_INVALID_STATE: never a crash.
  *
  * WiCAN Pro wiring (SDMMC slot, GPIO-matrix routed):
  *   CLK=21 CMD=47 D0=14 D1=13 D2=12 D3=48, card-detect=GPIO40.
@@ -48,7 +48,7 @@
 extern "C" {
 #endif
 
-/** Mount-state change notification. Runs in the detect task — keep it
+/** Mount-state change notification. Runs in the detect task: keep it
  *  short (the composition root uses it to flip filesystem's /sd backend). */
 typedef void (*external_storage_event_cb_t)(bool mounted);
 
@@ -72,7 +72,7 @@ esp_err_t external_storage_set_callback(external_storage_event_cb_t cb);
 
 /** Register the `sdcard` CLI command with cmdline_manager. Called
  *  INTERNALLY on the settings boot apply when the `cli` setting is true
- *  (default) — main no longer wires it. */
+ *  (default): main no longer wires it. */
 esp_err_t external_storage_register_cli(void);
 
 /** Register the settings descriptor ({cli}). Init runs before

@@ -1,5 +1,5 @@
 """On-target tests for socket_manager: TCP aggregate + UDP last-peer
-semantics, max_clients, dead-client reaping — all on the lwIP loopback.
+semantics, max_clients, dead-client reaping, all on the lwIP loopback.
 Builds against the MAIN firmware's partition table + sdkconfig.
 
 Run (hardware):

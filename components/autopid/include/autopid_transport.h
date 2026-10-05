@@ -23,7 +23,7 @@
 /**
  * @file autopid_transport.h
  * @brief The OBD transport behind autopid: a passthrough to the MIC3624
- *        (obd_chip — single master, claim arbiter).
+ *        (obd_chip, single master, claim arbiter).
  *
  * Every autopid path (runner, DTC, passive filter) talks to the chip
  * through this one vtable, so the protocol code stays free of direct

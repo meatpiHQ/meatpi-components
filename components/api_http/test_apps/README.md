@@ -1,9 +1,9 @@
-# api_http — on-target test app (self-contained, TWO-PHASE)
+# api_http: on-target test app (self-contained, TWO-PHASE)
 
 Composes the full core stack the way main will (log_manager →
 restart_tracker → dev_status_manager → filesystem → settings_manager →
 http_server_manager → api_http), serves on the **lwIP loopback**, and
-asserts every `/api` area with `esp_http_client` against 127.0.0.1 — no
+asserts every `/api` area with `esp_http_client` against 127.0.0.1: no
 external network or instruments. Run:
 
 ```powershell
@@ -29,7 +29,7 @@ counters), `/api/restart/history`, `/api/logs/status|level|sink|ring`
 (incl. 400 unknown level, 404 unknown sink, non-empty chunked ring dump),
 and `/api/fs/list|info` (incl. traversal rejection).
 
-## Expected result — serial markers, in this order
+## Expected result: serial markers, in this order
 
 ```
 INIT ok=1
@@ -67,7 +67,7 @@ re-runs behave identically. Last verified green: 2026-07-03 on WiCAN Pro.
 
 ## Not covered here
 
-`/api/wifi/*` — registered by wifi_manager itself
+`/api/wifi/*`: registered by wifi_manager itself
 (`wifi_manager_register_http()`, HTTP_API.md §7); needs the radio, covered
 by the WiFi HIL S10 over-RF scenario. `POST /api/restart` shares the
 deferred-reboot path asserted via submit (a second reboot would double the

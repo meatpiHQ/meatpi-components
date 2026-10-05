@@ -1,9 +1,9 @@
-# wifi_manager — hardware-in-the-loop pytest suite
+# wifi_manager: hardware-in-the-loop pytest suite
 
 Automated RF scenarios against the bench Pi's access point
 (`components/TESTBENCH.md`). The firmware app here exposes a serial command
 console (`SET {json}` / `RESTART` / `STATUS` / `SCAN`) so pytest can persist
-new WiFi settings and reboot the DUT between scenarios — every test exercises
+new WiFi settings and reboot the DUT between scenarios: every test exercises
 real reboot-to-apply. Run:
 
 ```powershell
@@ -24,7 +24,7 @@ Prereqs: DUT on COM7, `ssh rpi001` reachable, pytest + pyserial installed
 | `test_s5_auth_failure_ban` | wrong PSK | after 3 auth failures: `banned; deferring connect`; `STATUS … sta=0` |
 | `test_s6_recovery_with_correct_password` | fix the PSK | connects normally after reboot |
 | `test_s7_ap_auto_disable` | `ap_auto_disable=true` | `STA up; auto-disabling AP` then `ap=0`; on AP loss `STA down; re-enabling AP` + `AP started` |
-| `test_s9_scan_sees_bench_ap` | scan while associated | bench SSID present in `SCANJSON` (retries — RF scans can come back thin) |
+| `test_s9_scan_sees_bench_ap` | scan while associated | bench SSID present in `SCANJSON` (retries: RF scans can come back thin) |
 | `test_s8_ap_channel_follows_sta` | bench AP pinned ch 11, DUT `ap_channel=6` | `moving AP to STA channel 11`; `STATUS … ap_ch=11`; DUT beacon **on-air at 11** (Pi scan from the free radio); after bench-AP loss the DUT AP **stays** on 11 (no hop back to 6) |
 
 (plus the dual-radio scenarios s4/s10–s14 further down the file)
@@ -39,12 +39,12 @@ Not automated yet: S10 (HTTP over RF).
 
 All bench AP connections are `wican-*` and are cleaned up on entry and exit,
 even after an aborted run. The suite leaves the DUT's persisted WiFi settings
-pointing at the bench AP — rerun `.\test.ps1 target wifi_manager` or erase
+pointing at the bench AP: rerun `.\test.ps1 target wifi_manager` or erase
 flash for pristine settings.
 
 ## Provenance
 
 First live run (2026-07-02) caught a real component bug: wrong-PSK
 disconnects report `WIFI_REASON_HANDSHAKE_TIMEOUT` (204), which the
-auth-related reason list was missing — the ban never armed on hardware.
+auth-related reason list was missing, the ban never armed on hardware.
 Fixed in `wifi_manager.c` and pinned by `test_s5`.

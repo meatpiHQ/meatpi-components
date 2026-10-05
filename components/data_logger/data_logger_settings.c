@@ -25,7 +25,7 @@
  * @brief settings_manager descriptor for data_logger: field-table schema
  *        (source of truth for shape/ranges/defaults), on_apply (parses
  *        into the boot-applied config, snapshots the CAN subscription
- *        config, then re-binds the stream engines via dl_core_apply —
+ *        config, then re-binds the stream engines via dl_core_apply:
  *        data_logger.c owns the stream table and the rings).
  */
 #include <stdio.h>
@@ -48,12 +48,12 @@ static const settings_field_t FIELDS[] =
     SETTINGS_INT("max_files", 1, 500, 100),
     SETTINGS_INT("batch_rows", 16, 1024, 256),
     /* 5 s since 2026-09-07 (ROBUSTNESS.md "Fewer writes"): batches sit in
-       PSRAM, commits are atomic, a crash/restart loses nothing — a power
+       PSRAM, commits are atomic, a crash/restart loses nothing, a power
        cut loses at most this much */
     SETTINGS_INT("flush_ms", 100, 60000, 5000),
     /* v2: producer integration + the CAN stream (TASK addendum);
      * mf4/blf/candump/asc/jsonl added by addendum 2 (enum additions
-     * are schema-compatible — stored values stay valid) */
+     * are schema-compatible: stored values stay valid) */
     SETTINGS_STR_ENUM("autopid_log", "off,changed,all", "off"),
     SETTINGS_BOOL("can_log", false),
     SETTINGS_STR_ENUM("can_format",
@@ -142,7 +142,7 @@ static esp_err_t on_apply(const cJSON *settings)
     if (!s_cfg.can.monitor_all &&
         !dl_parse_hex_u32(filter, &s_cfg.can.filter))
     {
-        ESP_LOGW(TAG, "bad can_filter '%s' — logging ALL frames",
+        ESP_LOGW(TAG, "bad can_filter '%s': logging ALL frames",
                  filter);
         s_cfg.can.monitor_all = true;
     }

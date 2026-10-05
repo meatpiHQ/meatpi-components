@@ -1,6 +1,6 @@
 /**
  * @file test_main.c
- * @brief Host tests for mdns_manager's pure builders — the legacy
+ * @brief Host tests for mdns_manager's pure builders: the legacy
  *        HA-contract strings must come out byte-exact.
  *        Expected: 3 Tests 0 Failures 0 Ignored.
  */

@@ -1,4 +1,4 @@
-# dev_status_manager — host unit tests
+# dev_status_manager: host unit tests
 
 Pure helpers only (`dev_status_manager_fmt.c`). Run via `.\test.ps1 host`.
 

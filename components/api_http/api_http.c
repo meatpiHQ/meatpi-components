@@ -23,7 +23,7 @@
 /**
  * @file api_http.c
  * @brief Lifecycle, shared HTTP helpers, and the settings routes
- *        (the /api/settings surface — settings_manager/HTTP_API.md).
+ *        (the /api/settings surface: settings_manager/HTTP_API.md).
  */
 #include <stdlib.h>
 #include <string.h>
@@ -338,7 +338,7 @@ static esp_err_t settings_submit_handler(httpd_req_t *req)
     return err;
 }
 
-/* GET /api/settings/backup — the whole device configuration as ONE document
+/* GET /api/settings/backup: the whole device configuration as ONE document
    (offline backup / device-to-device transfer). Values are NOT redacted:
    passwords ship verbatim, or the backup could not transfer a working
    configuration. The UI must treat the file as sensitive. */
@@ -376,7 +376,7 @@ static esp_err_t settings_backup_get_handler(httpd_req_t *req)
     return api_send_json(req, doc);
 }
 
-/* POST /api/settings/backup — restore a backup document. ALL-OR-NOTHING:
+/* POST /api/settings/backup: restore a backup document. ALL-OR-NOTHING:
    pass 1 dry-runs every component (migrate + validate, nothing persisted);
    any failure returns 400 with per-component errors and the device is
    untouched. Pass 2 persists, then reboots (submit semantics) if anything
@@ -412,7 +412,7 @@ static esp_err_t settings_backup_post_handler(httpd_req_t *req)
     cJSON *errors  = cJSON_CreateObject();
     cJSON *skipped = cJSON_CreateArray();
 
-    /* pass 1: dry-run everything — reject the WHOLE document on any error */
+    /* pass 1: dry-run everything, reject the WHOLE document on any error */
     const cJSON *item = NULL;
 
     cJSON_ArrayForEach(item, comps)
@@ -495,8 +495,8 @@ static esp_err_t settings_backup_post_handler(httpd_req_t *req)
     return err;
 }
 
-/* POST /api/settings/factory_reset — wipe the settings partition back to
-   factory defaults (scope: settings ONLY — /data certs/files, SD and NVS
+/* POST /api/settings/factory_reset: wipe the settings partition back to
+   factory defaults (scope: settings ONLY, /data certs/files, SD and NVS
    are untouched; same as the CLI `factoryreset`). Requires the explicit
    confirm token so a stray POST can never wipe a device; the UI's dialog
    supplies it. Responds, then reboots into defaults. */

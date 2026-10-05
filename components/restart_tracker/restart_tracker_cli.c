@@ -22,7 +22,7 @@
 
 /**
  * @file restart_tracker_cli.c
- * @brief The component's CLI command (`restart_tracker`) — registered
+ * @brief The component's CLI command (`restart_tracker`): registered
  *        into cmdline_manager by restart_tracker_register_cli() (main
  *        wires it in CLI compositions only). Legacy option interface
  *        preserved (-l/--latest, -a/--history, -p/--pending,
@@ -335,7 +335,7 @@ static int cmd_restart_tracker(int argc, char **argv)
         }
 
         /* deliberately die UNANNOUNCED: the next boot must record an
-           unplanned reset and file its crash note — this is the tracker's
+           unplanned reset and file its crash note, this is the tracker's
            self-test */
         cmdline_printf("Triggering test panic (%s)...\n",
                        fault ? "fault" : (wdt ? "wdt" : "abort"));

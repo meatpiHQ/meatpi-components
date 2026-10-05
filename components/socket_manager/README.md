@@ -1,11 +1,11 @@
-# socket_manager — TCP/UDP server owner (service)
+# socket_manager: TCP/UDP server owner (service)
 
 Owns WiCAN's TCP and UDP listeners: up to 4 simultaneous servers on
 different ports (settings-defined), each robust across client churn, Wi-Fi
 drops and interface restarts. Every server presents the firmware's standard
 chunk-stream face (queue RX via `subscribe`, `send()` TX), so a server wraps
 into a `bridge_manager` endpoint with three one-line functions. It knows
-nothing about what flows through it — protocol logic is translator territory.
+nothing about what flows through it: protocol logic is translator territory.
 
 ## API
 
@@ -18,12 +18,12 @@ nothing about what flows through it — protocol logic is translator territory.
 | `socket_manager_unsubscribe(server, q)` | Detach. |
 | `socket_manager_send(server, data, len)` | TCP: fan-out to ALL clients; UDP: to the last peer heard from (`ESP_ERR_INVALID_STATE` before any datagram). |
 | `socket_manager_stats(server, *out)` | clients, bytes in/out, rx/tx drops, reconnects, refused. |
-| `socket_manager_server_name(idx)` | configured server name per slot (NULL past end) — bridge_endpoints registers a jack per configured name. |
+| `socket_manager_server_name(idx)` | configured server name per slot (NULL past end): bridge_endpoints registers a jack per configured name. |
 
 ## Decided semantics (spec §2)
 
 - **TCP aggregate**: one server = one stream. TX fans out to every client, RX
-  from any client merges into the one queue — classic transparent-bridge
+  from any client merges into the one queue: classic transparent-bridge
   behavior (what OBD/GVRET tools expect). Per-client addressing: out of
   scope v1.
 - **UDP last-peer**: TX targets the source of the most recent datagram (the
@@ -49,7 +49,7 @@ nothing about what flows through it — protocol logic is translator territory.
 
 ## Task model (stack math)
 
-ONE shared net task multiplexing every server via lwIP `select()` —
+ONE shared net task multiplexing every server via lwIP `select()`:
 1 × 6 KB PSRAM stack instead of 4 × 4 KB per-server tasks (the loop performs
 no flash writes and no cache-off work, so a PSRAM stack is safe per §2).
 Accept/recv/reap all happen in this task; `send()` runs in the caller under
@@ -58,13 +58,13 @@ the same mutex that guards the client tables.
 ## Settings (`"socket_manager"`, version 1)
 
 Field-table bounded-array schema (`socket_manager_settings.c`, standard
-§4.1): `servers` — array (maxItems 4) of `{name (a-z0-9_), proto tcp|udp,
+§4.1): `servers`, array (maxItems 4) of `{name (a-z0-9_), proto tcp|udp,
 port 1..65535, max_clients 1..4 (default 2), keepalive_s 0..600 (default
 30), enabled (default false)}`. Cross-item rules (on_validate → pure
 `smp_validate_servers`): unique names, unique ports among ENABLED servers,
 and **tcp:80 is refused** (2026-07-26: lwip SO_REUSEADDR lets a second
 LISTEN pcb bind httpd's port and incoming SYNs then ALTERNATE between the
-web server and the socket server — a nondeterministically dead UI/API,
+web server and the socket server: a nondeterministically dead UI/API,
 found live by the system_bench degraded leg).
 
 Defaults (meatpi 2026-07-03): `obd0` tcp:35000 **enabled**; `slcan0`
@@ -72,14 +72,14 @@ tcp:3333, `gvret0` tcp:23, `udp0` udp:17 parked (disabled).
 
 ## Dependencies
 
-`lwip`, `settings_manager`, `log_manager`, `esp_timer` — all private;
+`lwip`, `settings_manager`, `log_manager`, `esp_timer`: all private;
 `espressif/cjson` (managed, private). Init after settings_manager; start
 after `settings_manager_start()`. Wi-Fi/netif bring-up is wifi_manager's
-business — listeners on ANY simply start failing/backing off until an
+business: listeners on ANY simply start failing/backing off until an
 interface exists. Must NOT depend on bridge_manager (no upward edge);
 glue/main wraps servers as endpoints.
 
-## Memory footprint (estimated — measure before release)
+## Memory footprint (estimated: measure before release)
 
 | Where | What | ~Size |
 |---|---|---|
@@ -89,20 +89,20 @@ glue/main wraps servers as endpoints.
 
 ## Tests
 
-- **Host (`host_test/`, 9 tests)**: pure policy — backoff progression + cap,
+- **Host (`host_test/`, 9 tests)**: pure policy, backoff progression + cap,
   accept/reject at max_clients, config parse defaults, name charset, unique
   names/ports, disabled-port parking, max_clients bounds. **Green on rpi001
   2026-07-03.**
 - **Target (`test_apps/`)**: lwIP-loopback suite (TCP RX/TX, 2-client
   fan-out + merge, accept-then-close at max, abrupt-close reap, UDP
-  last-peer + no-peer refusal) — see its README. Builds clean; on-target run
+  last-peer + no-peer refusal), see its README. Builds clean; on-target run
   pending DUT reconnection (2026-07-03).
 - **Wi-Fi bench + BENCHMARKS.md**: see `BENCHMARKS.md` (methodology +
   scripts committed; numbers pending the DUT).
 
-## HTTP observability (endpoint reference — `components/HTTP_API.md` §6e3)
+## HTTP observability (endpoint reference: `components/HTTP_API.md` §6e3)
 
-`GET /api/sockets` (2026-07-05, served by the `api_http` glue — this component
+`GET /api/sockets` (2026-07-05, served by the `api_http` glue: this component
 stays transport-free): configured entries from this component's settings
 + live counters from `socket_manager_stats()`; `up:false` = configured but not
 running.

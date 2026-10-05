@@ -41,7 +41,7 @@ static const settings_field_t FIELDS[] =
     /* Exclusive bus (boot default; runtime switch on the UDS page / POST
      * /api/uds): while the tool is in use (a request, then 10 s of idle,
      * or an open session) the background pollers (autopid: PID polling +
-     * DTC scans) stay off the bus — obd_gate's diagnostics hold. ON by
+     * DTC scans) stay off the bus, obd_gate's diagnostics hold. ON by
      * default (Ali 2026-09-16): a diagnostic session wants the bus to
      * itself; turn off to keep AutoPID telemetry flowing meanwhile. */
     SETTINGS_BOOL("exclusive", true),
@@ -106,7 +106,7 @@ static esp_err_t on_apply(const cJSON *settings)
 static esp_err_t uds_settings_migrate(uint32_t from_version, cJSON *settings)
 {
     /* v1 -> v2 (2026-09-06): the "elm327" backend value no longer
-     * exists — map a stored one to auto so the config still validates */
+     * exists: map a stored one to auto so the config still validates */
     if (from_version < 2)
     {
         const cJSON *v = cJSON_GetObjectItemCaseSensitive(settings, "backend");

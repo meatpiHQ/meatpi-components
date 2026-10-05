@@ -1,13 +1,13 @@
 /**
  * @file test_ble_main.c
- * @brief On-target test app for ble_manager: the production composition —
+ * @brief On-target test app for ble_manager: the production composition,
  *        ble_manager as a bridge endpoint (`ble` ↔ `echo` raw bridge), so
  *        everything a client writes to FFF2 comes back as FFF1
  *        notifications; the CLI IN characteristic is wired to a stand-in
  *        handler (upper-cases the line and answers via CLI OUT) until the
  *        cmdline_manager exists.
  *
- * The device side only prints readiness markers — the real assertions run
+ * The device side only prints readiness markers: the real assertions run
  * from rpi001's BLE controller via tools/testbench/ble_bench.py (scan,
  * pair with the static passkey, subscribe, echo, CLI, throughput/RTT).
  */
@@ -96,7 +96,7 @@ static esp_err_t echo_unsubscribe(QueueHandle_t q)
     return ESP_OK;
 }
 
-/* benchmark: "blast <bytes>" on the CLI starts a TX-throughput burst — a
+/* benchmark: "blast <bytes>" on the CLI starts a TX-throughput burst, a
  * worker pushes patterned data through ble_manager_send (pacing against the
  * bounded TX queue exactly like a real bridge producer would) */
 static volatile uint32_t s_blast_request;

@@ -23,8 +23,8 @@
 /**
  * @file wifi_manager_select.c
  * @brief Pure STA candidate selection + per-entry attempt-failure memory
- *        (an ordering hint, never a block — meatpi 2026-09-06).
- *        No IDF dependencies — compiled as-is by the host unit tests.
+ *        (an ordering hint, never a block: meatpi 2026-09-06).
+ *        No IDF dependencies: compiled as-is by the host unit tests.
  *        Time comes in as a millisecond tick from the caller.
  */
 #include "wifi_manager_private.h"
@@ -264,7 +264,7 @@ int wm_select_from_scan(wm_select_state_t *st, const wm_network_t *cand,
         }
     }
 
-    /* 2. every visible entry failed lately: keep trying them anyway —
+    /* 2. every visible entry failed lately: keep trying them anyway,
      *    round-robin, so two entries sharing an SSID (different
      *    passwords) alternate instead of the first one hogging every
      *    attempt (meatpi 2026-09-06: our best chance is still a chance) */

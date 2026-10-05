@@ -43,7 +43,7 @@ static void test_healthy_battery_stays_normal(void)
 
 static void test_countdown_then_sleep(void)
 {
-    /* engine off: 12.4 V — countdown starts */
+    /* engine off: 12.4 V, countdown starts */
     TEST_ASSERT_EQUAL_INT(SM_ACT_NONE,
                           sm_policy_eval(&s_p, &s_cfg, 12.4f, 1000));
     TEST_ASSERT_EQUAL_INT(SLEEP_MANAGER_LOW_VOLTAGE, s_p.state);

@@ -173,7 +173,7 @@ esp_err_t ble_manager_send(const uint8_t *data, size_t len)
 
 bool ble_manager_is_enabled(void)
 {
-    /* the CONFIGURED truth — stays true while interface_manager holds
+    /* the CONFIGURED truth: stays true while interface_manager holds
        the stack stopped (the BLE_ENABLED bit tracks the RUNNING state,
        which is what a runtime stop clears) */
     return blm_settings_is_configured() && blm_core_config()->enabled;

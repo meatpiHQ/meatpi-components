@@ -39,7 +39,7 @@
 extern "C" {
 #endif
 
-/* ---- pure utilities (api_http_util.c — host-tested, no HTTP deps) ---------- */
+/* ---- pure utilities (api_http_util.c: host-tested, no HTTP deps) ---------- */
 
 /** Redact every string value whose key ends in "_password" to "". */
 void api_util_redact(cJSON *obj);
@@ -62,7 +62,7 @@ esp_err_t api_util_settings_path(const char *uri, char *name,
  *  (returned as int to keep this unit esp_log-free). */
 esp_err_t api_util_level_from_str(const char *s, int *out_level);
 
-/* ---- HTTP helpers (api_http.c) — httpd_req_t kept as void* here so the
+/* ---- HTTP helpers (api_http.c): httpd_req_t kept as void* here so the
  * pure unit above compiles without esp_http_server ------------------------- */
 
 struct httpd_req;

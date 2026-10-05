@@ -22,7 +22,7 @@
 
 /**
  * @file mqtt_manager_match.c
- * @brief PURE MQTT topic-filter matching + broker-URL validation — no
+ * @brief PURE MQTT topic-filter matching + broker-URL validation: no
  *        client, no RTOS; host-testable.
  */
 #include <string.h>

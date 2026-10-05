@@ -34,8 +34,8 @@
 #error "include autopid_private.h, not this fragment"
 #endif
 
-/* ---- pure: DTC codec (autopid_dtc_codec.c — host-tested; TASK_dtc.md §4) --
- * Mode 04 clears EVERYTHING (codes + readiness + MIL) — OBD2 has no
+/* ---- pure: DTC codec (autopid_dtc_codec.c, host-tested; TASK_dtc.md §4) --
+ * Mode 04 clears EVERYTHING (codes + readiness + MIL): OBD2 has no
  * per-code clear, so "clear specific DTCs" is a CONDITION on the whole
  * present set (always / if_any / if_only).                              */
 
@@ -94,7 +94,7 @@ bool ap_dtc_clear_allowed(const char present[][AP_DTC_CODE_LEN],
                           size_t n_present, const char *codes,
                           ap_dtc_clear_mode_t mode);
 
-/* ---- pure: freeze-frame codec (TASK_dtc §14 — OBD mode 02, frame 0) ------
+/* ---- pure: freeze-frame codec (TASK_dtc §14, OBD mode 02, frame 0) ------
  * Payload shapes are ap_resp_to_payloads output with the echo kept:
  * `42 <pid> <frame> <data…>`. Decode rides the standard-PID table
  * (autopid_std.c), byte semantics identical to the mode-01 expressions. */
@@ -111,7 +111,7 @@ typedef struct
 
 /** Parse a `42 02 <frame> hi lo` payload -> the DTC that froze the frame
  *  (DTCFRZF). @return true only for a non-zero DTC (0x0000 = no frame
- *  stored — some ECUs answer zeros instead of NO DATA). */
+ *  stored: some ECUs answer zeros instead of NO DATA). */
 bool ap_frz_dtc(const uint8_t *payload, size_t len,
                 char out[AP_DTC_CODE_LEN]);
 
@@ -127,7 +127,7 @@ bool ap_frz_bitmap(const uint8_t *payload, size_t len, uint8_t pid,
 int ap_frz_decode(const uint8_t *payload, size_t len, ap_frz_val_t *out,
                   int n, int max);
 
-/* ---- pure: DTC-database importer (autopid_dtc_db_codec.c — host-tested;
+/* ---- pure: DTC-database importer (autopid_dtc_db_codec.c, host-tested;
  * TASK_dtc_db.md §2). Canonical stored form: "#dtcdb1 <n>\n" then sorted
  * "CODE\tDESC\n" lines.                                                 */
 
@@ -147,7 +147,7 @@ typedef struct
 
 /** Sniff + parse @p in (CSV/TSV/;-CSV/JSON-map/JSON-array/plain text)
  *  into scratch + a SORTED deduped item index (last duplicate wins).
- *  CONTRACT: @p scratch_cap must be >= in_len + AP_DTC_DESC_MAX + 16 —
+ *  CONTRACT: @p scratch_cap must be >= in_len + AP_DTC_DESC_MAX + 16,
  *  the emitter checks per-entry headroom BEFORE writing (a smaller cap
  *  silently rejects the tail; bench-bitten 2026-07-08).
  *  @return entry count, or -1 (err filled; fmt_out = sniffed format). */
@@ -241,7 +241,7 @@ typedef struct
     ap_dtc_item_t items[AP_DTC_ITEMS_MAX];
     uint8_t  n_src;
     ap_dtc_src_t src[AP_DTC_SRC_MAX];
-    /* freeze frame (mode 02 frame 0, OBD scans only — TASK_dtc §14) */
+    /* freeze frame (mode 02 frame 0, OBD scans only: TASK_dtc §14) */
     bool     frz_present;
     char     frz_dtc[AP_DTC_CODE_LEN];  /* DTCFRZF                       */
     uint32_t frz_ecu;           /* responder CAN id; UINT32_MAX = hdr off */
@@ -250,7 +250,7 @@ typedef struct
     char     error[48];         /* last scan error, "" = ok              */
 } ap_dtc_report_t;
 
-/* ---- pure: filling a report (autopid_dtc_codec.c — host-tested) ---------- */
+/* ---- pure: filling a report (autopid_dtc_codec.c, host-tested) ---------- */
 
 /** One code of @p kind as @p ecu reported it: merged into the category
  *  array (once per code) and kept as an item (once per ECU).
@@ -283,7 +283,7 @@ void ap_dtc_report_src_j1939(ap_dtc_report_t *r, uint8_t sa, uint8_t lamps,
                              uint8_t count);
 
 #ifndef AUTOPID_HOST_TEST
-/* DTC engine (autopid_dtc.c — target half; TASK_dtc.md §5) */
+/* DTC engine (autopid_dtc.c: target half; TASK_dtc.md §5) */
 void ap_dtc_init(void);                      /* autopid_init context     */
 void ap_dtc_apply_settings(const cJSON *settings); /* on_apply context   */
 bool ap_dtc_enabled(void);
@@ -305,7 +305,7 @@ cJSON *ap_dtc_report_json(void);             /* the §8 GET "report" obj  */
 /** ... plus `desc` {code: text} from the DTC databases (the HTTP view). */
 cJSON *ap_dtc_report_json_desc(void);
 
-/** Conditional clear (sync, seconds of bus I/O — NEVER the event
+/** Conditional clear (sync, seconds of bus I/O: NEVER the event
  *  dispatcher; HTTP/CLI/scan-job/script contexts only). Re-reads mode 03
  *  first, evaluates, sends 04, confirms with a second 03.
  *  @param[out] cleared condition held + 44 confirmed
@@ -315,11 +315,11 @@ esp_err_t ap_dtc_clear(const char *codes, const char *mode, bool *cleared,
                        size_t err_len);
 
 /** Fire-and-forget clear for the event action (dispatcher context must
- *  not block on the bus) — spawns the job task, result travels by the
+ *  not block on the bus): spawns the job task, result travels by the
  *  autopid.dtc_clear event. */
 esp_err_t ap_dtc_clear_queue(const char *codes, const char *mode);
 
-/* DTC-database store + PSRAM cache (autopid_dtc_db.c — TASK_dtc_db §3) */
+/* DTC-database store + PSRAM cache (autopid_dtc_db.c: TASK_dtc_db §3) */
 void ap_dtc_db_init(void);                   /* autopid_init context     */
 void ap_dtc_db_load_all(void);               /* internal-stack ONLY (fs) */
 esp_err_t ap_dtc_db_store(const char *name, const char *raw,

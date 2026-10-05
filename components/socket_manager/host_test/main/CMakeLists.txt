@@ -1,5 +1,5 @@
 # Host test compiles ONLY the pure policy layer (backoff, accept decisions,
-# config parsing/validation) — no lwIP, so it runs on the linux target.
+# config parsing/validation): no lwIP, so it runs on the linux target.
 set(comp_dir "${CMAKE_CURRENT_LIST_DIR}/../..")
 
 idf_component_register(

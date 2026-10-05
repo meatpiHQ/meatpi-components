@@ -48,7 +48,7 @@
 
 static const char *TAG = "restart_tracker";
 
-/* Survives warm resets; random after power-on — rt_state_is_valid decides. */
+/* Survives warm resets; random after power-on: rt_state_is_valid decides. */
 static EXT_RAM_NOINIT_ATTR restart_tracker_state_t s_state;
 
 static portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED; /* internal: spinlock */

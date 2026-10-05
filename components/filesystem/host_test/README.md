@@ -1,6 +1,6 @@
-# filesystem — host unit tests
+# filesystem: host unit tests
 
-Pure path-logic suite (`filesystem_path.c` only — no VFS/LittleFS), IDF
+Pure path-logic suite (`filesystem_path.c` only: no VFS/LittleFS), IDF
 `linux` target. Run via `.\test.ps1 host` or manually per
 `components/TESTBENCH.md` §4.
 

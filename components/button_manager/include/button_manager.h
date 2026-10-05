@@ -32,11 +32,11 @@
  *    component owns the pin only from _start() onwards.
  *
  *  - LONG-PRESS WHILE RUNNING -> CONFIG MODE. This component detects
- *    the hold (settings-tunable, default 5 s at a 1 s tick — the legacy
+ *    the hold (settings-tunable, default 5 s at a 1 s tick: the legacy
  *    config_mode.c cadence) and fires the registered callback ONCE per
  *    press. WHAT config mode does (force AP, stop BLE, LED pattern,
  *    timeout-reboot) is composition policy wired by main
- *    (main_glue_wire_button) — this component knows no other component.
+ *    (main_glue_wire_button): this component knows no other component.
  *
  * Settings ("button_manager", v1): {enabled (true), hold_s (1..30, 5)}.
  */
@@ -50,7 +50,7 @@ extern "C" {
 
 #define BUTTON_MANAGER_GPIO 8
 
-/** Fired from the button task (small INTERNAL stack — the callback may
+/** Fired from the button task (small INTERNAL stack: the callback may
  *  reach radio/flash paths, §2) once per press when the hold threshold
  *  is crossed. Re-arms after release. */
 typedef void (*button_manager_longpress_cb_t)(void);

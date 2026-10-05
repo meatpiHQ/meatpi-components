@@ -22,7 +22,7 @@
 
 /**
  * @file filesystem_cli.c
- * @brief The component's CLI command (`fs`) — registered into
+ * @brief The component's CLI command (`fs`): registered into
  *        cmdline_manager by filesystem_register_cli() (main wires it
  *        in CLI compositions only). Reports each backend's capacity.
  */

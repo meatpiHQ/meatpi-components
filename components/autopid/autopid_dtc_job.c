@@ -59,7 +59,7 @@ static char        s_job_codes[192];
 static char        s_job_mode[12];
 static StaticTask_t s_job_tcb;         /* internal: FreeRTOS object */
 /* 16 KB (StackType_t = BYTES on xtensa): ap_resp_to_payload(s)' line
-   table alone is ~5.6 KB of frame — 6144 overflowed the moment the
+   table alone is ~5.6 KB of frame, 6144 overflowed the moment the
    scan grew the multi-ECU path (silent PSRAM-bss scribble; found
    2026-07-22 when an internal-RAM stack turned it into a panic) */
 static StackType_t  s_job_stack[16384] EXT_RAM_BSS_ATTR; /* no fs I/O */
@@ -86,7 +86,7 @@ static void dtc_job_task(void *arg)
     }
     else
     {
-        /* rule-queued clear: the job flag was NOT pre-acquired —
+        /* rule-queued clear: the job flag was NOT pre-acquired,
          * ap_dtc_clear() takes it itself; results travel by event */
         char err[48];
 
@@ -94,7 +94,7 @@ static void dtc_job_task(void *arg)
                            err, sizeof(err));
     }
 
-    /* ephemeral tasks escape System Monitor — surface the watermark so
+    /* ephemeral tasks escape System Monitor: surface the watermark so
        the stack-audit bench (and any log reader) sees how close this
        job came to the 2026-07-22 silent-overflow cliff */
     ESP_LOGI(TAG, "dtc job stack_hw=%u B",

@@ -1,4 +1,4 @@
-/* Host tests for data_logger_recover.c — the pure recovery decisions
+/* Host tests for data_logger_recover.c: the pure recovery decisions
    (ROBUSTNESS.md): torn text tails, .wdl resync, corrupt names, the
    PSRAM salvage sanity checks and the CRC. */
 #include <string.h>

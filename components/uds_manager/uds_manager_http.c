@@ -159,7 +159,7 @@ static esp_err_t request_handler(httpd_req_t *req)
     if (cJSON_IsNumber(v)) opts.p2_ms = (uint32_t)v->valueint;
     v = cJSON_GetObjectItemCaseSensitive(root, "p2star_ms");
     if (cJSON_IsNumber(v)) opts.p2star_ms = (uint32_t)v->valueint;
-    /* the page's "final response timeout" — the same thing as P2* */
+    /* the page's "final response timeout": the same thing as P2* */
     v = cJSON_GetObjectItemCaseSensitive(root, "timeout_ms");
     if (cJSON_IsNumber(v) && opts.p2star_ms == 0)
     {
@@ -356,7 +356,7 @@ static cJSON *read_small_body(httpd_req_t *req)
     return cJSON_Parse(body);
 }
 
-/* POST /api/uds {"exclusive":bool} — the runtime switch (boot default = the
+/* POST /api/uds {"exclusive":bool}: the runtime switch (boot default = the
  * setting); answers with the status like GET */
 static esp_err_t control_handler(httpd_req_t *req)
 {
@@ -378,7 +378,7 @@ static esp_err_t control_handler(httpd_req_t *req)
 }
 
 /* POST /api/uds/session {"action":"begin","tx_id","rx_id","ext"?} |
- * {"action":"end"} — tester present while the page holds the session;
+ * {"action":"end"}: tester present while the page holds the session;
  * requests inside it ride the held claim. 409 when another transaction/
  * session owns the bus. */
 static esp_err_t session_handler(httpd_req_t *req)

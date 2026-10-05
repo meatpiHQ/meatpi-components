@@ -22,7 +22,7 @@
 
 /**
  * @file websocket_manager_private.h
- * @brief Internal API + the pure policy layer (host-testable — no httpd).
+ * @brief Internal API + the pure policy layer (host-testable: no httpd).
  */
 #pragma once
 
@@ -38,7 +38,7 @@
 extern "C" {
 #endif
 
-/* ---- pure policy (websocket_manager_policy.c — host-tested) ---------------- */
+/* ---- pure policy (websocket_manager_policy.c: host-tested) ---------------- */
 
 typedef struct
 {
@@ -72,7 +72,7 @@ const wsm_channel_cfg_t *wsm_core_config(int idx); /* NULL past end */
 int  wsm_settings_count(void);         /* configured channel slots          */
 bool wsm_settings_is_configured(void); /* boot apply ran (standard §4.3)    */
 
-/* ---- ws layer (websocket_manager_ws.c) — indexed like the config ----------- */
+/* ---- ws layer (websocket_manager_ws.c): indexed like the config ----------- */
 
 esp_err_t wsm_ws_register_routes(void);
 void      wsm_ws_reset(void);

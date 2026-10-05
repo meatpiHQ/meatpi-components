@@ -1,7 +1,7 @@
-# socket_manager — on-target test app (self-contained, lwIP loopback)
+# socket_manager: on-target test app (self-contained, lwIP loopback)
 
 Persists a test server set (TCP `tcp0:3333` max 2 clients + UDP `udp0:17`)
-**before** the settings boot pass (`set()` then `settings_manager_start()` —
+**before** the settings boot pass (`set()` then `settings_manager_start()`:
 reboot-to-apply without a reboot), then drives real BSD-socket clients
 against 127.0.0.1. No RF, no external gear. Run:
 
@@ -18,7 +18,7 @@ max_clients accept-then-close + `refused` counter, abrupt-close reaping
 (remaining client keeps working), UDP no-peer send refusal, UDP RX +
 last-peer TX, stats counters.
 
-## Expected result — serial markers, in this order
+## Expected result: serial markers, in this order
 
 ```
 INIT ok=1
@@ -38,10 +38,10 @@ STATS in=<n> out=<n> rx_drops=0
 TEST DONE
 ```
 
-**Last verified green: 2026-07-03 on WiCAN Pro (first flight — all 13
+**Last verified green: 2026-07-03 on WiCAN Pro (first flight, all 13
 markers).** Inherits the main config via root `sdkconfig.defaults`
 (standard §7); the overlay pins the test console to 115200 (main runs
-2 Mbaud — sanctioned test-console override).
+2 Mbaud: sanctioned test-console override).
 
 Wi-Fi robustness (listener recovery across a Wi-Fi drop) and the RF
-benchmark baselines are bench scenarios — see `../BENCHMARKS.md`.
+benchmark baselines are bench scenarios, see `../BENCHMARKS.md`.

@@ -1,6 +1,6 @@
-# http_server_manager — host unit tests
+# http_server_manager: host unit tests
 
-Pure match-logic suite (`http_server_manager_match.c` only — no httpd/VFS),
+Pure match-logic suite (`http_server_manager_match.c` only: no httpd/VFS),
 IDF `linux` target. Run via `.\test.ps1 host` or manually per
 `components/TESTBENCH.md` §4.
 

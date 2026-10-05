@@ -22,7 +22,7 @@
 
 /**
  * @file can_manager.h
- * @brief Owner of the native CAN (TWAI) bus — WiCAN Pro TX=GPIO2 /
+ * @brief Owner of the native CAN (TWAI) bus: WiCAN Pro TX=GPIO2 /
  *        RX=GPIO1 / STDBY=GPIO38.
  *
  * Model (ARCHITECTURE "the one pattern"): can_manager owns the ONE
@@ -43,7 +43,7 @@
  * can_manager_send() refuses. can_manager_status() tells where the link is.
  *
  * The ESP TWAI transceiver and the MIC3624 OBD chip are two nodes on the
- * SAME vehicle CAN bus — electrically legal; contention between autopid
+ * SAME vehicle CAN bus: electrically legal; contention between autopid
  * polling (via the MIC) and native-CAN traffic is a policy question left
  * to the user in v1 (README).
  */
@@ -217,7 +217,7 @@ const char *can_manager_probe_name(can_probe_result_t result);
 /** Zero the stats counters (CLI `can -z`). */
 void can_manager_zero_stats(void);
 
-/** /api/can route (HTTP compositions only — main wires it). */
+/** /api/can route (HTTP compositions only: main wires it). */
 esp_err_t can_manager_register_http(void);
 
 #ifdef __cplusplus

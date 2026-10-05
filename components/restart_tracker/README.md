@@ -9,8 +9,8 @@ ring, and a pending planned-restart intent) lives in **PSRAM `.noinit`**
 `esp_cache_msync` write-back after every mutation. Warm resets (esp_restart,
 panic, watchdog) preserve everything; a power cycle leaves random PSRAM, which
 the envelope detects and resets cleanly. It also provides the **one sanctioned
-way to reboot on purpose** — `restart_tracker_restart(reason, source, flags)`
-— so the next boot always knows whether the restart was planned and by whom.
+way to reboot on purpose**, `restart_tracker_restart(reason, source, flags)`,
+so the next boot always knows whether the restart was planned and by whom.
 This is the PSRAM-survival pattern `log_manager`'s crash ring reuses.
 A boot that follows a crash also knows **where** it crashed: the crash note
 (below), written by two hooks around IDF's panic handler. Since 2026-10-05
@@ -44,7 +44,7 @@ device instead of starting it again (the crash-loop brake).
 
 Reasons: none / user_request / config_apply / config_recovery / ota_apply /
 factory_reset / safe_mode / power_wake / internal_recovery / periodic_wake
-(sleep_manager's check-in, 2026-09-07 — before that it was filed as
+(sleep_manager's check-in, 2026-09-07: before that it was filed as
 power_wake) / park_retry (a parked device starts again, 2026-10-05).
 Sources: web_ui / cmdline / console / mqtt / ota / safe_mode / config_server
 / sleep_mode / button / pairing / park (the crash park's own timer).
@@ -212,7 +212,7 @@ the reset call.
 
 ## Dependencies
 
-- `esp_mm` (cache msync) + `esp_timer` — private, target glue only.
+- `esp_mm` (cache msync) + `esp_timer`: private, target glue only.
 - `nvs_flash` (the stored crash report). NVS must be initialised before
   `restart_tracker_init()`; when it is not, the report is neither read nor
   stored and the boot says so in one W line.
@@ -225,24 +225,24 @@ the reset call.
   `restart_tracker_get_crash()` answers `ESP_ERR_NOT_SUPPORTED`.
 - Requires `CONFIG_SPIRAM_ALLOW_NOINIT_SEG_EXTERNAL_MEMORY=y` (enabled in the
   main sdkconfig 2026-07-03).
-- Init order: right after `log_manager_init()` — before anything that could
+- Init order: right after `log_manager_init()`, before anything that could
   crash, so the boot record exists. No settings, no descriptor. Main calls
   `main_park_check()` right after it and `restart_tracker_settle(false)`
   from its 60 s loop; safe mode calls `restart_tracker_set_boot_mode(SAFE)`.
 - **Firmware rule:** transports reboot via `restart_tracker_restart()` (the
   settings submit-then-reboot uses `CONFIG_APPLY`/`CONFIG_SERVER`), never raw
-  `esp_restart()` — a raw restart shows up as planned=0/"software".
+  `esp_restart()`: a raw restart shows up as planned=0/"software".
 
 ## Settings (`"restart_tracker"`, version 1)
 
-Minimal descriptor, one knob: `cli` (bool, default true) — register the
+Minimal descriptor, one knob: `cli` (bool, default true), register the
 `restart_tracker` console command with cmdline_manager on the settings
 boot apply (reboot-to-apply). Registered via
 `restart_tracker_register_settings()`, wired by main right after
 settings_manager_init because this component inits before it (the
 log_manager_register_settings pattern, 2026-07-05).
 
-## HTTP API (requirement — full endpoint reference: `HTTP_API.md` in this directory; conventions: `components/HTTP_API.md`)
+## HTTP API (requirement: full endpoint reference: `HTTP_API.md` in this directory; conventions: `components/HTTP_API.md`)
 
 `GET /api/restart/history` (boot records with to-str names, newest first; the
 running image's `elf_sha`; a `crash` object on every record that follows a
@@ -251,7 +251,7 @@ recorded crash; each record's `mode` and `settled`; the `brake`; the stored
 `DELETE /api/restart/report` and
 `POST /api/restart` (respond, flush ≈1 s, then
 `restart_tracker_restart(USER_REQUEST, WEB_UI, 0)`). Implemented by the
-`api_http` glue — this component must NOT depend on the HTTP server. The
+`api_http` glue: this component must NOT depend on the HTTP server. The
 legacy `restart_tracker_http.c` was dropped; these routes replace it.
 
 ## Memory footprint
@@ -294,7 +294,7 @@ legacy `restart_tracker_http.c` was dropped; these routes replace it.
   is filed incomplete; no pending note clears the slot; a foreign store or a
   fresh history clears the kept notes and still files the pending one;
   lookup never returns another boot's note, ring wrap included; the summary
-  line of each kind; text made printable. And 8 for the pure core — garbage-memory detection,
+  line of each kind; text made printable. And 8 for the pure core: garbage-memory detection,
   boot recording/counters, planned-intent consumed exactly once, unexpected
   classification (panic / the three watchdogs yes; sw / poweron / deepsleep
   no; planned never) on the IDF 5+ reason numbers (INT_WDT 5, TASK_WDT 6,

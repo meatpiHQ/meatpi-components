@@ -1,6 +1,6 @@
 /**
  * @file ml_at_socket.c
- * @brief AT Socket Bridge — BSD socket API over SIM7600 internal TCP/IP stack
+ * @brief AT Socket Bridge: BSD socket API over SIM7600 internal TCP/IP stack
  *
  * Maps standard BSD socket calls to SIM7600 AT commands:
  *   socket()     → allocate link_num (0-9)
@@ -14,7 +14,7 @@
  *   select()     → AT+CIPRXGET=4,N (query pending bytes)
  *
  * Architecture: Single-reader model. Only at_cmd() reads from UART.
- * No background URC handler task — URCs are processed inline when they
+ * No background URC handler task: URCs are processed inline when they
  * appear in AT command responses, and recv/select actively poll the modem.
  *
  * The UART is shared with ml_cellular.c (AT command mode, no PPP).
@@ -52,12 +52,12 @@ static const char *TAG = "ml_at_sock";
 #define AT_SOCK_FD_BASE     ML_AT_SOCK_FD_BASE  /* Virtual FDs: 32-41 (within FD_SETSIZE=64) */
 #define AT_MAX_SEND_CHUNK   1460    /* Max bytes per AT+CIPSEND */
 #define AT_RESP_BUF_SIZE    512     /* AT response buffer */
-#define AT_DATA_BUF_SIZE    4096    /* Data response buffer — room for 1460 data + headers */
+#define AT_DATA_BUF_SIZE    4096    /* Data response buffer: room for 1460 data + headers */
 #define UART_NUM            UART_NUM_1
 #define AT_TIMEOUT_MS       5000
 #define AT_LONG_TIMEOUT_MS  15000
 #define DNS_TIMEOUT_MS      20000   /* DNS can be slow over cellular */
-#define RX_RING_SIZE        8192    /* Per-socket RX ring buffer — 8KB for throughput */
+#define RX_RING_SIZE        8192    /* Per-socket RX ring buffer: 8KB for throughput */
 
 /* ============================================================================
  * Internal Socket State
@@ -74,7 +74,7 @@ typedef struct {
     uint32_t send_timeout_ms;
     uint16_t local_port;        /* For UDP bind */
 
-    /* RX ring buffer — filled by active polling via AT+CIPRXGET=2 */
+    /* RX ring buffer: filled by active polling via AT+CIPRXGET=2 */
     uint8_t *rx_buf;
     volatile size_t rx_head;    /* Write position */
     volatile size_t rx_tail;    /* Read position */
@@ -84,7 +84,7 @@ typedef struct {
     uint32_t last_src_ip;
     uint16_t last_src_port;
 
-    /* Async connect result — set by process_urcs() */
+    /* Async connect result: set by process_urcs() */
     volatile bool connect_done;
     volatile bool connect_ok;
 } ml_at_sock_t;
@@ -127,7 +127,7 @@ static size_t ring_read(ml_at_sock_t *s, uint8_t *data, size_t len) {
 }
 
 /* ============================================================================
- * URC Processing (inline — called from at_cmd response parsing)
+ * URC Processing (inline, called from at_cmd response parsing)
  *
  * When at_cmd() reads a response, it may contain interleaved URCs.
  * This function scans the response buffer for URC lines and dispatches them.
@@ -135,7 +135,7 @@ static size_t ring_read(ml_at_sock_t *s, uint8_t *data, size_t len) {
 
 static void process_urc_line(const char *line)
 {
-    /* +IPCLOSE: <link_num>,<reason> — remote closed */
+    /* +IPCLOSE: <link_num>,<reason>, remote closed */
     if (strncmp(line, "+IPCLOSE:", 9) == 0) {
         int link_num = atoi(line + 9);
         if (link_num >= 0 && link_num < AT_SOCK_MAX) {
@@ -145,7 +145,7 @@ static void process_urc_line(const char *line)
         return;
     }
 
-    /* +CIPOPEN: <link_num>,<err> — async connect result */
+    /* +CIPOPEN: <link_num>,<err>, async connect result */
     if (strncmp(line, "+CIPOPEN:", 9) == 0) {
         int link_num, err;
         if (sscanf(line + 9, " %d,%d", &link_num, &err) == 2) {
@@ -163,7 +163,7 @@ static void process_urc_line(const char *line)
         return;
     }
 
-    /* +CIPRXGET: 1,<link_num> — data notification (we ignore; we poll actively) */
+    /* +CIPRXGET: 1,<link_num>, data notification (we ignore; we poll actively) */
     if (strncmp(line, "+CIPRXGET: 1,", 13) == 0) {
         int link_num = atoi(line + 13);
         ESP_LOGD(TAG, "URC: data notification on link %d (ignored, will poll)", link_num);
@@ -206,7 +206,7 @@ static void process_urcs_in_response(const char *resp)
 }
 
 /* ============================================================================
- * AT Command Helpers (single-reader model — sole UART reader)
+ * AT Command Helpers (single-reader model: sole UART reader)
  * ========================================================================== */
 
 /* Binary-safe search: find needle in haystack of given length.
@@ -476,7 +476,7 @@ static int at_read_data_chunk(int link_num, int max_bytes, int *out_remaining)
                 return 0;
             }
 
-            /* Parse the header — look for the line ending with \n after +CIPRXGET */
+            /* Parse the header: look for the line ending with \n after +CIPRXGET */
             char *p = strstr(hdr, "+CIPRXGET: 2,");
             if (p) {
                 char *nl = strchr(p, '\n');
@@ -508,7 +508,7 @@ static int at_read_data_chunk(int link_num, int max_bytes, int *out_remaining)
     }
 
     /* Track total bytes written to ring.
-     * Phase 1 may have piggybacked some data — actual_len was reduced. */
+     * Phase 1 may have piggybacked some data: actual_len was reduced. */
     int orig_actual = actual_len;
     {
         int ln_dummy, parsed_actual = 0;
@@ -519,7 +519,7 @@ static int at_read_data_chunk(int link_num, int max_bytes, int *out_remaining)
     int total_written = orig_actual - actual_len; /* Phase 1 piggyback */
 
     /* Phase 2: Read remaining binary data bytes directly into ring buffer.
-     * We know exactly how many bytes to expect — no string parsing needed.
+     * We know exactly how many bytes to expect: no string parsing needed.
      * Use a large buffer to minimize uart_read_bytes() calls (each call has
      * timeout overhead even when data is available). */
     uint8_t chunk[1460];
@@ -534,7 +534,7 @@ static int at_read_data_chunk(int link_num, int max_bytes, int *out_remaining)
     }
 
     /* Phase 3: Consume trailing \r\nOK\r\n (don't care about exact content).
-     * Short timeout — data is already flowing, just need to clear the tail. */
+     * Short timeout: data is already flowing, just need to clear the tail. */
     uint8_t trail[32];
     uart_read_bytes(UART_NUM, trail, sizeof(trail), pdMS_TO_TICKS(5));
 
@@ -691,7 +691,7 @@ int ml_at_socket(int domain, int type, int protocol)
         return -1;
     }
 
-    /* Accept AF_INET and AF_INET6 — the modem handles IPv6 transparently
+    /* Accept AF_INET and AF_INET6: the modem handles IPv6 transparently
      * via AT+CIPOPEN with IPv6 address strings. The domain is stored but
      * the AT bridge doesn't differentiate at the link level. */
     if (domain != AF_INET && domain != AF_INET6) {
@@ -744,7 +744,7 @@ int ml_at_connect(int fd, const struct sockaddr *addr, socklen_t addrlen)
     ml_at_sock_t *s = fd_to_sock(fd);
     if (!s) { errno = EBADF; return -1; }
 
-    char ip_str[INET6_ADDRSTRLEN];  /* 46 bytes — fits IPv4 and IPv6 */
+    char ip_str[INET6_ADDRSTRLEN];  /* 46 bytes: fits IPv4 and IPv6 */
     uint16_t port;
     sockaddr_to_str(addr, ip_str, sizeof(ip_str), &port);
 
@@ -881,7 +881,7 @@ ssize_t ml_at_recv(int fd, void *buf, size_t len, int flags)
     ml_at_sock_t *s = fd_to_sock(fd);
     if (!s) { errno = EBADF; return -1; }
 
-    /* Check ring buffer first — fast path, no AT commands */
+    /* Check ring buffer first: fast path, no AT commands */
     size_t avail = ring_used(s);
     if (avail > 0) {
         size_t to_read = (avail < len) ? avail : len;
@@ -922,7 +922,7 @@ ssize_t ml_at_recv(int fd, void *buf, size_t len, int flags)
 
     do {
         if (!first_poll) {
-            /* Short fixed delay between polls — 10ms balances throughput
+            /* Short fixed delay between polls: 10ms balances throughput
              * with CPU usage. Lower than 10ms starves other tasks. */
             vTaskDelay(pdMS_TO_TICKS(10));
         }
@@ -941,7 +941,7 @@ ssize_t ml_at_recv(int fd, void *buf, size_t len, int flags)
             total_drained += got;
 
             /* If modem still has data (ring was full), try again after
-             * reading from ring — but this is rare with 8KB ring */
+             * reading from ring, but this is rare with 8KB ring */
         }
         xSemaphoreGive(s_at.at_mutex);
 
@@ -961,7 +961,7 @@ ssize_t ml_at_recv(int fd, void *buf, size_t len, int flags)
             return 0;
         }
 
-        /* No data — yield to let lower-priority tasks (DERP connect) run */
+        /* No data: yield to let lower-priority tasks (DERP connect) run */
         vTaskDelay(1);
 
     } while ((esp_timer_get_time() - start) < timeout_us);
@@ -982,7 +982,7 @@ ssize_t ml_at_sendto(int fd, const void *buf, size_t len, int flags,
         return ml_at_send(fd, buf, len, flags);
     }
 
-    char ip_str[INET6_ADDRSTRLEN];  /* 46 bytes — fits IPv4 and IPv6 */
+    char ip_str[INET6_ADDRSTRLEN];  /* 46 bytes: fits IPv4 and IPv6 */
     uint16_t port;
     sockaddr_to_str(dest_addr, ip_str, sizeof(ip_str), &port);
 
@@ -1148,7 +1148,7 @@ int ml_at_setsockopt(int fd, int level, int optname,
     }
 
     if (level == IPPROTO_TCP) {
-        /* TCP_KEEPIDLE, TCP_KEEPINTVL, TCP_KEEPCNT — accept but no-op */
+        /* TCP_KEEPIDLE, TCP_KEEPINTVL, TCP_KEEPCNT: accept but no-op */
         return 0;
     }
 
@@ -1240,7 +1240,7 @@ int ml_at_select(int nfds, fd_set *readfds, fd_set *writefds,
 
         if (ready_count > 0) break;
 
-        /* No data — yield to let lower-priority tasks (DERP connect) run,
+        /* No data: yield to let lower-priority tasks (DERP connect) run,
          * then wait before polling again */
         vTaskDelay(1);
 
@@ -1274,7 +1274,7 @@ int ml_at_getaddrinfo(const char *hostname, const char *service,
     /* Check if hostname is already an IP address */
     struct in_addr test_addr;
     if (inet_aton(hostname, &test_addr)) {
-        /* It's already an IP — build result directly */
+        /* It's already an IP: build result directly */
         struct addrinfo *ai = calloc(1, sizeof(struct addrinfo) + sizeof(struct sockaddr_in));
         if (!ai) return EAI_MEMORY;
 
@@ -1294,7 +1294,7 @@ int ml_at_getaddrinfo(const char *hostname, const char *service,
         return 0;
     }
 
-    /* Resolve via AT+CDNSGIP — this is an ASYNC command.
+    /* Resolve via AT+CDNSGIP: this is an ASYNC command.
      * The modem replies "OK" immediately, then sends "+CDNSGIP: 1,..." as a URC.
      * We use at_cmd_wait_urc() to keep reading until we see the result. */
     char cmd[256];
@@ -1355,7 +1355,7 @@ int ml_at_getaddrinfo(const char *hostname, const char *service,
         return EAI_NONAME;
     }
 
-    /* First pass: look for an IPv4 address (preferred — works with our full stack) */
+    /* First pass: look for an IPv4 address (preferred, works with our full stack) */
     for (int i = 0; i < ip_count; i++) {
         if (inet_aton(ips[i], &test_addr)) {
             ESP_LOGI(TAG, "DNS: %s -> %s (IPv4)", hostname, ips[i]);
@@ -1380,7 +1380,7 @@ int ml_at_getaddrinfo(const char *hostname, const char *service,
         }
     }
 
-    /* Second pass: no IPv4 found — try IPv6 */
+    /* Second pass: no IPv4 found, try IPv6 */
     struct in6_addr addr6;
     for (int i = 0; i < ip_count; i++) {
         if (inet_pton(AF_INET6, ips[i], &addr6) == 1) {

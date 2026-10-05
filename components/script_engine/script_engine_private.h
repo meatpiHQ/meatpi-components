@@ -52,7 +52,7 @@ void se_set_trigger(const em_event_t *ev);
 /* Register the `script.run` event action (script_engine_events.c). */
 void se_events_register(void);
 
-/* Cooperative budget/kill check — bindings call it at every I/O point. */
+/* Cooperative budget/kill check: bindings call it at every I/O point. */
 void se_check_budget(bvm *vm);
 
 esp_err_t script_engine_register_cli(void);

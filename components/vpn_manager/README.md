@@ -3,24 +3,24 @@
 WireGuard client (rewrite of legacy `vpn_manager`, decisions in
 `TASK_vpn_manager.md`). One peer described by settings; a small state
 task connects when the network is up AND the clock is valid
-(rtc_manager — WireGuard handshakes carry timestamps), verifies the
+(rtc_manager: WireGuard handshakes carry timestamps), verifies the
 handshake, publishes `DEV_STATUS_BIT_VPN_ENABLED` + the
 `vpn.state {connected}` event, and reconnects with 5→60 s backoff on
 failure, network loss, or 30 s of peer silence.
 
 Crypto/tunnel = the vendored [components/esp_wireguard](../esp_wireguard/)
-port (trombik; PROVENANCE.md) — this component is its only consumer.
+port (trombik; PROVENANCE.md): this component is its only consumer.
 
 ## Settings (`vpn_manager`, v1, reboot-to-apply)
 
 `enabled` (false), `type` (wireguard), `private_key`*,
 `peer_public_key`, `preshared_key`* (optional), `address` (local
-tunnel IP, optional /cidr — ALWAYS the WG netif address),
+tunnel IP, optional /cidr: ALWAYS the WG netif address),
 `allowed_ip` + `allowed_ip_mask` (the AllowedIPs subnet; only its
-netmask reaches lwIP — it steers tunnel-subnet destinations into the
+netmask reaches lwIP: it steers tunnel-subnet destinations into the
 WG netif. 0.0.0.0 = plain /32; see BUG_WG_NETIF_ADDR.md), `endpoint`,
 `port` (51820),
-`keepalive_s` (25), `default_route` (false — meatpi: only the allowed
+`keepalive_s` (25), `default_route` (false: meatpi: only the allowed
 range routes), `dns` (optional override, saved/restored around the
 connection), `cli` (true).
 
@@ -41,9 +41,9 @@ registration at the server. Reboot applies.
 
 ## Surfaces
 
-- `GET /api/vpn` — `{state, endpoint, connects, failures, uptime_s}`.
-- `POST /api/vpn/keygen` — `{public_key, pending_reboot:true}`.
-- CLI `vpn` — same status as text.
+- `GET /api/vpn`: `{state, endpoint, connects, failures, uptime_s}`.
+- `POST /api/vpn/keygen`: `{public_key, pending_reboot:true}`.
+- CLI `vpn`, same status as text.
 - Event source `vpn.state {connected}`.
 
 ## MQTT-behind-the-tunnel
@@ -57,4 +57,4 @@ latency ever hurts, add a rule on `vpn.state`.
 PSRAM: 6 KB state-task stack, plus the two peer-snapshot tables of the HTTP and CLI surfaces (1.3 KB each, PSRAM since 2026-09-22). Internal: FreeRTOS objects + the lwip
 netif esp_wireguard creates while up. Host tests: `host_test/`
 (6 tests, pure config checks). Bench: WireGuard server on rpi001,
-LOCAL-ONLY (TASK §3.1) — handshake + ping + MQTT-through-tunnel.
+LOCAL-ONLY (TASK §3.1), handshake + ping + MQTT-through-tunnel.

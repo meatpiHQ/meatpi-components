@@ -144,7 +144,7 @@ uint32_t ls_ring_pop_batch(ls_ring_t *r, void *dst, uint32_t budget,
 
         if (written > 0 && written + len > budget)
         {
-            break; /* next whole record doesn't fit — leave it queued */
+            break; /* next whole record doesn't fit: leave it queued */
         }
 
         uint32_t room = budget - written;
@@ -181,7 +181,7 @@ int ls_rotate_victims(uint32_t *epochs, int n, int keep)
         return 0;
     }
 
-    /* insertion sort ascending — n is tiny (retention counts <= 16) */
+    /* insertion sort ascending: n is tiny (retention counts <= 16) */
     for (int i = 1; i < n; i++)
     {
         uint32_t v = epochs[i];

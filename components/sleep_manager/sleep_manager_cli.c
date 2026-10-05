@@ -23,7 +23,7 @@
 /**
  * @file sleep_manager_cli.c
  * @brief The `sleep` CLI command (§6b). `sleep test <secs>` forces a
- *        full sleep entry with a timed wake — the bench smoke.
+ *        full sleep entry with a timed wake: the bench smoke.
  */
 #include <stdlib.h>
 #include <string.h>
@@ -52,7 +52,7 @@ static int cmd_sleep(int argc, char **argv)
 
         if (err != ESP_OK)
         {
-            cmdline_printf("test sleep refused (%s) — enabled + "
+            cmdline_printf("test sleep refused (%s): enabled + "
                            "4..600 s\n", esp_err_to_name(err));
             return 1;
         }

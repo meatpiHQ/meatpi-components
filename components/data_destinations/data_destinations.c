@@ -25,12 +25,12 @@
  * @brief Lifecycle, the applied-config / runtime-state caches (mutex-
  *        guarded, PSRAM), the poster task and the status/test surface.
  *
- * The poster (PSRAM stack — every payload source is RAM: the autopid
+ * The poster (PSRAM stack: every payload source is RAM: the autopid
  * snapshot cache, the PSRAM config copy, dev_status getters; outbound
  * I/O goes through mqtt_manager / http_client_manager; stats are
  * cache-only) laps once a second (or at once when a test is requested):
  * for each enabled destination that is DUE it checks the link the type
- * needs (broker connected for MQTT, a network for HTTP/ABRP) — a down
+ * needs (broker connected for MQTT, a network for HTTP/ABRP), a down
  * link is a SKIPPED lap (counted, never a failure, never backed off:
  * the next lap after the link returns delivers), an attempt is booked
  * through the pure scheduler (success resets backoff; the 3rd
@@ -40,7 +40,7 @@
  *
  * STACK RULE (found on the bench 2026-09-19: the first build overflowed
  * the MAIN task's stack in _start): the applied table is ~10 KB, so it is
- * never copied onto a caller's stack — readers borrow it under the lock
+ * never copied onto a caller's stack, readers borrow it under the lock
  * (dd_config_lock/peek/unlock) or copy ONE destination (~1.3 KB, poster
  * only, on its 32 KB stack).
  */

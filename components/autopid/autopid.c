@@ -29,7 +29,7 @@
  *
  * Threading: s_lock guards the config tables + scheduler state. The
  * poller task copies what it needs per iteration and NEVER touches the
- * filesystem — config loads run in the caller's context (main at boot,
+ * filesystem: config loads run in the caller's context (main at boot,
  * httpd on PUT), then re-arm the scheduler.
  */
 #include "autopid.h"
@@ -69,7 +69,7 @@ static StaticSemaphore_t s_lock_buf;   /* internal: FreeRTOS object */
 static bool s_started;
 
 /* enabled: seeded by on_apply (ap_core_set_enabled), cleared by
- * autopid_stop() — runtime-mutated, so it lives here; the boot-applied
+ * autopid_stop(), runtime-mutated, so it lives here; the boot-applied
  * knobs live in autopid_settings.c */
 static bool s_enabled;
 
@@ -105,7 +105,7 @@ void ap_core_set_type_enabled(int type, bool enabled)
     s_sched.type_enabled[type] = enabled;
 }
 
-/* ---- config (re)load — CALLER context, never the poller -------------------------- */
+/* ---- config (re)load: CALLER context, never the poller -------------------------- */
 
 static void arm_scheduler(void)
 {
@@ -231,7 +231,7 @@ esp_err_t autopid_start(void)
         }
     }
 
-    /* DTC databases + DBC files: cache loads need flash reads — main
+    /* DTC databases + DBC files: cache loads need flash reads, main
      * task context (internal stack) is the sanctioned place (§2) */
     ap_dtc_db_load_all();
     ap_dbc_load_all();
@@ -255,7 +255,7 @@ esp_err_t autopid_stop(void)
     s_started = false;
     dev_status_manager_clear(DEV_STATUS_BIT_AUTOPID_ENABLED);
     /* AUTOPID_IDLE is set by the poller once any in-flight request
-     * finishes — sleep_manager waits on exactly that. */
+     * finishes: sleep_manager waits on exactly that. */
     return ESP_OK;
 }
 
@@ -279,7 +279,7 @@ ap_sched_t *ap_core_sched(void)
 }
 
 /* One-shot chip jobs (std scan / test-a-PID / dtc scan / dtc clear)
- * never interleave — each would trash the other's protocol/header
+ * never interleave: each would trash the other's protocol/header
  * state mid-flight (TASK_dtc.md §5). */
 static volatile bool s_job_busy;
 
@@ -369,7 +369,7 @@ esp_err_t autopid_get_value(const char *param, double *out_value,
 
     if (slot < 0)
     {
-        /* not a polled parameter — try the injected values (GPS etc.) */
+        /* not a polled parameter: try the injected values (GPS etc.) */
         return ap_ext_get(param, out_value, out_ts_us) ? ESP_OK
                                                        : ESP_ERR_NOT_FOUND;
     }

@@ -1,4 +1,4 @@
-# led_manager — host unit tests
+# led_manager: host unit tests
 
 The pure indication arbiter (`led_manager_policy.c`: no I2C, no FreeRTOS),
 IDF `linux` target. Run via `.\test.ps1 host led_manager`. The chip layer

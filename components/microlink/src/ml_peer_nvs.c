@@ -41,7 +41,7 @@ typedef struct __attribute__((packed)) {
     } __attribute__((packed)) endpoints[2]; /* 12 bytes */
     uint8_t endpoint_count;         /* 1 byte */
     char hostname_short[7];         /* 7 bytes (truncated) */
-    uint16_t lru_counter;           /* 2 bytes — higher = more recently used */
+    uint16_t lru_counter;           /* 2 bytes: higher = more recently used */
 } peer_nvs_entry_t;                 /* Total: 92 bytes */
 
 /* In-memory table (loaded from NVS blob) */
@@ -159,7 +159,7 @@ esp_err_t ml_peer_nvs_save(const ml_peer_t *peer) {
     }
 
     /* NVS wear guard: every full netmap (one per reconnect) re-adds every
-     * peer, and the LRU stamp makes the blob differ each time — so an
+     * peer, and the LRU stamp makes the blob differ each time, so an
      * unconditional flush burns a flash write per peer per reconnect for
      * peers that haven't changed at all. If the entry is identical apart
      * from recency, bump the LRU in RAM only; it is persisted piggybacked

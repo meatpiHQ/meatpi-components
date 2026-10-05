@@ -410,8 +410,8 @@ int usbh_cdc_ncm_eth_output(uint32_t buflen)
     usbh_bulk_urb_fill(&g_cdc_ncm_class.bulkout_urb, g_cdc_ncm_class.hport, g_cdc_ncm_class.bulkout, g_cdc_ncm_tx_buffer, nth16->wBlockLength, USB_OSAL_WAITING_FOREVER, NULL, NULL);
     int ret = usbh_submit_urb(&g_cdc_ncm_class.bulkout_urb);
 
-    /* WICAN FIX (BUG_NCM_HOST_TX_ZLP.md, PROVENANCE.md): NCM 1.0 §3.2.2
-     * — an NTB whose length is an exact multiple of the bulk MPS must be
+    /* WICAN FIX (BUG_NCM_HOST_TX_ZLP.md, PROVENANCE.md): NCM 1.0 §3.2.2,
+     * an NTB whose length is an exact multiple of the bulk MPS must be
      * terminated with a ZLP, or the device's OUT transfer never
      * completes and the frame is silently swallowed. Found live: a DHCP
      * DISCOVER frames to wBlockLength 384 = 6 x 64 (FS MPS) exactly, so

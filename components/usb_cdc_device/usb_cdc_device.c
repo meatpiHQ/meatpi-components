@@ -26,7 +26,7 @@
  *        over serial. See include/usb_cdc_device.h.
  *
  * Context rules mirror usb_net_device: CherryUSB endpoint/class callbacks
- * run in the USB INTERRUPT on the ESP port — they only move bytes to/from
+ * run in the USB INTERRUPT on the ESP port, they only move bytes to/from
  * a StreamBuffer and flip flags. A PSRAM-stacked session task owns the
  * blocking j2534_server_serve_serial() loop; the server's read/write go
  * through the transport vtable registered here.
@@ -297,11 +297,11 @@ static void ucd_session_task(void *arg)
 
         /* flush any stale RX from a previous session before serving */
         xStreamBufferReset(s_rx_sb);
-        ESP_LOGI(TAG, "port open — serving J2534 over CDC-ACM");
+        ESP_LOGI(TAG, "port open: serving J2534 over CDC-ACM");
         j2534_server_serve_serial();     /* blocks for the session */
         ESP_LOGI(TAG, "serial session ended");
         /* serve_serial returns instantly if the server is disabled or a
-         * TCP tester holds the session — throttle so we don't spin */
+         * TCP tester holds the session: throttle so we don't spin */
         vTaskDelay(pdMS_TO_TICKS(200));
     }
 }
@@ -368,8 +368,8 @@ esp_err_t usb_cdc_device_start(void)
     }
 
     s_started = true;
-    ESP_LOGI(TAG, "up: CDC-ACM J2534 serial device (vid 0x%04x pid 0x%04x) "
-             "— waiting for the host", CONFIG_WICAN_USB_DEV_VID,
+    ESP_LOGI(TAG, "up: CDC-ACM J2534 serial device (vid 0x%04x pid 0x%04x), "
+             "waiting for the host", CONFIG_WICAN_USB_DEV_VID,
              CONFIG_WICAN_USB_DEV_PID_CDC);
     return ESP_OK;
 }

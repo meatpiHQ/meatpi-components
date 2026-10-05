@@ -23,7 +23,7 @@
 /**
  * @file bridge_manager_private.h
  * @brief Internal API between bridge_manager translation units, incl. the
- *        pure config layer (host-testable — no FreeRTOS/IDF runtime deps).
+ *        pure config layer (host-testable: no FreeRTOS/IDF runtime deps).
  */
 #pragma once
 
@@ -39,14 +39,14 @@
 extern "C" {
 #endif
 
-#define BM_CTX_MAX 4096 /* per-direction translator ctx pool slot size —
+#define BM_CTX_MAX 4096 /* per-direction translator ctx pool slot size:
                            256 until 2026-07-22; canmqtt keeps its frame
                            batch + JSON build buffer + tx reassembly ALL
-                           in ctx (never on the 4 KB pump stack — the
+                           in ctx (never on the 4 KB pump stack: the
                            stack-audit lesson), which needs ~4 KB. Slots
                            are PSRAM (2 x 6 bridges x 4 KB = 48 KB). */
 
-/* ---- pure config layer (bridge_manager_config.c — host-tested) ------------- */
+/* ---- pure config layer (bridge_manager_config.c: host-tested) ------------- */
 
 typedef struct
 {
@@ -68,9 +68,9 @@ esp_err_t bm_parse_bridge(const cJSON *item, bm_bridge_cfg_t *out);
  * (single-consumer rule: two bridges reading one endpoint would split its
  * RX stream between their queues nondeterministically) UNLESS its
  * endpoint_multi flag says the provider fans RX out to every subscriber
- * (obd — the default TCP+USB passthrough pair rides this).
+ * (obd: the default TCP+USB passthrough pair rides this).
  * ep_count/tr_count < 0 = registry not final (BOOT apply): the existence
- * checks AND the single-consumer rule are skipped — capabilities are
+ * checks AND the single-consumer rule are skipped, capabilities are
  * unknowable before the jacks register, boot values are either the
  * authored default or survived a strict runtime PUT, and build_bridge
  * degrades a refused second subscribe alone. endpoint_multi is parallel
@@ -95,7 +95,7 @@ const void *bm_core_translator(const char *name);  /* bridge_translator_t* */
 int bm_core_endpoint_names(const char **out, bool *multi_out, int cap);
 int bm_core_translator_names(const char **out, int cap);
 
-/** True once bridge_manager_start ran — the registry is FINAL, so the
+/** True once bridge_manager_start ran: the registry is FINAL, so the
  *  settings validator may enforce name existence (runtime PUTs). At the
  *  boot apply this is false and existence checks are skipped (dynamic
  *  socket/WS jacks register at bridge_endpoints_start, in between). */

@@ -22,7 +22,7 @@
 
 /**
  * @file espnetlink_link_cli.c
- * @brief `espnetlink` — status; `espnetlink pair <ssid> <password>`;
+ * @brief `espnetlink`: status; `espnetlink pair <ssid> <password>`;
  *        `espnetlink repair` (VBUS cycle -> key re-read). Registered on
  *        the settings boot apply when `cli` is true.
  */
@@ -61,7 +61,7 @@ static int cmd_espnetlink(int argc, char **argv)
             cmdline_printf("pair failed: %s\n", esp_err_to_name(err));
             return 1;
         }
-        cmdline_printf("paired '%s' (wifi slot %d) — reboot to apply\n",
+        cmdline_printf("paired '%s' (wifi slot %d): reboot to apply\n",
                        argv[2], slot);
         return 0;
     }

@@ -31,7 +31,7 @@
  *   encode : slcan ASCII stream (from the client) → CAN-wire chunk(s)
  *
  * Bridge config rule: the CAN endpoint is side `a` (a→b = decode). Channel
- * commands (O/C/S/Z/M/m/V/N/F…) are ABSORBED — the bus is owned by
+ * commands (O/C/S/Z/M/m/V/N/F…) are ABSORBED: the bus is owned by
  * can_manager settings, and python-can's `slcan` interface needs no replies.
  */
 #include <stddef.h>
@@ -41,7 +41,7 @@
 #include "bridge_manager.h"
 #include "can_frame_wire.h"
 
-/* client command assembly — one '\r'-terminated line at a time. SLCAN_MTU is
+/* client command assembly: one '\r'-terminated line at a time. SLCAN_MTU is
  * ~30; 48 gives headroom. Used by encode; decode ignores it. */
 typedef struct
 {
@@ -101,11 +101,11 @@ static esp_err_t slcan_decode(void *ctx, const uint8_t *in, size_t len,
 
     (void)ctx;
 
-    /* chunks may be COALESCED (several wire frames per chunk — the can
+    /* chunks may be COALESCED (several wire frames per chunk: the can
        endpoint packs them since 2026-07-18); the lines are batched into
        ONE sink call per chunk so frame-bound transports (ws_can: one
        sink call = one WS frame) ride the same lift. Clients must accept
-       multiple CR-terminated slcan records per transport frame — that
+       multiple CR-terminated slcan records per transport frame: that
        is stream-legal slcan. Malformed tail = dropped, stream keeps
        going. */
     char batch[512];

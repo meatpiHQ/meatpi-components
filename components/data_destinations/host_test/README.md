@@ -1,6 +1,6 @@
 # data_destinations host suite
 
-Covers the PURE core (`data_destinations_core.c`) only — no IDF glue:
+Covers the PURE core (`data_destinations_core.c`) only: no IDF glue:
 
 - settings-item parse/normalize: defaults (mqtt, `~/autopid`, 5 s,
   retained), scheme prepending per type, the ABRP default endpoint and

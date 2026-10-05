@@ -22,7 +22,7 @@
 
 /**
  * @file script_engine_obd.h
- * @brief obd.* conversation core (pure over an injected port — see
+ * @brief obd.* conversation core (pure over an injected port, see
  *        script_engine_obd.c). The Berry glue lives in
  *        script_engine_bind.c; the device port install in
  *        script_engine.c; host tests inject fakes.

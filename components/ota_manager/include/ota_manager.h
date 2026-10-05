@@ -25,18 +25,18 @@
  * @brief WiCAN firmware update manager (core service).
  *
  * Owns the device's OWN firmware update: the OTA session over the
- * `ota_0`/`ota_1` app partitions (esp_ota). TRANSPORT-AGNOSTIC by design —
+ * `ota_0`/`ota_1` app partitions (esp_ota). TRANSPORT-AGNOSTIC by design:
  * the manager exposes one byte-stream session (`begin` → `write`× →
  * `end`/`abort`) and transports feed it:
  *
  *   - today:  HTTP multipart upload from the web UI (`api_http` glue,
- *             `POST /api/ota/upload` — the HTML form path)
- *   - later:  raw HTTP body, TCP, MQTT, … — same four calls, no changes
+ *             `POST /api/ota/upload`, the HTML form path)
+ *   - later:  raw HTTP body, TCP, MQTT, …, same four calls, no changes
  *             here (ownership inversion, Architecture §2)
  *
  * One session at a time. `end()` validates the image (esp_ota magic/digest)
  * and sets the boot partition; the TRANSPORT then reboots via
- * `restart_tracker_restart(OTA_APPLY, <source>)` — never from here, and
+ * `restart_tracker_restart(OTA_APPLY, <source>)`: never from here, and
  * never a raw esp_restart(). A failed/aborted session leaves the running
  * firmware untouched (the inactive partition is scratch space).
  *
@@ -99,7 +99,7 @@ esp_err_t ota_manager_abort(void);
 esp_err_t ota_manager_status(ota_manager_status_t *out);
 
 /** State-change notification (RECEIVING at begin, READY/FAILED/IDLE at
- *  end/abort). Runs in the TRANSPORT's context, outside the session lock —
+ *  end/abort). Runs in the TRANSPORT's context, outside the session lock:
  *  keep it short. One consumer: the composition root (e.g. wiring the
  *  "update in progress" LED indication). Register before start(). */
 typedef void (*ota_manager_event_cb_t)(ota_manager_state_t state);

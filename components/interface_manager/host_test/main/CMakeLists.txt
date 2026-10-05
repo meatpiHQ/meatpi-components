@@ -1,4 +1,4 @@
-# Host test compiles ONLY the pure policy — no wifi/ble deps.
+# Host test compiles ONLY the pure policy: no wifi/ble deps.
 set(comp_dir "${CMAKE_CURRENT_LIST_DIR}/../..")
 
 idf_component_register(

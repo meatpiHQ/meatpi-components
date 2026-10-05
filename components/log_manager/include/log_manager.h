@@ -25,12 +25,12 @@
  * @brief WiCAN Debug Log Manager (core component, Coding Standard §9).
  *
  * Owns the log pipeline: it installs itself via esp_log_set_vprintf(), so
- * every component (and IDF internals) keeps calling plain ESP_LOGx — no
+ * every component (and IDF internals) keeps calling plain ESP_LOGx, no
  * wrapper macros, no call-site migration. Captured lines flow through a
  * fixed-depth PSRAM queue drained by a dedicated log task into **sinks**.
  *
  * Routing is fully pluggable (§9.3): a sink is just {name, write(line,len)}.
- * Built in: "console" (UART, always available from init) and "ring" — a
+ * Built in: "console" (UART, always available from init) and "ring", a
  * PSRAM `.noinit` ring buffer that SURVIVES warm resets (same
  * magic/version/CRC + cache-msync pattern as restart_tracker), so the last
  * ~16 KiB of logs are readable after a crash with ZERO flash wear.
@@ -39,7 +39,7 @@
  * sink MUST batch + rate-limit its flushes and hand writes to an
  * internal-stack task (§2 corollary; see README for the wear-safe recipe).
  *
- * Pipeline rules (§9.5): producers never block — if the queue is full the
+ * Pipeline rules (§9.5): producers never block, if the queue is full the
  * oldest entry is dropped and a counter increments ("dropped N" is emitted
  * when pressure clears). A sink's write runs in the log task only, so a slow
  * sink can never stall a producer. No logging from ISRs.
@@ -86,7 +86,7 @@ esp_err_t log_manager_start(void);
 /** Stop the task (drains first); fall back to synchronous console+ring. */
 esp_err_t log_manager_stop(void);
 
-/** Register this component's settings descriptor ("log_manager") — call
+/** Register this component's settings descriptor ("log_manager"): call
  *  after settings_manager_init(), before settings_manager_start(). */
 esp_err_t log_manager_register_settings(void);
 
@@ -99,7 +99,7 @@ esp_err_t log_manager_register(const log_descriptor_t *desc);
 esp_err_t log_manager_set_level(const char *name, esp_log_level_t level);
 
 /** Cumulative E/W line counts since boot (health surface: a clean boot
- *  logs ZERO errors — the bench asserts it; every silent degradation is
+ *  logs ZERO errors, the bench asserts it; every silent degradation is
  *  an ESP_LOGE somebody scrolled past). Either pointer may be NULL. */
 void log_manager_health(uint32_t *errors, uint32_t *warnings);
 
@@ -118,7 +118,7 @@ esp_err_t log_manager_sink_get(size_t index, const char **name, bool *enabled);
 /** Total lines dropped by backpressure since boot. */
 uint32_t log_manager_dropped_count(void);
 
-/** Sink-registry occupancy (§12 — cross-component registrants since
+/** Sink-registry occupancy (§12: cross-component registrants since
  *  log_sinks; main wires this into the WICAN CAPS line). Either pointer
  *  may be NULL. */
 void log_manager_sinks_capacity(size_t *used, size_t *cap);

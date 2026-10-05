@@ -23,10 +23,10 @@
 /**
  * @file led_manager_http.c
  * @brief The /api/led routes (§9.1: feature components register their own
- *        domain routes) — main calls led_manager_register_http() only in
+ *        domain routes), main calls led_manager_register_http() only in
  *        HTTP compositions, so the LED code carries no HTTP dependency.
  *
- * The REST client drives the ALERT priority — the same user-facing slot
+ * The REST client drives the ALERT priority: the same user-facing slot
  * the `led -c` CLI command uses. Firmware-internal indications (STATUS,
  * OTA's CRITICAL) are never writable from outside: the arbiter's ladder
  * stays honest.
@@ -67,7 +67,7 @@ static const char *prio_name(led_manager_prio_t prio)
     }
 }
 
-/* GET /api/led — what the LED is showing right now (the arbiter's winner). */
+/* GET /api/led: what the LED is showing right now (the arbiter's winner). */
 static esp_err_t led_get_handler(httpd_req_t *req)
 {
     led_manager_prio_t  prio;
@@ -100,7 +100,7 @@ static esp_err_t send_simple(httpd_req_t *req, const char *status,
 }
 
 /* PUT /api/led {"r":0-255,"g":..,"b":..[,"mode":"solid|blink_slow|
-   blink_fast|off"]} — set the ALERT indication (the user slot). */
+   blink_fast|off"]}: set the ALERT indication (the user slot). */
 static esp_err_t led_put_handler(httpd_req_t *req)
 {
     char buf[160];
@@ -178,7 +178,7 @@ static esp_err_t led_put_handler(httpd_req_t *req)
     return send_simple(req, "200 OK", "{\"ok\":true}");
 }
 
-/* DELETE /api/led — release the ALERT indication (arbiter falls back). */
+/* DELETE /api/led: release the ALERT indication (arbiter falls back). */
 static esp_err_t led_delete_handler(httpd_req_t *req)
 {
     if (led_manager_clear(LED_MANAGER_PRIO_ALERT) != ESP_OK)

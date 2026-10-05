@@ -22,7 +22,7 @@
 
 /**
  * @file autopid_cache.c
- * @brief The live parameter value cache — one slot per pooled parameter,
+ * @brief The live parameter value cache: one slot per pooled parameter,
  *        lock-protected snapshots. The single source every output reads
  *        (API, CLI, ${autopid.data}, Phase-3 events).
  */
@@ -48,7 +48,7 @@ static ap_slot_t s_cache[AP_MAX_PARAMS] EXT_RAM_BSS_ATTR;
 static SemaphoreHandle_t s_lock;
 static StaticSemaphore_t s_lock_buf; /* internal: FreeRTOS object */
 
-/* External injected values (GPS etc.) — small, name-keyed, config-agnostic.
+/* External injected values (GPS etc.): small, name-keyed, config-agnostic.
  * Shares s_lock with the slot cache. */
 #define AP_MAX_EXTERNAL 12
 
@@ -78,8 +78,8 @@ void ap_cache_clear(void)
 {
     xSemaphoreTake(s_lock, portMAX_DELAY);
     memset(s_cache, 0, sizeof(s_cache));
-    /* s_ext is NOT cleared: external samples (GPS) are config-independent
-     * — a config reload must not blank the last known position */
+    /* s_ext is NOT cleared: external samples (GPS) are config-independent,
+     * a config reload must not blank the last known position */
     xSemaphoreGive(s_lock);
 }
 
@@ -289,7 +289,7 @@ cJSON *ap_cache_detail(const ap_config_t *cfg)
         cJSON_AddItemToArray(arr, p);
     }
 
-    /* external injected values (GPS etc.) — listed like real params */
+    /* external injected values (GPS etc.), listed like real params */
     for (int i = 0; i < AP_MAX_EXTERNAL; i++)
     {
         if (!s_ext[i].valid)

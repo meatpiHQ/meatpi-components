@@ -126,7 +126,7 @@ static void *cjson_psram_malloc(size_t size) {
  *
  * Creates a static task with its stack in PSRAM and its TCB in internal
  * RAM. For microlink's TLS/socket/crypto tasks (net_io/derp_tx/coord)
- * that never touch flash — moving 34 KB of stacks off the scarce
+ * that never touch flash, moving 34 KB of stacks off the scarce
  * internal heap. Self-deletion via vTaskDelete(NULL) is safe for static
  * tasks (FreeRTOS just marks them done); the PSRAM stacks are freed by
  * ml_free_psram_task_stacks() in microlink_destroy after the join.
@@ -301,7 +301,7 @@ microlink_t *microlink_init(const microlink_config_t *config) {
 
     /* Initialize HTTP config server (loads NVS peer allowlist + settings) */
     /* WiCAN: coordination-server override from the caller's config
-     * (Headscale/Ionscale) — takes effect before any NVS override */
+     * (Headscale/Ionscale), takes effect before any NVS override */
     ml->ctrl_port = 80;
     if (config->control_url != NULL && config->control_url[0] != '\0') {
         strncpy(ml->ctrl_host, config->control_url, sizeof(ml->ctrl_host) - 1);
@@ -462,7 +462,7 @@ bsd_socket_fallback:
         int flags = ml_fcntl(ml->disco_sock4, F_GETFL, 0);
         ml_fcntl(ml->disco_sock4, F_SETFL, flags | O_NONBLOCK);
 
-        /* Record the actual bound port (getsockname not wrapped — AT sockets use stored port) */
+        /* Record the actual bound port (getsockname not wrapped: AT sockets use stored port) */
         struct sockaddr_in local_addr;
         socklen_t addr_len = sizeof(local_addr);
         getsockname(ml->disco_sock4, (struct sockaddr *)&local_addr, &addr_len);
@@ -478,11 +478,11 @@ skip_bsd_socket:
 
     /* Create tasks.
      * WiCAN (internal-RAM budget): net_io/derp_tx/coord run PSRAM
-     * stacks (34 KB moved off internal) — they do TLS/sockets/crypto
+     * stacks (34 KB moved off internal), they do TLS/sockets/crypto
      * only, never flash, so the §2 corollary allows it. Their TCBs stay
      * internal (the scheduler touches TCBs). wg_mgr KEEPS an internal
      * stack: it writes the peer cache to NVS (flash), which a PSRAM
-     * stack forbids. Self-deleting static tasks are safe — the memory
+     * stack forbids. Self-deleting static tasks are safe: the memory
      * is ours; the PSRAM stacks are freed in microlink_destroy. */
     BaseType_t ret;
 
@@ -540,7 +540,7 @@ esp_err_t microlink_stop(microlink_t *ml) {
 
     /* Wait for tasks to exit (they check ML_EVT_SHUTDOWN_REQUEST).
      * Tasks call vTaskDelete(NULL) to self-delete, so we must NOT call
-     * vTaskDelete() on them again — that causes a crash in uxListRemove
+     * vTaskDelete() on them again: that causes a crash in uxListRemove
      * because the task's list node is already invalid. WiCAN (2026-10-02):
      * a REAL join of the static tasks (their stacks are freed by destroy),
      * then a moment for the idle task to reap the dynamic wg_mgr task. */
@@ -577,7 +577,7 @@ void microlink_destroy(microlink_t *ml) {
 
     microlink_stop(ml);
 
-    /* WiCAN: PSRAM task stacks are ours to free — safe now that
+    /* WiCAN: PSRAM task stacks are ours to free, safe now that
      * microlink_stop() waited for the tasks to self-delete */
     ml_free_psram_task_stacks();
 
@@ -747,7 +747,7 @@ uint64_t ml_get_time_ms(void) {
 }
 
 /* ============================================================================
- * MagicDNS — Resolve tailnet hostnames against peer list
+ * MagicDNS: Resolve tailnet hostnames against peer list
  * ========================================================================== */
 
 /* Case-insensitive string compare (limited to len bytes) */

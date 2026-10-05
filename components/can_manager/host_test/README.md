@@ -1,6 +1,6 @@
 # can_core host tests
 
-Unity suite for `can_core_filter.c` — the pure CAN frame filter/mask
+Unity suite for `can_core_filter.c`: the pure CAN frame filter/mask
 match, id parse (11/29-bit), byte/byte-string parse, and hex-id formatting.
 These have no FreeRTOS/TWAI dependencies, so they run on the IDF `linux`
 target.

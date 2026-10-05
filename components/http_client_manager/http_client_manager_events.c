@@ -22,10 +22,10 @@
 
 /**
  * @file http_client_manager_events.c
- * @brief event_manager glue: `http.post {url, body, content_type?}` —
+ * @brief event_manager glue: `http.post {url, body, content_type?}`,
  *        the webhook/ABRP-style action. Fire-and-forget with counted
  *        errors, NO retries (design §12.3); runs in the dispatcher
- *        (8 KB PSRAM stack — the component's TLS work is heap-based,
+ *        (8 KB PSRAM stack: the component's TLS work is heap-based,
  *        response buffer freed immediately).
  */
 #include <string.h>
@@ -76,7 +76,7 @@ void hcm_events_register(void)
             "\"content_type\":{\"type\":\"string\"}},"
             "\"required\":[\"url\",\"body\"]}",
         .run = act_post,
-        .blocking = true, /* HTTP+TLS round-trip — off the dispatcher */
+        .blocking = true, /* HTTP+TLS round-trip: off the dispatcher */
     };
 
     (void)event_manager_register_action(&POST);

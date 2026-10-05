@@ -315,7 +315,7 @@ int ap_resp_collect_lines(const char *resp, ap_line_t *lines, int max,
                         lines[n_lines++] = parsed;
                     }
                 }
-                /* unparseable line (command echo remnants) — skip */
+                /* unparseable line (command echo remnants): skip */
             }
         }
 

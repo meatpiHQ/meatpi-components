@@ -23,7 +23,7 @@
 /**
  * @file espnetlink_link_core.c
  * @brief Pure helpers: document parsers (the same lightweight keyed scan
- *        as usb_acm_gps.c — no cJSON, so the host suite needs no IDF
+ *        as usb_acm_gps.c, no cJSON, so the host suite needs no IDF
  *        components), identity checks, URL build, and the pairing state
  *        machine (§3 of the ESPNetLink ↔ WiCAN integration contract).
  */
@@ -142,7 +142,7 @@ static bool val_num(const char *start, const char *end, const char *key,
     return true;
 }
 
-/* Copy a JSON string value (no escape processing beyond \" and \\ — the
+/* Copy a JSON string value (no escape processing beyond \" and \\: the
  * dongle never emits anything else in these documents). False when the
  * key is absent, not a string, or does not fit. */
 static bool val_str(const char *start, const char *end, const char *key,
@@ -179,7 +179,7 @@ static bool val_str(const char *start, const char *end, const char *key,
 }
 
 /* [start,end) of the object value for `"section":{...}` (one nesting
- * level — the health document is flat inside each section). */
+ * level: the health document is flat inside each section). */
 static bool section(const char *json, const char *quoted_key,
                     const char **start, const char **end)
 {
@@ -538,7 +538,7 @@ espnl_sm_action_t espnl_sm_step(espnl_sm_t *sm, espnl_sm_event_t ev,
             {
                 /* the key is fine, the WiCAN side cannot take it yet
                  * (factory AP password): a retry or a power cycle would
-                 * change nothing — park until the operator acts */
+                 * change nothing, park until the operator acts */
                 enter(sm, ESPNL_SM_HOLD, now_ms);
                 return ESPNL_ACT_NONE;
             }
@@ -622,7 +622,7 @@ espnl_sm_action_t espnl_sm_step(espnl_sm_t *sm, espnl_sm_event_t ev,
             if (ev == ESPNL_EV_OK || ev == ESPNL_EV_UNSUPPORTED)
             {
                 /* UNSUPPORTED: the dongle firmware has no settings API
-                 * for the class/sharing — the link itself works, so run
+                 * for the class/sharing, the link itself works, so run
                  * with what it offers (the engine reports the gap) */
                 sm->cycles = 0;
                 enter(sm, ESPNL_SM_NCM_UP, now_ms);

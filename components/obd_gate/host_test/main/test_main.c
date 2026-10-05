@@ -71,7 +71,7 @@ void test_expired_hold_is_reaped(void)
     /* just before the deadline: still held */
     TEST_ASSERT_FALSE(og_core_try(&g, &ELM0, HOLD - 1, HOLD));
 
-    /* at the deadline: stale — reaped and granted */
+    /* at the deadline: stale, reaped and granted */
     TEST_ASSERT_TRUE(og_core_try(&g, &ELM0, HOLD, HOLD));
     TEST_ASSERT_EQUAL_PTR(&ELM0, g.owner);
     TEST_ASSERT_EQUAL_UINT32(1, g.expiries);
@@ -114,7 +114,7 @@ void test_waiter_owns_next_turn(void)
     TEST_ASSERT_FALSE(og_core_try(&g, &ELM0, 10, HOLD));  /* -> waiter */
     og_core_release(&g, &CHIP);
 
-    /* chip's next command arrives FIRST — refused, the turn is reserved */
+    /* chip's next command arrives FIRST: refused, the turn is reserved */
     TEST_ASSERT_FALSE(og_core_try(&g, &CHIP, 12, HOLD));
     TEST_ASSERT_TRUE(og_core_try(&g, &ELM0, 20, HOLD));
     TEST_ASSERT_EQUAL_PTR(&ELM0, g.owner);

@@ -5,7 +5,7 @@
  *        parsers, the "changed?" compare, URL build, the settings
  *        migration, the shared GPS parser against the dongle's HTTP
  *        `/api/gps` document (latitude/longitude, unlike the console's
- *        lat/lon) — plus the pairing state machine (test_sm.c).
+ *        lat/lon), plus the pairing state machine (test_sm.c).
  */
 #include <string.h>
 

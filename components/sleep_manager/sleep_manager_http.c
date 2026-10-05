@@ -22,7 +22,7 @@
 
 /**
  * @file sleep_manager_http.c
- * @brief The optional /api/sleep status route (§9.1) — the UI's
+ * @brief The optional /api/sleep status route (§9.1): the UI's
  *        "sleep armed / countdown" banner reads this.
  */
 #include <stdio.h>

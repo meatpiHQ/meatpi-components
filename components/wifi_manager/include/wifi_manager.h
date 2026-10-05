@@ -36,12 +36,12 @@
  * scanning, and event callbacks only.
  *
  * Lifecycle (composition in main):
- *   wifi_manager_init()      — allocate state, register the settings
+ *   wifi_manager_init():       allocate state, register the settings
  *                              descriptor. Before settings_manager_start().
- *   settings_manager_start() — runs on_apply (stores config; touches no HW)
- *   wifi_manager_start()     — netifs + esp_wifi up per config; refuses with
+ *   settings_manager_start(): runs on_apply (stores config; touches no HW)
+ *   wifi_manager_start():      netifs + esp_wifi up per config; refuses with
  *                              ESP_ERR_INVALID_STATE if unconfigured (§4.3).
- *   wifi_manager_stop()      — stops the radio and the reconnect task.
+ *   wifi_manager_stop():       stops the radio and the reconnect task.
  *
  * Requires nvs_flash_init() before start (esp_wifi dependency); main owns
  * that, per §3 ("a component assumes its dependencies are already init'd").
@@ -67,7 +67,7 @@ extern "C" {
 #define WIFI_MANAGER_BIT_ENABLED         BIT3  /* radio started              */
 #define WIFI_MANAGER_BIT_STA_AP_OVERLAP  BIT4  /* STA and AP subnets overlap */
 
-/** Event callbacks. All run in the default event loop task — keep them short,
+/** Event callbacks. All run in the default event loop task: keep them short,
  *  never block, never call back into wifi_manager stop/start from them. */
 typedef struct
 {
@@ -91,7 +91,7 @@ esp_err_t wifi_manager_stop(void);
 /** Button config mode (2026-07-19): force the AP up with the
  *  boot-applied AP config regardless of the running mode (STA-only
  *  included; an existing STA link stays up). The ONE sanctioned runtime
- *  mode change — there is no reverse; config mode ends with a reboot
+ *  mode change: there is no reverse; config mode ends with a reboot
  *  back into the configured mode. No-op if the AP is already serving. */
 esp_err_t wifi_manager_config_ap(void);
 
@@ -158,7 +158,7 @@ esp_err_t wifi_manager_resume_ap(void);
  * Drop the current STA association NOW; the normal selection path
  * reconnects (same candidate rules, no settings touched). For a consumer
  * that KNOWS the association is dead while the driver still reports it
- * connected — an AP that rebooted and came back inside the beacon-loss
+ * connected: an AP that rebooted and came back inside the beacon-loss
  * window forgets its clients, so every socket times out on a "connected"
  * STA (espnetlink_link, bench 2026-08-24: the dongle's AP after a VBUS
  * cycle). ESP_ERR_INVALID_STATE when STA is not connected.
@@ -166,7 +166,7 @@ esp_err_t wifi_manager_resume_ap(void);
 esp_err_t wifi_manager_sta_reconnect(void);
 
 /** Whether the BOOT-CONFIGURED mode includes STA / AP (regardless of any
- *  runtime suspension) — policy inputs for interface_manager. */
+ *  runtime suspension): policy inputs for interface_manager. */
 bool wifi_manager_mode_has_sta(void);
 
 /** True while the APPLIED AP password is still the factory default. The
@@ -188,7 +188,7 @@ bool wifi_manager_mode_has_ap(void);
  * Network-trust admission gate for http_server_manager (wired by main):
  * false when the current STA network is marked untrusted AND the request
  * arrived via the STA address. Own-AP/USB requests always pass; outbound
- * clients are unaffected (meatpi 2026-07-08 — shared networks must not
+ * clients are unaffected (meatpi 2026-07-08, shared networks must not
  * expose configuration).
  */
 bool wifi_manager_http_request_allowed(int sockfd);
@@ -197,7 +197,7 @@ esp_err_t wifi_manager_register_http(void);
 
 /** Register the `wifi` CLI command with cmdline_manager. Called
  *  INTERNALLY on the settings boot apply when the `cli` setting is true
- *  (default) — main no longer wires it. */
+ *  (default): main no longer wires it. */
 esp_err_t wifi_manager_register_cli(void);
 
 #ifdef __cplusplus

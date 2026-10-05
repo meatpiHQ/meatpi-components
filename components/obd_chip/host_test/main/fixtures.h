@@ -2,7 +2,7 @@
  * @file fixtures.h
  * @brief Real chip logs for replay tests. LONG_22202A is a genuine car ECU
  *        answering proprietary PID 22202A with a 36-line ISO-TP response
- *        (supplied by meatpi 2026-07-03) — the "many, many lines" case the
+ *        (supplied by meatpi 2026-07-03): the "many, many lines" case the
  *        command engine must reassemble regardless of chunk boundaries.
  */
 #pragma once

@@ -22,7 +22,7 @@
 
 /**
  * @file espnetlink_link_migrate.c
- * @brief Settings migration for the "espnetlink" descriptor — cJSON
+ * @brief Settings migration for the "espnetlink" descriptor: cJSON
  *        only, no IDF deps, so the host suite exercises every shipped
  *        schema version (standard §5 / §7).
  */
@@ -56,7 +56,7 @@ esp_err_t espnl_settings_migrate(uint32_t from_version, cJSON *settings)
         /* v1 shipped enabled=false as its default. A device that never
          * paired (no ssid) just carried that default: give it the v2
          * one so a dongle is plug-and-play after the upgrade. A device
-         * with an ssid made a deliberate choice either way — keep it.
+         * with an ssid made a deliberate choice either way: keep it.
          * mode / auto_pair / device_id / cut_retries: schema defaults. */
         const cJSON *ssid = cJSON_GetObjectItemCaseSensitive(settings,
                                                              "ssid");

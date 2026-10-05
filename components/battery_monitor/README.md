@@ -1,14 +1,14 @@
-# battery_monitor — battery/supply voltage owner (feature)
+# battery_monitor: battery/supply voltage owner (feature)
 
 Owns the battery-sense ADC input (WiCAN Pro: ADC1 CH3 = GPIO4 behind a
-÷11 divider, 6 dB attenuation — all Kconfig per hardware revision:
+÷11 divider, 6 dB attenuation, all Kconfig per hardware revision:
 `WICAN_BATT_ADC_CHANNEL` / `WICAN_BATT_DIVIDER_X100` /
 `WICAN_BATT_OFFSET_MV`). Samples every `poll_s`, 8-sample averaged,
-eFuse-calibration corrected (curve fitting, line-fitting fallback — the
+eFuse-calibration corrected (curve fitting, line-fitting fallback: the
 IDF v6 oneshot API; the legacy continuous/DMA path is gone).
 
 This is the **foundation for sleep_manager** (its sleep/wake voltages
-become one watch) — and a general trigger source: stop ECU polling on a
+become one watch), and a general trigger source: stop ECU polling on a
 sag, MQTT alert on low battery, etc.
 
 ## API
@@ -35,7 +35,7 @@ battery_monitor_watch(&(battery_monitor_watch_cfg_t){
 
 Semantics (pure policy, host-tested):
 
-- **Hysteresis pair**: `below_v`..`above_v` is a silent band — no
+- **Hysteresis pair**: `below_v`..`above_v` is a silent band, no
   flapping around a single threshold (engine cranking dips, alternator
   ripple).
 - **Hold debounce**: a side must persist `hold_ms` before its event
@@ -50,28 +50,28 @@ Semantics (pure policy, host-tested):
 
 ## Settings (`"battery_monitor"`, version 1, field table)
 
-`cli` (bool, default true): register this component's console command(s) with cmdline_manager on the settings boot apply (reboot-to-apply). Ownership: the component registers its own commands — main wires nothing (2026-07-05).
+`cli` (bool, default true): register this component's console command(s) with cmdline_manager on the settings boot apply (reboot-to-apply). Ownership: the component registers its own commands, main wires nothing (2026-07-05).
 
-`enabled` (bool, true) · `poll_s` (1..60, default 3 — the legacy
+`enabled` (bool, true) · `poll_s` (1..60, default 3: the legacy
 cadence). Thresholds are NOT settings here: consumers own their numbers
 (sleep_manager will persist its own sleep/wake voltages and register
 them as a watch).
 
 ## Files
 
-- `battery_monitor.c` — lifecycle, settings, watch registry, sampler.
-- `battery_monitor_policy.c` — PURE watch state machine (host-tested,
+- `battery_monitor.c`: lifecycle, settings, watch registry, sampler.
+- `battery_monitor_policy.c`: PURE watch state machine (host-tested,
   6 tests: hysteresis, hold, initial state, clock wrap).
-- `battery_monitor_adc.c` — oneshot + calibration + divider scaling
+- `battery_monitor_adc.c`: oneshot + calibration + divider scaling
   (ported from legacy sleep_mode.c; the ×11 + 0.1 V bench numbers).
-- `battery_monitor_http.c` — the optional route.
+- `battery_monitor_http.c`: the optional route.
 
 ## Verified
 
 2026-07-04 on the bench (PSU set to 11.3–11.7 V): boot log
 `started (11.56 V, poll 3s, ch3, div x11.00)`; `GET /api/battery` →
 `{"voltage":11.51}`. Gotcha found: concurrent `adc_oneshot_read` calls
-fail on the unit lock — the synchronous boot reading runs BEFORE the
+fail on the unit lock, the synchronous boot reading runs BEFORE the
 sampler task exists.
 
 ## Memory

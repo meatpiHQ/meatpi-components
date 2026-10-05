@@ -534,7 +534,7 @@ static void test_at_transceive_gives_up_on_a_chip_that_keeps_cutting(void)
     TEST_ASSERT_EQUAL_size_t(0, n); /* never a 6-byte "answer" */
 }
 
-/* ---- UDS DTC codec (uds_dtc_codec.c — TASK_dtc §12) ----------------------- */
+/* ---- UDS DTC codec (uds_dtc_codec.c: TASK_dtc §12) ----------------------- */
 #include "uds_dtc.h"
 
 void test_dtc_requests(void)
@@ -647,7 +647,7 @@ void test_dtc_format_suffix_rules(void)
 {
     char code[10];
 
-    /* FTB 0 -> NO suffix (identical to the OBD code — stable diffs
+    /* FTB 0 -> NO suffix (identical to the OBD code: stable diffs
        when `auto` flips protocols between scans) */
     uds_dtc_format(0x04, 0x20, 0x00, code);
     TEST_ASSERT_EQUAL_STRING("P0420", code);

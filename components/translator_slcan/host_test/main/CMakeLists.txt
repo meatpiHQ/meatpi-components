@@ -1,6 +1,6 @@
 # Pure codec only (translator_slcan_codec.c). Includes bridge_manager.h +
 # can_frame_wire.h + can_core.h (headers pull FreeRTOS, available on the
-# linux target — same as bridge_manager's own host test).
+# linux target, same as bridge_manager's own host test).
 set(comp_dir "${CMAKE_CURRENT_LIST_DIR}/../..")
 set(root "${comp_dir}/..")
 

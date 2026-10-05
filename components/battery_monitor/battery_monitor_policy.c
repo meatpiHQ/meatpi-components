@@ -22,7 +22,7 @@
 
 /**
  * @file battery_monitor_policy.c
- * @brief PURE threshold-watch state machine — hysteresis pair + hold
+ * @brief PURE threshold-watch state machine: hysteresis pair + hold
  *        debounce, injected time/voltage, no ADC, no RTOS.
  */
 #include "battery_monitor_private.h"

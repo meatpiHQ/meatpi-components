@@ -28,7 +28,7 @@
  * mechanism (see the root CMakeLists: a later component dir overrides an
  * earlier component with the same name). A pack ships its own ext_manager
  * component which wires the pack's features into the firmware's
- * registries at these hook points — bridge jacks
+ * registries at these hook points: bridge jacks
  * (bridge_manager_register_endpoint), the ISO-TP providers
  * (can_isotp_provide, j2534_isotp_provide), settings components, CLI
  * commands, …

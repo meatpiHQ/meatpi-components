@@ -162,7 +162,7 @@ static void test_sm_drop_timeout_repost_then_recover(void)
     TEST_ASSERT_EQUAL(ESPNL_SM_WAIT_DROP, sm.state);
     TEST_ASSERT_EQUAL(ESPNL_ACT_NONE, tick(1000));   /* 4 s: no 3rd POST */
     TEST_ASSERT_EQUAL(ESPNL_ACT_NONE, tick(5000));   /* 9 s */
-    /* 10 s: the cut never landed — VBUS cycle */
+    /* 10 s: the cut never landed, VBUS cycle */
     TEST_ASSERT_EQUAL(ESPNL_ACT_VBUS_CYCLE, tick(1000));
     TEST_ASSERT_EQUAL(ESPNL_SM_IDLE, sm.state);
 

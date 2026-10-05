@@ -168,7 +168,7 @@ esp_err_t em_rules_parse(const cJSON *rules, em_rule_t *out, int max,
         }
 
         /* body: either an action ("do" + optional "with"), or the script
-         * sugar ("script":"name" — rewritten to script.run{name}) */
+         * sugar ("script":"name", rewritten to script.run{name}) */
         const cJSON *script = cJSON_GetObjectItemCaseSensitive(item,
                                                                "script");
 

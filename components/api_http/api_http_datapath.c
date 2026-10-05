@@ -23,7 +23,7 @@
 /**
  * @file api_http_datapath.c
  * @brief Data-path observability: GET /api/bridges, /api/sockets, /api/ws
- *        (API-first §1b — a user dashboard shows data-path activity
+ *        (API-first §1b, a user dashboard shows data-path activity
  *        without firmware access).
  *
  * The configured entries come from each component's SETTINGS (the source

@@ -25,12 +25,12 @@
  * @brief WiCAN BLE GATT server owner (feature component).
  *
  * Rewrite of the legacy `ble.c` against the Coding Standard, preserving the
- * ON-AIR CONTRACT exactly — same services, characteristic UUIDs, security
+ * ON-AIR CONTRACT exactly, same services, characteristic UUIDs, security
  * model and device name, so every existing app/tool keeps working:
  *
  *  - Device Information Service (0x180A): manufacturer "MEATPI.COM", model
  *    "WiCAN-PRO", serial (derived from the device name), HW/FW/SW revision,
- *    system id, regulatory certification — all read-only.
+ *    system id, regulatory certification: all read-only.
  *  - FFF0 service (advertised): FFF1 notify/indicate = data OUT, FFF2
  *    write/write-NR = data IN (the ELM/OBD data pipe), plus the two 128-bit
  *    COMMAND-LINE characteristics (CLI OUT notify + CLI IN write with
@@ -39,18 +39,18 @@
  *    (settings), IO_CAP_OUT, 16-byte keys, ENC_MITM permissions on every
  *    data characteristic, local privacy (RPA), MTU 517, runtime pairing
  *    enable/disable.
- *  - Device name: "WiC_<device id>" — the id comes from
+ *  - Device name: "WiC_<device id>", the id comes from
  *    dev_status_manager_device_id() (12 hex chars of the SoftAP MAC).
  *
  * Data-path face: the standard endpoint trio (subscribe/unsubscribe/send,
- * chunk layout shared with obd_chip/socket_manager) — glue or main wraps it
+ * chunk layout shared with obd_chip/socket_manager), glue or main wraps it
  * into a bridge_manager endpoint, so OBD↔BLE / CAN↔BLE / anything↔BLE are
  * configured bridges, not code here. ONE subscriber (a BLE link is one
  * bridge endpoint).
  *
  * Coexistence note: the legacy code stopped WiFi/config server on BLE
  * connect (sideways calls). This component only publishes
- * DEV_STATUS_BIT_BLE_ENABLED/CONNECTED — any radio-coexistence policy
+ * DEV_STATUS_BIT_BLE_ENABLED/CONNECTED: any radio-coexistence policy
  * belongs to the composition root, not here (Architecture §2).
  */
 #pragma once
@@ -87,28 +87,28 @@ esp_err_t ble_manager_start(void);
 /** Stop advertising and shut the BLE stack down. */
 esp_err_t ble_manager_stop(void);
 
-/* ---- endpoint trio (the bridge ABI — same shape as obd_chip/sockets) ------ */
+/* ---- endpoint trio (the bridge ABI, same shape as obd_chip/sockets) ------ */
 
 /** Attach the ONE subscriber queue (items ble_chunk_t): FFF2 writes from the
  *  client flow into it. ESP_ERR_INVALID_STATE if taken. */
 esp_err_t ble_manager_subscribe(QueueHandle_t q);
 esp_err_t ble_manager_unsubscribe(QueueHandle_t q);
 
-/** TX to the client as FFF1 notifications — queued, packed to the
+/** TX to the client as FFF1 notifications, queued, packed to the
  *  negotiated MTU by the TX task (legacy packing/congestion logic).
  *  ESP_ERR_INVALID_STATE when no client is connected. */
 esp_err_t ble_manager_send(const uint8_t *data, size_t len);
 
 /* ---- status ----------------------------------------------------------------- */
 
-/** True when BLE is enabled in SETTINGS — the configured truth, stable
+/** True when BLE is enabled in SETTINGS: the configured truth, stable
  *  across runtime stop/start cycles (interface_manager's policy input;
  *  the BLE_ENABLED dev-status bit tracks the RUNNING state instead). */
 bool ble_manager_is_enabled(void);
 bool ble_manager_is_connected(void);
 bool ble_manager_is_secured(void);   /* authenticated + encrypted pairing */
 
-/* ---- pairing window (runtime, ephemeral — like the legacy toggle) ---------- */
+/* ---- pairing window (runtime, ephemeral, like the legacy toggle) ---------- */
 
 void ble_manager_pairing_enable(void);
 void ble_manager_pairing_disable(void);
@@ -117,7 +117,7 @@ bool ble_manager_pairing_is_enabled(void);
 /* ---- command line characteristics (future cmdline_manager registers) -------- */
 
 /** Handler for complete CLI lines written to CLI IN (secured links only).
- *  Runs in the BT stack callback — keep it short or hand off to a task. */
+ *  Runs in the BT stack callback: keep it short or hand off to a task. */
 typedef void (*ble_cli_handler_t)(const char *line);
 
 esp_err_t ble_manager_set_cli_handler(ble_cli_handler_t handler);

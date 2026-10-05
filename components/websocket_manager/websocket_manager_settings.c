@@ -47,7 +47,7 @@ static const settings_field_t CHANNEL_ITEMS[] =
 
 /* Default channels for the known consumers. ws_obd ships ENABLED (paired
    with bridge_manager's default obd<->ws_obd bridge = OBD over WebSocket
-   out of the box); ws_log ships enabled too — the ROUTE only: nothing
+   out of the box); ws_log ships enabled too: the ROUTE only: nothing
    flows until log_sinks' ws gate (default false) opens. The rest stay
    parked (disabled) until the UI/product enables them. */
 static const settings_field_t FIELDS[] =

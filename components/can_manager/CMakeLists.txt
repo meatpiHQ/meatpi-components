@@ -17,7 +17,7 @@ idf_component_register(
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "."
     # Service: owns the TWAI bus. can_core* is the adopted shared-bus
-    # engine (ex elm327_can component, merged 2026-07-19 — PROVENANCE.md);
+    # engine (ex elm327_can component, merged 2026-07-19: PROVENANCE.md);
     # cmdline/http only by the surface files (§6b + §9.1).
     REQUIRES esp_driver_twai
     # esp_hal_twai + soc: the receive-error storm throttle masks the

@@ -1,5 +1,5 @@
 /*
- * usbd_cdc_ncm.h — CDC-NCM (NTB16) DEVICE class for CherryUSB.
+ * usbd_cdc_ncm.h: CDC-NCM (NTB16) DEVICE class for CherryUSB.
  *
  * WiCAN-AUTHORED (2026-07-07, see PROVENANCE.md): CherryUSB has no
  * device-side NCM class (upstream ships usbh_cdc_ncm only). Written in the
@@ -30,7 +30,7 @@ extern "C" {
  *  - the data interface protocol is 0x01 ("Network Transfer Block").
  * bmNetworkCapabilities = 0x01: only SetEthernetPacketFilter on top of the
  * always-mandatory Get/SetNtbInputSize (4-byte form) + GetNtbParameters.
- * mac_str_idx names the string descriptor holding 12 uppercase hex chars —
+ * mac_str_idx names the string descriptor holding 12 uppercase hex chars:
  * the MAC the HOST's network interface uses (not the device's). */
 #define CDC_NCM_ALT_DESCRIPTOR_LEN (8 + 9 + 5 + 5 + 13 + 6 + 7 + 9 + 9 + 7 + 7)
 // clang-format off
@@ -83,7 +83,7 @@ extern "C" {
     0x03,                                       /* bmAttributes: interrupt */      \
     0x10, 0x00,                                 /* wMaxPacketSize 16 */            \
     0x10,                                       /* bInterval */                    \
-    /* Data interface, alt 0 — no endpoints (mandatory, NCM 1.0 §5.3) */           \
+    /* Data interface, alt 0: no endpoints (mandatory, NCM 1.0 §5.3) */           \
     0x09,                                       /* bLength */                      \
     USB_DESCRIPTOR_TYPE_INTERFACE,                                                 \
     (uint8_t)(bFirstInterface + 1),             /* bInterfaceNumber */             \
@@ -93,7 +93,7 @@ extern "C" {
     0x00,                                       /* bInterfaceSubClass */           \
     0x01,                                       /* bInterfaceProtocol: NTB */      \
     0x00,                                       /* iInterface */                   \
-    /* Data interface, alt 1 — the live data path */                               \
+    /* Data interface, alt 1: the live data path */                               \
     0x09,                                       /* bLength */                      \
     USB_DESCRIPTOR_TYPE_INTERFACE,                                                 \
     (uint8_t)(bFirstInterface + 1),             /* bInterfaceNumber */             \
@@ -125,7 +125,7 @@ extern "C" {
 #endif
 
 /* Init the COMM interface (registers all three endpoints + class requests).
- * Then register the DATA interface with usbd_cdc_ncm_init_data_intf — its
+ * Then register the DATA interface with usbd_cdc_ncm_init_data_intf: its
  * notify hook is how alt-setting changes (the host opening/closing the data
  * path) reach the class. */
 struct usbd_interface *usbd_cdc_ncm_init_intf(struct usbd_interface *intf,
@@ -147,7 +147,7 @@ int usbd_cdc_ncm_start_write(uint8_t *buf, uint32_t len);
 int usbd_cdc_ncm_eth_start_write(uint8_t *ntb_buf, uint32_t cap,
                                  const uint8_t *frame, uint32_t frame_len);
 
-/* Walk a received NTB16, invoking cb per datagram (task context — call it
+/* Walk a received NTB16, invoking cb per datagram (task context: call it
  * from wherever you handle usbd_cdc_ncm_data_recv_done, not the ISR).
  * Returns the datagram count, or -1 if the NTB is malformed. */
 typedef void (*usbd_cdc_ncm_datagram_cb_t)(const uint8_t *frame,
@@ -156,9 +156,9 @@ int usbd_cdc_ncm_parse_ntb(const uint8_t *ntb, uint32_t len,
                            usbd_cdc_ncm_datagram_cb_t cb, void *arg);
 
 /* Weak hooks, called from USB interrupt context on ESP ports:
- *  data_recv_done — one NTB landed in the start_read buffer (len bytes)
- *  data_send_done — the last start_write completed
- *  link_event     — host opened (true) / closed (false) the data path */
+ *  data_recv_done: one NTB landed in the start_read buffer (len bytes)
+ *  data_send_done: the last start_write completed
+ *  link_event:      host opened (true) / closed (false) the data path */
 void usbd_cdc_ncm_data_recv_done(uint32_t len);
 void usbd_cdc_ncm_data_send_done(uint32_t len);
 void usbd_cdc_ncm_link_event(bool up);

@@ -1,4 +1,4 @@
-# Host test compiles ONLY the pure path module — no VFS/littlefs needed,
+# Host test compiles ONLY the pure path module: no VFS/littlefs needed,
 # so it runs on the linux target.
 set(comp_dir "${CMAKE_CURRENT_LIST_DIR}/../..")
 

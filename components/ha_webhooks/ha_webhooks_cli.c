@@ -22,7 +22,7 @@
 
 /**
  * @file ha_webhooks_cli.c
- * @brief The `webhook` console command — shows the HA link config + stats.
+ * @brief The `webhook` console command: shows the HA link config + stats.
  *        Registered by ha_webhooks_register_cli() from on_apply, gated by
  *        the `cli` setting (§6b). main wires nothing.
  */

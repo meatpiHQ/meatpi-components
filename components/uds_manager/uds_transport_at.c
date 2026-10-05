@@ -52,7 +52,7 @@
 static const char *TAG = "uds_manager";
 
 /* the chip's reply: a multi-frame DID read is hundreds of bytes, a 4 KB
- * TransferData answer the worst case (hex + spaces + line prefixes) —
+ * TransferData answer the worst case (hex + spaces + line prefixes),
  * PSRAM, not the 4 KB httpd worker stack; one transaction at a time (the
  * caller's chip hold) */
 #define UDS_AT_RBUF 8192
@@ -114,7 +114,7 @@ static bool is_error_token(const char *tok, size_t len)
         return false; /* pure hex/space/colon: it's data */
     }
 
-    /* it has non-hex letters — confirm it's a known error phrase */
+    /* it has non-hex letters: confirm it's a known error phrase */
     static const char *ERR[] = { "NO DATA", "ERROR", "UNABLE", "BUFFER",
                                  "STOPPED", "SEARCHING", "BUS", "TIMEOUT",
                                  "RX", "TX", "CAN" };
@@ -136,7 +136,7 @@ static bool is_error_token(const char *tok, size_t len)
         }
     }
 
-    /* has non-hex letters but no known phrase — treat as junk, reject */
+    /* has non-hex letters but no known phrase: treat as junk, reject */
     return true;
 }
 
@@ -533,7 +533,7 @@ esp_err_t uds_at_transceive_ex(uds_at_request_fn req_fn,
     {
         /* CAN protocol: ISO 15765-4, 11-bit or 29-bit, at the bitrate
            the bus runs at (6/7 at 500k, 8/9 at 250k: a request pinned to
-           the other bitrate destroys a live bus's traffic) — ATTP (try
+           the other bitrate destroys a live bus's traffic), ATTP (try
            protocol, RAM) not ATSP, which writes the chip's EEPROM on
            every request (the driver's guard would rewrite it anyway;
            obd_chip_guard.h) */
@@ -571,7 +571,7 @@ esp_err_t uds_at_transceive_ex(uds_at_request_fn req_fn,
            units from p2 (floor 40 ms, cap 1.02 s) so a single-frame answer
            comes back in ~p2 instead of the chip's 0.5 s default. 0x78
            responsePending stays chip-bound: the MIC rides it out itself
-           and P2* beyond ~1 s is not reachable on this path — the native
+           and P2* beyond ~1 s is not reachable on this path, the native
            ISO-TP path is the answer for slow ECUs. RAM-only (no EEPROM). */
         uint32_t st = p2_ms / 4;
 
@@ -598,7 +598,7 @@ esp_err_t uds_at_transceive_ex(uds_at_request_fn req_fn,
        hands it over as soon as it is complete instead of waiting out
        ATST for more ECUs (bench 2026-09-16: 4-8 ms vs 180-260 ms). The
        chip still rides out 7F xx 78 responsePending before the final
-       answer and prints every one of them — the parser drops + counts
+       answer and prints every one of them: the parser drops + counts
        them. The digit counts printed LINES, so "1" cuts a multi-frame
        answer after its first frame: the length line says how long the
        message is, and a cut answer is asked for again with the digit

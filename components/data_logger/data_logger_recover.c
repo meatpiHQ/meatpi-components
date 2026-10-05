@@ -22,7 +22,7 @@
 
 /**
  * @file data_logger_recover.c
- * @brief PURE recovery helpers (no IO, no RTOS — host-tested), the
+ * @brief PURE recovery helpers (no IO, no RTOS, host-tested), the
  *        decision logic behind ROBUSTNESS.md:
  *        - torn tails: how much of a text log / a .wdl log is intact
  *        - set-aside names for corrupt files (*.corrupt) and their parse
@@ -193,7 +193,7 @@ bool dl_recover_ring_sane(uint32_t cap, uint32_t cap_limit, uint32_t head,
     uint32_t span = (head + cap - tail) % cap;
 
     /* the three indices are updated one after another: a reset between
-       two of them leaves fill off by one — trust head/tail then. A full
+       two of them leaves fill off by one, trust head/tail then. A full
        ring (head == tail, fill == cap) is the one legitimate mismatch. */
     if (*fill > cap || (*fill != span && !(*fill == cap && span == 0)))
     {

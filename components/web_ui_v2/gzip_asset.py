@@ -11,7 +11,7 @@ stripped from the markup. Measured on index.html: 85 KB -> ~70 KB gzipped
 with no functional change, which is what pays for the dashboard widgets
 under the "no bigger web UI" rule. The preview/probe tooling can build
 from the same function (make_preview.py --min) so the tests run against
-what ships. Bang comments (/*! ... */) survive — that is where the licence
+what ships. Bang comments (/*! ... */) survive: that is where the licence
 note of any vendored snippet lives.
 """
 import gzip

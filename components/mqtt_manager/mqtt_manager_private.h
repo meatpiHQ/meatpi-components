@@ -97,7 +97,7 @@ typedef struct
     char     password[64];
     char     ca_file[128];     /* "" = built-in bundle                    */
     char     cert_set[25];     /* CERT_MANAGER_NAME_MAX + 1 (asserted in
-                                  mqtt_manager.c — no cert_manager.h here:
+                                  mqtt_manager.c: no cert_manager.h here:
                                   the host suite includes this header)    */
     uint32_t keepalive_s;
     mm_connect_on_t connect_on;

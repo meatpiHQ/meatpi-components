@@ -24,11 +24,11 @@
  * @file data_destinations_post.c
  * @brief The transports: payload builders (snapshot + timestamp, the
  *        status block, the legacy first-push {config,status,autopid_data})
- *        and one delivery per type — MQTT publish (direct path: the
+ *        and one delivery per type: MQTT publish (direct path: the
  *        poster is a dedicated task and snapshots can exceed the async
  *        ring's 4 KB), HTTP(S) JSON POST with the auth modes / extra
  *        query / cert set, ABRP form POST with api_key query or header.
- *        Every buffer here is heap (PSRAM by size) — the poster's stack
+ *        Every buffer here is heap (PSRAM by size): the poster's stack
  *        carries only the TLS handshake.
  */
 #include <stdlib.h>

@@ -22,7 +22,7 @@
 
 /**
  * @file mqtt_manager_item.c
- * @brief PURE codec for the async publish queue's ring items — no RTOS,
+ * @brief PURE codec for the async publish queue's ring items: no RTOS,
  *        host-testable.
  */
 #include <string.h>

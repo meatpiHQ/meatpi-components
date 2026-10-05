@@ -38,7 +38,7 @@ menu "MicroLink V2 Configuration"
         help
             Tailscale VPN IP of the priority peer (e.g., "100.81.222.123").
             This peer is guaranteed a WireGuard slot even when the peer table
-            is full — the least-recently-used non-priority peer is evicted to
+            is full: the least-recently-used non-priority peer is evicted to
             make room.
 
             On large tailnets where the NVS cache fills the peer table at boot
@@ -111,7 +111,7 @@ menu "MicroLink V2 Configuration"
 
                 When enabled, MicroLink can operate over cellular data instead
                 of (or in addition to) WiFi. All Tailscale protocol operations
-                work unchanged — traffic is routed through DERP relay.
+                work unchanged: traffic is routed through DERP relay.
 
         choice ML_CELLULAR_BOARD
             prompt "Cellular board type"
@@ -298,7 +298,7 @@ menu "MicroLink V2 Configuration"
                 WiFi credentials, Tailscale auth key, peer allowlist, etc.
 
                 Settings persist in NVS across reboots. The peer allowlist
-                controls which peers receive outbound DISCO probes — on large
+                controls which peers receive outbound DISCO probes: on large
                 tailnets this prevents wg_mgr flooding and reduces latency.
 
         config ML_CONFIG_MAX_ALLOWED_PEERS

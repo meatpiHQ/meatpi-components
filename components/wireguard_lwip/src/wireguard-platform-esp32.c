@@ -24,7 +24,7 @@ void wireguard_tai64n_now(uint8_t *output) {
     // MUST be wall-clock time: the responder rejects any initiation whose
     // timestamp is not strictly greater than the last one it accepted for
     // this static key, so a boot-relative clock (esp_timer_get_time) makes
-    // every post-reboot handshake look like a replay — the tunnel can then
+    // every post-reboot handshake look like a replay: the tunnel can then
     // never re-establish against a long-running server. vpn_manager gates
     // connecting on a valid system clock, so wall time is guaranteed here.
     struct timeval tv;

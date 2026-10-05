@@ -23,7 +23,7 @@
 /**
  * @file settings_manager_codec.c
  * @brief Self-validating envelope: {"crc32":N,"version":N,"data":{...}} + CRC-32.
- *        Pure logic, no filesystem — host-testable on the linux target.
+ *        Pure logic, no filesystem: host-testable on the linux target.
  */
 #include <stdlib.h>
 #include <string.h>

@@ -1,4 +1,4 @@
-# i2c_bus — the shared peripheral I2C bus (HAL)
+# i2c_bus: the shared peripheral I2C bus (HAL)
 
 Owns THE one I2C master bus (IDF v6 `i2c_master` driver) that WiCAN Pro's
 on-board peripherals share: the AW2023 LED controller (`led_manager`,
@@ -16,7 +16,7 @@ code changes.
 | `i2c_bus_start()` / `stop()` | Lifecycle uniformity; passive component. |
 | `i2c_bus_handle()` | The `i2c_master_bus_handle_t` (for drivers that take a bus handle, e.g. the vendored icm42670). |
 | `i2c_bus_add_device(addr, hz, *out)` | Attach a 7-bit device (wrapper around `i2c_master_bus_add_device`). |
-| `i2c_bus_probe(addr)` | ACK-probe — diagnostics/bench. |
+| `i2c_bus_probe(addr)` | ACK-probe: diagnostics/bench. |
 
 ## Thread safety (the point of this component)
 
@@ -24,11 +24,11 @@ The v6 `i2c_master` driver serializes TRANSACTIONS on the bus with a
 per-bus lock, so managers on different tasks can talk to their own devices
 concurrently without coordination. A manager whose logical operation spans
 MULTIPLE transactions (read-modify-write) still needs its own mutex around
-the sequence — led_manager and rtc_manager each carry one.
+the sequence: led_manager and rtc_manager each carry one.
 
 ## Dependencies
 
-`esp_driver_i2c` (public — the header exposes handle types), `log_manager`.
+`esp_driver_i2c` (public: the header exposes handle types), `log_manager`.
 Init before any peripheral manager's `_start()` (main does it in the HAL
 block). No settings.
 

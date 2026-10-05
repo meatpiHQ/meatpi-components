@@ -22,7 +22,7 @@
 
 /**
  * @file restart_tracker_private.h
- * @brief Pure state-machine core (restart_tracker_core.c) — no IDF deps, so
+ * @brief Pure state-machine core (restart_tracker_core.c): no IDF deps, so
  *        the host unit tests compile it directly. Time, uptime, and the reset
  *        reason are injected by the caller; restart_tracker.c is the target
  *        glue (locking, PSRAM noinit placement, cache msync, esp_* sources).

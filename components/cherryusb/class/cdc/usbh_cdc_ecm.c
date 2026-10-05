@@ -332,7 +332,7 @@ int usbh_cdc_ecm_eth_output(uint32_t buflen)
     int ret = usbh_submit_urb(&g_cdc_ecm_class.bulkout_urb);
 
     /* WICAN FIX (PROVENANCE.md; same class as BUG_NCM_HOST_TX_ZLP.md):
-     * ECM has NO length framing — the device delimits frames by the
+     * ECM has NO length framing, the device delimits frames by the
      * transfer boundary alone, so a frame that is an exact multiple of
      * the bulk MPS needs a ZLP or the device's OUT read never
      * completes (this driver already applies the rule on RX, :300).

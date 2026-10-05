@@ -22,7 +22,7 @@
 
 /**
  * @file j2534_channel.h
- * @brief J2534 channel transport bindings — a CAN channel onto
+ * @brief J2534 channel transport bindings: a CAN channel onto
  *        can_manager (raw frames), an ISO15765 channel onto the
  *        registered ISO-TP provider (can_isotp.h; without one,
  *        ISO15765 connect fails with a log line). Owned by
@@ -50,7 +50,7 @@ void j2534_channel_reset_all(void);     /* tester disconnected: tear down */
 /**
  * ECU-flashing safety gate. When @p allow is false (the default), a write
  * carrying a UDS memory-transfer service (RequestDownload/Upload,
- * TransferData, RequestTransferExit) is rejected — reprogramming is
+ * TransferData, RequestTransferExit) is rejected, reprogramming is
  * impossible without them. Set from the j2534_server `allow_reflash`
  * setting. Applies to ISO15765 and to raw-CAN frames that carry an
  * ISO-TP single/first frame with one of those SIDs.

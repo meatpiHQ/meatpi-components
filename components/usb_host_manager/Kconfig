@@ -21,7 +21,7 @@ menu "WiCAN usb_host_manager"
         default 0x16D0
         help
             VID advertised when the connector runs in DEVICE role
-            (role=device: CherryUSB CDC-NCM/RNDIS/CDC-ACM — the J2534
+            (role=device: CherryUSB CDC-NCM/RNDIS/CDC-ACM, the J2534
             USB transport, TASK_j2534_server.md §5). A host-side J2534
             DLL matches its device by VID/PID. 0x16D0 = MCS Electronics
             (shared VID pool).
@@ -34,7 +34,7 @@ menu "WiCAN usb_host_manager"
             (see WICAN_USB_DEV_VID).
             NOT 0x1261: that PID is the shipped MeatPi USB-CAN product,
             and its Windows INF claims VID_16D0&PID_1261&MI_00 as a COM
-            port — it outranks the inbox class-match NCM driver and
+            port, it outranks the inbox class-match NCM driver and
             breaks enumeration on any PC that ever installed it
             (bench-hit 2026-07-08, Code 10).
 

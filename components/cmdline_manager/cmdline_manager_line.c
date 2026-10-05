@@ -22,7 +22,7 @@
 
 /**
  * @file cmdline_manager_line.c
- * @brief PURE byte-stream -> line assembler — no RTOS; host-testable.
+ * @brief PURE byte-stream -> line assembler: no RTOS; host-testable.
  */
 #include <string.h>
 

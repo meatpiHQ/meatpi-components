@@ -22,7 +22,7 @@
 
 /**
  * @file cmdline_manager_console.c
- * @brief The UART0 console — the IDF advanced console example pattern
+ * @brief The UART0 console: the IDF advanced console example pattern
  *        (examples/system/console/advanced), NOT the REPL component:
  *        running linenoise + esp_console_run in our own loop keeps every
  *        command inside cmdline_manager's one-at-a-time lock.
@@ -53,7 +53,7 @@ static const char *TAG = "cmdline_manager";
 static TaskHandle_t s_console_task;
 static StaticTask_t s_console_tcb;    /* internal: FreeRTOS object */
 /* INTERNAL stack: runs command handlers (same §2-corollary contract as
-   the dispatcher — flash-touching commands) + linenoise editing.
+   the dispatcher, flash-touching commands) + linenoise editing.
    6 KB: measured 1.2 KB peak; headroom for editing + the fs walk. */
 static StackType_t s_console_stack[6144];
 
@@ -135,7 +135,7 @@ static void console_task(void *arg)
 
         if (line == NULL)
         {
-            continue; /* EOF / ^C — just re-prompt */
+            continue; /* EOF / ^C: just re-prompt */
         }
 
         if (line[0] != '\0')

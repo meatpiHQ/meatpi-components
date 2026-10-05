@@ -23,7 +23,7 @@
 /**
  * @file obd_chip_parse.c
  * @brief Pure response framing / classification for the ELM327-dialect chip.
- *        No IDF dependencies — compiled as-is by the host unit tests, which
+ *        No IDF dependencies: compiled as-is by the host unit tests, which
  *        replay real chip logs re-split at every chunk boundary.
  */
 #include "obd_chip_private.h"
@@ -53,7 +53,7 @@ size_t obd_parse_feed(obd_resp_acc_t *acc, const char *data, size_t n)
     {
         char c = data[consumed++];
 
-        /* the prompt is '>' at LINE START only — response DATA may
+        /* the prompt is '>' at LINE START only: response DATA may
            contain '>' mid-line (STSLCS: "VL_WAKE: OFF, >13.50V ..."
            truncated here live until this check existed) */
         bool at_line_start =
@@ -77,7 +77,7 @@ size_t obd_parse_feed(obd_resp_acc_t *acc, const char *data, size_t n)
 
         if (c == '>' && acc->overflow)
         {
-            /* overflowed: buf no longer tracks line starts — take any
+            /* overflowed: buf no longer tracks line starts, take any
                prompt rather than hang (truncated flag is already set) */
             acc->done = true;
             break;
@@ -192,7 +192,7 @@ bool obd_parse_is_chip_error(const char *resp)
 }
 
 /* Monitor-class commands stream frames until ANY non-CR byte is sent (stop
- * with SPACE — CR would repeat the last command and can re-enter monitor
+ * with SPACE: CR would repeat the last command and can re-enter monitor
  * mode). Table pending meatpi's authoritative list (task §11); extend here. */
 static const char *const MONITOR_CMDS[] =
 {

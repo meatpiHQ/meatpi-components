@@ -1,6 +1,6 @@
 /**
  * @file ml_cellular.c
- * @brief MicroLink Cellular Module — SIM7600 4G Modem Driver + PPP
+ * @brief MicroLink Cellular Module: SIM7600 4G Modem Driver + PPP
  *
  * Two-phase operation:
  *   1. AT command mode: Initialize modem, check SIM, register on network, get IMEI
@@ -39,7 +39,7 @@ static const char *TAG = "ml_cell";
  * ========================================================================== */
 
 #define UART_NUM            UART_NUM_1
-#define UART_RX_BUF_SIZE    (16 * 1024)  /* 16KB — SIM7600 needs large buffers for PPP */
+#define UART_RX_BUF_SIZE    (16 * 1024)  /* 16KB: SIM7600 needs large buffers for PPP */
 #define UART_TX_BUF_SIZE    (4 * 1024)   /* 4KB TX buffer */
 #define AT_TIMEOUT_MS       5000
 #define AT_SHORT_TIMEOUT_MS 2000
@@ -137,7 +137,7 @@ static bool at_extract_value(const char *resp, const char *prefix, char *out, si
         p = strstr(resp, prefix);
     }
     if (!p) {
-        /* No prefix or not found — extract first non-empty line (e.g. AT+CGSN returns bare IMEI) */
+        /* No prefix or not found: extract first non-empty line (e.g. AT+CGSN returns bare IMEI) */
         p = resp;
         while (*p == '\r' || *p == '\n' || *p == ' ') p++;
     } else {
@@ -228,7 +228,7 @@ static esp_err_t modem_wait_ready(void)
          * was previously set to a different speed with AT+IPR */
         if (i == 3) {
 #ifdef CONFIG_ML_BOARD_LILYGO_T_SIM7670G
-            /* SIM7670G: only probe 115200 — unreliable at higher rates */
+            /* SIM7670G: only probe 115200, unreliable at higher rates */
             int try_bauds[] = {115200};
             int num_bauds = 1;
 #else
@@ -339,7 +339,7 @@ static esp_err_t sim_setup(void)
             return ESP_ERR_INVALID_STATE;
         }
     } else {
-        ESP_LOGE(TAG, "SIM not detected — check SIM card insertion");
+        ESP_LOGE(TAG, "SIM not detected: check SIM card insertion");
         s_cell.state = ML_CELL_STATE_ERROR;
         return ESP_ERR_NOT_FOUND;
     }
@@ -369,7 +369,7 @@ static esp_err_t network_register(void)
     /* Wait for network registration with timeout.
      * Check both AT+CREG (CS/GSM) and AT+CEREG (EPS/LTE).
      * SIM7600 supports 2G/3G/4G so AT+CREG works, but LTE-only modems
-     * like SIM7670G have no CS domain — only AT+CEREG returns registration. */
+     * like SIM7670G have no CS domain: only AT+CEREG returns registration. */
     for (int i = 0; i < 30; i++) {
         bool registered = false;
 
@@ -386,7 +386,7 @@ static esp_err_t network_register(void)
         } else if (strstr(resp, ",6") != NULL) {
             /* stat=6: registered for SMS only, no data.
              * Known SIM7670G issue with certain SIMs/carriers/firmware. */
-            ESP_LOGW(TAG, "EPS registered for SMS only (stat=6) — no data service. "
+            ESP_LOGW(TAG, "EPS registered for SMS only (stat=6): no data service. "
                      "Check SIM/carrier/APN or update modem firmware.");
         }
 
@@ -437,7 +437,7 @@ static esp_err_t network_register(void)
  * PPP Data Connection
  * ========================================================================== */
 
-/* PPP transmit callback — sends data from lwIP PPP stack to SIM7600 UART */
+/* PPP transmit callback: sends data from lwIP PPP stack to SIM7600 UART */
 static uint32_t s_ppp_tx_count = 0;
 
 static esp_err_t ppp_transmit(void *h, void *buffer, size_t len)
@@ -456,19 +456,19 @@ static esp_netif_driver_ifconfig_t s_ppp_driver_cfg = {
     .transmit = ppp_transmit,
 };
 
-/* PPP status event handler — detects CHAP auth failure for AT fallback,
+/* PPP status event handler: detects CHAP auth failure for AT fallback,
  * and PPP close completion (PPPERR_USER) for safe teardown. */
 static void ppp_status_event_handler(void *arg, esp_event_base_t event_base,
                                        int32_t event_id, void *event_data)
 {
     if (event_id == NETIF_PPP_ERRORUSER) {
-        /* ppp_close() completed — safe to destroy netif now */
+        /* ppp_close() completed: safe to destroy netif now */
         ESP_LOGI(TAG, "PPP closed (user interrupt)");
         if (s_cell.ppp_events) {
             xEventGroupSetBits(s_cell.ppp_events, PPP_CLOSED_BIT);
         }
     } else if (event_id == NETIF_PPP_ERRORAUTHFAIL) {
-        ESP_LOGW(TAG, "PPP CHAP authentication failed — will fall back to AT");
+        ESP_LOGW(TAG, "PPP CHAP authentication failed: will fall back to AT");
         if (s_cell.ppp_events) {
             xEventGroupSetBits(s_cell.ppp_events, PPP_CHAP_FAIL_BIT);
         }
@@ -510,7 +510,7 @@ static void ppp_ip_event_handler(void *arg, esp_event_base_t event_base,
     }
 }
 
-/* PPP receive task — reads UART data from SIM7600 and feeds it to esp_netif */
+/* PPP receive task: reads UART data from SIM7600 and feeds it to esp_netif */
 static void ppp_rx_task(void *arg)
 {
     uint8_t *buf = ml_psram_malloc(UART_RX_BUF_SIZE);
@@ -550,7 +550,7 @@ static esp_err_t ppp_setup_and_dial(void)
     ESP_LOGI(TAG, "PPP cleanup: ATH -> %.30s", resp);
     vTaskDelay(pdMS_TO_TICKS(500));
 
-    /* Close any existing AT socket bridge session — NETOPEN persists across
+    /* Close any existing AT socket bridge session: NETOPEN persists across
      * ESP32 resets and blocks PPP dialing. Ignore errors (not open = OK). */
     at_send_cmd("AT+NETCLOSE", resp, sizeof(resp), 5000);
     ESP_LOGI(TAG, "PPP cleanup: NETCLOSE -> %.30s", resp);
@@ -558,7 +558,7 @@ static esp_err_t ppp_setup_and_dial(void)
 
     /* Deactivate PDP context. If the modem's internal TCP/IP stack previously
      * held CID 1 (from AT+NETOPEN), it won't properly hand the PDP context
-     * to PPP — IPCP gets no response because the modem still "owns" the bearer.
+     * to PPP: IPCP gets no response because the modem still "owns" the bearer.
      * Deactivating forces ATD*99# to re-establish the PDP context fresh via PPP. */
     at_send_cmd("AT+CGACT=0,1", resp, sizeof(resp), 5000);
     ESP_LOGI(TAG, "PPP cleanup: CGACT=0,1 -> %.30s", resp);
@@ -568,7 +568,7 @@ static esp_err_t ppp_setup_and_dial(void)
     ESP_LOGI(TAG, "PPP cleanup: CGACT? -> %.60s", resp);
     vTaskDelay(pdMS_TO_TICKS(2000));
 
-    /* Configure PDP context — ALWAYS set AT+CGDCONT for PPP.
+    /* Configure PDP context: ALWAYS set AT+CGDCONT for PPP.
      * Without an explicit PDP context, the modem has no bearer to bridge
      * over PPP and IPCP will get no response (silent timeout).
      * Empty APN = modem uses network-provided default. */
@@ -582,14 +582,14 @@ static esp_err_t ppp_setup_and_dial(void)
         if (apn[0]) {
             ESP_LOGI(TAG, "PDP context: APN=%s", apn);
         } else {
-            ESP_LOGW(TAG, "PDP context: no APN set (using network default) — "
+            ESP_LOGW(TAG, "PDP context: no APN set (using network default), "
                      "set APN via menuconfig or web UI for reliable PPP");
         }
     }
 
     /* Set PDP context authentication.
      * If PPP credentials are provided (e.g. Soracom: sora/sora), use CHAP (type 2).
-     * Otherwise use PAP with empty credentials (type 1) — EIOT/BICS SIMs pass
+     * Otherwise use PAP with empty credentials (type 1): EIOT/BICS SIMs pass
      * PAP Auth-Ack with empty creds (IMSI-based auth). */
     const char *ppp_user = s_cell.config.ppp_user ? s_cell.config.ppp_user : "";
     const char *ppp_pass = s_cell.config.ppp_pass ? s_cell.config.ppp_pass : "";
@@ -607,7 +607,7 @@ static esp_err_t ppp_setup_and_dial(void)
         ESP_LOGI(TAG, "PPP: empty credentials, PAP auth (IMSI-based)");
     }
 
-    /* Do NOT activate PDP context here (AT+CGACT=1,1) — let ATD*99***1#
+    /* Do NOT activate PDP context here (AT+CGACT=1,1): let ATD*99***1#
      * activate it during PPP negotiation. Pre-activating can cause the modem's
      * internal TCP/IP stack to claim the context, blocking IPCP. */
 
@@ -645,7 +645,7 @@ static esp_err_t ppp_setup_and_dial(void)
         return ESP_FAIL;
     }
 
-    /* Set PPP authentication — CHAP if credentials provided, PAP if empty */
+    /* Set PPP authentication: CHAP if credentials provided, PAP if empty */
     esp_netif_auth_type_t auth = (ppp_user[0] || ppp_pass[0])
                                  ? NETIF_PPP_AUTHTYPE_CHAP
                                  : NETIF_PPP_AUTHTYPE_PAP;
@@ -666,11 +666,11 @@ static esp_err_t ppp_setup_and_dial(void)
 
     ESP_LOGI(TAG, "PPP CHAP auth configured (user=%s)", ppp_user[0] ? ppp_user : "<empty>");
 
-    /* Do NOT call esp_netif_action_start() yet — it immediately sends LCP
+    /* Do NOT call esp_netif_action_start() yet: it immediately sends LCP
      * Configure-Request frames via ppp_transmit(), which would go to the modem
      * while it's still in AT command mode and corrupt the AT session. */
 
-    /* Dial PPP data mode — ATD*99***1# specifies PDP context 1 explicitly.
+    /* Dial PPP data mode: ATD*99***1# specifies PDP context 1 explicitly.
      * Retry up to 3 times: modem PDP deactivation is async and carrier-dependent,
      * sometimes the first dial fails with ERROR even after CGACT=0,1 + delay. */
     ESP_LOGI(TAG, "Dialing PPP (ATD*99***1#)...");
@@ -731,7 +731,7 @@ static esp_err_t ppp_setup_and_dial(void)
     /* Small delay to let RX task settle and start reading UART */
     vTaskDelay(pdMS_TO_TICKS(50));
 
-    /* NOW start the PPP protocol — this sends the first LCP Configure-Request.
+    /* NOW start the PPP protocol: this sends the first LCP Configure-Request.
      * The modem is already in data mode, and the RX task is ready to receive. */
     esp_netif_action_start(s_cell.ppp_netif, 0, 0, 0);
     esp_netif_action_connected(s_cell.ppp_netif, 0, 0, 0);
@@ -753,7 +753,7 @@ static esp_err_t ppp_setup_and_dial(void)
         s_cell.ppp_running = false;
         vTaskDelay(pdMS_TO_TICKS(200));
         s_cell.state = ML_CELL_STATE_REGISTERED;
-        return ESP_ERR_NOT_SUPPORTED;   /* Distinct from timeout — caller can fall back */
+        return ESP_ERR_NOT_SUPPORTED;   /* Distinct from timeout: caller can fall back */
     }
 
     ESP_LOGE(TAG, "PPP connection timeout");
@@ -844,9 +844,9 @@ esp_err_t ml_cellular_init(const ml_cellular_config_t *config)
     /* Upgrade UART baud rate for faster data transfer.
      * Start at 115200 for reliable initial handshake, then switch to a higher
      * rate. SIM7670G lacks hardware flow control on most boards and has smaller
-     * UART buffers — cap at 115200 to avoid data loss. SIM7600 handles 921600. */
+     * UART buffers: cap at 115200 to avoid data loss. SIM7600 handles 921600. */
 #ifdef CONFIG_ML_BOARD_LILYGO_T_SIM7670G
-    int fast_baud = 0;  /* Stay at 115200 — SIM7670G unreliable above this without flow control */
+    int fast_baud = 0;  /* Stay at 115200: SIM7670G unreliable above this without flow control */
     ESP_LOGI(TAG, "SIM7670G: keeping baud at 115200 (no HW flow control)");
 #else
     int fast_baud = 921600;
@@ -925,12 +925,12 @@ esp_err_t ml_cellular_ppp_stop(void)
 
     ESP_LOGI(TAG, "Stopping PPP...");
 
-    /* 1. Stop RX task — no more UART reads feeding lwIP */
+    /* 1. Stop RX task: no more UART reads feeding lwIP */
     s_cell.ppp_running = false;
     vTaskDelay(pdMS_TO_TICKS(500)); /* Let task exit cleanly */
 
     /* 2. Initiate PPP close via esp_netif.
-     *    esp_netif_action_stop → ppp_close(0) which is ASYNCHRONOUS —
+     *    esp_netif_action_stop → ppp_close(0) which is ASYNCHRONOUS:
      *    the lwIP TCPIP thread runs the LCP termination FSM, and
      *    eventually calls on_ppp_status_changed(PPPERR_USER).
      *    We MUST wait for that callback before destroying the netif,
@@ -957,13 +957,13 @@ esp_err_t ml_cellular_ppp_stop(void)
             if (bits & PPP_CLOSED_BIT) {
                 ESP_LOGI(TAG, "PPP close confirmed");
             } else {
-                ESP_LOGW(TAG, "PPP close timeout — proceeding with teardown");
+                ESP_LOGW(TAG, "PPP close timeout: proceeding with teardown");
             }
         }
         vTaskDelay(pdMS_TO_TICKS(100)); /* Brief settle after close */
     }
 
-    /* 3. Unregister event handlers — PPP FSM is fully stopped now */
+    /* 3. Unregister event handlers: PPP FSM is fully stopped now */
     if (s_cell.ppp_status_handler) {
         esp_event_handler_instance_unregister(NETIF_PPP_STATUS, ESP_EVENT_ANY_ID, s_cell.ppp_status_handler);
         s_cell.ppp_status_handler = NULL;
@@ -1030,7 +1030,7 @@ int ml_cellular_send_at(const char *cmd, char *response, size_t resp_size, int t
         return -1;
     }
     if (s_cell.state == ML_CELL_STATE_DATA_CONNECTED) {
-        ESP_LOGW(TAG, "Cannot send raw AT in AT socket bridge mode — use ml_at_socket API");
+        ESP_LOGW(TAG, "Cannot send raw AT in AT socket bridge mode: use ml_at_socket API");
         return -1;
     }
     return at_send_cmd(cmd, response, resp_size, timeout_ms);
@@ -1043,12 +1043,12 @@ int ml_cellular_send_at(const char *cmd, char *response, size_t resp_size, int t
 esp_err_t ml_cellular_data_start(void)
 {
     if (s_cell.state < ML_CELL_STATE_REGISTERED) {
-        ESP_LOGE(TAG, "Cannot start data mode — not registered on network (state=%d)", s_cell.state);
+        ESP_LOGE(TAG, "Cannot start data mode, not registered on network (state=%d)", s_cell.state);
         return ESP_ERR_INVALID_STATE;
     }
 
     if (s_cell.ppp_running) {
-        ESP_LOGW(TAG, "PPP is running — stop it first");
+        ESP_LOGW(TAG, "PPP is running: stop it first");
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -1112,13 +1112,13 @@ esp_err_t ml_cellular_connect(void)
     esp_err_t ret = ml_cellular_ppp_start();
 
     if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "PPP connected — using lwIP standard sockets");
+        ESP_LOGI(TAG, "PPP connected: using lwIP standard sockets");
         s_cell.data_mode = ML_DATA_MODE_PPP;
         return ESP_OK;
     }
 
-    /* PPP failed — clean up and fall back to AT socket bridge */
-    ESP_LOGW(TAG, "PPP failed (%s) — falling back to AT socket bridge",
+    /* PPP failed: clean up and fall back to AT socket bridge */
+    ESP_LOGW(TAG, "PPP failed (%s): falling back to AT socket bridge",
              esp_err_to_name(ret));
     ml_cellular_ppp_stop();
 
@@ -1130,7 +1130,7 @@ esp_err_t ml_cellular_connect(void)
     ret = ml_cellular_data_start();
 
     if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "AT socket bridge connected — using modem internal TCP/IP");
+        ESP_LOGI(TAG, "AT socket bridge connected: using modem internal TCP/IP");
         s_cell.data_mode = ML_DATA_MODE_AT_SOCKET;
         return ESP_OK;
     }

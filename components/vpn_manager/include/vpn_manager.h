@@ -22,27 +22,27 @@
 
 /**
  * @file vpn_manager.h
- * @brief WiCAN VPN client (feature component) — WireGuard over the
+ * @brief WiCAN VPN client (feature component): WireGuard over the
  *        vendored `esp_wireguard` port (rewrite of legacy vpn_manager,
  *        TASK_vpn_manager.md).
  *
  * Model: settings describe ONE WireGuard peer (reboot-to-apply like
  * everything). start() arms a small state task gated on
  * DEV_STATUS_NETWORK_CONNECTED_MASK *and* a valid clock (WireGuard
- * handshakes carry timestamps — rtc_manager restores time at boot; a
+ * handshakes carry timestamps: rtc_manager restores time at boot; a
  * fresh board waits and retries): it connects when the uplink is up,
  * polls peer liveness, tears down on network loss and reconnects with
  * backoff. Connected state = DEV_STATUS_BIT_VPN_ENABLED + the
  * `vpn.state {connected}` event.
  *
  * Routing: only the configured allowed_ip range routes into the
- * tunnel unless `default_route` is set (default OFF — meatpi
+ * tunnel unless `default_route` is set (default OFF, meatpi
  * 2026-07-07). Optional DNS override (saved/restored around the
  * connection, the legacy behavior).
  *
  * Keys: `POST /api/vpn/keygen` generates a fresh Curve25519 pair ON
  * the device and stores the private key straight into pending
- * settings — the response carries ONLY the public key (register it at
+ * settings, the response carries ONLY the public key (register it at
  * the server). Settings GETs redact `private_key`/`preshared_key`
  * (api_http secret suffixes); "" on PUT keeps the stored value.
  */
@@ -88,9 +88,9 @@ esp_err_t vpn_manager_stop(void);
 
 esp_err_t vpn_manager_status(vpn_manager_status_t *out);
 
-/** The device's OWN tunnel address while CONNECTED — WireGuard: the
+/** The device's OWN tunnel address while CONNECTED: WireGuard: the
  *  configured `address` (any /cidr stripped); Tailscale: the live
- *  tailnet 100.x IP. Consumers: the HA webhook push (`vpn_ip` — HA
+ *  tailnet 100.x IP. Consumers: the HA webhook push (`vpn_ip`, HA
  *  stores it as the away-from-home control endpoint). "" +
  *  ESP_ERR_INVALID_STATE when not connected. */
 esp_err_t vpn_manager_tunnel_ip(char *buf, size_t len);

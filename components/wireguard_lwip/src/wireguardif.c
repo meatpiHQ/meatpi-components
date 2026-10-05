@@ -176,7 +176,7 @@ static err_t wireguardif_peer_output(struct netif *netif, struct pbuf *q, struct
 
 	// Check if peer has a direct endpoint (non-zero IP and port)
 	// If not, use DERP relay callback if available.
-	// force_derp_output: cellular mode — always route through DERP.
+	// force_derp_output: cellular mode, always route through DERP.
 	if (ip_addr_isany(&peer->ip) || peer->port == 0 || device->force_derp_output) {
 		WG_DEBUG("[WG_OUT] No direct endpoint or force_derp, checking DERP\n");
 
@@ -424,7 +424,7 @@ static void wireguardif_process_response_message(struct wireguard_device *device
 		ip_addr_isany(addr) ? "DERP" : ipaddr_ntoa(addr), port);
 
 	if (wireguard_process_handshake_response(device, peer, response)) {
-		// Packet is good — identify the peer
+		// Packet is good: identify the peer
 		uint8_t wg_idx = wireguard_peer_index(device, peer);
 		printf("[WG] *** HANDSHAKE COMPLETE! wg_idx=%u key=%02x%02x%02x%02x "
 		       "from=%s:%u ***\n",

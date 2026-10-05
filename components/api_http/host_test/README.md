@@ -1,6 +1,6 @@
-# api_http — host unit suite
+# api_http: host unit suite
 
-Compiles ONLY the pure utility layer (`api_http_util.c` — no
+Compiles ONLY the pure utility layer (`api_http_util.c`: no
 esp_http_server dependency) on the IDF **linux** target. Runs on the bench
 Pi via `.\test.ps1 host` (or manually: `idf.py --preview set-target linux &&
 idf.py build && ./build/api_http_host_test.elf`).
@@ -24,5 +24,5 @@ idf.py build && ./build/api_http_host_test.elf`).
 OK
 ```
 
-(The FreeRTOS POSIX ELF never exits by itself — the runner judges by the
+(The FreeRTOS POSIX ELF never exits by itself: the runner judges by the
 Unity summary line, same as the other host suites.)

@@ -96,7 +96,7 @@ static void test_pem_rejects_binary_and_bounds(void)
     char der[64];
 
     memset(der, 0x30, sizeof(der));
-    der[1] = (char)0x82; /* DER SEQUENCE — binary upload */
+    der[1] = (char)0x82; /* DER SEQUENCE: binary upload */
     TEST_ASSERT_FALSE(cm_pem_plausible(CERT_MANAGER_CA, der, sizeof(der)));
     TEST_ASSERT_FALSE(cm_pem_plausible(CERT_MANAGER_CA, CERT_PEM, 8));
     TEST_ASSERT_FALSE(cm_pem_plausible(CERT_MANAGER_CA, NULL, 100));

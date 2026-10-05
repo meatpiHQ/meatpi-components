@@ -236,11 +236,11 @@ esp_err_t usb_host_manager_start(void)
          *               IP-over-USB carries the J2534 TCP server + web UI
          *               + bridges (NCM = what Windows 10/11 binds natively;
          *               24H2 removed the RNDIS driver);
-         *   cdc       → CDC-ACM serial — not implemented yet.
+         *   cdc       → CDC-ACM serial, not implemented yet.
          * No VBUS drive: the PC powers the bus in device role. */
         usb_net_device_config_t dev_cfg = { 0 };
 
-        /* CDC-ACM serial J2534 transport (usb_cdc_device) — a virtual COM
+        /* CDC-ACM serial J2534 transport (usb_cdc_device): a virtual COM
          * port instead of the NCM/RNDIS network device. */
         if (strcmp(uhm_settings_device_class(), "cdc") == 0)
         {

@@ -65,7 +65,7 @@ void espnl_pair_init(void);
  * Persist the dongle as a STA candidate + our ssid/device_id. Reads the
  * stored objects first and writes only what differs (§11: no
  * unconditional rewrites). @p changed reports whether anything was
- * written — the engine reboots only then. device_id may be "".
+ * written: the engine reboots only then. device_id may be "".
  */
 esp_err_t espnl_pair_store(const char *ssid, const char *password,
                            const char *device_id, int *slot_out,
@@ -102,7 +102,7 @@ const char *espnl_usb_host(void);
 /* ---- engine hooks used by the USB driver -------------------------------- */
 
 /** The identified dongle (status document): device id, firmware version
- *  and API level from /api/info — a stale dongle build is visible in the
+ *  and API level from /api/info, a stale dongle build is visible in the
  *  status instead of surfacing as a "foreign device" (bench 2026-09-08). */
 void espnl_engine_note_info(const char *device_id, const char *fw_version,
                             int api_level);
@@ -113,6 +113,6 @@ void espnl_engine_note_info(const char *device_id, const char *fw_version,
 void espnl_engine_dongle_rebooting(void);
 
 /** Record the last pairing failure for the status/HTTP/UI surface
- *  ("" clears). Any store/identify failure should name itself here —
+ *  ("" clears). Any store/identify failure should name itself here:
  *  the pair_state label alone proved misleading (field 2026-09-07). */
 void espnl_status_set_last_error(const char *msg);

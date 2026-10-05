@@ -1,4 +1,4 @@
-# Host test compiles ONLY the pure string builders — no esp-mdns.
+# Host test compiles ONLY the pure string builders: no esp-mdns.
 set(comp_dir "${CMAKE_CURRENT_LIST_DIR}/../..")
 
 idf_component_register(

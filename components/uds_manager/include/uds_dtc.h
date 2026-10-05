@@ -22,7 +22,7 @@
 
 /**
  * @file uds_dtc.h
- * @brief PURE UDS DTC codec (ISO 14229 services 0x19 / 0x14) —
+ * @brief PURE UDS DTC codec (ISO 14229 services 0x19 / 0x14):
  *        request builders + response parsers, host-tested. The
  *        consumer (autopid_dtc, TASK_dtc §12) drives the transactions
  *        via uds_request(); this layer never does I/O.
@@ -52,16 +52,16 @@ typedef struct
 
 /* ---- request builders (return bytes written) ------------------------------- */
 
-/** 19 01 <mask> — reportNumberOfDTCByStatusMask. */
+/** 19 01 <mask>: reportNumberOfDTCByStatusMask. */
 size_t uds_dtc_req_count(uint8_t status_mask, uint8_t out[3]);
 
-/** 19 02 <mask> — reportDTCByStatusMask. */
+/** 19 02 <mask>: reportDTCByStatusMask. */
 size_t uds_dtc_req_by_status(uint8_t status_mask, uint8_t out[3]);
 
-/** 19 0A — reportSupportedDTC. */
+/** 19 0A: reportSupportedDTC. */
 size_t uds_dtc_req_supported(uint8_t out[2]);
 
-/** 14 <g><g><g> — ClearDiagnosticInformation. NULL group = FFFFFF
+/** 14 <g><g><g>: ClearDiagnosticInformation. NULL group = FFFFFF
  *  (all groups). */
 size_t uds_dtc_req_clear(const uint8_t group[3], uint8_t out[4]);
 
@@ -121,10 +121,10 @@ typedef struct
 size_t uds_wwh_req_by_mask(uint8_t group, uint8_t status_mask,
                            uint8_t severity_mask, uint8_t out[5]);
 
-/** 19 55 <group> — the DTCs with permanent status. */
+/** 19 55 <group>: the DTCs with permanent status. */
 size_t uds_wwh_req_permanent(uint8_t group, uint8_t out[3]);
 
-/** 14 FF FF <group> — clear the group (ISO 27145-3: all of it or
+/** 14 FF FF <group>: clear the group (ISO 27145-3: all of it or
  *  nothing; there is no clear of a single code). */
 size_t uds_wwh_req_clear(uint8_t group, uint8_t out[4]);
 

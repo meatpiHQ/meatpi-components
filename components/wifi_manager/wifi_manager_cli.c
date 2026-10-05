@@ -22,12 +22,12 @@
 
 /**
  * @file wifi_manager_cli.c
- * @brief The component's CLI command (`wifi`) — registered into
+ * @brief The component's CLI command (`wifi`): registered into
  *        cmdline_manager by wifi_manager_register_cli() (main wires it
  *        in CLI compositions only). Legacy option interface preserved
  *        (-s/--status, -i/--info, outputs byte-alike); --scan is the
  *        v6 addition; bare = a short v6 summary. Direct esp_wifi reads
- *        are fine here — this file is part of the radio's owner.
+ *        are fine here: this file is part of the radio's owner.
  */
 #include <stdlib.h>
 #include <string.h>
@@ -223,7 +223,7 @@ static int cmd_wifi(int argc, char **argv)
 
     if (s_args.stop->count > 0)
     {
-        /* EPHEMERAL radio stop (BLE/coex testing) — settings untouched,
+        /* EPHEMERAL radio stop (BLE/coex testing): settings untouched,
            a reboot brings WiFi back. Cuts network transports (use the
            UART console). */
         cmdline_printf("stopping WiFi radio (until reboot)...\n");

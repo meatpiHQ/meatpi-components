@@ -35,7 +35,7 @@
 
 #define DL_EPOCH_LEN  10
 
-/* every stream's prefix and every engine's extension — retention spans
+/* every stream's prefix and every engine's extension: retention spans
  * engine switches, so a user who flips sqlite->csv still ages out
  * their old .db files (within the same stream prefix) */
 static const char *const PREFIXES[] = { DL_PREFIX_PARAM, DL_PREFIX_CAN };
@@ -277,10 +277,10 @@ int dl_csv_frame_row(char *out, size_t cap, int64_t ts_ms, uint32_t id,
 
 /* ---- more text rows (addendum 2) -------------------------------------------
 
-   candump: "(sec.usec) can0 ID#HEXDATA" — can-utils / SavvyCAN;
+   candump: "(sec.usec) can0 ID#HEXDATA", can-utils / SavvyCAN;
    asc:     Vector CANalyzer text data row (seconds since file start);
    jsonl:   one JSON object per line (names come from the bounded
-            registry — no quote escaping by design). */
+            registry: no quote escaping by design). */
 
 int dl_candump_row(char *out, size_t cap, int64_t ts_ms, uint32_t id,
                    uint8_t flags, const uint8_t *data, uint8_t dlc)
@@ -593,7 +593,7 @@ size_t dl_mf4_prelude(uint8_t *buf, size_t cap, int64_t start_ms,
         mf4_tx(buf, off_tx[i], CN_NAMES[i]);
     }
 
-    /* DT header — length grows by 22 per record (patched at commit) */
+    /* DT header: length grows by 22 per record (patched at commit) */
     mf4_block(buf, off_dt, "##DT", 24, 0);
 
     *dt_len_off = (uint32_t)(off_dt + 8);
@@ -617,7 +617,7 @@ size_t dl_mf4_record(uint8_t *buf, int64_t start_ms,
 
    python-can-compatible: "LOGG" 144-byte file header (counters + end
    time re-written on every commit) + LOG_CONTAINER objects
-   (compressionMethod=0, uncompressed v1 — the zlib variant is a v2
+   (compressionMethod=0, uncompressed v1: the zlib variant is a v2
    candidate via the ESP ROM miniz) of concatenated 48-byte
    CAN_MESSAGE objects (ns timestamps relative to the header start). */
 

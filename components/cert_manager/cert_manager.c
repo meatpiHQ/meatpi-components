@@ -82,14 +82,14 @@ static cm_set_t *find_set(const char *name)
 
 /** Invalidate a set's cache WITHOUT freeing: borrowed pointers (e.g.
  *  esp-mqtt's TLS config, which does not copy) must stay valid until
- *  reboot — freeing here would be a use-after-free at the next TLS
+ *  reboot, freeing here would be a use-after-free at the next TLS
  *  handshake. The orphaned buffers (≤8 KB per upload/delete of a loaded
  *  part, a rare config operation) are the legacy-proven trade. */
 static void orphan_cache(cm_set_t *set)
 {
     for (int p = 0; p < 3; p++)
     {
-        set->pem[p] = NULL; /* deliberately NOT freed — see above */
+        set->pem[p] = NULL; /* deliberately NOT freed, see above */
         set->pem_len[p] = 0;
     }
 }
@@ -129,7 +129,7 @@ static esp_err_t scan_cb(const char *name, bool is_dir, size_t size,
 
 /** Read one part from the filesystem into the PSRAM cache. A FLASH READ
  *  (littlefs -> esp_partition_read disables the cache): only ever called
- *  from internal-stack contexts — the rescan (main task at start, the
+ *  from internal-stack contexts, the rescan (main task at start, the
  *  httpd task on upload/delete) or a guarded lazy get. */
 static void load_part(cm_set_t *set, cert_manager_part_t part)
 {
@@ -157,7 +157,7 @@ static void load_part(cm_set_t *set, cert_manager_part_t part)
  *  consumer's first borrow is never a flash read on ITS stack: the
  *  data_destinations poster (PSRAM stack) asserted in
  *  spi_flash_disable_interrupts_caches_and_other_cpu on its first HTTPS
- *  delivery with a cert set (bench 2026-09-19) — the ha_webhooks poster
+ *  delivery with a cert set (bench 2026-09-19): the ha_webhooks poster
  *  would have done the same with a cert_set configured. ≤ 10 × 3 × 8 KB
  *  of PSRAM worst case, typically one 2 KB CA. */
 static void load_all(void)
@@ -321,7 +321,7 @@ esp_err_t cert_manager_start(void)
 
 esp_err_t cert_manager_stop(void)
 {
-    s_started = false; /* caches stay valid — borrowed pointers live on
+    s_started = false; /* caches stay valid: borrowed pointers live on
                           (see orphan_cache) */
     return ESP_OK;
 }
@@ -344,7 +344,7 @@ esp_err_t cert_manager_get(const char *set, cert_manager_part_t part,
     if (entry != NULL && entry->pem[part] == NULL)
     {
         /* not cached (a part that appeared without a rescan): the lazy
-           load is a flash read, forbidden on a PSRAM stack (§2) — refuse
+           load is a flash read, forbidden on a PSRAM stack (§2), refuse
            with a warning instead of the cache_utils.c:126 assert */
         int marker = 0;
 

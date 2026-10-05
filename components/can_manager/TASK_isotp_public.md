@@ -52,7 +52,7 @@ blocked counters, the chip answers OK / the app sees `?`.
 2. `uds_transport_obd.c` holds the transaction around `uds_at_transceive()`;
    `uds_manager.c` rejects a reply whose SID is not ours (`uds_response_
    matches()`, host-tested) with ESP_ERR_INVALID_RESPONSE + a WARN, on either
-   transport — a stray autopid reply can never be returned as the answer.
+   transport: a stray autopid reply can never be returned as the answer.
 3. Bench: new `tools/testbench/obd/uds_route_bench.py <base>` → `UDS ROUTE
    PASS`: 20 × `3E 00` + `10 02` + `22 F1 90` through `POST /api/uds/request`
    with autopid polling; asserts 20/20 ok, prints the backend and the
@@ -60,14 +60,14 @@ blocked counters, the chip answers OK / the app sees `?`.
 
 Acceptance (bench 2026-09-16): the guard, the hold and the SID/retry
 guards land TWO gates in `uds_route_bench.py`:
-- HARD (correctness): **0 corrupt** — a request is NEVER answered ok with a
+- HARD (correctness): **0 corrupt**, a request is NEVER answered ok with a
   payload that is not its own SID. Verified 0/0 even under the flood below.
 - throughput: `--min-ok-pct` (default 90). PASS with autopid PAUSED (20/20,
   median 107 ms) or a light/standard-PID config.
 
 KNOWN LIMIT (the chip transport's ceiling, why Phase 2 exists): while autopid
 floods the SAME single-MCU ECU simulator with 32-parameter multiframe DIDs
-(the Ioniq profile on 7E4), a UDS request to 7E0 is starved to ~2/20 — the
+(the Ioniq profile on 7E4), a UDS request to 7E0 is starved to ~2/20: the
 transaction hold blocks autopid (verified: 0 polls during a UDS burst), but
 autopid's own request times out mid-ISO-TP and the simulator keeps
 transmitting its 7E4 reply, saturating the bus. Failures are clean errors,
@@ -76,7 +76,7 @@ independently, so this is pessimistic; the real coexistence fix is the native
 ISO-TP path (Phase 2), which subscribes to its own rx id and never touches
 the chip. The chip transport is the no-CAN fallback.
 
-### Phase 2: the public ISO-TP provider (the big one, fixes A and B) — BUILT + bench PASS 2026-09-16
+### Phase 2: the public ISO-TP provider (the big one, fixes A and B), BUILT + bench PASS 2026-09-16
 
 Status: `can_isotp_esp` is in the public build (main registers it right after
 `ext_manager_init`, only when the slot is empty). Bench, public build, DUT
@@ -86,13 +86,13 @@ Status: `can_isotp_esp` is in the public build (main registers it right after
    came back as an ISO15765 RX_MSG).
 2. `j2534_bench.py --reflash --tx 7E2 --rx 7EA` against `pcan_reflash_ecu.py
    --scenario happy --req 7E2 --resp 7EA` (new id overrides: the simulator
-   cannot be switched off — its settings API is gone — and it answers 7E0, so
+   cannot be switched off (its settings API is gone) and it answers 7E0, so
    the reflash ran on a pair it does not answer; autopid paused) →
    `J2534 REFLASH PASS`: CONNECT with ids, 10 02, seed/key, the multi-frame
    34 → 74, the 31 01 erase routine (the happy scenario sent no 0x78).
 3. `uds_route_bench.py --expect-backend isotp` with autopid RUNNING: 20/20 on
    7E0 (median 22 ms) AND 20/20 on the pathological same-ECU 7E4 target
-   (median 28 ms) that starved the chip path to 2/20 — 0 corrupt both. The
+   (median 28 ms) that starved the chip path to 2/20, 0 corrupt both. The
    simulator answers `22 F1 90` with NRC 0x31 on 7E0 now (Ioniq profile), so
    the VIN check moved to the negative-response path.
 4. Coexistence: autopid kept ~11 polls/s during the UDS benches (58 in 5 s),
@@ -102,7 +102,7 @@ Status: `can_isotp_esp` is in the public build (main registers it right after
    is editing the DUT's table live.
 5. Memory: PSRAM min_free 3.89 MB with a session open (floor 1 MB); the
    `isotp` task stack high-water 3296 B free of 4096 after the reflash leg;
-   `stack_audit.py` (its component roots were WRONG — `REPO/../..` is
+   `stack_audit.py` (its component roots were WRONG: `REPO/../..` is
    wican-fw-dev, the paths doubled the folder name, so it had scanned main/
    only; fixed) lists the task, no candidate for the component (frames ≤ 96 B,
    esp_isotp ≤ 160 B). Pre-existing candidates it now surfaces, NOT touched:
@@ -111,8 +111,8 @@ Status: `can_isotp_esp` is in the public build (main registers it right after
 
 Two things the build added beyond the sketch below: (a) the provider allows
 ONE session per rx id, so the UDS isotp transport now closes its session after
-5 s idle (`ISOTP_IDLE_CLOSE_MS`, esp_timer; tester-present re-binds inside it)
-— without that a UDS probe of an ECU locked a J2534 CONNECT to the same ECU
+5 s idle (`ISOTP_IDLE_CLOSE_MS`, esp_timer; tester-present re-binds inside it),
+without that a UDS probe of an ECU locked a J2534 CONNECT to the same ECU
 out (bench-hit); (b) both consumers hold `obd_gate` as planned (UDS per
 transaction, J2534 WRITE→READ delivery).
 
@@ -175,9 +175,9 @@ Acceptance (all on the public build, DUT + simulator, then the PCAN ECU):
 
 Not host-testable as a unit (esp_isotp REQUIRES esp_driver_twai); the
 pure part worth a host test is the session bookkeeping (open/close/limits,
-NO_MEM consumption) behind a fake ops seam — small, do it.
+NO_MEM consumption) behind a fake ops seam: small, do it.
 
-### Phase 3: chip transport hygiene (fixes D, keeps the fallback honest) — BUILT + bench PASS 2026-09-16
+### Phase 3: chip transport hygiene (fixes D, keeps the fallback honest), BUILT + bench PASS 2026-09-16
 
 Status: `uds_route_bench.py --expect-backend obd_chip` (settings forced) with
 the Exclusive bus switch on: **20/20, median 3 ms, max 7 ms** (Phase 1: 106 ms
@@ -192,7 +192,7 @@ TCP bridge (scratch `elm_timing.py` / `elm_pending.py`):
   responsePending AND prints every one of them before the final answer
   (erase_pending ECU: 8 lines then `71 01 FF 00 00`, 409 ms, nothing left
   in its buffer). The parser is message-aware now: pendings dropped and
-  counted (`pending` in the route), the last message is the answer —
+  counted (`pending` in the route), the last message is the answer,
   host-tested, and bench: `31 01 FF 00` -> `71 01 FF 00 00` pending 8.
 - setup re-send only when needed works: a steady request adds 5 bytes to
   the chip's tx counter (its own line), nothing else writes meanwhile.
@@ -218,7 +218,7 @@ TCP bridge (scratch `elm_timing.py` / `elm_pending.py`):
   backend.
 Also: 8 KB PSRAM reply buffer, 64 B request cap returns INVALID_ARG with a
 log line. The chip path without the Exclusive switch stays at its known
-ceiling under autopid's flood (4/20, 0 corrupt) — that is what the switch
+ceiling under autopid's flood (4/20, 0 corrupt): that is what the switch
 is for. Original sketch:
 
 1. `ATSP` → `ATTP` (share `ap_init_sanitize` by moving it to obd_chip as
@@ -237,7 +237,7 @@ is for. Original sketch:
 Acceptance: `uds_route_bench.py --backend obd_chip` (settings forced) →
 20/20, median ≤ 300 ms, no `ATSP` in a `/ws/obd` capture of the run.
 
-### Phase 4: route + page (fixes E) — BUILT + PASS 2026-09-16
+### Phase 4: route + page (fixes E), BUILT + PASS 2026-09-16
 
 Status: `GET /api/uds` (backend_setting/active, provider, can_running, the
 exclusive switch state, autopid_paused, session_active, `last` transaction,
@@ -245,8 +245,8 @@ esp_isotp provider stats), `POST /api/uds {exclusive}`, `POST /api/uds/session
 {action:begin|end,tx_id,rx_id,ext}` (tester present while the page holds it),
 `timeout_ms` honoured as P2*, the whole PDU as hex (12 KB PSRAM). Page: path
 badge + provider chip, the Exclusive bus switch, 29-bit, session switch,
-"Final response timeout (P2*)", and — Ali 2026-09-16, "a terminal view
-instead" — a scrolling TERMINAL of every request (›) and reply (‹) with the
+"Final response timeout (P2*)", and (Ali 2026-09-16, "a terminal view
+instead") a scrolling TERMINAL of every request (›) and reply (‹) with the
 decode inline (positive / NRC name, size, time, path, DID payload as text),
 raw JSON per reply behind a toggle, kept across page visits (last 300 lines,
 Clear), a sent line clicks back into the form; the uds_manager settings card.
@@ -273,7 +273,7 @@ Acceptance: `probe_uds.mjs` PASS; smoke PASS; Playwright shot on the DUT
 showing the badge and a decoded VIN.
 
 ### The Exclusive bus option (Ali, 2026-09-16: "an enable/disable in the UI" so
-UDS/J2534 can block AutoPID) — BUILT + bench PASS
+UDS/J2534 can block AutoPID), BUILT + bench PASS
 
 Design: settings are boot-applied and autopid depends on uds_manager, so the
 hold lives in `obd_gate` (the bus-policy component both sides already point
@@ -282,20 +282,20 @@ at): `obd_gate_diag_hold(owner, on)` refcounted by owner (pure core
 every loop, pauses polls AND DTC scans, acks (`obd_gate_diag_ack`), and
 restores its chip baseline on resume; `stats.paused_diag` in /api/autopid.
 Each tool has a boot-default setting (`uds_manager.exclusive`,
-`j2534_server.exclusive`, default ON — Ali 2026-09-16, "this should be ON by
+`j2534_server.exclusive`, default ON: Ali 2026-09-16, "this should be ON by
 default in UDS tools and in J2534 and scripting") plus a RUNTIME switch on its page
-(`POST /api/uds|/api/j2534 {exclusive}`) — the autopid pattern (setting +
+(`POST /api/uds|/api/j2534 {exclusive}`): the autopid pattern (setting +
 runtime control). UDS holds from the first request (waiting up to 700 ms for
 autopid's ack) until 10 s of idle (`UDS_EXCLUSIVE_IDLE_MS`) or the end of a
 session; J2534 holds while a tester is attached (TCP or serial). Bench: hold
 on within ~1 s of the first request, 0 autopid polls while held, release at
 ~10 s idle and polls back at ~11/s; J2534 probe paused autopid for exactly
 the 2.3 s connection; chip-path bench with the switch 20/20 vs 4/20 without.
-Not blocked: apps on the MIC chip (BLE/TCP/WS ELM clients) — they are the
+Not blocked: apps on the MIC chip (BLE/TCP/WS ELM clients), they are the
 user's own traffic; autopid already yields to them. Scripting has its OWN
 setting + hold (`script_engine.exclusive`, default on): a script's first ECU
 access (uds/uds_ext, obd_claim, obd_request, obd_isotp_tx/rx) takes obd_gate's
-hold, the runner releases it after the run — so a running script never
+hold, the runner releases it after the run, so a running script never
 depends on the UDS page's switch. Bench (UDS switch OFF): a synchronous 4.4 s
 script moved autopid's poll counter by 4 (all before its first request)
 against 44 polls in 4 s idle; the device log shows the hold spanning the run
@@ -305,14 +305,14 @@ taken meanwhile queue behind it and are served AFTER the run (they read
 "running") - use the log ring or a counter delta around the run, not samples.
 
 ### Scripting re-verified (Ali: "check UDS scripting still works and script
-ECU flashing") — PASS 2026-09-16
+ECU flashing"), PASS 2026-09-16
 
 `tools/testbench/obd/uds_bindings.be` via `run_be.py`: uds()/uds_ok/uds_nrc/
-uds_nrc_str, obd_claim/obd_request/obd_isotp_tx/rx/obd_release — 13/13 on the
+uds_nrc_str, obd_claim/obd_request/obd_isotp_tx/rx/obd_release, 13/13 on the
 native path with autopid running AND on the chip path. `reflash.be` (now
 TX/RX-parametrized; `run_be.py --tx 7E2 --rx 7EA`) against
 `pcan_reflash_ecu.py --scenario happy --req 7E2 --resp 7EA` with the Exclusive
-switch on: REFLASH OK — session, seed/key, erase, RequestDownload, 640 bytes in
+switch on: REFLASH OK, session, seed/key, erase, RequestDownload, 640 bytes in
 5 TransferData blocks over native ISO-TP in ~140 ms, TransferExit, the ECU's
 checkMemory CRC routine `71 01 02 02 00` = verified. Needs
 `script_engine.allow_reflash` (restored to off after).
@@ -330,12 +330,12 @@ checkMemory CRC routine `71 01 02 02 00` = verified. Needs
 ## 3. Decisions for Ali (defaults in bold, the plan proceeds on them)
 
 1. Provider placement: **new public component `can_isotp_esp`, self-
-   registering, pack wins when present** — or fold it into can_manager.
+   registering, pack wins when present**, or fold it into can_manager.
 2. Bus arbitration for native sessions: **obd_gate per conversation (UDS:
-   request->final response; J2534: write->reply)** — or hold autopid for the
+   request->final response; J2534: write->reply)**, or hold autopid for the
    life of a J2534 channel.
 3. Keep the chip transport as the no-CAN fallback: **yes** (Phase 3 makes
-   it decent) — or drop it and require native CAN for the UDS Tool.
+   it decent), or drop it and require native CAN for the UDS Tool.
 4. Page: expose the `backend` setting in the UI: **no, status badge only**;
    the setting stays in All Settings for the bench.
 

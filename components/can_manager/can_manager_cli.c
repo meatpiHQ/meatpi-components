@@ -44,7 +44,7 @@ static const char *bus_state_str(uint8_t state)
     }
 }
 
-/* can send <id> [hexbytes] [-r] — TX one frame (id decides 11/29-bit) */
+/* can send <id> [hexbytes] [-r]: TX one frame (id decides 11/29-bit) */
 static int cmd_can_send(int argc, char **argv)
 {
     uint32_t id = 0;

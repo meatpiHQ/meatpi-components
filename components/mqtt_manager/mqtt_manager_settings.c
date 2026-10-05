@@ -26,7 +26,7 @@
  *        (source of truth for shape/ranges/defaults), on_validate (enabled
  *        needs a broker url), on_apply (stores the boot-applied broker
  *        config). The identity pair (client_id/topic_prefix) is seeded into
- *        mqtt_manager.c via mm_core_set_identity — start() resolves its
+ *        mqtt_manager.c via mm_core_set_identity: start() resolves its
  *        device-id defaults in place.
  */
 #include <stdio.h>

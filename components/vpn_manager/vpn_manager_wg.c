@@ -34,7 +34,7 @@
  *        netif (dest & mask == addr & mask). So the netif IP is ALWAYS
  *        Interface.Address; the user's AllowedIPs contributes only the
  *        netmask, and 0.0.0.0 (the route-everything idiom) falls back
- *        to /32 — the default_route flag handles it. Passing the
+ *        to /32: the default_route flag handles it. Passing the
  *        AllowedIPs NETWORK address through instead brought the netif
  *        up as e.g. 10.8.0.0 and silently killed the whole data plane
  *        (BUG_WG_NETIF_ADDR.md).
@@ -53,7 +53,7 @@ static const char *TAG = "vpn_manager";
 
 static wireguard_ctx_t s_ctx;
 static wireguard_config_t s_cfg;
-/* esp_wireguard keeps POINTERS into its config — these back them */
+/* esp_wireguard keeps POINTERS into its config: these back them */
 static char s_addr[32];
 static char s_endpoint[64];
 static char s_priv[64];

@@ -25,7 +25,7 @@
  * @brief Home Assistant integration (v6 port of the legacy ha_webhooks +
  *        autopid webhook poster). Owns the HA telemetry link:
  *
- *   - inbound  `/api/webhook` GET/POST/DELETE — the HA HACS integration
+ *   - inbound  `/api/webhook` GET/POST/DELETE: the HA HACS integration
  *              auto-registers its webhook URL here (discovery push);
  *   - outbound a PSRAM-stack poster task that, every `interval_s`, builds
  *              `{status, autopid_data, config}` and POSTs it to the
@@ -58,7 +58,7 @@ esp_err_t ha_webhooks_stop(void);
 esp_err_t ha_webhooks_register_http(void);
 
 /** Register the `webhook` console command (gated by the `cli` setting;
- *  called internally from on_apply — main wires nothing, §6b). */
+ *  called internally from on_apply: main wires nothing, §6b). */
 esp_err_t ha_webhooks_register_cli(void);
 
 #ifdef __cplusplus

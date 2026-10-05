@@ -23,7 +23,7 @@
 /**
  * @file usb_cdc_device.h
  * @brief WiCAN as a USB CDC-ACM (serial) DEVICE carrying the J2534 wire
- *        protocol — the `device_class=cdc` alternative to the NCM/RNDIS
+ *        protocol: the `device_class=cdc` alternative to the NCM/RNDIS
  *        network device (usb_net_device).
  *
  * The PC sees a virtual COM port (inbox usbser.sys on Windows, ttyACM on

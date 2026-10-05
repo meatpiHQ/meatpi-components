@@ -27,11 +27,11 @@
  * Owns the ONE device-status event group. Feature components publish their
  * state by setting/clearing well-known bits; consumers (LED logic, sleep
  * manager, status API, UI) read snapshots or block on bit combinations.
- * Nobody keeps a private "is X connected" flag — this is the single source
+ * Nobody keeps a private "is X connected" flag: this is the single source
  * of truth for live device state (Architecture §2: own the resource, let
  * others register into it).
  *
- * Bits are ephemeral runtime state — they reset on reboot and are NOT
+ * Bits are ephemeral runtime state: they reset on reboot and are NOT
  * settings. Only the lower 24 bits exist (FreeRTOS reserves the top 8).
  */
 #pragma once
@@ -85,7 +85,7 @@ extern "C" {
 /** Create the event group and capture running-app/partition info. */
 esp_err_t dev_status_manager_init(void);
 
-/** Lifecycle uniformity (§3); passive component — both trivial. */
+/** Lifecycle uniformity (§3); passive component: both trivial. */
 esp_err_t dev_status_manager_start(void);
 esp_err_t dev_status_manager_stop(void);
 
@@ -124,7 +124,7 @@ const char *dev_status_manager_partition_label(void);
 
 /**
  * The device id: 12 lowercase hex chars of the SoftAP MAC (legacy
- * hw_config_get_device_id). THE one identity every derived name builds on —
+ * hw_config_get_device_id). THE one identity every derived name builds on:
  * BLE device name ("WiCAN_<id>"), STA hostname ("wican_<id>"), AP SSID.
  * Cached; safe to call from any component after boot.
  */
@@ -147,13 +147,13 @@ typedef struct
 
 typedef struct
 {
-    dev_status_heap_t internal; /* MALLOC_CAP_INTERNAL — the scarce one    */
+    dev_status_heap_t internal; /* MALLOC_CAP_INTERNAL: the scarce one    */
     dev_status_heap_t psram;    /* MALLOC_CAP_SPIRAM                       */
 } dev_status_memory_t;
 
 /** Register the `version`/`status` CLI commands with cmdline_manager.
  *  Called INTERNALLY on the settings boot apply when the `cli` setting is
- *  true (default) — main no longer wires it. */
+ *  true (default): main no longer wires it. */
 esp_err_t dev_status_manager_register_cli(void);
 
 /** Register the settings descriptor ({cli}). Init runs before
@@ -195,14 +195,14 @@ esp_err_t dev_status_manager_memory_deep(dev_status_memory_t *out);
  * Counts since boot, from the SPI-flash driver's own counters
  * (CONFIG_SPI_FLASH_ENABLE_COUNTERS). THE tripwire for the
  * "component silently rewrites flash every boot / on a timer" bug class
- * (settings_manager did exactly that — 37 files, every boot, for weeks):
+ * (settings_manager did exactly that: 37 files, every boot, for weeks):
  * the boot report prints them and the bench asserts a write budget and
  * zero idle writes. */
 typedef struct
 {
     uint32_t write_count; /* esp_flash_write calls                        */
     uint32_t write_bytes;
-    uint32_t erase_count; /* erase ops — the wear that actually ages NOR  */
+    uint32_t erase_count; /* erase ops: the wear that actually ages NOR  */
     uint32_t erase_bytes;
 } dev_status_flash_t;
 
@@ -214,7 +214,7 @@ esp_err_t dev_status_manager_flash(dev_status_flash_t *out);
  * The automotive-DTC idea for the firmware itself (meatpi): structural
  * problems (registry overflow, settings degraded, errors during boot, …)
  * are LATCHED to NVS and survive reboots/power cycles until MANUALLY
- * cleared — `faults -c` on the CLI or POST /api/faults/clear. Raise is
+ * cleared: `faults -c` on the CLI or POST /api/faults/clear. Raise is
  * wear-disciplined: one NVS write on first occurrence, at most one
  * count-update per code per boot; recurrences count in RAM. */
 
@@ -244,7 +244,7 @@ esp_err_t dev_status_manager_faults_clear(void);
 
 /** One task's live stats. `stack_hw` is stack that was NEVER used (bytes;
  *  small = close to overflow). `runtime_us` is the cumulative esp_timer
- *  time the scheduler charged to the task — CPU% comes from DELTAS
+ *  time the scheduler charged to the task: CPU% comes from DELTAS
  *  between two snapshots: task_delta / (total_delta * cores). */
 typedef struct
 {
@@ -254,7 +254,7 @@ typedef struct
     int8_t   core;       /* 0 / 1, -1 = unpinned                        */
     uint8_t  prio;
     uint32_t stack_hw;   /* stack high-water: unused bytes remaining    */
-    uint64_t runtime_us; /* cumulative run time (u64 — never wraps)     */
+    uint64_t runtime_us; /* cumulative run time (u64: never wraps)     */
     bool     stack_ext;  /* stack lives in PSRAM (else internal DRAM)   */
 } dev_status_task_t;
 
@@ -268,7 +268,7 @@ typedef struct
  * meaningless `stack_hw` once.
  *
  * Snapshot every task into @p out (capacity @p cap): fills @p out_count
- * and @p out_total_us (scheduler time since boot, PER CORE — multiply by
+ * and @p out_total_us (scheduler time since boot, PER CORE, multiply by
  * core count for the CPU% denominator; both nullable). Sorted by
  * runtime, busiest first. Needs CONFIG_FREERTOS_USE_TRACE_FACILITY (+
  * _GENERATE_RUN_TIME_STATS for runtimes); ESP_ERR_NOT_SUPPORTED without.
@@ -290,7 +290,7 @@ esp_err_t dev_status_manager_temperature(float *out_c);
 /* ---- change notification (event_manager glue and friends) ------------------ */
 
 /** Called after any bit change: @p changed = XOR of old/new, @p now =
- *  the bits after. Runs in the SETTER's context — keep it non-blocking
+ *  the bits after. Runs in the SETTER's context: keep it non-blocking
  *  (queue sends only). ≤4 subscribers (event_manager glue and
  *  mqtt_manager today), registered for life; ESP_ERR_NO_MEM when full. */
 typedef void (*dev_status_change_cb_t)(EventBits_t changed,

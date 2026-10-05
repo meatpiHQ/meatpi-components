@@ -41,7 +41,7 @@
 
 static const char *TAG = "mdns_manager";
 
-/* the legacy on-air strings — the HA integration matches these */
+/* the legacy on-air strings: the HA integration matches these */
 #define MM_INSTANCE     "wican web server"
 #define MM_SERVICE_NAME "WiCAN-WebServer"
 #define MM_SERVICE_TYPE "_wican"
@@ -49,7 +49,7 @@ static const char *TAG = "mdns_manager";
 #define MM_SERVICE_PORT 80
 
 /* device-contract v2 (ha_webhooks/device-contract): every MeatPi
- * product advertises _meatpi._tcp — the one brand-wide discovery
+ * product advertises _meatpi._tcp: the one brand-wide discovery
  * surface. _wican._tcp stays in parallel for older integrations. */
 #define MM_MEATPI_SERVICE_TYPE "_meatpi"
 #define MM_API_LEVEL_STR       "6"
@@ -104,7 +104,7 @@ esp_err_t mdns_manager_start(void)
     mdns_instance_name_set(MM_INSTANCE);
 
     /* the TXT contract: legacy keys, real values (legacy shipped empty
-     * firmware/hardware/version strings on the Pro — same keys) */
+     * firmware/hardware/version strings on the Pro, same keys) */
     uint8_t mac[6];
     char mac_str[18];
 
@@ -135,7 +135,7 @@ esp_err_t mdns_manager_start(void)
     }
 
     /* the contract-v2 brand service (integration 3.0 discovers ONLY
-       _meatpi/_wican service types — _http matching was removed) */
+       _meatpi/_wican service types: _http matching was removed) */
     mdns_txt_item_t meatpi_txt[] =
     {
         { "device_type", CONFIG_WICAN_DEVICE_TYPE },

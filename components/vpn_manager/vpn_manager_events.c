@@ -22,7 +22,7 @@
 
 /**
  * @file vpn_manager_events.c
- * @brief event_manager glue: the `vpn.state {connected}` source —
+ * @brief event_manager glue: the `vpn.state {connected}` source,
  *        rules can alert on tunnel up/down or nudge consumers that
  *        live behind the tunnel. Publishes come from the state task
  *        (queue-safe).

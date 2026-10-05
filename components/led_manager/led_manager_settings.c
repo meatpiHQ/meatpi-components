@@ -38,7 +38,7 @@ static const settings_field_t FIELDS[] =
 {
     SETTINGS_BOOL("enabled", true),
     SETTINGS_STR_ENUM("idle_mode", "off,solid,blink_slow", "solid"),
-    /* startup/idle color rgb(0,204,255) — brand cyan (meatpi 2026-07-19) */
+    /* startup/idle color rgb(0,204,255): brand cyan (meatpi 2026-07-19) */
     SETTINGS_INT("idle_r", 0, 255, 0),
     SETTINGS_INT("idle_g", 0, 255, 204),
     SETTINGS_INT("idle_b", 0, 255, 255),

@@ -205,7 +205,7 @@ esp_err_t hw_config_apply_live(const hw_config_t *cfg)
         return ESP_ERR_NO_MEM;
     }
 
-    /* persist (survives reboot) — runs on the httpd task (internal stack,
+    /* persist (survives reboot): runs on the httpd task (internal stack,
        flash-safe). Reboot-to-apply is deliberately bypassed for the URL
        push: also update the live cache so the poster picks it up now. */
     char err[96] = "";
@@ -257,7 +257,7 @@ esp_err_t ha_webhooks_start(void)
 
     /* Always start the poster; its loop gates on `enabled` each lap. This
        way a LIVE enable via the HA discovery push (POST /api/webhook)
-       takes effect without a reboot — the whole point of the endpoint. */
+       takes effect without a reboot: the whole point of the endpoint. */
     ESP_LOGI(TAG, "up (enabled=%d, interval %us, mode %s)", c.enabled,
              (unsigned)c.interval_s, c.data_mode_full ? "full" : "changed");
     return hw_poster_start();

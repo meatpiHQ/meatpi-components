@@ -23,7 +23,7 @@
 /**
  * @file obd_chip_uart.c
  * @brief UART1 + control pins: driver install, serialized TX, the RX fan-out
- *        task, and the sleep/wake/reset pin sequences (from meatpi — the
+ *        task, and the sleep/wake/reset pin sequences (from meatpi, the
  *        sleep hold SURVIVES resets, so waking requires the release
  *        sequence, verified on the bench 2026-07-03).
  */
@@ -50,15 +50,15 @@ static const char *TAG = "obd_chip";
 #define OBD_RX_PIN    GPIO_NUM_15
 #define OBD_READY_PIN GPIO_NUM_7  /* chip-driven; LOW = awake/ready, HIGH =
                                      asleep (legacy elm327_chip_get_status:
-                                     ELM327_READY==0 — task §11.1 answered) */
+                                     ELM327_READY==0, task §11.1 answered) */
 #define OBD_SLEEP_PIN GPIO_NUM_9  /* manager-driven; high = awake            */
 #define OBD_RESET_PIN GPIO_NUM_41 /* active-low pulse; OPEN-DRAIN output
-                                     (legacy init — never drive it high)     */
+                                     (legacy init: never drive it high)     */
 
-/* The chip can burst (own 8 KB buffer) at 2 Mbaud — legacy sizes. The
+/* The chip can burst (own 8 KB buffer) at 2 Mbaud: legacy sizes. The
  * driver allocates these ring buffers itself with MALLOC_CAP_DEFAULT
  * (UART_ISR_IN_IRAM off), which our SPIRAM malloc policy places in
- * PSRAM — same as legacy; no DMA involved (the ISR copies the 128 B
+ * PSRAM, same as legacy; no DMA involved (the ISR copies the 128 B
  * hardware FIFO into the ring). Only the small driver object and FIFO
  * stash live internal. */
 #define OBD_UART_RX_BUF (18 * 1024)
@@ -108,7 +108,7 @@ void obd_pins_init(void)
 void obd_pin_wake(void)
 {
     /* the sleep path parks the pin low with pulldown + gpio_hold_en + RTC
-       pulldown; holds survive resets — release everything first (meatpi) */
+       pulldown; holds survive resets: release everything first (meatpi) */
     gpio_sleep_set_pull_mode(OBD_SLEEP_PIN, GPIO_FLOATING);
     gpio_pulldown_en(OBD_SLEEP_PIN);
     rtc_gpio_pulldown_dis(OBD_SLEEP_PIN);

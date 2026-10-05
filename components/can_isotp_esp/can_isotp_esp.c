@@ -173,7 +173,7 @@ static esp_err_t on_can_tx(uint32_t id, const uint8_t *data, uint8_t size,
 
     /* blocks up to 100 ms when the TWAI TX queue is full; a failure makes
        the stack abort this transfer (send_status error -> our send times
-       out) — exactly the "bus not delivering" outcome we want */
+       out), exactly the "bus not delivering" outcome we want */
     return can_manager_send(id, s->ext, false, data, size);
 }
 
@@ -246,7 +246,7 @@ static bool poll_busy_sessions(void)
         if (s->tx_inflight && (int32_t)(now - s->tx_deadline_ms) > 0)
         {
             /* the sender gave up on it long ago; the stack has flagged
-               N_Bs by now (busy window > N_Bs) — stop tracking */
+               N_Bs by now (busy window > N_Bs): stop tracking */
             s->tx_inflight = false;
         }
 
@@ -557,7 +557,7 @@ static void isotp_close(can_isotp_session_t s)
 
     /* the task cannot reach s any more (lookups happen under s_tbl_lock,
        which it holds while feeding). A consumer must not send/recv on s
-       concurrently with close — both consumers serialize their own calls. */
+       concurrently with close: both consumers serialize their own calls. */
     xSemaphoreTake(s->lock, portMAX_DELAY);
     xSemaphoreGive(s->lock);
 
@@ -634,7 +634,7 @@ static esp_err_t isotp_send(can_isotp_session_t s, const uint8_t *data,
 
     /* the peer's flow control never came or its CFs stalled (contract:
        ESP_ERR_TIMEOUT). tx_inflight stays set so the task keeps polling
-       until the stack flags N_Bs or the deadline passes — the link is
+       until the stack flags N_Bs or the deadline passes: the link is
        never left "in progress" */
     STAT_INC(tx_timeouts);
     ESP_LOGW(TAG, "send %u B on %lX: no completion within %lu ms",
@@ -680,7 +680,7 @@ static esp_err_t isotp_recv(can_isotp_session_t s, uint8_t *buf, size_t cap,
 esp_err_t can_isotp_esp_init(void)
 {
     static const log_descriptor_t LOG_DESC = { "can_isotp_esp", ESP_LOG_INFO };
-    /* the vendored stack logs every send at INFO — keep it quiet unless
+    /* the vendored stack logs every send at INFO: keep it quiet unless
        someone turns it up in the log settings */
     static const log_descriptor_t STACK_LOG = { "esp_isotp", ESP_LOG_WARN };
     static const can_isotp_ops_t OPS =

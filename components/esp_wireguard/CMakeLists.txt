@@ -3,7 +3,7 @@ idf_component_register(
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "src"
     # The trombik convenience API only. The WireGuard CORE (wireguardif,
-    # crypto, platform) is the SHARED components/wireguard_lwip — ONE
+    # crypto, platform) is the SHARED components/wireguard_lwip: ONE
     # data plane + ONE set of wireguardif_*/crypto symbols for BOTH VPN
     # types (plain WireGuard here, Tailscale via microlink). The private
     # esp_wireguard core copies were deleted 2026-07-07 when microlink

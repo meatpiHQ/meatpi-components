@@ -23,7 +23,7 @@
 /**
  * @file dev_status_manager_events.c
  * @brief event_manager glue: `status.bit {bit, set}` on EVERY bit
- *        change — mqtt/sd/time_synced/sta_connected/ble_connected/…
+ *        change, mqtt/sd/time_synced/sta_connected/ble_connected/…
  *        rules for free (the legacy HOME/DRIVE-mode idea, generalized:
  *        contexts are whatever rules make of the bits).
  */

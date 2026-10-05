@@ -22,7 +22,7 @@
 
 /**
  * @file http_server_manager.h
- * @brief WiCAN HTTP Server Manager — public API.
+ * @brief WiCAN HTTP Server Manager: public API.
  *
  * Owns exactly one HTTP server (httpd_handle_t): port, socket config, lifecycle.
  * It is content-agnostic. Two kinds of things register into it:
@@ -65,11 +65,11 @@ typedef struct
 {
     const char    *uri;              /**< "/dashboard.html", or a prefix: "/web/" plus '*'.   */
     const char    *content_type;     /**< MIME; inferred from extension if NULL.   */
-    const uint8_t *data_start;       /**< Embedded blob (EMBED_FILES) — or NULL.   */
-    const uint8_t *data_end;         /**< Embedded blob end — or NULL.             */
+    const uint8_t *data_start;       /**< Embedded blob (EMBED_FILES), or NULL.   */
+    const uint8_t *data_end;         /**< Embedded blob end, or NULL.             */
     const char    *fs_path;          /**< File path; for a prefix entry, the dir.  */
-    const char    *content_encoding; /**< "gzip" for pre-compressed — or NULL.     */
-    const char    *source_url;       /**< Upstream origin for fetch-on-miss — or NULL. */
+    const char    *content_encoding; /**< "gzip" for pre-compressed, or NULL.     */
+    const char    *source_url;       /**< Upstream origin for fetch-on-miss, or NULL. */
 } http_asset_t;
 
 /**
@@ -119,8 +119,8 @@ esp_err_t http_server_manager_set_asset_fetcher(http_asset_fetch_fn_t fn);
 
 /**
  * Optional per-request admission gate (network-trust lockdown,
- * wifi_manager TASK 2026-07-08). Called for EVERY request — API routes,
- * WebSocket handshakes, and asset/catch-all serving — with the accepted
+ * wifi_manager TASK 2026-07-08). Called for EVERY request (API routes,
+ * WebSocket handshakes, and asset/catch-all serving) with the accepted
  * socket's fd. Return false to reject (HTTP 403 / WS handshake refused).
  * The gate must be fast and non-blocking (httpd task context). NULL
  * disables gating. Wired by main (composition root), typically to
@@ -143,7 +143,7 @@ void http_server_manager_capacity(size_t *used, size_t *cap);
  * @brief The underlying server handle, for APIs that require it (e.g. async
  *        WebSocket sends via httpd_ws_send_frame_async).
  * @return Handle, or NULL when not started.
- * @warning Escape hatch. Do not register handlers through it directly — use
+ * @warning Escape hatch. Do not register handlers through it directly: use
  *          register_uri so ordering vs. the catch-all stays correct.
  */
 httpd_handle_t http_server_manager_handle(void);

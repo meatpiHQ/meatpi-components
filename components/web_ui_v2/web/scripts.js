@@ -1,4 +1,4 @@
-/* web_ui_v2 — the Scripts page as an on-demand chunk (2026-09-07).
+/* web_ui_v2: the Scripts page as an on-demand chunk (2026-09-07).
    Loaded by index.html's PAGES.scripts stub from /ui/scripts.js (embedded,
    gzipped; web_ui_v2/CMakeLists.txt minifies it with the same rjsmin as the
    page) the first time the page opens. A classic script: it shares the

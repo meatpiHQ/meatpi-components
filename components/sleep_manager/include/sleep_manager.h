@@ -22,22 +22,22 @@
 
 /**
  * @file sleep_manager.h
- * @brief WiCAN low-power manager (feature component) — rewrite of
+ * @brief WiCAN low-power manager (feature component): rewrite of
  *        legacy `sleep_mode.c` (TASK_sleep_manager.md).
  *
- * Model: battery voltage (from battery_monitor — this component owns
+ * Model: battery voltage (from battery_monitor, this component owns
  * NO ADC) drives a pure policy ladder: NORMAL → LOW_VOLTAGE (below
  * sleep_voltage, a countdown of sleep_delay_min) → SLEEPING →
  * WAKE_PENDING (voltage recovered and stable) → **reboot**
- * (restart_tracker POWER_WAKE) rather than resume-in-place — every
+ * (restart_tracker POWER_WAKE) rather than resume-in-place: every
  * manager restarts clean, the legacy-proven approach.
  *
  * SLEEPING = repeated LIGHT sleep with a 2 s timer wake (voltage still
  * sampled between naps; the timer wake doubles as meatpi's bench
- * failsafe — the device can never be stranded in a state only an
+ * failsafe: the device can never be stranded in a state only an
  * external signal can leave). Entry sequence: `sleep.entering` event →
  * wait for autopid idle → main's prepare callback (ordered component
- * stops — composition-root glue, so this component doesn't depend on
+ * stops, composition-root glue, so this component doesn't depend on
  * wifi/ble/mqtt/...) → CAN transceiver standby → OBD chip sleep
  * (verified each nap, ≤6 re-sleeps then recovery reboot) → USB power
  * rail held low.
@@ -50,7 +50,7 @@
  *
  * Bench-safety (meatpi 2026-07-07): the state task arms only after a
  * 15 s boot grace period (a bootloop still leaves a flash window),
- * and all sleeping is timer-woken light sleep — no deep sleep, no
+ * and all sleeping is timer-woken light sleep: no deep sleep, no
  * wake source that can silently never fire.
  *
  * Settings schema v3 (2026-10-01): `wake_mv` is a setting of its own

@@ -223,7 +223,7 @@ static bool obd_scan(ap_dtc_report_t *r, char *resp, size_t resp_len)
     ap_resp_ecu_t *ecus = ap_dtc_obd_ecus();
     bool alive = false;
 
-    /* 01 01: MIL + count from EVERY responder (MIL = OR, count = sum —
+    /* 01 01: MIL + count from EVERY responder (MIL = OR, count = sum,
        J1979 semantics for a functional scan) */
     if (ap_be()->request("0101", resp, resp_len, AP_DTC_REQ_TIMEOUT) ==
         ESP_OK)
@@ -263,7 +263,7 @@ static bool obd_scan(ap_dtc_report_t *r, char *resp, size_t resp_len)
                                resp, resp_len);
     }
 
-    /* freeze frame while the headers-on window is still open — only when
+    /* freeze frame while the headers-on window is still open: only when
        something is stored (no codes = no frame) */
     if (s_cfg.want_freeze && r->n_stored > 0)
     {
@@ -275,7 +275,7 @@ static bool obd_scan(ap_dtc_report_t *r, char *resp, size_t resp_len)
     return true;
 }
 
-/** Runs in the job task (scan) — poller already paused by the caller. */
+/** Runs in the job task (scan): poller already paused by the caller. */
 void ap_dtc_run_scan(char *resp, size_t resp_len)
 {
     /* the job task only (one job at a time): ~5 KB that is not its stack */
@@ -381,7 +381,7 @@ void ap_dtc_run_scan(char *resp, size_t resp_len)
              r->n_permanent, r->n_new, r->n_ecus, r->mil ? "ON" : "off");
 }
 
-/* ---- the clear (sync; HTTP/CLI/script/job contexts — NEVER the event
+/* ---- the clear (sync; HTTP/CLI/script/job contexts: NEVER the event
  *      dispatcher) ------------------------------------------------------------------- */
 
 /** The stored codes on the bus NOW, by the path in use.
@@ -582,7 +582,7 @@ esp_err_t ap_dtc_clear(const char *codes, const char *mode, bool *cleared,
             }
 
             /* reflect the wipe in the report + diff memory (no "new"
-             * storm when codes come back later — they ARE new then) */
+             * storm when codes come back later: they ARE new then) */
             xSemaphoreTake(s_lock, portMAX_DELAY);
             memcpy(s_prev_stored, present, sizeof(s_prev_stored));
             s_prev_n = n_after;

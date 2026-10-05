@@ -23,7 +23,7 @@
 /**
  * @file rtc_manager_http.c
  * @brief The optional /api/rtc routes (§9.1: feature components register
- *        their own domain routes) — main calls rtc_manager_register_http()
+ *        their own domain routes), main calls rtc_manager_register_http()
  *        only in HTTP compositions, so the chip code carries no HTTP
  *        dependency. Documented in components/HTTP_API.md §6d.
  */
@@ -84,7 +84,7 @@ static esp_err_t rtc_get_handler(httpd_req_t *req)
 
 static esp_err_t rtc_sync_handler(httpd_req_t *req)
 {
-    /* blocking on-demand SNTP sync — ~16 s/server worst case; the UI
+    /* blocking on-demand SNTP sync: ~16 s/server worst case; the UI
      * shows a spinner (same pattern as /api/wifi/scan) */
     esp_err_t err = rtc_manager_sync_now();
 

@@ -94,7 +94,7 @@ static bool dtc_uds_clear_group(const uint8_t group[3])
 }
 
 /** Clear via UDS: a CSV codes list -> one 14 per code (TRUE selective
- *  clear — the thing OBD mode 04 can't do); empty list -> group
+ *  clear, the thing OBD mode 04 can't do); empty list -> group
  *  FFFFFF. ALL calls must confirm. */
 bool ap_dtc_uds_clear(const char *codes)
 {
@@ -144,7 +144,7 @@ bool ap_dtc_uds_clear(const char *codes)
 
 /** UDS scan: stored = 19 02 <mask>, pending = 19 02 pendingDTC-bit.
  *  Permanent has no UDS equivalent (OBD-only concept) and MIL is not
- *  carried by 0x19 — both stay zero under forced `uds` (documented,
+ *  carried by 0x19: both stay zero under forced `uds` (documented,
  *  TASK_dtc §12). @return true when the ECU answered. */
 bool ap_dtc_uds_scan(ap_dtc_report_t *r)
 {

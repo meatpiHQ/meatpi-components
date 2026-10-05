@@ -9,7 +9,7 @@
  * Architecture:
  * - Poll for incoming DERP frames (TLS read) every iteration
  * - Drain TX queue between reads (TLS write)
- * - No mutex needed — single task owns the SSL context exclusively
+ * - No mutex needed: single task owns the SSL context exclusively
  *
  * Backpressure strategy (from tailscaled):
  * When queue is full, dequeue oldest packet and retry up to 3 times.
@@ -103,7 +103,7 @@ static int ml_derp_bio_send(void *ctx, const unsigned char *buf, size_t len) {
     return ret;
 }
 
-/* WiCAN: DERP transport I/O — TLS for real Tailscale DERP (:443), plain
+/* WiCAN: DERP transport I/O, TLS for real Tailscale DERP (:443), plain
  * TCP otherwise (Headscale's embedded DERP is served over plain HTTP).
  * The plain path reuses the mbedTLS BIO callbacks so the error-code
  * semantics (WANT_READ / SSL_TIMEOUT / CONN_RESET) match
@@ -203,7 +203,7 @@ static esp_err_t derp_recv_frame_header(microlink_t *ml, uint8_t *type,
 /**
  * Write exactly `len` bytes via TLS with WANT_WRITE retry.
  * Returns bytes written on success, -1 on error.
- * No mutex needed — called only from the DERP I/O task.
+ * No mutex needed: called only from the DERP I/O task.
  */
 static int derp_tls_write_all(microlink_t *ml, const uint8_t *data, size_t len) {
     size_t written = 0;
@@ -470,7 +470,7 @@ esp_err_t ml_derp_queue_send(microlink_t *ml, const uint8_t *dest_key,
     };
     memcpy(item.dest_pubkey, dest_key, 32);
 
-    /* WG handshake packets (type 1=init, 2=response) get priority — front of queue.
+    /* WG handshake packets (type 1=init, 2=response) get priority: front of queue.
      * This ensures handshake responses aren't delayed behind DISCO pings. */
     bool is_wg_handshake = (len >= 4 && (data[0] == 0x01 || data[0] == 0x02));
 
@@ -665,7 +665,7 @@ esp_err_t ml_derp_connect(microlink_t *ml) {
     const char *derp_host = ML_DERP_HOST;
     int derp_port = ML_DERP_PORT;
 
-    /* WiCAN: never dial a region that isn't in the DERPMap — a custom
+    /* WiCAN: never dial a region that isn't in the DERPMap, a custom
      * coordinator (Headscale) serves its own region IDs and the public
      * ML_DERP_HOST fallback is useless there. */
     uint16_t dial_region = ml_effective_derp_region(ml);
@@ -699,7 +699,7 @@ esp_err_t ml_derp_connect(microlink_t *ml) {
     ESP_LOGI(TAG, "Connecting to DERP %s:%d (region %d)",
              derp_host, derp_port, dial_region ? dial_region : ML_DERP_REGION);
 
-    /* DNS resolve — accept IPv4 or IPv6 (carrier may be IPv6-only) */
+    /* DNS resolve: accept IPv4 or IPv6 (carrier may be IPv6-only) */
     struct addrinfo hints = { .ai_family = AF_UNSPEC, .ai_socktype = SOCK_STREAM };
     struct addrinfo *res = NULL;
     char port_str[6];
@@ -713,7 +713,7 @@ esp_err_t ml_derp_connect(microlink_t *ml) {
     int64_t t_derp_dns = esp_timer_get_time();
     ESP_LOGI(TAG, "[TIMING] DERP DNS: %lld ms", (t_derp_dns - t_derp_start) / 1000);
 
-    /* TCP connect — use address family from DNS result */
+    /* TCP connect: use address family from DNS result */
     int sock = ml_socket(res->ai_family, SOCK_STREAM, 0);
     if (sock < 0) {
         ml_freeaddrinfo(res);
@@ -748,7 +748,7 @@ esp_err_t ml_derp_connect(microlink_t *ml) {
     mbedtls_ssl_init(&ml->derp.ssl);
     mbedtls_ssl_config_init(&ml->derp.ssl_conf);
     /* WiCAN/IDF v6 (mbedtls 4): global PSA RNG replaces the
-     * entropy+ctr_drbg pair and mbedtls_ssl_conf_rng — see PROVENANCE */
+     * entropy+ctr_drbg pair and mbedtls_ssl_conf_rng, see PROVENANCE */
     psa_crypto_init();
 
     mbedtls_ssl_config_defaults(&ml->derp.ssl_conf,

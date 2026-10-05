@@ -22,7 +22,7 @@
 
 /**
  * @file http_client_manager_auth.c
- * @brief PURE url/auth helpers — own tiny base64, no mbedtls, no RTOS;
+ * @brief PURE url/auth helpers: own tiny base64, no mbedtls, no RTOS;
  *        host-testable.
  */
 #include <stdio.h>

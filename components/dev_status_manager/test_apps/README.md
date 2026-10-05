@@ -1,4 +1,4 @@
-# dev_status_manager — on-target test app
+# dev_status_manager: on-target test app
 
 Self-contained. Builds against the main partition table (rev 2.1). Run:
 
@@ -13,7 +13,7 @@ any-set semantics, the network mask, a **cross-task waiter** (second task sets
 ETH after 300 ms and wakes `wait_any`), the wait-timeout path, bit names,
 uptime formatting, clear-all.
 
-## Expected result — serial markers, in this order
+## Expected result: serial markers, in this order
 
 ```
 INIT ok=1 partition=ota_0 version_set=1

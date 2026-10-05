@@ -69,7 +69,7 @@ static void test_bounce_never_edges(void)
 static void test_blip_resets_the_count(void)
 {
     /* two low samples, a high blip, then lows again: the counter must
-       restart — edge only after 3 CONSECUTIVE agreeing samples */
+       restart, edge only after 3 CONSECUTIVE agreeing samples */
     uhm_presence_sample(&s_p, 0);
     uhm_presence_sample(&s_p, 0);
     TEST_ASSERT_EQUAL_INT(UHM_EDGE_NONE, uhm_presence_sample(&s_p, 1));

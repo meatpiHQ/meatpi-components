@@ -1,7 +1,7 @@
 /**
  * @file bench_main.c
  * @brief data_logger storage benchmark (TASK_data_logger.md §3): sqlite
- *        write-rate matrix on the REAL SD card — FATFS vs littlefs —
+ *        write-rate matrix on the REAL SD card (FATFS vs littlefs)
  *        plus a raw-binary append ceiling. Prints one line per leg:
  *          BENCH <leg> rows=<n> ms=<t> rows_per_s=<r> file_kb=<s>
  *        and "BENCH DONE" at the end (serial capture asserts on it).
@@ -161,7 +161,7 @@ static int64_t insert_rows(sqlite3 *db, int rows, int batch,
 
         if (churn_pragmas)
         {
-            /* the "restore" half (WAL is compiled out — fails silently,
+            /* the "restore" half (WAL is compiled out: fails silently,
                exactly like legacy) */
             sqlite3_exec(db, "PRAGMA synchronous = NORMAL;", NULL, NULL,
                          NULL);

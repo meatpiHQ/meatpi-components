@@ -6,8 +6,8 @@
  *        asserts every /api area with esp_http_client against 127.0.0.1.
  *
  * TWO-PHASE (like restart_tracker's suite): phase 1 exercises the read/write
- * endpoints, then PUTs a real settings change and POSTs /api/settings/submit
- * — which REBOOTS the device via restart_tracker_restart(CONFIG_APPLY,
+ * endpoints, then PUTs a real settings change and POSTs /api/settings/submit,
+ * which REBOOTS the device via restart_tracker_restart(CONFIG_APPLY,
  * CONFIG_SERVER). Phase 2 (marker file present) verifies the change
  * persisted across the reboot and that the restart history records the
  * planned config_apply/config_server reboot, then prints TEST DONE.
@@ -187,7 +187,7 @@ static void phase1(void)
            strstr(s_body, "\"changed\":true") != NULL);
 
     /* identical PUT: unredact must map "" back to the stored secret, so
-       the write dedups — changed=false proves the keep-stored semantics */
+       the write dedups, changed=false proves the keep-stored semantics */
     st = http_req(HTTP_METHOD_PUT, "/api/settings/api_test",
                   "{\"value\":7,\"api_password\":\"\"}");
     printf("PUT-KEEP noop=%d\n", st == 200 &&

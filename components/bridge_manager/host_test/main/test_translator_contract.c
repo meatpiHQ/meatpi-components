@@ -3,7 +3,7 @@
  * @brief Proves the bridge_translator_t contract (ctx/sink plumbing) with a
  *        line-splitter test codec: decode reassembles '\n'-terminated lines
  *        from arbitrarily fragmented input and emits one sink call per
- *        complete line — zero, one, or many outputs per input chunk, exactly
+ *        complete line, zero, one, or many outputs per input chunk, exactly
  *        the shape slcan/GVRET reassembly needs.
  */
 #include <string.h>

@@ -90,7 +90,7 @@ static uint32_t s_guard_blocked;
  * neither claims nor releases (the transaction owns the claim). s_lock-
  * protected. s_txn_start_us arms a fail-open steal so a transaction whose
  * end() never ran (e.g. an httpd worker recycled mid-request) cannot brick
- * the chip for other requesters — mirrors obd_gate's max-hold expiry. */
+ * the chip for other requesters: mirrors obd_gate's max-hold expiry. */
 static TaskHandle_t s_txn_task;
 static int64_t      s_txn_start_us;
 #define OBD_TXN_MAX_US (12 * 1000 * 1000) /* > worst UDS transaction */
@@ -139,7 +139,7 @@ void obd_core_fanout(const uint8_t *data, size_t len)
     obd_chunk_t chunk;
 
     /* obd_gate: the chip's conversation window ends at the '>' prompt
-       (line start only — response DATA may contain '>' mid-line, see
+       (line start only, response DATA may contain '>' mid-line, see
        obd_chip_parse.c). Release is idempotent; the max-hold expiry
        covers monitor-class commands that never print a prompt. */
     if (obd_gate_enabled())
@@ -304,7 +304,7 @@ esp_err_t obd_core_claim(int type, uint32_t timeout_ms)
             return ESP_OK;
         }
 
-        /* v1 policy "manual": a held MONITOR is never auto-interrupted —
+        /* v1 policy "manual": a held MONITOR is never auto-interrupted,
            commands fail fast so callers can surface "bus busy" (task §5) */
         if (monitor_blocks)
         {
@@ -325,7 +325,7 @@ void obd_core_release(void)
 {
     portENTER_CRITICAL(&s_lock);
 
-    /* a nested request inside a held transaction does NOT release — the
+    /* a nested request inside a held transaction does NOT release: the
        transaction owns the claim until obd_chip_txn_end() */
     if (s_txn_task == NULL || s_txn_task != xTaskGetCurrentTaskHandle())
     {
@@ -451,7 +451,7 @@ esp_err_t obd_chip_send(const uint8_t *data, size_t len)
         return ESP_ERR_INVALID_ARG;
     }
 
-    /* a write mid-bring-up would interleave with the bare-UART probes —
+    /* a write mid-bring-up would interleave with the bare-UART probes:
        hold early boot-window clients until the chip is negotiated (a
        zero-cost flag test any time after) */
     if (!obd_core_bringup_wait(OBD_BRINGUP_WAIT_MS))
@@ -465,7 +465,7 @@ esp_err_t obd_chip_send(const uint8_t *data, size_t len)
     }
 
     /* EEPROM guard (obd_chip_guard.h): apps re-send ATSP on every connect
-       and a terminal user can type ATPP — rewrite the two with RAM twins
+       and a terminal user can type ATPP, rewrite the two with RAM twins
        in place, refuse the rest with the ELM "?" the sender expects, so
        the chip never sees an EEPROM write from a bridge. */
     uint8_t copy[256];
@@ -496,7 +496,7 @@ esp_err_t obd_chip_send(const uint8_t *data, size_t len)
         data = copy;
     }
 
-    /* obd_gate: a CR submits a command to the chip — that opens a bus
+    /* obd_gate: a CR submits a command to the chip, that opens a bus
        conversation, so serialize against the ESP-side ELM engines. May
        block up to OBD_GATE_WAIT_MS; released when the RX fan-out sees
        the '>' prompt (or by the max-hold failsafe). */
@@ -588,7 +588,7 @@ esp_err_t obd_chip_sleep(bool sleep)
     {
         /* don't yank the chip asleep mid-bring-up (sleep entry already
            takes seconds; after DONE this is a flag test). Proceed on a
-           wedged bring-up — sleeping is the stronger intent. */
+           wedged bring-up: sleeping is the stronger intent. */
         (void)obd_core_bringup_wait(OBD_BRINGUP_WAIT_MS);
         obd_pin_sleep();
     }
@@ -626,7 +626,7 @@ esp_err_t obd_chip_init(void)
     log_manager_register(&LOG_DESC); /* per-TAG level control (§9.2) */
 
     /* first: the bring-up gate must exist even after a partial init
-       (start() can still be reached — §4.3 degrade paths) */
+       (start() can still be reached, §4.3 degrade paths) */
     s_bringup_evt = xEventGroupCreateStatic(&s_bringup_evt_buf);
 
     esp_err_t err = obd_settings_register();
@@ -698,7 +698,7 @@ static void bringup_task(void *arg)
 
     /* legacy-parity auto-update (Ali 2026-07-26): a chip not at the
        packaged fw version is flashed to it. Runs AFTER the DONE bit
-       (the update path waits on it — ordering matters) and ALSO after a
+       (the update path waits on it, ordering matters) and ALSO after a
        FAILED bring-up: a chip stuck in download mode fails bring-up and
        completing the download is its recovery path. A dead wire aborts
        on the VTVERS timeout inside. At the packaged version this costs
@@ -709,12 +709,12 @@ static void bringup_task(void *arg)
 
         if (up != ESP_OK && up != ESP_ERR_TIMEOUT)
         {
-            ESP_LOGW(TAG, "auto fw update did not complete (%s) — will "
+            ESP_LOGW(TAG, "auto fw update did not complete (%s): will "
                      "re-check next boot", esp_err_to_name(up));
         }
     }
 
-    /* ephemeral task escapes System Monitor — surface the watermark for
+    /* ephemeral task escapes System Monitor: surface the watermark for
        the stack-audit bench (the 2026-07-22 convention) */
     ESP_LOGI(TAG, "bring-up done in %lu ms, stack_hw=%u B",
              (unsigned long)((esp_timer_get_time() - t0) / 1000),
@@ -736,7 +736,7 @@ esp_err_t obd_chip_start(void)
     }
 
     /* async (2026-07-26): the ~2 s ATZ + baud negotiation was half the
-       boot — launch it and let boot continue; wire-touching APIs gate
+       boot, launch it and let boot continue; wire-touching APIs gate
        on the DONE bit. Internal stack: same rule as the RX task (UART
        driver path). Clear-before-arm: a retry after a failed round must
        not leave round 1's DONE bit satisfying round 2's gate. */
@@ -750,7 +750,7 @@ esp_err_t obd_chip_start(void)
     if (xTaskCreate(bringup_task, "obd_bringup", 4096, NULL, 5, NULL)
         != pdPASS)
     {
-        /* no task — fall back to the legacy synchronous path */
+        /* no task: fall back to the legacy synchronous path */
         esp_err_t err = bringup_run();
 
         bringup_finish();

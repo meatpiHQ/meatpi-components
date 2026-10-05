@@ -141,7 +141,7 @@ static esp_err_t on_validate(const cJSON *settings, char *err,
 
     /* registry-existence checks only when the registries are populated:
        at the BOOT apply, components register during their own init in
-       main's sequence — a PUT at runtime sees everything and is strict */
+       main's sequence, a PUT at runtime sees everything and is strict */
     for (int i = 0; i < count; i++)
     {
         if (em_action_count() > 0 &&
@@ -161,7 +161,7 @@ static esp_err_t on_validate(const cJSON *settings, char *err,
     }
 
     /* `undo` only on actions that can reverse themselves (pure check, the
-       registry lookup injected) — skipped at the boot apply like the rest */
+       registry lookup injected), skipped at the boot apply like the rest */
     if (em_action_count() > 0)
     {
         rc = em_rules_validate_undo(probe, count, action_undoable, err,
@@ -195,7 +195,7 @@ static esp_err_t on_apply(const cJSON *settings)
     }
 
     /* timers: store config; the engine arms them in start() (per-rule
-       runtime state lives there too and is zero at boot — on_apply always
+       runtime state lives there too and is zero at boot: on_apply always
        runs before the engine's start()) */
     s_n_timers = 0;
 

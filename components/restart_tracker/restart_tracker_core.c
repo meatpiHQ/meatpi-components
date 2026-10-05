@@ -22,7 +22,7 @@
 
 /**
  * @file restart_tracker_core.c
- * @brief Pure restart-tracking state machine. No IDF dependencies — compiled
+ * @brief Pure restart-tracking state machine. No IDF dependencies: compiled
  *        as-is by the host unit tests. All wall-clock/uptime/reset-reason
  *        inputs are injected (rt_inputs_t).
  */
@@ -43,7 +43,7 @@
 #define RT_RST_SW        3U
 #define RT_RST_DEEPSLEEP 8U
 
-/* CRC-32 (IEEE 802.3, poly 0xEDB88320) — same convention as the settings
+/* CRC-32 (IEEE 802.3, poly 0xEDB88320), same convention as the settings
  * codec; local so the core has zero deps. Shared with the crash note
  * (restart_tracker_crash_core.c). */
 uint32_t rt_crc32_bytes(const uint8_t *data, size_t len)
@@ -66,7 +66,7 @@ uint32_t rt_crc32_bytes(const uint8_t *data, size_t len)
 uint32_t rt_crc32(const restart_tracker_state_t *state)
 {
     /* span [magic, crc32): the mspi_tuning_guard head is sacrificial and
-       excluded — boot-time timing tuning may overwrite it (see header) */
+       excluded, boot-time timing tuning may overwrite it (see header) */
     size_t start = offsetof(restart_tracker_state_t, magic);
 
     return rt_crc32_bytes((const uint8_t *)state + start,

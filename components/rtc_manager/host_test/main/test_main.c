@@ -59,7 +59,7 @@ static void test_encode_round_trip(void)
 
 static void test_fresh_board_rejected(void)
 {
-    /* power-on reset value: 2000-01-01 00:00:00 — year 00 < 20 */
+    /* power-on reset value: 2000-01-01 00:00:00, year 00 < 20 */
     const uint8_t regs[RTC_REGS_LEN] =
         { 0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0x00 };
     struct tm t;
@@ -84,7 +84,7 @@ static void test_garbage_rejected(void)
 
 static void test_status_bits_masked(void)
 {
-    /* RX8130 seconds/minutes carry a status bit in bit7 — must be masked */
+    /* RX8130 seconds/minutes carry a status bit in bit7: must be masked */
     const uint8_t regs[RTC_REGS_LEN] =
         { 0x80 | 0x30, 0x80 | 0x15, 0x12, 0x01, 0x04, 0x07, 0x26 };
     struct tm t;

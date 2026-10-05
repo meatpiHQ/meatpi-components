@@ -22,15 +22,15 @@
 
 /**
  * @file iperf_manager_cli.c
- * @brief The `iperf` console command — hand-parsed argv over the managed
+ * @brief The `iperf` console command: hand-parsed argv over the managed
  *        engine (one CLI-tracked session at a time; the engine itself
  *        supports more).
  *
  * Report routing: the engine prints interval/summary lines on ITS report
- * task via the weak `iperf_report_output` — we override it to chain to
+ * task via the weak `iperf_report_output`, we override it to chain to
  * the default stdout writer (serial console) AND cache the latest
- * period/summary under a mutex, so remote CLI sessions (ws_cli/TCP/BLE
- * — where async prints can't reach) poll `iperf -r`.
+ * period/summary under a mutex, so remote CLI sessions (ws_cli/TCP/BLE,
+ * where async prints can't reach) poll `iperf -r`.
  */
 #include <stdlib.h>
 #include <string.h>
@@ -83,7 +83,7 @@ void iperf_report_output(const iperf_report_t *report)
 }
 
 /** Engine state callback: IPERF_CLOSED fires on EVERY termination path
- *  (finished, aborted, socket error) — the SUMMARY report does not (an
+ *  (finished, aborted, socket error), the SUMMARY report does not (an
  *  accept-timeout server dies without one; learned on the bench). */
 static void on_state(iperf_id_t id, iperf_state_data_t *data, void *priv)
 {

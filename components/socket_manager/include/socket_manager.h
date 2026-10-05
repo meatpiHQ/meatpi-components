@@ -27,7 +27,7 @@
  * Runs multiple listeners on different ports simultaneously (settings-defined,
  * up to SOCKET_MANAGER_MAX_SERVERS), each robust across client churn, Wi-Fi
  * drops and interface restarts. Every server presents the firmware's standard
- * chunk-stream face — queue-based RX (subscribe) + send() TX — so a server
+ * chunk-stream face, queue-based RX (subscribe) + send() TX, so a server
  * plugs into bridge_manager as an endpoint with three-line glue.
  *
  * Content-agnostic: no protocol logic lives here (that is translator
@@ -64,7 +64,7 @@ extern "C" {
 #define SOCKET_MANAGER_MAX_CLIENTS 4   /* per TCP server */
 
 /* Chunk layout shared with the firmware-wide endpoint convention
- * (identical to obd_chip's obd_chunk_t — bridges pump these by value). */
+ * (identical to obd_chip's obd_chunk_t: bridges pump these by value). */
 #define SOCKET_MANAGER_CHUNK_SIZE 128
 
 typedef struct
@@ -78,8 +78,8 @@ typedef struct
     uint16_t clients;      /* currently connected (TCP) / 0|1 peer (UDP) */
     uint32_t bytes_in;
     uint32_t bytes_out;
-    uint32_t rx_drops;     /* subscriber queue full — chunk dropped        */
-    uint32_t tx_drops;     /* client send failed/stalled — client dropped  */
+    uint32_t rx_drops;     /* subscriber queue full: chunk dropped        */
+    uint32_t tx_drops;     /* client send failed/stalled: client dropped  */
     uint32_t reconnects;   /* listener (re)creations after failure         */
     uint32_t refused;      /* connections refused at max_clients           */
 } socket_stats_t;
@@ -98,7 +98,7 @@ esp_err_t socket_manager_stop(void);
 /**
  * Attach the ONE subscriber queue of @p server (item type socket_chunk_t).
  * RX from the server's clients starts flowing into it. One subscriber per
- * server (a server is one bridge endpoint) — ESP_ERR_INVALID_STATE if taken.
+ * server (a server is one bridge endpoint): ESP_ERR_INVALID_STATE if taken.
  */
 esp_err_t socket_manager_subscribe(const char *server, QueueHandle_t q);
 esp_err_t socket_manager_unsubscribe(const char *server, QueueHandle_t q);

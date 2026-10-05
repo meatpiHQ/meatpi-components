@@ -23,7 +23,7 @@ bridge_manager.bridges += {name:"br_gvret", a:"can", b:"gvret0", translator:"gvr
 `a` = CAN endpoint. SavvyCAN → "Connect" → GVRET over TCP to the socket.
 
 ## Tests
-- Host: `./test.ps1 host translator_gvret` — decode records (checksum, ext
+- Host: `./test.ps1 host translator_gvret`, decode records (checksum, ext
   bit31), encode BUILD_CAN_FRAME (+ fragmentation), handshake replies via the
   reply channel.
 - Bench (pending SavvyCAN): capture a legacy TCP:23 session as

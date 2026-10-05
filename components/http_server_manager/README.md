@@ -3,12 +3,12 @@
 ## Summary
 
 Service component that owns the firmware's single HTTP server (`httpd_handle_t`):
-port, socket configuration, and lifecycle. It is content-agnostic — it knows
+port, socket configuration, and lifecycle. It is content-agnostic: it knows
 nothing about dashboards or settings. Components register **API routes**
 (`httpd_uri_t` handlers) and **static asset tables** (`http_asset_t`) into it;
 the manager serves assets through one wildcard catch-all installed last, so
 specific routes always win. Assets can be embedded blobs (`EMBED_FILES`) or
-filesystem files (VFS path — SD or internal), with optional **fetch-on-miss**:
+filesystem files (VFS path: SD or internal), with optional **fetch-on-miss**:
 a missing file with a `source_url` is downloaded once via an injected fetcher,
 then served locally on every later request. See `ARCHITECTURE.md` §8.
 
@@ -16,16 +16,16 @@ then served locally on every later request. See `ARCHITECTURE.md` §8.
 
 `include/http_server_manager.h`:
 
-- `esp_err_t http_server_manager_init(void)` — prepare config; nothing listens yet.
-- `esp_err_t http_server_manager_start(void)` — install buffered routes, catch-all last, listen.
-- `esp_err_t http_server_manager_stop(void)` — stop and release.
-- `esp_err_t http_server_manager_register_uri(const httpd_uri_t *uri)` — one API route. Buffered before start; installed live after start. The struct must outlive the server.
-- `esp_err_t http_server_manager_register_handlers(const httpd_uri_t *uris, size_t count)` — batch form.
-- `esp_err_t http_server_manager_register_assets(const http_asset_t *table)` — sentinel-terminated asset table. **Pre-start only** (tables are read lock-free by the catch-all). Earlier tables win on conflicts.
-- `esp_err_t http_server_manager_set_asset_fetcher(http_asset_fetch_fn_t fn)` — inject the fetch-on-miss downloader (main wires the download component's ensure-present here). NULL disables; misses then 404 with `source_url` logged.
-- `esp_err_t http_server_manager_set_request_gate(http_request_gate_fn_t fn)` — a per-request admission gate `bool fn(int sockfd)`. Every registered route (incl. WS pre-handshake) is installed behind a trampoline that consults the gate first; `false` → 403 (WS: refuse before the 101), `true` → chain to the real handler. Content-agnostic — the manager knows nothing about *why*; main wires it to `wifi_manager_http_request_allowed` for the network-trust lockdown. NULL disables. The gate runs in httpd-task context: keep it fast + non-blocking.
-- `void http_server_manager_capacity(size_t *used, size_t *cap)` — occupancy of the route table (2026-10-03): routes registered so far, WebSocket channels included, and the table's size (`HSM_MAX_BUFFERED_URIS`, 144). Main prints it as `WICAN CAPS http_routes=113/144` and latches `registry_headroom` below 2 free; `/api/status` carries it in `health.caps.http_routes`. The table had overflowed three times (80, 96, 112) with the last registration refused each time; the third was found by this getter on its first boot, at 112 of 112.
-- `httpd_handle_t http_server_manager_handle(void)` — escape hatch for APIs needing the raw handle (async WebSocket sends). Do not register handlers through it.
+- `esp_err_t http_server_manager_init(void)`: prepare config; nothing listens yet.
+- `esp_err_t http_server_manager_start(void)`: install buffered routes, catch-all last, listen.
+- `esp_err_t http_server_manager_stop(void)`: stop and release.
+- `esp_err_t http_server_manager_register_uri(const httpd_uri_t *uri)`: one API route. Buffered before start; installed live after start. The struct must outlive the server.
+- `esp_err_t http_server_manager_register_handlers(const httpd_uri_t *uris, size_t count)`: batch form.
+- `esp_err_t http_server_manager_register_assets(const http_asset_t *table)`, sentinel-terminated asset table. **Pre-start only** (tables are read lock-free by the catch-all). Earlier tables win on conflicts.
+- `esp_err_t http_server_manager_set_asset_fetcher(http_asset_fetch_fn_t fn)`: inject the fetch-on-miss downloader (main wires the download component's ensure-present here). NULL disables; misses then 404 with `source_url` logged.
+- `esp_err_t http_server_manager_set_request_gate(http_request_gate_fn_t fn)`: a per-request admission gate `bool fn(int sockfd)`. Every registered route (incl. WS pre-handshake) is installed behind a trampoline that consults the gate first; `false` → 403 (WS: refuse before the 101), `true` → chain to the real handler. Content-agnostic: the manager knows nothing about *why*; main wires it to `wifi_manager_http_request_allowed` for the network-trust lockdown. NULL disables. The gate runs in httpd-task context: keep it fast + non-blocking.
+- `void http_server_manager_capacity(size_t *used, size_t *cap)`: occupancy of the route table (2026-10-03): routes registered so far, WebSocket channels included, and the table's size (`HSM_MAX_BUFFERED_URIS`, 144). Main prints it as `WICAN CAPS http_routes=113/144` and latches `registry_headroom` below 2 free; `/api/status` carries it in `health.caps.http_routes`. The table had overflowed three times (80, 96, 112) with the last registration refused each time; the third was found by this getter on its first boot, at 112 of 112.
+- `httpd_handle_t http_server_manager_handle(void)`: escape hatch for APIs needing the raw handle (async WebSocket sends). Do not register handlers through it.
 
 `http_asset_t` fields: `uri` (exact, or a prefix entry: a path ending in `/` plus
 `*`, which serves a whole directory), `content_type` (inferred from extension if
@@ -54,9 +54,9 @@ by `304`. Filesystem files stream in 4 KB chunks.
 
 ## Dependencies
 
-- `esp_http_server` — **public** (`REQUIRES`); the header exposes `httpd_uri_t`
+- `esp_http_server`: **public** (`REQUIRES`); the header exposes `httpd_uri_t`
   and `httpd_handle_t`.
-- `filesystem` — **private** (`PRIV_REQUIRES`); all file serving goes through
+- `filesystem`: **private** (`PRIV_REQUIRES`); all file serving goes through
   `filesystem_open()`, so asset `fs_path` values are logical filesystem paths
   (`/data/...` internal flash, `/sd/...` SD once external_storage exists). The
   manager mounts nothing and assumes `filesystem_init()` ran first (Coding
@@ -74,7 +74,7 @@ registered (the catch-all must be installed last).
 ## Settings
 
 None. (The generic `/settings/*` routes belong to the `settings_http` glue
-component, not to this server — see ARCHITECTURE.md §9.)
+component, not to this server, see ARCHITECTURE.md §9.)
 
 ## Constraints & limitations (read before registering)
 
@@ -88,9 +88,9 @@ component, not to this server — see ARCHITECTURE.md §9.)
 - **GET only** on the catch-all. Other methods on asset URIs 404 through httpd's
   method matching; API routes declare their own methods.
 - **ETag is identity-weak** (size+mtime). Two different files with identical
-  size and mtime would collide — acceptable for firmware assets, not
+  size and mtime would collide: acceptable for firmware assets, not
   cryptographic.
-- **`HSM_PATH_MAX` is 192** — URI + resolved FS path must fit; over-long
+- **`HSM_PATH_MAX` is 192**: URI + resolved FS path must fit; over-long
   requests are rejected with 400, over-long resolved paths don't match.
 - **Traversal is rejected** by substring (`..` anywhere in the URI). Encoded
   traversal (`%2e%2e`) arrives decoded from httpd and is caught by the same
@@ -105,7 +105,7 @@ UDS benches (~3.2 KB in use); 8 KB keeps ~4.9 KB of headroom and returns
 write flash (`/api/fs/upload`, OTA, settings). `TASK_internal_ram.md`.
 
 No task of its own beyond httpd's own workers (owned by esp_http_server). All
-numbers **estimated** — replace with **measured** before release.
+numbers **estimated**: replace with **measured** before release.
 
 | Region                          | Where           | Size (est.) | Notes                          |
 |---------------------------------|-----------------|-------------|---------------------------------|
@@ -115,17 +115,17 @@ numbers **estimated** — replace with **measured** before release.
 | httpd stack/control             | per esp_http_server config | ~4–8 KB | owned by IDF httpd          |
 
 Without PSRAM (`CONFIG_SPIRAM` off) `EXT_RAM_BSS_ATTR` is empty and the
-registries (~1.6 KB) land in internal `.bss` — correct fallback, not a bug.
+registries (~1.6 KB) land in internal `.bss`: correct fallback, not a bug.
 
 Measure: `idf.py size-components`; internal-heap delta around a large file GET.
 
 ## Testing
 
-- **Host (linux target):** `host_test/` — Unity suite for the pure match logic:
+- **Host (linux target):** `host_test/`, Unity suite for the pure match logic:
   normalization (query/fragment strip, root→index, traversal + overlong
   rejection), exact/prefix resolution, table precedence, remainder joining,
   MIME inference.
-- **On-target (pytest-embedded):** `test_apps/` — fully self-contained over
+- **On-target (pytest-embedded):** `test_apps/`, fully self-contained over
   **lwIP loopback** (`CONFIG_LWIP_NETIF_LOOPBACK`): the app starts the server,
   registers an API route + embedded + FS + fetch-on-miss assets with a stub
   fetcher, then asserts against `http://127.0.0.1` using `esp_http_client`.
@@ -147,29 +147,29 @@ Measure: `idf.py size-components`; internal-heap delta around a large file GET.
 
 The basic-password successor to the parked pairing-token design (Ali:
 "just a basic password for now"). Settings `http_server_manager` v1:
-`auth_enabled` (default **false** — open device, the historic behavior)
+`auth_enabled` (default **false**, open device, the historic behavior)
 + `auth_password` (4..64 chars required to enable; `_password` suffix →
 api_http redaction: GET returns `""`, `""` on PUT keeps the stored
 secret). Reboot-to-apply.
 
-When enabled, EVERY inbound request — all routes, the UI catch-all, and
-WS pre-handshakes — must present the password at the same trampoline
+When enabled, EVERY inbound request (all routes, the UI catch-all, and
+WS pre-handshakes) must present the password at the same trampoline
 choke point as the network-trust gate (trust 403 wins first, then
 password 401):
 
-- `Authorization: Basic base64(any:password)` — any username; a stock
+- `Authorization: Basic base64(any:password)`, any username; a stock
   browser needs ZERO UI code (401 + `WWW-Authenticate: Basic
   realm="WiCAN"` → native prompt, credentials cached for every request
   incl. the WS upgrade GET);
-- `Authorization: Bearer <password>` — tools/integrations;
-- Cookie `wican_auth=<password>` — fallback for clients that can't set
+- `Authorization: Bearer <password>`, tools/integrations;
+- Cookie `wican_auth=<password>`: fallback for clients that can't set
   headers.
 
 The check (`hsm_auth_check`, `http_server_manager_auth.c`) is PURE and
 host-tested (6 cases: Basic any-user, Bearer, cookie incl. substring
 names, garbage base64, fail-closed, open-when-unset); the comparison is
 flat (no early-out). Oversized Authorization/Cookie headers fail closed.
-SAFE MODE's server is separate and never gated — physical-presence
+SAFE MODE's server is separate and never gated: physical-presence
 recovery always works. Bench-verified live 2026-07-19: 401+challenge
 bare, 200 via all three carriers, 401 wrong password, UI gated,
 redaction intact, disable restores open.

@@ -118,7 +118,7 @@ static esp_err_t cli_unsubscribe(QueueHandle_t q)
  * The endpoint ABI carries no ctx pointer, so each slot gets generated
  * wrappers bound to a name buffer filled at start() from the applied
  * settings. Renaming a server/channel renames its jack (bridges follow
- * the settings name — the old fixed-name-only wart is gone). */
+ * the settings name: the old fixed-name-only wart is gone). */
 
 static char s_sock_names[SOCKET_MANAGER_MAX_SERVERS][16];
 static char s_ws_names[WEBSOCKET_MANAGER_MAX_CHANNELS][16];
@@ -192,7 +192,7 @@ esp_err_t bridge_endpoints_init(void)
     static const bridge_endpoint_t FIXED[] =
     {
         /* multi_consumer: obd_chip fans RX out to every subscriber queue
-           (each gets a full copy) and serializes TX — the single-consumer
+           (each gets a full copy) and serializes TX, the single-consumer
            rule doesn't apply, so TCP + USB passthrough can both be live */
         { "obd", obd_ep_send, obd_ep_subscribe, obd_ep_unsubscribe,
           .multi_consumer = true },
@@ -235,7 +235,7 @@ esp_err_t bridge_endpoints_start(void)
     /* dynamic jacks: one per CONFIGURED server/channel, under its
        configured name (settings applied by now; registration must
        precede bridge_manager_start). A name colliding with an existing
-       jack is refused by the registry — log and degrade alone. */
+       jack is refused by the registry: log and degrade alone. */
     for (int i = 0; i < SOCKET_MANAGER_MAX_SERVERS; i++)
     {
         const char *name = socket_manager_server_name(i);
@@ -278,6 +278,6 @@ esp_err_t bridge_endpoints_start(void)
 esp_err_t bridge_endpoints_stop(void)
 {
     /* jacks live as long as the registry; the adapters' own tasks park
-       when unsubscribed (init-once, §3 — no teardown path) */
+       when unsubscribed (init-once, §3: no teardown path) */
     return ESP_OK;
 }

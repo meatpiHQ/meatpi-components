@@ -1,6 +1,6 @@
 /**
  * @file test_main.c
- * @brief Host suite for se_script_name_ok — the script-name guard that
+ * @brief Host suite for se_script_name_ok: the script-name guard that
  *        protects the /data/scripts load path (script_engine.c) and the
  *        script.run event action (script_engine_events.c) from path
  *        traversal / injection. Security-relevant: a bad name reaches a
@@ -11,7 +11,7 @@
 
 bool se_script_name_ok(const char *name);
 
-/* test_obd.c — obd.* conversation core suite */
+/* test_obd.c: obd.* conversation core suite */
 void test_obd_claim_release_cycle(void);
 void test_obd_claim_same_addr_extends(void);
 void test_obd_claim_other_addr_busy(void);
@@ -25,7 +25,7 @@ void test_obd_isotp_requires_claim(void);
 void test_obd_isotp_under_claim(void);
 void test_obd_bad_args(void);
 
-/* test_reflash.c — se_obd_transfer_file suite */
+/* test_reflash.c: se_obd_transfer_file suite */
 void test_xfer_requires_claim(void);
 void test_xfer_blocks_and_bsc(void);
 void test_xfer_bsc_wraps(void);
@@ -34,7 +34,7 @@ void test_xfer_negative_response_stops(void);
 void test_xfer_read_failure(void);
 void test_xfer_bad_args(void);
 
-/* test_doc.c — the reference + example gallery tables */
+/* test_doc.c: the reference + example gallery tables */
 void test_doc_bindings_table_is_consistent(void);
 void test_doc_reference_json_shape(void);
 void test_examples_are_valid_scripts(void);

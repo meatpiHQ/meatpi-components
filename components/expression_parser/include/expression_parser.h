@@ -26,14 +26,14 @@
  *
  * Pure utility component (no IDF dependencies beyond esp_err) evaluating
  * the expression format documented at
- * meatpihq.github.io/wican-fw/config/automate/usage — the grammar existing
+ * meatpihq.github.io/wican-fw/config/automate/usage: the grammar existing
  * user expressions were written against, kept compatible:
  *
  *   B<n>          unsigned byte n of the payload
  *   B<n>:<bit>    single bit (0..7) of byte n
  *   S<n>          signed byte n
  *   [B<x>:B<y>]   unsigned big-endian multi-byte (span <= 8 bytes)
- *   [S<x>:S<y>]   signed big-endian multi-byte — container by span, exactly
+ *   [S<x>:S<y>]   signed big-endian multi-byte: container by span, exactly
  *                 the legacy semantics: 1 byte -> int8, 2 -> int16,
  *                 3..4 -> int32, 5..8 -> int64 (a 3-byte span therefore has
  *                 no sign bit in range, as legacy behaved)
@@ -83,7 +83,7 @@ esp_err_t expression_parser_eval(const char *expr, const uint8_t *data,
                                  size_t data_len, double v, double *result);
 
 /**
- * @brief Validate @p expr WITHOUT data — the save-time / UI check.
+ * @brief Validate @p expr WITHOUT data: the save-time / UI check.
  *
  * Runs the same tokenizer/evaluator in dry-run mode: byte references
  * evaluate as 0 and only their indexes are recorded; division by zero is

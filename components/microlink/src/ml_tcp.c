@@ -58,7 +58,7 @@ microlink_tcp_socket_t *microlink_tcp_connect(microlink_t *ml, uint32_t dest_ip,
     ml_wg_mgr_send_cmm(ml, dest_ip);
 
     /* Wait for WG tunnel to establish with this peer.
-     * Poll wireguardif_peer_is_up() — once the WG handshake completes,
+     * Poll wireguardif_peer_is_up(): once the WG handshake completes,
      * lwIP can route TCP through the tunnel. Without a valid session,
      * connect() will fail with EHOSTUNREACH. */
     uint32_t wait_ms = 0;

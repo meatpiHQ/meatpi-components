@@ -167,7 +167,7 @@ void test_tuning_guard_clobber_is_harmless(void)
 
     rt_record_boot(&s_state, &i);
 
-    /* the S3 MSPI timing tuning overwrites the first 64 bytes every boot —
+    /* the S3 MSPI timing tuning overwrites the first 64 bytes every boot,
        exactly the guard; the state must stay valid */
     memset(s_state.mspi_tuning_guard, 0xA5,
            sizeof(s_state.mspi_tuning_guard));

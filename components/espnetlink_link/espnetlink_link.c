@@ -29,8 +29,8 @@
  *        sink.
  *
  * State is derived, not event-driven: every tick reads wifi_manager's
- * connected flag + the driver's AP record and usb_host_manager's status
- * — no callback ownership fight with the other consumers, and a missed
+ * connected flag + the driver's AP record and usb_host_manager's status,
+ * no callback ownership fight with the other consumers, and a missed
  * event can never strand the state.
  */
 #include <stdio.h>
@@ -197,7 +197,7 @@ void espnl_engine_dongle_rebooting(void)
 {
     /* the dongle is going down (VBUS cycle) or just came back up (its
      * USB re-enumerated): either way its AP has forgotten us. Re-join
-     * and do not hammer it with doomed polls meanwhile — only when the
+     * and do not hammer it with doomed polls meanwhile: only when the
      * AP is what we are on (usb_ncm mode polls over USB: leave it) */
     if (s_st.uplink != ESPNETLINK_UPLINK_ESPNETLINK_AP)
     {
@@ -249,7 +249,7 @@ static void sta_gateway(char *out, size_t len)
 
 /* ---- HTTP polls ---------------------------------------------------- */
 
-/* @p status_out: the HTTP status (-1 = no answer), also on failure — a
+/* @p status_out: the HTTP status (-1 = no answer), also on failure, a
  * 404 means the dongle firmware has no such route, which the caller
  * reports instead of retrying in silence. */
 static bool http_get(const char *url, int timeout_ms,
@@ -387,7 +387,7 @@ static void poll_health(const char *host)
 
 /* usb_ncm / usb_rndis mode reached over the dongle's AP with its data
  * lines cut (the normal state after wifi_modem + boot-cut): restore them
- * over WiFi — POST /api/wifi_modem/usb_data {"enabled":true}. The dongle
+ * over WiFi, POST /api/wifi_modem/usb_data {"enabled":true}. The dongle
  * releases its mux at once AND clears the boot-cut hint, so USB
  * re-enumerates and the machine can bring the USB-Ethernet uplink up.
  * Rate-limited by the caller. Returns true on a 200. */
@@ -425,7 +425,7 @@ static bool ap_restore_usb_data(const char *host)
     }
 
     ESP_LOGI(TAG, "usb mode: dongle data lines restored over the AP "
-             "(boot-cut hint cleared) — waiting for USB enumeration");
+             "(boot-cut hint cleared), waiting for USB enumeration");
     return true;
 }
 
@@ -513,7 +513,7 @@ static void link_task(void *arg)
              * on): the dongle answers at its fixed USB address. Checked
              * BEFORE on_ap: the wire is the configured transport there,
              * and the STA may well still be parked on the dongle's AP
-             * (its slot survives pairing) — poll over the wire anyway. */
+             * (its slot survives pairing): poll over the wire anyway. */
             now_up = ESPNETLINK_UPLINK_ESPNETLINK_USB;
             strncpy(host, espnl_usb_host(), sizeof(host) - 1);
         }
@@ -606,7 +606,7 @@ static void link_task(void *arg)
         }
 
         /* 5. usb_ncm / usb_rndis mode but the dongle's data lines are cut
-         *    (paired under wifi_modem earlier — boot-cut keeps them cut
+         *    (paired under wifi_modem earlier: boot-cut keeps them cut
          *    on every dongle boot, and with us on its AP the dongle's
          *    60 s no-station fallback never fires): restore over WiFi. */
         if (cfg->mode != ESPNETLINK_MODE_WIFI_MODEM &&

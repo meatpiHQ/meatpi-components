@@ -43,7 +43,7 @@
 extern "C" {
 #endif
 
-/* first request after a protocol prelude can sit in SEARCHING — the std
+/* first request after a protocol prelude can sit in SEARCHING: the std
  * scan learned the same lesson (AP_SCAN_REQ_TIMEOUT 10 s) */
 #define AP_DTC_REQ_TIMEOUT   pdMS_TO_TICKS(5000)
 #define AP_DTC_INIT_TIMEOUT  pdMS_TO_TICKS(2000)

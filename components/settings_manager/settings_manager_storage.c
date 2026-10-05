@@ -291,7 +291,7 @@ esp_err_t sm_storage_wipe(void)
         return ESP_FAIL;
     }
 
-    /* unlink everything in the cfg dir (json + any stray .tmp) —
+    /* unlink everything in the cfg dir (json + any stray .tmp):
        the next boot's load pass finds nothing and applies pure
        factory defaults */
     int removed = 0;

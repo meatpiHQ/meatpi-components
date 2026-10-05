@@ -22,7 +22,7 @@
 
 /**
  * @file usb_acm_gps.h
- * @brief ESPNetLink GPS fix — the dongle's `gps -p -j` JSON parsed into a
+ * @brief ESPNetLink GPS fix: the dongle's `gps -p -j` JSON parsed into a
  *        flat struct. Pure, no deps → host-testable. The values are
  *        published as first-class autopid parameters (gps_*), so they ride
  *        the same cache / snapshot / value-sink / event path as polled
@@ -38,7 +38,7 @@
 extern "C" {
 #endif
 
-/** A GPS fix in the dongle's native units (only a LIVE fix is reported —
+/** A GPS fix in the dongle's native units (only a LIVE fix is reported:
  *  a stale/cached AGNSS position is never presented as current). */
 typedef struct
 {
@@ -55,7 +55,7 @@ typedef struct
 
 /**
  * Parse the dongle's `gps -p -j` response. The JSON object may be wrapped
- * in the console echo/prompt — the first `{`…`}` is used. `heading_deg`
+ * in the console echo/prompt: the first `{`…`}` is used. `heading_deg`
  * comes from `course_deg`; `accuracy_m` = round(`hdop`×5).
  *
  * @return true and fills @p out from a LIVE fix when `"valid":true`;

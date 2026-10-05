@@ -23,7 +23,7 @@
 /**
  * @file cert_manager_http.c
  * @brief The /api/certs routes (§9.1; HTTP_API.md §6g): list, raw-body
- *        part upload, set delete. Deliberately NO read-back — key
+ *        part upload, set delete. Deliberately NO read-back: key
  *        material never leaves the device.
  */
 #include <stdio.h>
@@ -45,7 +45,7 @@ static const char *TAG = "cert_manager";
 static char s_body[CERT_MANAGER_PEM_MAX] EXT_RAM_BSS_ATTR;
 
 /* multipart upload: parts are STAGED during the parse and stored only
- * after multipart_upload_handle returns — the proven api_http_fs
+ * after multipart_upload_handle returns, the proven api_http_fs
  * pattern. No filesystem/flash work runs while the parser and the
  * request stream are live (writing from on_part_end crashed the device;
  * see CHECKLIST). */
@@ -175,7 +175,7 @@ static esp_err_t certs_upload_handler(httpd_req_t *req)
                                                     : "multipart parse");
         }
 
-        /* the request body is fully consumed — NOW hit the filesystem */
+        /* the request body is fully consumed: NOW hit the filesystem */
         int stored = 0;
 
         for (int p = 0; p < 3; p++)

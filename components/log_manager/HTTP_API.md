@@ -1,8 +1,8 @@
-# log_manager — HTTP API reference
+# log_manager: HTTP API reference
 
 > **Implemented (2026-07-03)** by the `api_http` glue (on-target suite green).
 > Conventions: `components/HTTP_API.md` §1. These are the **ephemeral runtime
-> knobs** (§9.4) — persisted boot defaults go through
+> knobs** (§9.4), persisted boot defaults go through
 > `/api/settings/log_manager` like any settings object.
 
 ## GET /api/logs/ring
@@ -11,7 +11,7 @@ Dump the PSRAM crash ring: the most recent log output in chronological order,
 **including lines from before the last warm reset** (`---- boot ----`
 separators mark reboots). The first thing to grab when diagnosing a crash.
 
-**Response 200** — `Content-Type: text/plain`, chunked (ring is up to
+**Response 200**: `Content-Type: text/plain`, chunked (ring is up to
 `LOG_MANAGER_RING_SIZE`, default 16 KiB; the transport streams via an
 internal-RAM chunk buffer):
 
@@ -23,7 +23,7 @@ E (1203) wifi_manager: ...
 I (790) log_manager: pipeline up (queue 64x256, ring 16 KiB, sync until start)
 ```
 
-**Errors**: `503 {"error":"ring unavailable"}` (invalid/never adopted —
+**Errors**: `503 {"error":"ring unavailable"}` (invalid/never adopted,
 effectively only before init).
 
 ## DELETE /api/logs/ring
@@ -51,7 +51,7 @@ Clear the ring (e.g. after the UI uploaded it to support).
 `dropped` counts producer-side drop-oldest events since boot (§9.5); a
 steadily climbing value means a sink is too slow or the queue too small.
 Since 2026-07-26 the `log_sinks` component registers the four external
-sinks (`tcp`/`udp`/`ws`/`file`) unconditionally — persisted gates +
+sinks (`tcp`/`udp`/`ws`/`file`) unconditionally, persisted gates +
 parameters live on `/api/settings/log_sinks`; the runtime toggle below
 pauses/resumes a RUNNING sink but cannot bring up a gate-off engine.
 
@@ -65,7 +65,7 @@ Runtime, **ephemeral** per-TAG level (resets to persisted defaults on reboot).
 ```
 `tag` is a component TAG (§10) or `"*"` for global. `level` ∈
 `none|error|warn|info|debug|verbose`. Levels above the compile-time
-`CONFIG_LOG_MAXIMUM_LEVEL` are accepted but yield no extra output — the
+`CONFIG_LOG_MAXIMUM_LEVEL` are accepted but yield no extra output: the
 response says so.
 
 **Response 200** `{"ok":true,"capped":false}`

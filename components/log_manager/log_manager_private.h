@@ -22,7 +22,7 @@
 
 /**
  * @file log_manager_private.h
- * @brief Pure ring-buffer core (log_manager_ring.c) — no IDF deps, compiled
+ * @brief Pure ring-buffer core (log_manager_ring.c): no IDF deps, compiled
  *        directly by the host unit tests. The header/data live in PSRAM
  *        `.noinit` on target; validity is guarded by magic/version/CRC so
  *        power-on garbage is detected (same pattern as restart_tracker).
@@ -45,14 +45,14 @@ typedef struct
     /* Sacrificial head, excluded from the CRC: ESP32-S3 MSPI timing tuning
      * writes a 64-byte pattern at PSRAM physical addr 0 every boot, which is
      * where .ext_ram_noinit starts. Whichever noinit object links first
-     * loses its first 64 bytes — this guard absorbs that. */
+     * loses its first 64 bytes: this guard absorbs that. */
     uint8_t  mspi_tuning_guard[64];
     uint32_t magic;
     uint32_t version;
     uint32_t size;  /**< data buffer capacity                      */
     uint32_t head;  /**< next write offset                          */
     uint32_t used;  /**< valid bytes (== size once wrapped)         */
-    uint32_t crc32; /**< over magic..used — MUST stay last          */
+    uint32_t crc32; /**< over magic..used: MUST stay last          */
 } lm_ring_hdr_t;
 
 uint32_t lm_ring_crc(const lm_ring_hdr_t *hdr);

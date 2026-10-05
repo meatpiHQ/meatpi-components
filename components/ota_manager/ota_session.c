@@ -22,7 +22,7 @@
 
 /**
  * @file ota_session.c
- * @brief The PURE update-session state machine — no esp_ota, no locks
+ * @brief The PURE update-session state machine: no esp_ota, no locks
  *        (the glue serializes); flash operations are injected, so every
  *        transition host-tests without hardware.
  */

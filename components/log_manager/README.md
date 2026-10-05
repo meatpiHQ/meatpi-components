@@ -4,7 +4,7 @@
 
 Core component owning the log pipeline. It installs itself with
 `esp_log_set_vprintf()`, so every component and IDF internals keep using plain
-`ESP_LOGx` — no wrapper macros, no call-site migration. Lines flow through a
+`ESP_LOGx`: no wrapper macros, no call-site migration. Lines flow through a
 fixed-depth PSRAM queue into a dedicated log task, which fans them out to
 **sinks**. The producer path is wait-free: a full queue drops the *oldest*
 line and counts it (`dropped N messages` is emitted when pressure clears);
@@ -17,9 +17,9 @@ detected and dropped).
 | Sink | What it does |
 |---|---|
 | `console` | UART stdout, live from `init()` (§9.3) |
-| `ring` | PSRAM `.noinit` ring (default 16 KiB) that **survives warm resets** — same magic/version/CRC + `esp_cache_msync` pattern as `restart_tracker`. After a crash/reboot, `log_manager_ring_read()` returns the last lines *including pre-reset output*, with **zero flash wear**. A `---- boot ----` separator is written every boot. |
+| `ring` | PSRAM `.noinit` ring (default 16 KiB) that **survives warm resets**, same magic/version/CRC + `esp_cache_msync` pattern as `restart_tracker`. After a crash/reboot, `log_manager_ring_read()` returns the last lines *including pre-reset output*, with **zero flash wear**. A `---- boot ----` separator is written every boot. |
 
-TCP / UDP / WebSocket / file sinks are **external registrants** — the manager
+TCP / UDP / WebSocket / file sinks are **external registrants**: the manager
 deliberately has no network or filesystem dependency (Architecture §3). The
 recipe:
 
@@ -31,14 +31,14 @@ log_manager_add_sink(&UDP_SINK);   // from the owning feature component
 
 **They exist now (2026-07-26): the `log_sinks` component** registers all
 four (`tcp` tail server, `udp` collector push, `ws` = the ws_log channel,
-`file` = rotated SD files), every gate default-false — see
+`file` = rotated SD files), every gate default-false, see
 `components/log_sinks/README.md`. The sink registry is sized 12
 (`LM_MAX_SINKS`) and exposes `log_manager_sinks_capacity()` for the
 `WICAN CAPS` boot line (§12).
 
 **Flash-wear rule for a file sink:** never write per-line. Accumulate
 into a RAM buffer and flush on a coarse period (≥ 60 s) or on buffer-full,
-through an internal-stack writer task (§2 corollary — the log task itself
+through an internal-stack writer task (§2 corollary: the log task itself
 runs on a PSRAM stack and performs no flash writes). For crash forensics the
 PSRAM ring already covers the common case without touching flash at all.
 (log_sinks' file sink implements exactly this recipe, SD-only.)
@@ -49,7 +49,7 @@ PSRAM ring already covers the common case without touching flash at all.
 |---|---|
 | `log_manager_init()` | Hook + console + ring adopt. **First init in main** (§9.6); synchronous routing until start. |
 | `log_manager_start()` / `_stop()` | Spawn/stop the log task (queued routing). |
-| `log_manager_register_settings()` | Register the `"log_manager"` settings descriptor — call after `settings_manager_init()`. |
+| `log_manager_register_settings()` | Register the `"log_manager"` settings descriptor: call after `settings_manager_init()`. |
 | `log_manager_register(desc)` | Per-component `{TAG, default_level}` (§9.2). |
 | `log_manager_set_level(name, level)` | Runtime, **ephemeral** level knob (§9.4). |
 | `log_manager_add_sink(sink)` / `log_manager_sink_set_enabled(name, on)` | Pluggable routing. |
@@ -78,7 +78,7 @@ PSRAM ring already covers the common case without touching flash at all.
 
 Runtime changes via `set_level`/`sink_set_enabled` reset to these on reboot.
 
-## HTTP API (requirement — full endpoint reference: `HTTP_API.md` in this directory; conventions: `components/HTTP_API.md`)
+## HTTP API (requirement: full endpoint reference: `HTTP_API.md` in this directory; conventions: `components/HTTP_API.md`)
 
 Via the `api_http` glue (never a direct dependency on the HTTP server):
 `GET/DELETE /api/logs/ring` (crash-ring dump as text/plain, chunked / clear),
@@ -96,14 +96,14 @@ defaults stay on `/api/settings/log_manager`.
 | Where | What | Size |
 |---|---|---|
 | Flash | code + rodata | 2.6 KiB |
-| PSRAM `.bss` | queue (64×258 B) + registries + log-task stack (4 KiB — `StackType_t` is bytes on xtensa, not words) | **21,856 B** |
+| PSRAM `.bss` | queue (64×258 B) + registries + log-task stack (4 KiB: `StackType_t` is bytes on xtensa, not words) | **21,856 B** |
 | PSRAM `.noinit` | crash ring + header + tuning guard | **16,472 B** |
 | Internal | spinlock, TCB, flags | **670 B** |
 | Producer cost | one 256 B line buffer on the caller's stack | per call |
 
 ## Tests
 
-- **Host (`host_test/`, 9 tests):** the pure ring core — garbage detection,
+- **Host (`host_test/`, 9 tests):** the pure ring core, garbage detection,
   reset, roundtrip, wrap-keeps-newest, oversized append, newest-window reads,
   header tamper, size mismatch, tuning-guard clobber harmless.
 - **On-target (`test_apps/`):** ESP_LOGx → custom sink capture, runtime level

@@ -26,7 +26,7 @@
  *        `logger.error {count}` sources, the `logger.enable` /
  *        `logger.disable` gate actions (meatpi 2026-07-07: always-on
  *        when enabled, plus rule-driven gating), and the
- *        `logger.write` action — THE producer path (autopid Phase 6):
+ *        `logger.write` action, THE producer path (autopid Phase 6):
  *        a rule routes any event's values into the log, e.g.
  *          match autopid.param ->
  *            logger.write {"source":"autopid","name":"${param}",

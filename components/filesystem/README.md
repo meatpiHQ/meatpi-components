@@ -3,12 +3,12 @@
 ## Summary
 
 The firmware's general-purpose file API (core layer, ARCHITECTURE.md §5). Owns the
-internal-flash data filesystem — LittleFS on the `storage` partition, mounted at
-`/data` — and presents one path-based interface that routes logical paths to the
+internal-flash data filesystem (LittleFS on the `storage` partition, mounted at
+`/data`) and presents one path-based interface that routes logical paths to the
 right backend. `/sd/...` is reserved for the SD card backend and reports
 `ESP_ERR_INVALID_STATE` until `external_storage` exists and is wired up (v1 ships
 the internal backend only). The `settings` partition is deliberately **not** served
-here — `settings_manager` owns it for fault isolation.
+here: `settings_manager` owns it for fault isolation.
 
 Pinned design decisions (closes REVIEW.md §6.1):
 
@@ -19,7 +19,7 @@ Pinned design decisions (closes REVIEW.md §6.1):
 - **Writes are always atomic:** `filesystem_write()` = temp file + `fsync` +
   `rename`, and auto-creates parent directories. A power cut leaves the old file
   or the new one, never a torn one.
-- **`list` is part of the API** — the settings UI needs it to enumerate candidates
+- **`list` is part of the API**: the settings UI needs it to enumerate candidates
   for the schema `format:"file"` keyword.
 
 ## API
@@ -38,28 +38,28 @@ Pinned design decisions (closes REVIEW.md §6.1):
 | `filesystem_open(path, mode)` | Validated `FILE*` for streaming (chunked HTTP serving). Streaming writes are **not** atomic. |
 | `filesystem_info(prefix, *total, *used)` | Backend capacity. |
 
-Errors: `ESP_ERR_INVALID_ARG` (bad path — wrong prefix, `..`, `//`, trailing `/`,
+Errors: `ESP_ERR_INVALID_ARG` (bad path, wrong prefix, `..`, `//`, trailing `/`,
 ≥128 chars), `ESP_ERR_INVALID_STATE` (not inited / backend unavailable),
 `ESP_ERR_NOT_FOUND`, `ESP_ERR_INVALID_SIZE`, `ESP_ERR_NO_MEM`, `ESP_FAIL`.
 
 ## Dependencies
 
-- `joltwallet/littlefs` (managed, private) — the internal FS.
-- `vfs` (private) — POSIX layer.
+- `joltwallet/littlefs` (managed, private): the internal FS.
+- `vfs` (private): POSIX layer.
 - Init order: `filesystem_init()` runs in `main` after `external_storage_init()`
   (once that exists) and before anything that reads/writes files
   (`download`, `http_server_manager`). See ARCHITECTURE.md §11.
 
 ## Settings (`"filesystem"`, version 1)
 
-Minimal descriptor, one knob: `cli` (bool, default true) — register the
+Minimal descriptor, one knob: `cli` (bool, default true), register the
 `fs` console command with cmdline_manager on the settings boot apply
 (reboot-to-apply). Registered via `filesystem_register_settings()`,
 wired by main right after settings_manager_init because this component
 inits before it (the log_manager_register_settings pattern,
 2026-07-05).
 
-## HTTP API (requirement — full endpoint reference: `HTTP_API.md` in this directory; conventions: `components/HTTP_API.md`)
+## HTTP API (requirement: full endpoint reference: `HTTP_API.md` in this directory; conventions: `components/HTTP_API.md`)
 
 Read-only in v1, via the `api_http` glue: `GET /api/fs/list?path=…` (drives
 the settings-UI `format:"file"` picker) and `GET /api/fs/info?path=…`
@@ -76,7 +76,7 @@ exists.
 - Standard §2 corollary still applies to callers: no `filesystem_write()` from a
   task with a PSRAM stack.
 
-## Memory footprint (estimated — replace with measured before release)
+## Memory footprint (estimated: replace with measured before release)
 
 | Where | What | Size |
 |---|---|---|
@@ -90,20 +90,20 @@ exists.
 A never-formatted `storage` partition reads as erased flash (0xFF). Letting
 `esp_vfs_littlefs_register()` discover that makes `lfs_mount()` log
 "Corrupted dir pair" at **E** level before `format_if_mount_failed`
-formats it — two E lines that latched a `boot_errors` fault on every
+formats it: two E lines that latched a `boot_errors` fault on every
 brand-new unit (fresh-unit bench 2026-08-31). Since 2026-09-05
 `filesystem_init()` probes the superblock pair (blocks 0 and 1) with
 `fs_region_is_blank()` and, when both are erased, calls
 `esp_littlefs_format()` first (one **I** line, no mount attempt), then
 mounts a clean filesystem. A non-blank partition that fails to mount still
-takes the loud path on purpose — that is real corruption. settings_manager
+takes the loud path on purpose: that is real corruption. settings_manager
 does the same for its `settings` partition. Verified: erase-flash + first
 boot = 0 E lines, `WICAN FAULTS active=0`.
 
 ## Tests
 
-- **Host (Unity, `host_test/`):** pure path logic — prefix routing, traversal/`//`
-  rejection, length caps, temp-name and parent derivation — plus the
+- **Host (Unity, `host_test/`):** pure path logic (prefix routing, traversal/`//`
+  rejection, length caps, temp-name and parent derivation) plus the
   blank-flash predicate (`fs_region_is_blank`: erased, formatted magic,
   single stray byte, empty/NULL). 11 tests. `idf.py --preview
   set-target linux && idf.py build` (Linux host required), run the ELF.
@@ -115,4 +115,4 @@ boot = 0 E lines, `WICAN FAULTS active=0`.
 
 ## CLI
 
-`filesystem_register_cli()` (main, CLI builds) registers the `fs` command with cmdline_manager (`filesystem_cli.c`) — per-backend usage for /data and /sd.
+`filesystem_register_cli()` (main, CLI builds) registers the `fs` command with cmdline_manager (`filesystem_cli.c`): per-backend usage for /data and /sd.

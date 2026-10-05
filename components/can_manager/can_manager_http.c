@@ -22,7 +22,7 @@
 
 /**
  * @file can_manager_http.c
- * @brief GET /api/can — bus status, the link (listen before talk) and
+ * @brief GET /api/can: bus status, the link (listen before talk) and
  *        stats (§9.1 own-routes).
  */
 #include <stdio.h>

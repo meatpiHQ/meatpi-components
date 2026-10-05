@@ -42,7 +42,7 @@
 
 /* 40: the 33rd registrant (iperf_manager, 2026-07-11) silently pushed
    the LAST registrants (ha_webhooks, data_logger) off the 32-slot
-   table — register() ESP_ERR_NO_MEM → degraded every boot. The
+   table: register() ESP_ERR_NO_MEM → degraded every boot. The
    registry is PSRAM .bss, so headroom is effectively free. */
 #define SM_MAX_COMPONENTS 48
 #define SM_NAME_MAX       32
@@ -155,8 +155,8 @@ esp_err_t sm_validate_entry(const sm_entry_t *e, const cJSON *candidate,
 void settings_manager_capacity(size_t *used, size_t *cap)
 {
     /* health surface: the registry silently degraded ha_webhooks +
-       data_logger for 2 days when slot 33 of 32 was refused (2026-07-13)
-       — the bench asserts headroom now */
+       data_logger for 2 days when slot 33 of 32 was refused (2026-07-13),
+       the bench asserts headroom now */
     if (used != NULL)
     {
         *used = s_count;
@@ -234,7 +234,7 @@ esp_err_t settings_manager_register(const settings_descriptor_t *desc)
     }
 
     /* Same treatment for the optional defaults override: an unparseable or
-       non-object override is an authoring bug — fail here, not at first boot
+       non-object override is an authoring bug, fail here, not at first boot
        fallback when nobody is looking. */
     if (desc->defaults_json != NULL)
     {
@@ -319,7 +319,7 @@ int sm_fill_missing(cJSON *dst, const cJSON *src)
 
 /* Effective defaults (Coding Standard §5): the JSON Schema's per-property
    "default" keywords are the source of truth. defaults_json, when present, is a
-   WHOLE-OBJECT override — it replaces the schema-derived set entirely (validated
+   WHOLE-OBJECT override: it replaces the schema-derived set entirely (validated
    as an object at registration). Never returns NULL except on OOM. */
 cJSON *sm_build_defaults(const sm_entry_t *e)
 {
@@ -429,7 +429,7 @@ esp_err_t settings_manager_factory_reset(void)
 
     if (err == ESP_OK)
     {
-        ESP_LOGW(TAG, "factory reset: settings wiped — reboot to apply "
+        ESP_LOGW(TAG, "factory reset: settings wiped, reboot to apply "
                  "factory defaults");
     }
 
@@ -522,8 +522,8 @@ esp_err_t settings_manager_set(const char *name, const cJSON *in,
 
     /* FULL REPLACE (Coding Standard §6): @p in is the complete new object; the
        previous settings do not leak in. Optional keys the client omitted are
-       filled from the schema defaults (§5), then the whole document — including
-       "required" — is validated. Reboot-to-apply: nothing is applied here. */
+       filled from the schema defaults (§5), then the whole document (including
+       "required") is validated. Reboot-to-apply: nothing is applied here. */
     cJSON *candidate = cJSON_Duplicate(in, true);
 
     if (candidate == NULL)
@@ -576,7 +576,7 @@ esp_err_t settings_manager_set(const char *name, const cJSON *in,
         return r;
     }
 
-    /* current now holds the PENDING (post-reboot) values — that is what get()
+    /* current now holds the PENDING (post-reboot) values: that is what get()
        reports, since it's what a UI wants to display after a save. */
     cJSON_Delete(e->current);
     e->current = candidate;

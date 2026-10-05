@@ -22,8 +22,8 @@
 
 /**
  * @file battery_monitor_private.h
- * @brief Internal contracts: the PURE watch state machine (host-testable
- *        — time and voltage injected) and the ADC layer.
+ * @brief Internal contracts: the PURE watch state machine (host-testable,
+ *        time and voltage injected) and the ADC layer.
  */
 #pragma once
 

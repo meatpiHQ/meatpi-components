@@ -23,7 +23,7 @@
 /**
  * @file external_storage_private.h
  * @brief Internal API + the pure detect-debounce state machine
- *        (host-testable — no GPIO).
+ *        (host-testable: no GPIO).
  */
 #pragma once
 
@@ -35,7 +35,7 @@
 extern "C" {
 #endif
 
-/* consecutive identical samples required to accept a state change —
+/* consecutive identical samples required to accept a state change:
  * SD sockets bounce on insertion, and 4 × 250 ms also rides out the
  * card seating wobble */
 #define ES_DEBOUNCE_SAMPLES 4

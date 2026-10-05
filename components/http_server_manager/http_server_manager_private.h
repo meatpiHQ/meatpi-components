@@ -38,10 +38,10 @@ extern "C" {
 
 #define HSM_MAX_ASSET_TABLES 16
 /* 48 overflowed 2026-07-06 when autopid's std_scan routes landed; 64
-   overflowed 2026-07-07 when /api/usb/acm* + /api/scripts* landed — the
+   overflowed 2026-07-07 when /api/usb/acm* + /api/scripts* landed: the
    rejects surface as 404s on whatever registers LATER (ws channels,
    /api/logs). Watch the "route buffer full" boot error when adding
-   routes. Each slot is one httpd_uri_t (~16 B) in PSRAM — cheap. */
+   routes. Each slot is one httpd_uri_t (~16 B) in PSRAM: cheap. */
 /* The route table (PSRAM). History of running out, each time with the LAST
  * registration refused and nothing else to show for it:
  *   2026-07-08  83 static routes + the WebSocket channels overflowed 80
@@ -87,8 +87,8 @@ const char *hsm_match_mime_from_path(const char *path);
 
 /* ---- admin password (auth.c pure + settings.c, 2026-07-19) ----------------- */
 
-/** PURE credential check (host-tested): Authorization header (Basic —
- *  any username, password part decides — or Bearer) OR the
+/** PURE credential check (host-tested): Authorization header (Basic
+ *  (any username, password part decides) or Bearer) OR the
  *  `wican_auth` cookie vs @p password. Empty/NULL password = open. */
 bool hsm_auth_check(const char *auth_hdr, const char *cookie_hdr,
                     const char *password);

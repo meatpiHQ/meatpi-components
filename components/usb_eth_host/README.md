@@ -15,18 +15,18 @@ as lwIP's resolver 0 and re-asserted by a 5 s guard.
 
 | Function | One-liner |
 |---|---|
-| `usb_eth_host_start(cfg)` / `_stop()` / `_is_started()` | Bring the CherryUSB host up/down (VBUS ensured ON at start — no power-cycle since 2026-08-24, the connector mux provides the DWC2 connect edge; rail off on stop). |
+| `usb_eth_host_start(cfg)` / `_stop()` / `_is_started()` | Bring the CherryUSB host up/down (VBUS ensured ON at start: no power-cycle since 2026-08-24, the connector mux provides the DWC2 connect edge; rail off on stop). |
 | `usb_eth_host_driver_is_allowed(d)`, `_driver_to_str(d)` | Runtime driver mask. |
 | `usb_eth_host_get_active_driver(&d)`, `_get_active_ifkey(buf,len)` | Which class is bound and its netif key (→ `esp_netif_get_handle_from_ifkey`). |
-| `usb_eth_host_get_active_device_ids(&vid,&pid)` | (2026-08-24) `idVendor`/`idProduct` of the device behind the active driver — the ESPNetLink is `303A:4007`. False when none. |
+| `usb_eth_host_get_active_device_ids(&vid,&pid)` | (2026-08-24) `idVendor`/`idProduct` of the device behind the active driver: the ESPNetLink is `303A:4007`. False when none. |
 | `usb_eth_host_rndis_get_link(&up)` | RNDIS carrier state. |
 | `usb_eth_host_get_netif_config()`, `_netif_apply(ifkey,cfg)` | The netif config in force / re-apply to a live netif. |
 
 Callbacks in `usb_eth_host_config_t`: `on_eth_ip_up` / `on_eth_ip_lost`
-are a **balanced pair** — `lost` fires on `IP_EVENT_ETH_LOST_IP`, on the
+are a **balanced pair**: `lost` fires on `IP_EVENT_ETH_LOST_IP`, on the
 overlap suspend, **and from the driver-stopped path** (since 2026-08-24:
-lwIP posts no LOST_IP when a netif is simply stopped and destroyed —
-USB unplug or the ESPNetLink cutting its data lines — so `usb_host_manager`
+lwIP posts no LOST_IP when a netif is simply stopped and destroyed
+(USB unplug or the ESPNetLink cutting its data lines) so `usb_host_manager`
 kept reporting "uplink up"). Context: the system event task or the USB
 host task; never block in them.
 
@@ -43,7 +43,7 @@ None (configured through `usb_eth_host_start()` by `usb_host_manager`).
 ## Memory footprint (estimated)
 
 - CherryUSB host: the psc task (`CONFIG_USBHOST_PSC_STACKSIZE`) + per
-  class RX thread (NCM: 2048 B) — internal; exist only while a device is
+  class RX thread (NCM: 2048 B), internal; exist only while a device is
   attached.
 - `eth shared buf`: 4624 B internal DMA while attached.
 - Static: ~0.2 KB `.bss` (active driver/ifkey/VID/PID, DNS guard, flags).

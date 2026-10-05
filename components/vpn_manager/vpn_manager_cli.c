@@ -22,7 +22,7 @@
 
 /**
  * @file vpn_manager_cli.c
- * @brief The `vpn` CLI command — registered by
+ * @brief The `vpn` CLI command: registered by
  *        vpn_manager_register_cli() on the settings apply (§6b).
  */
 #include "esp_attr.h"

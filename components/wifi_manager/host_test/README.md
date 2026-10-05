@@ -1,6 +1,6 @@
-# wifi_manager — host unit tests
+# wifi_manager: host unit tests
 
-Pure selection/failure-memory suite (`wifi_manager_select.c` only — no esp_wifi),
+Pure selection/failure-memory suite (`wifi_manager_select.c` only: no esp_wifi),
 IDF `linux` target. Run via `.\test.ps1 host` or manually per
 `components/TESTBENCH.md` §4.
 

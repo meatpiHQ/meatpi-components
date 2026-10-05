@@ -22,7 +22,7 @@
 
 /**
  * @file data_logger.h
- * @brief WiCAN record logger (feature component) — the generic
+ * @brief WiCAN record logger (feature component): the generic
  *        successor of legacy `obd_logger`.
  *
  * Model (ownership inversion, Architecture §5): producers REGISTER a
@@ -30,19 +30,19 @@
  * timestamped numeric records with data_logger_write(); this component
  * owns everything storage: the sqlite files on the SD card
  * (`/sd/logs/dl_<epoch>.db`), write batching, size rotation and
- * retention. Producers never block on the card — records go into a
+ * retention. Producers never block on the card: records go into a
  * bounded PSRAM ring (drop-oldest + counter, the log_manager
  * backpressure rule) drained by one writer task, the only code that
  * touches sqlite (the port is compiled THREADSAFE=0).
  *
  * Three storage engines, chosen by the `format` setting (meatpi
  * 2026-07-07: sqlite REQUIRED for tooling compatibility, append logs
- * added for speed — BENCHMARKS.md, bench card):
- *   "sqlite" (default) dl_<epoch>.db  — ~700 rows/s tuned;
+ * added for speed: BENCHMARKS.md, bench card):
+ *   "sqlite" (default) dl_<epoch>.db:   ~700 rows/s tuned;
  *     params(id, source, name UNIQUE) +
  *     records(ts [epoch ms], param_id, value REAL) + index on ts
- *   "csv"              dl_<epoch>.csv — `ts_ms,source.name,value`
- *   "binary"           dl_<epoch>.wdl — packed frames w/ inline param
+ *   "csv"              dl_<epoch>.csv (`ts_ms,source.name,value`
+ *   "binary"           dl_<epoch>.wdl) packed frames w/ inline param
  *     dictionary (data_logger_append.c documents the framing); the
  *     fast option (raw append benched ~170× tuned sqlite) for
  *     CAN-frame-rate streams
@@ -105,7 +105,7 @@ typedef struct
 /** Register descriptors (settings/log/events). No storage access. */
 esp_err_t data_logger_init(void);
 
-/** Create the writer task if enabled. Storage may come and go later —
+/** Create the writer task if enabled. Storage may come and go later:
  *  the writer follows external_storage_is_mounted(). */
 esp_err_t data_logger_start(void);
 
@@ -135,7 +135,7 @@ esp_err_t data_logger_stats(data_logger_stats_t *out);
 void data_logger_autopid_sink(const char *name, const char *unit,
                               double value, bool changed);
 
-/** Optional /api/logger status route (§9.1 — main wires it in HTTP
+/** Optional /api/logger status route (§9.1: main wires it in HTTP
  *  compositions only). */
 esp_err_t data_logger_register_http(void);
 

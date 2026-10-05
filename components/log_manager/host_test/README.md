@@ -1,4 +1,4 @@
-# log_manager — host unit tests
+# log_manager: host unit tests
 
 Pure crash-ring core only (`log_manager_ring.c`). Run via `.\test.ps1 host`.
 

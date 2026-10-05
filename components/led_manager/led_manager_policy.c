@@ -22,7 +22,7 @@
 
 /**
  * @file led_manager_policy.c
- * @brief PURE indication arbitration — no I2C, no RTOS, host-testable.
+ * @brief PURE indication arbitration: no I2C, no RTOS, host-testable.
  */
 #include <string.h>
 

@@ -22,7 +22,7 @@
 
 /**
  * @file battery_monitor_cli.c
- * @brief The component's CLI command (`battery`) — registered into
+ * @brief The component's CLI command (`battery`): registered into
  *        cmdline_manager by battery_monitor_register_cli() (main wires
  *        it in CLI compositions only, like battery_monitor_register_http).
  */

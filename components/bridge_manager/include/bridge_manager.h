@@ -24,8 +24,8 @@
  * @file bridge_manager.h
  * @brief WiCAN data-path pump (service component).
  *
- * Moves chunks between any two registered endpoints — OBD chip ↔ TCP,
- * CAN ↔ UDP, USB ↔ OBD, and any future pairing — with no per-pairing code.
+ * Moves chunks between any two registered endpoints (OBD chip ↔ TCP,
+ * CAN ↔ UDP, USB ↔ OBD, and any future pairing) with no per-pairing code.
  * Three-piece model (TASK_bridge_manager.md §2, decided):
  *
  *  - ENDPOINT:   anything that can source/sink chunks. Registered by name via
@@ -36,10 +36,10 @@
  *                (byte-transparent) is built in.
  *  - BRIDGE:     one settings-configured pairing {name, a, b, translator,
  *                enabled}. Built once at start() from the boot-applied
- *                settings (standard §4.2 reboot-to-apply — the spec's "live
+ *                settings (standard §4.2 reboot-to-apply: the spec's "live
  *                re-apply" is superseded by the standard, which wins).
  *
- * Chunk convention: {uint16_t len; uint8_t data[128]} — identical layout to
+ * Chunk convention: {uint16_t len; uint8_t data[128]}: identical layout to
  * obd_chip's obd_chunk_t and socket_manager's socket_chunk_t, so their
  * subscribe/send APIs wrap into endpoints without copies or adaptation.
  */
@@ -66,10 +66,10 @@ extern "C" {
 #define BRIDGE_MANAGER_MAX_ENDPOINTS   24 /* 8 was outgrown by main's glue;
                                              16 hit 15/16 by 2026-07-19
                                              (7 fixed + 4 sock + 3 ws +
-                                             acm) — one more jack away
+                                             acm): one more jack away
                                              from silent bridge drops */
 #define BRIDGE_MANAGER_MAX_TRANSLATORS 8 /* 4 sat at 3/4 (slcan/realdash/
-                                            gvret) — the very first
+                                            gvret): the very first
                                             registry_headroom fault the
                                             2026-07-19 health net latched */
 #define BRIDGE_MANAGER_CHUNK_SIZE      128
@@ -99,7 +99,7 @@ typedef struct
  * A translator: stateful stream codec (bytes arrive fragmented across
  * chunks, so each bridge direction owns a reassembly ctx of ctx_size bytes,
  * allocated from the manager's static PSRAM pool and prepared by ctx_init).
- * decode/encode are PURE — no I/O, no globals; everything lives in ctx. One
+ * decode/encode are PURE: no I/O, no globals; everything lives in ctx. One
  * input may emit zero, one, or many output frames via the sink callback.
  * Direction convention: a→b chunks run through decode, b→a through encode.
  */
@@ -109,7 +109,7 @@ typedef esp_err_t (*bridge_sink_fn_t)(void *arg, const uint8_t *out,
 /**
  * Reply channel (opt-in via wants_reply). Some protocols (GVRET's
  * TIME_SYNC/GET_DEV_INFO/…) must answer the client on the SAME side the
- * command arrived — the pure decode/encode sink only reaches the FAR side.
+ * command arrived: the pure decode/encode sink only reaches the FAR side.
  * A translator that sets wants_reply=true makes the FIRST bytes of its ctx a
  * bridge_reply_hdr_t; the pump fills it (after ctx_init) with a sink that
  * writes back to the near endpoint. The codec calls hdr->reply(hdr->reply_arg,
@@ -124,7 +124,7 @@ typedef struct
 
 typedef struct
 {
-    const char *name;                    /* "slcan", "gvret" — settings key */
+    const char *name;                    /* "slcan", "gvret": settings key */
     size_t      ctx_size;                /* per-direction reassembly state  */
     bool        wants_reply;             /* ctx starts with bridge_reply_hdr_t */
     esp_err_t (*ctx_init)(void *ctx);
@@ -136,7 +136,7 @@ typedef struct
     /** OPTIONAL periodic flush for ACCUMULATING codecs (canmqtt
      *  batching): when flush != NULL, the pump calls it per direction
      *  whenever >= flush_ms elapsed since that direction's last
-     *  decode/encode/flush — on the pump's own <=100 ms wakeups, so
+     *  decode/encode/flush: on the pump's own <=100 ms wakeups, so
      *  the real period is flush_ms rounded up to the next wakeup. The
      *  sink is the SAME destination the direction normally writes to.
      *  A codec with nothing pending must emit nothing. flush == NULL
@@ -166,7 +166,7 @@ esp_err_t bridge_manager_start(void);
 /** Tear down every bridge (unsubscribe, stop pumps). */
 esp_err_t bridge_manager_stop(void);
 
-/** Registration — pre-start only; tables are read lock-free afterwards. */
+/** Registration: pre-start only; tables are read lock-free afterwards. */
 esp_err_t bridge_manager_register_endpoint(const bridge_endpoint_t *ep);
 esp_err_t bridge_manager_register_translator(const bridge_translator_t *tr);
 

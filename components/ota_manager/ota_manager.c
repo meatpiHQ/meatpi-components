@@ -50,7 +50,7 @@ static const esp_partition_t *s_target;
 static bool s_inited;
 static ota_manager_event_cb_t s_event_cb;
 
-/** Fire the state-change callback (outside s_lock — the callback may do
+/** Fire the state-change callback (outside s_lock: the callback may do
  *  I/O, e.g. main's LED-indication glue). */
 static void notify(ota_manager_state_t before, ota_manager_state_t after)
 {

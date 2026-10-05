@@ -54,7 +54,7 @@ static StaticSemaphore_t s_lock_buf; /* internal: FreeRTOS object */
 static TaskHandle_t s_task;
 static StaticTask_t s_tcb;                            /* internal: FreeRTOS */
 static StackType_t s_stack[4096] EXT_RAM_BSS_ATTR; /* 3072 left 768 B
-                              headroom (stack audit 2026-07-22) — too
+                              headroom (stack audit 2026-07-22): too
                               thin for a PSRAM stack, which corrupts
                               silently instead of panicking */
 static volatile float s_voltage;

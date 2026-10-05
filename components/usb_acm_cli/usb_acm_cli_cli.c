@@ -22,7 +22,7 @@
 
 /**
  * @file usb_acm_cli_cli.c
- * @brief `acm` console command — status, or send a line to the modem.
+ * @brief `acm` console command: status, or send a line to the modem.
  *        `acm`            -> connection status
  *        `acm AT+CSQ`     -> send the line, print the response
  */

@@ -22,8 +22,8 @@
 
 /**
  * @file led_manager_events.c
- * @brief event_manager glue: `led.indicate {r,g,b,mode}` + `led.clear`
- *        — the ALERT arbitration slot, same as the REST/CLI surfaces
+ * @brief event_manager glue: `led.indicate {r,g,b,mode}` + `led.clear`,
+ *        the ALERT arbitration slot, same as the REST/CLI surfaces
  *        (rules never touch STATUS/CRITICAL; the ladder stays honest).
  */
 #include <string.h>

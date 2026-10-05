@@ -25,7 +25,7 @@
  * @brief The built-in example scripts (2026-09-07): the Scripts page's
  *        gallery. Each is a complete, commented Berry program a user can
  *        open, run and edit; they ship in the firmware (not on the file
- *        system) so they follow the bindings and never get lost. PURE —
+ *        system) so they follow the bindings and never get lost. PURE:
  *        host-tested for shape (valid ids, under the inline size cap).
  *
  * Every example was run on the bench against the ECU simulator; keep them

@@ -22,7 +22,7 @@
 
 /**
  * @file usb_host_manager.h
- * @brief WiCAN USB host policy (feature component) — rewrite of the
+ * @brief WiCAN USB host policy (feature component): rewrite of the
  *        legacy usb_host_manager (TASK_usb_host_manager.md), v1 scope
  *        = USB-Ethernet uplink.
  *
@@ -31,14 +31,14 @@
  * GPIO11. When `enabled`, a presence task watches the OTG ID pin
  * (GPIO39, low = a device/OTG cable attached, debounced): on attach
  * it flips the mux to host, powers VBUS (GPIO10, settle delay) and
- * starts usb_eth_host (CherryUSB enumerates the adapter — RTL8152 /
- * ASIX / CDC-ECM / CDC-NCM / RNDIS — into ONE esp_netif, DHCP or
+ * starts usb_eth_host (CherryUSB enumerates the adapter (RTL8152 /
+ * ASIX / CDC-ECM / CDC-NCM / RNDIS) into ONE esp_netif, DHCP or
  * static). On detach everything tears down and the mux returns to the
  * CH342, so a PC can always reach the console/flash through the port
- * while nothing else is plugged in — and ALWAYS when `enabled` is
+ * while nothing else is plugged in, and ALWAYS when `enabled` is
  * false.
  *
- * Uplink semantics (v1, meatpi 2026-07-07): NO wifi/usb arbitration —
+ * Uplink semantics (v1, meatpi 2026-07-07): NO wifi/usb arbitration,
  * the wired uplink just raises DEV_STATUS_BIT_ETH_CONNECTED (part of
  * the NETWORK mask every consumer already gates on). `prefer_usb_route`
  * (default OFF = wifi-first, legacy default) only sets the default
@@ -78,7 +78,7 @@ esp_err_t usb_host_manager_init(void);
 esp_err_t usb_host_manager_start(void);
 
 /** Tear the host stack down and return the mux to the CH342 (also the
- *  sleep path — wired into main's prepare callback). Waits, bounded to
+ *  sleep path, wired into main's prepare callback). Waits, bounded to
  *  3 s, for the presence task to finish the teardown (2026-10-01). */
 esp_err_t usb_host_manager_stop(void);
 
@@ -86,7 +86,7 @@ esp_err_t usb_host_manager_status(usb_host_manager_status_t *out);
 
 /**
  * Drive the connector's VBUS rail (USB_OTG_PWR_EN, active high) while
- * host mode is active — the recovery lever for a dongle that must be
+ * host mode is active: the recovery lever for a dongle that must be
  * re-enumerated (espnetlink_link's key re-read), also behind the
  * `usb vbus <0|1>` dev command. The rail has a board pull-up, so the
  * power-on default is ON; an off→on cycle reboots the attached device.

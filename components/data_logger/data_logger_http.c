@@ -23,7 +23,7 @@
 /**
  * @file data_logger_http.c
  * @brief The optional /api/logger status route (§9.1). File
- *        browse/download/delete deliberately NOT duplicated here — the
+ *        browse/download/delete deliberately NOT duplicated here: the
  *        files live under /sd/logs and the existing /api/fs file
  *        manager routes cover them.
  */
@@ -85,7 +85,7 @@ static esp_err_t logger_handler(httpd_req_t *req)
     return httpd_resp_send(req, body, HTTPD_RESP_USE_STRLEN);
 }
 
-/* POST /api/logger/gate {"enabled":bool} — runtime (non-persisted)
+/* POST /api/logger/gate {"enabled":bool}: runtime (non-persisted)
  * logging gate, the HTTP twin of the logger.enable/logger.disable event
  * actions (API-first §1b: anything a rule can do, a client can do). The
  * observable state is GET /api/logger's "paused" field. */
@@ -119,7 +119,7 @@ static esp_err_t gate_post_handler(httpd_req_t *req)
 
     body[len] = '\0';
 
-    /* one bool field — a full cJSON parse is overkill */
+    /* one bool field: a full cJSON parse is overkill */
     bool on;
 
     if (strstr(body, "\"enabled\"") == NULL)
@@ -150,13 +150,13 @@ static esp_err_t gate_post_handler(httpd_req_t *req)
 
 /* ---- GET /api/logger/export?stream=params&since=<cursor>&limit=<n> --------
  * Device-contract ask #8: incremental export of the params stream (the
- * jsonl engine; the csv engine too since 2026-09-06 — same cursor, same
+ * jsonl engine; the csv engine too since 2026-09-06, same cursor, same
  * budgets, the trailing meta line stays JSON). `name=<param>` (2026-09-06, the dashboard's
- * history) returns only that parameter's records — the cursor still
+ * history) returns only that parameter's records: the cursor still
  * advances over every line read, bounded per request by
  * DL_EXPORT_SCAN_CAP. Cursor = "<file-epoch>:<byte-offset>", opaque to
  * the client; the FINAL line of every response is a meta record
- * {"_cursor":"<next>","more":true|false} — resend it as `since` to
+ * {"_cursor":"<next>","more":true|false}: resend it as `since` to
  * continue. Files are epoch-named (dl_<epoch>.jsonl) so the cursor
  * survives rotation: a retired epoch resumes at the next newer file.
  * Reads are budgeted (lines + bytes) and cut on record boundaries; the
@@ -171,7 +171,7 @@ static esp_err_t gate_post_handler(httpd_req_t *req)
 /* ?name=<param> filter (dashboard history, 2026-09-06): a record's
  * "param":"<source>.<name>" matches on the full value or on the part
  * after its last '.', so the UI can ask by parameter name without knowing
- * the sink's source prefix. Plain substring scan — no JSON parse. */
+ * the sink's source prefix. Plain substring scan: no JSON parse. */
 static bool export_line_matches(const char *line, size_t len,
                                 const char *name, bool csv)
 {
@@ -258,7 +258,7 @@ static int export_list_epochs(int64_t *out, int cap, const char *ext)
 
     closedir(d);
 
-    /* ascending (oldest first) — insertion sort, n is small */
+    /* ascending (oldest first): insertion sort, n is small */
     for (int i = 1; i < n; i++)
     {
         int64_t v = out[i];
@@ -386,7 +386,7 @@ static esp_err_t export_get_handler(httpd_req_t *req)
         if (f == NULL && !gated_here)
         {
             /* the ACTIVE file is exclusively held by the writer (FATFS
-               FS_LOCK) — pause the gate; the writer closes its files
+               FS_LOCK): pause the gate; the writer closes its files
                within one ~200 ms loop. Restored after the read unless a
                logger.disable rule had already paused it. */
             data_logger_stats_t st;

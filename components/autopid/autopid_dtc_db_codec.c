@@ -31,7 +31,7 @@
  *            CODE\tDESCRIPTION\n        (sorted by code, deduped)
  *
  * The importer owns no memory: the caller provides the scratch buffer
- * (unsorted parsed lines), the item index, and the output buffer —
+ * (unsorted parsed lines), the item index, and the output buffer,
  * PSRAM heap on target, small statics in the host suite.
  */
 #include "autopid_private.h"
@@ -57,7 +57,7 @@ typedef struct
 } db_parse_t;
 
 /** Validate + normalize one (code, desc) pair into scratch/items.
- *  Codes may carry UDS-style suffixes ("P0420-00") — truncated to the
+ *  Codes may carry UDS-style suffixes ("P0420-00"), truncated to the
  *  5-char base in v1 (TASK_dtc_db §7.3). */
 static void emit_entry(db_parse_t *p, const char *code, size_t code_len,
                        const char *desc, size_t desc_len)

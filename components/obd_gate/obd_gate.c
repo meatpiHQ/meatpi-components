@@ -101,7 +101,7 @@ esp_err_t obd_gate_acquire(const void *owner, uint32_t wait_ms)
         vTaskDelay(pdMS_TO_TICKS(OG_POLL_MS));
     }
 
-    /* fail-open: take it anyway — a wedged holder must never brick the
+    /* fail-open: take it anyway, a wedged holder must never brick the
        other requester; the clash risk returns for this one conversation */
     portENTER_CRITICAL(&s_mux);
     og_core_force(&s_gate, owner, now_ms(), OBD_GATE_HOLD_MS);
@@ -110,7 +110,7 @@ esp_err_t obd_gate_acquire(const void *owner, uint32_t wait_ms)
 
     if ((steals % 16) == 1)
     {
-        ESP_LOGW(TAG, "gate held past %u ms — proceeding anyway "
+        ESP_LOGW(TAG, "gate held past %u ms, proceeding anyway "
                  "(%lu steals)", (unsigned)wait_ms, (unsigned long)steals);
     }
 

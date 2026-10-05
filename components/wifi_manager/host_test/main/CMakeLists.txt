@@ -1,4 +1,4 @@
-# Host test compiles ONLY the pure selection/ban module — no esp_wifi/netif
+# Host test compiles ONLY the pure selection/ban module: no esp_wifi/netif
 # needed, so it runs on the linux target.
 set(comp_dir "${CMAKE_CURRENT_LIST_DIR}/../..")
 

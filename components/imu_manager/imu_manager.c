@@ -28,7 +28,7 @@
  *        polling detector task, and event fan-out.
  *
  * Both detectors run side by side (meatpi 2026-07-04): WoM = per-sample
- * threshold with PREVIOUS-sample reference (differential — an initial-
+ * threshold with PREVIOUS-sample reference (differential, an initial-
  * sample reference latches forever after an orientation change), catches
  * door slams/knocks/vibration and is PUBLISHED as an event (throttled).
  * SMD = the DMP/APEX algorithm needing SUSTAINED motion, drives the
@@ -92,7 +92,7 @@ static SemaphoreHandle_t s_sub_lock;
 static StaticSemaphore_t s_sub_lock_buf; /* internal: FreeRTOS object */
 static uint32_t s_pub_drops;
 
-/* ---- detector task (POLLING — meatpi's call: nothing here is time-
+/* ---- detector task (POLLING: meatpi's call: nothing here is time-
  * critical, and polling avoids ISR complexity entirely. INT_STATUS2
  * LATCHES the WOM/SMD bits until read, so a 200 ms poll misses nothing;
  * worst-case detection latency is one tick.) ---------------------------------- */

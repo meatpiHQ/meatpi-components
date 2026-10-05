@@ -22,7 +22,7 @@
 
 /**
  * @file uds_manager_cli.c
- * @brief The `uds` console command — the terminal's serial/BLE/WS face.
+ * @brief The `uds` console command: the terminal's serial/BLE/WS face.
  *        `uds -t 7E0 -r 7E8 22 F1 90`  (hex request after the flags)
  */
 #include <stdlib.h>

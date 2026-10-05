@@ -9,9 +9,9 @@ idf_component_register(
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "."
     # Service: owns the AW2023 RGB LED (shared bus via i2c_bus) and the
-    # priority arbitration over it — highest occupied indication wins.
+    # priority arbitration over it, highest occupied indication wins.
     # cmdline_manager only by the _cli.c (`led` command); http_server_manager
-    # + esp_http_server only by the _http.c (/api/led — main wires it in HTTP
+    # + esp_http_server only by the _http.c (/api/led: main wires it in HTTP
     # compositions).
     PRIV_REQUIRES event_manager i2c_bus settings_manager log_manager cmdline_manager
                   http_server_manager esp_http_server

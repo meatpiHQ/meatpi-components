@@ -25,15 +25,15 @@
  * @brief PURE DBC codec (TASK_dbc.md §2-3, host-tested): parse the BO_/
  *        SG_/SIG_VALTYPE_ subset, and COMPILE a signal into an
  *        expression_parser expression over the filter payload (B0 =
- *        first frame data byte — the same frame of reference DBC uses).
+ *        first frame data byte: the same frame of reference DBC uses).
  *
  * Compilation rules (why multiply-add, not shift-or): the expression
  * grammar truncates bitwise/shift operands to 32-bit int, so int ops
  * are only ever applied WITHIN one byte ((B2>>4)&15); multi-byte
  * composition and sign extension use * + - on exact power-of-two
- * decimal literals (doubles — exact to 2^53). Motorola byte-aligned
+ * decimal literals (doubles: exact to 2^53). Motorola byte-aligned
  * signals use the compact [Bx:By]/[Sx:Sy] spans (spans are big-endian
- * = Motorola order; signed spans only for 1/2/4/8-byte containers —
+ * = Motorola order; signed spans only for 1/2/4/8-byte containers:
  * the 3-byte-span no-sign-bit legacy quirk).
  */
 #include "autopid_private.h"
@@ -142,7 +142,7 @@ static bool parse_sg(const char *p, const char *end, ap_dbc_sig_t *s)
 
             if (*ep == 'M' || v > UINT16_MAX)
             {
-                s->mux = 3;     /* extended — listed, never compiled */
+                s->mux = 3;     /* extended: listed, never compiled */
             }
             else
             {
@@ -367,7 +367,7 @@ int ap_dbc_parse(const char *text, size_t len, ap_dbc_msg_t *msgs,
         }
         else if (ll > 12 && strncmp(p, "SG_MUL_VAL_ ", 12) == 0)
         {
-            /* extended-multiplexing map — mark the message so its muxed
+            /* extended-multiplexing map: mark the message so its muxed
                signals stay listed-with-reason instead of decoding wrong */
             unsigned long id = strtoul(p + 12, NULL, 10) & 0x1FFFFFFFUL;
 
@@ -534,7 +534,7 @@ esp_err_t ap_dbc_expr(const ap_dbc_sig_t *s, char *out, size_t out_cap,
 
     *reason = NULL;
 
-    /* simple mux (M switch / m<N>) compiles like a plain signal — the
+    /* simple mux (M switch / m<N>) compiles like a plain signal: the
        m<N> gate is a SEPARATE runner precondition (ap_dbc_mux_cond) */
     if (s->mux == 3)
     {
@@ -600,7 +600,7 @@ esp_err_t ap_dbc_expr(const ap_dbc_sig_t *s, char *out, size_t out_cap,
             }
             else if (ops && n > 1)
             {
-                /* '+' binds tighter than '>>' in the grammar — a bare
+                /* '+' binds tighter than '>>' in the grammar: a bare
                  * shift segment inside a sum needs parens */
                 append(raw, sizeof(raw), &w, "(%s)", st);
             }
@@ -612,7 +612,7 @@ esp_err_t ap_dbc_expr(const ap_dbc_sig_t *s, char *out, size_t out_cap,
 
         raw_ops = strpbrk(raw, ">&*+-|") != NULL;
 
-        /* sign extension: RAW - msb*2^len (multiply-add — no 32-bit
+        /* sign extension: RAW - msb*2^len (multiply-add, no 32-bit
          * ceiling; int ops only ever touch one byte) */
         if (s->is_signed)
         {
@@ -735,7 +735,7 @@ esp_err_t ap_dbc_mux_cond(const ap_dbc_sig_t *s, const ap_dbc_msg_t *msgs,
 
     if (s->mux != 1)
     {
-        return ESP_OK;          /* plain / switch — unconditional        */
+        return ESP_OK;          /* plain / switch: unconditional        */
     }
 
     const ap_dbc_sig_t *sw = NULL;
@@ -755,7 +755,7 @@ esp_err_t ap_dbc_mux_cond(const ap_dbc_sig_t *s, const ap_dbc_msg_t *msgs,
         return ESP_ERR_NOT_SUPPORTED;
     }
 
-    /* the DBC m<N> comparison is on the RAW switch value — compile the
+    /* the DBC m<N> comparison is on the RAW switch value: compile the
        switch slice unscaled and unsigned */
     ap_dbc_sig_t raw_sw = *sw;
 

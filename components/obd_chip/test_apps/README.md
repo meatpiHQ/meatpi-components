@@ -1,6 +1,6 @@
-# obd_chip — on-target test app (live bench)
+# obd_chip: on-target test app (live bench)
 
-Runs against the **real bench**: chip + ECU simulator at 500k/11-bit + PCAN —
+Runs against the **real bench**: chip + ECU simulator at 500k/11-bit + PCAN,
 topology, wiring, tools and versions are documented in `BENCH.md` next to
 this file (the §7 bench doc, verified 2026-07-03). Run:
 
@@ -18,10 +18,10 @@ healthy subscriber unaffected), claim arbitration (MONITOR blocks `request`,
 release restores), monitor-class classification + `request()` refusal, a real
 `ATMA` session terminated by the SPACE stop byte, and staging the embedded
 vendor firmware file to `/data`. After `TEST DONE` the app keeps a **USB
-bridge** (COM6 ⇄ chip, built on `subscribe`/`send` — the production
+bridge** (COM6 ⇄ chip, built on `subscribe`/`send`: the production
 passthrough shape) and a console command loop.
 
-## Expected result — serial markers, in this order
+## Expected result: serial markers, in this order
 
 ```
 INIT ok=1
@@ -41,10 +41,10 @@ BRIDGE READY
 TEST DONE
 ```
 
-(`ready_pin` reads 0 on the current bench while the chip answers — the open
+(`ready_pin` reads 0 on the current bench while the chip answers: the open
 READY-semantics question; the version string tracks the installed chip fw.
 Since the 2026-07-26 async bring-up, `START` prints after the app has waited
-for `obd_chip_ready()` — `ready=1` is the real bring-up outcome.)
+for `obd_chip_ready()`: `ready=1` is the real bring-up outcome.)
 Last verified: 2026-07-03 on the live bench.
 
 ## Console commands (after TEST DONE, on COM7 @115200)
@@ -55,12 +55,12 @@ Last verified: 2026-07-03 on the live bench.
   do not interrupt power.** Ends with `FWUPDATE done err=...`.
 
 **Real update verified 2026-07-03**: `FWUPDATE FORCE` reflashed V2.3.22 on
-the bench chip — 3557 records in ~80 s, `err=ESP_OK`, and the full marker
+the bench chip, 3557 records in ~80 s, `err=ESP_OK`, and the full marker
 suite (incl. live-ECU PID 0100 + VIN) green on the next boot. Note the
 `FWVERSION` printed right after the update may be blank (the chip was just
 hardware-reset); reset the DUT and read the `VERSION` marker instead. If an
 update is interrupted mid-stream the chip stays in download mode (`VTVERS`
-answers `?`, hardware reset does not exit it) — running `FWUPDATE FORCE`
+answers `?`, hardware reset does not exit it), running `FWUPDATE FORCE`
 again recovers it; this path is exercised and verified.
 
 ## PCAN scenarios (via the bridge + PCAN_USBBUS2)
@@ -68,25 +68,25 @@ again recovers it; this path is exercised and verified.
 With the bridge running, `tools/testbench/obd_bench_check.py` re-verifies the
 chip and the ECU path from the PC.
 
-**4 KB ISO-TP `VT` transmit — VERIFIED 2026-07-03** with a REAL ISO-TP
+**4 KB ISO-TP `VT` transmit: VERIFIED 2026-07-03** with a REAL ISO-TP
 stack (python-can + **can-isotp**, per the task spec): run
 `tools/testbench/obd_vt_isotp_check.py` (expects `VT ISO-TP CHECK PASS`,
 `--size` selectable). It sends `VTFullyRequestCk<LLLL><hex><CCCC>` through
 COM6 while an `isotp.CanStack` receiver (rxid 0x7DF, FC txid 0x7E8,
-BS=0/STmin=0) owns flow control, sequence checking and reassembly — any
+BS=0/STmin=0) owns flow control, sequence checking and reassembly: any
 ISO-15765-2 violation by the chip surfaces through the stack's error
 handler. Verified byte-exact with zero stack errors at 7 B (single frame),
 100 B and the full 4095 B. Syntax + the real-world response transcript
-(J1850 VPW `ATSH`, UDS TransferData, per-message output) — and why the
+(J1850 VPW `ATSH`, UDS TransferData, per-message output), and why the
 `IT CH_NO`/`OK` lines in the raw tester log are the Bluetooth tester box,
 not the chip: component `README.md` §Open stubs item 3 (source:
 `wican_pro_tester/protocol_notes.md`). The trailing ` <n>` is the ELM
 expected-response-count hint; it makes no observable difference against
 the single-response bench sim (`1`/`2`/none probed identical).
 
-**Monitor-injection — VERIFIED 2026-07-03**: run
+**Monitor-injection: VERIFIED 2026-07-03**: run
 `tools/testbench/obd_monitor_injection_check.py` (expects
 `MONITOR INJECTION CHECK PASS`). It enables `ATH1`, starts `ATMA`, injects
 0x123/`DE AD BE EF 11 22 33 44` from PCAN, asserts the frames stream through
-the bridge (the `<DATA ERROR` tag on arbitrary data is expected — not a
+the bridge (the `<DATA ERROR` tag on arbitrary data is expected, not a
 failure), and stops the session with SPACE.

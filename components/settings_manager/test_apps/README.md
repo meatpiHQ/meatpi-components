@@ -1,4 +1,4 @@
-# settings_manager — on-target test app
+# settings_manager: on-target test app
 
 Self-contained (no external gear). Exercises the real `settings` LittleFS
 partition from the **main partition table** (standard rev 2.1 §7). Run:
@@ -8,7 +8,7 @@ partition from the **main partition table** (standard rev 2.1 §7). Run:
 ```
 
 Erase flash first (`idf.py -p COM7 erase-flash`) when asserting first-boot
-behavior — settings persist across reflashes by design.
+behavior: settings persist across reflashes by design.
 
 ## What is covered
 
@@ -19,7 +19,7 @@ error text, persistence across reboot, v1→v2 migration (key rename), CRC
 corruption → defaults fallback, broken component degrades without affecting
 its sibling.
 
-## Expected result — serial markers, in this order
+## Expected result: serial markers, in this order
 
 ```
 REG badschema REJECTED
@@ -49,6 +49,6 @@ TEST DONE
 ```
 
 A first mount of a virgin partition logs a littlefs `Corrupted dir pair` error
-then formats — expected, not a failure. Crash signatures (`abort()`,
+then formats, expected, not a failure. Crash signatures (`abort()`,
 `Guru Meditation`) are failures. `pytest_settings_manager.py` encodes the same
 sequence for pytest-embedded. Last verified green: 2026-07-02 on WiCAN Pro.

@@ -22,13 +22,13 @@
 
 /**
  * @file espnetlink_link.h
- * @brief The ESPNetLink LTE/GPS dongle as the WiCAN's internet uplink —
+ * @brief The ESPNetLink LTE/GPS dongle as the WiCAN's internet uplink:
  *        zero-touch pairing over USB, then either the "WiFi modem"
  *        topology (default) or plain USB-Ethernet (NCM).
  *
  * Why two modes: the WiCAN's USB host transmitter desenses the dongle's
  * GNSS while the USB-Ethernet link is active (a cold fix never
- * completes). In `wifi_modem` mode the USB cable carries 5 V only —
+ * completes). In `wifi_modem` mode the USB cable carries 5 V only:
  * the WiCAN reads the dongle's per-device AP key over USB once, tells
  * the dongle to cut its data lines, and from then on joins the dongle's
  * WiFi AP (a normal wifi_manager fallback network: the home network
@@ -141,7 +141,7 @@ typedef void (*espnetlink_gps_sink_t)(const usb_acm_gps_t *fix);
 void espnetlink_link_set_gps_sink(espnetlink_gps_sink_t sink);
 
 /** Last cached fix (never touches the network). ESP_ERR_NOT_FOUND when
- *  there is no live fix — the same contract as usb_acm_cli_gps_get(),
+ *  there is no live fix: the same contract as usb_acm_cli_gps_get(),
  *  so it doubles as that component's fallback provider. */
 esp_err_t espnetlink_link_gps_get(usb_acm_gps_t *out);
 

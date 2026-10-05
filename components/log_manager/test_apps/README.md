@@ -1,4 +1,4 @@
-# log_manager — on-target test app
+# log_manager: on-target test app
 
 Self-contained, **two-phase across a real reboot**. Builds against the main
 partition table (rev 2.1). Run:
@@ -12,14 +12,14 @@ partition table (rev 2.1). Run:
 Composition boot (log pipeline first, settings applied, task started), a
 custom sink receiving `ESP_LOGx` output end-to-end, runtime level control
 (DEBUG gated at INFO, passes after `set_level`), sink disable, **drop-oldest
-backpressure** (300-line burst from a priority-5 task — above the log task —
+backpressure** (300-line burst from a priority-5 task (above the log task)
 must drop, never block), and the PSRAM ring surviving a genuine
 `esp_restart()` (a unique marker logged before the reset is found in the ring
 after it), then ring clear.
 
-## Expected result — serial markers
+## Expected result: serial markers
 
-Phase 1 (fresh flash — ring holds no phase marker):
+Phase 1 (fresh flash: ring holds no phase marker):
 
 ```
 INIT ok=1

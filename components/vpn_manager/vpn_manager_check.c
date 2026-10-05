@@ -98,7 +98,7 @@ const char *vpn_check_config(const vpn_config_t *cfg)
         size_t len = strlen(cfg->ts_auth_key);
 
         /* tskey-auth-... (Tailscale) or a headscale preauth key (hex);
-         * shape-check only — the coordinator is the judge */
+         * shape-check only: the coordinator is the judge */
         if (len < 16)
         {
             return "ts_auth_key is required for tailscale (from your "

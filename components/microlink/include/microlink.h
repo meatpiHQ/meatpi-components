@@ -44,7 +44,7 @@ typedef struct {
     /* Optional timing overrides (0 = use defaults) */
     /* WiCAN addition: coordination server override for Headscale /
      * Ionscale (upstream only reads this from its own NVS config UI,
-     * which WiCAN compiles out — settings_manager owns config).
+     * which WiCAN compiles out: settings_manager owns config).
      * Host name only (no scheme), NULL/"" = controlplane.tailscale.com */
     const char *control_url;
 
@@ -80,7 +80,7 @@ typedef void (*microlink_data_cb_t)(microlink_t *ml, uint32_t src_ip, const uint
                                      size_t len, void *user_data);
 
 /**
- * @brief Factory reset — erase all stored keys and cached peers
+ * @brief Factory reset: erase all stored keys and cached peers
  * @return ESP_OK on success
  *
  * Must be called BEFORE microlink_init(). Erases:
@@ -200,10 +200,10 @@ const char *microlink_default_device_name(void);
 const char *microlink_imei_device_name(void);
 
 /* ============================================================================
- * MagicDNS — Resolve Tailnet hostnames to VPN IPs
+ * MagicDNS: Resolve Tailnet hostnames to VPN IPs
  *
  * Resolves short or FQDN hostnames (e.g., "npc1", "npc1.tail12345.ts.net")
- * against the known peer list. No network calls — lookup only.
+ * against the known peer list. No network calls: lookup only.
  * ========================================================================== */
 
 /**
@@ -294,7 +294,7 @@ uint16_t microlink_udp_get_local_port(const microlink_udp_socket_t *sock);
  * TCP Socket API
  *
  * Provides TCP connections over the Tailscale VPN tunnel.
- * Traffic is routed through WireGuard — standard BSD TCP sockets
+ * Traffic is routed through WireGuard: standard BSD TCP sockets
  * over the encrypted tunnel. Works with any TCP service on a peer
  * (HTTP, Traccar, MQTT, custom protocols, etc).
  * ========================================================================== */

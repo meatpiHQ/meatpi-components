@@ -1,4 +1,4 @@
-# Host test compiles ONLY the pure detect debouncer — no GPIO/SDMMC.
+# Host test compiles ONLY the pure detect debouncer: no GPIO/SDMMC.
 set(comp_dir "${CMAKE_CURRENT_LIST_DIR}/../..")
 
 idf_component_register(

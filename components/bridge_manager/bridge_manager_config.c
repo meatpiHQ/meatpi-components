@@ -88,7 +88,7 @@ static bool name_in_list(const char *name, const char *const *list, int count)
 }
 
 /** True when @p name is a registered endpoint whose provider fans RX out
- *  to every subscriber (multi_consumer) — exempt from single-consumer. */
+ *  to every subscriber (multi_consumer): exempt from single-consumer. */
 static bool name_is_multi(const char *name, const char *const *names,
                           const bool *multi, int count)
 {
@@ -139,7 +139,7 @@ esp_err_t bm_validate_bridges(const cJSON *bridges,
 
         /* ep_count/tr_count < 0 = the registry is not FINAL yet (the BOOT
            apply: dynamic socket/WS jacks register at
-           bridge_endpoints_start, AFTER the settings pass) — skip the
+           bridge_endpoints_start, AFTER the settings pass), skip the
            existence checks; build_bridge degrades an unknown name alone.
            A runtime PUT sees the complete registry and stays strict. */
         if (ep_count >= 0 &&
@@ -169,7 +169,7 @@ esp_err_t bm_validate_bridges(const cJSON *bridges,
             }
 
             /* single-consumer rule: an endpoint's RX stream belongs to at
-               most one ENABLED bridge — except fan-out providers
+               most one ENABLED bridge, except fan-out providers
                (multi_consumer), whose every subscriber gets a full copy.
                ep_count < 0 (BOOT apply) skips the rule entirely:
                capabilities are unknowable before the jacks register, and

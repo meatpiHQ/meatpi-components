@@ -1,12 +1,12 @@
-# websocket_manager — benchmarks
+# websocket_manager: benchmarks
 
 > Status 2026-07-04: measured on the **composed main firmware** (all 15
-> components live — WiFi STA + BLE advertising + OBD + SD + httpd), not a
+> components live, WiFi STA + BLE advertising + OBD + SD + httpd), not a
 > stripped bench app: these are conservative product numbers. Driven from
 > rpi001 by `tools/testbench/ws_bench.py` over a CROSS-TRANSPORT bridge
 > `br_ws = ws_obd <-raw-> obd0` (WS channel ↔ TCP server; the Pi holds both
 > ends), so every byte crosses httpd WS framing + the bridge pump + lwIP
-> TCP. One pump crossing per direction — socket_manager's echo-bridge rows
+> TCP. One pump crossing per direction: socket_manager's echo-bridge rows
 > crossed the pump twice; the `latency` scenario here loops WS→TCP→WS so it
 > is directly comparable to those RTT rows. RF context: rpi001 hotspot
 > (Pi 5 + RTL8822CU), ~2 m. IDF v6.0.2.
@@ -59,7 +59,7 @@ WS→TCP direction (fewer, bigger RX frames → 4.2×); DUT-side TX coalescing
 | Wi-Fi | 749 | 5.4 | 14.7 | 25.9 | v6-dev tree | 2026-07-04 |
 
 socket_manager's TCP echo-bridge row (same double-crossing shape): p50 3.4 /
-p95 14.2 — the WS delta is httpd framing + one extra client hop on the Pi.
+p95 14.2, the WS delta is httpd framing + one extra client hop on the Pi.
 
 ## 3. Bidirectional (simultaneous blast both directions, 128 B)
 
@@ -70,7 +70,7 @@ p95 14.2 — the WS delta is httpd framing + one extra client hop on the Pi.
 The aggregate lands on the SAME ~83–87 KB/s ceiling as a single direction:
 the ~700 frames/s budget is shared between RX (httpd task) and TX (bridge
 pump), and the split under full saturation is scheduling-dependent (a
-repeat run split 60.6/0.0 the other way; no clients were dropped — log
+repeat run split 60.6/0.0 the other way; no clients were dropped: log
 ring verified). Under real workloads (one direction saturating at most)
 this doesn't bite; provision per-direction, don't assume fair sharing at
 saturation.
@@ -90,7 +90,7 @@ Fan-out TX shares the same frame-rate budget: 2 clients ≈ half rate each
 |---|---|---|---|---|---|
 | Wi-Fi, 0100 poll loop | 520 / 30 s | 54.5 | 69.0 | v6-dev tree | 2026-07-04 |
 
-system_bench's TCP polling row for comparison: 410 polls/30 s, p50 68 ms —
+system_bench's TCP polling row for comparison: 410 polls/30 s, p50 68 ms,
 WS is actually FASTER here (TCP_NODELAY on the WS side; the ELM-chip
 turnaround dominates both).
 

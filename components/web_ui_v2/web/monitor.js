@@ -1,4 +1,4 @@
-/* web_ui_v2 — the CAN Monitor page as an on-demand chunk. Rebuilt 2026-09-07
+/* web_ui_v2: the CAN Monitor page as an on-demand chunk. Rebuilt 2026-09-07
    after Ali's Claude Design "WiCAN PRO Monitor" (Downloads/WiCAN PRO web UI
    design): a PCAN-View style analyzer with three tabs.
      Monitor  : toolbar (ID filter, Pause, Clear), a RECEIVE list grouped by

@@ -22,7 +22,7 @@
 
 /**
  * @file log_manager_ring.c
- * @brief Pure PSRAM crash-ring operations. No IDF dependencies — the target
+ * @brief Pure PSRAM crash-ring operations. No IDF dependencies: the target
  *        glue owns placement (.noinit) and cache write-back; the host tests
  *        compile this file directly against a plain array.
  */
@@ -30,7 +30,7 @@
 
 #include <string.h>
 
-/* CRC-32 (IEEE 802.3) over [magic, crc32) — the tuning guard is excluded. */
+/* CRC-32 (IEEE 802.3) over [magic, crc32): the tuning guard is excluded. */
 uint32_t lm_ring_crc(const lm_ring_hdr_t *hdr)
 {
     size_t start = offsetof(lm_ring_hdr_t, magic);

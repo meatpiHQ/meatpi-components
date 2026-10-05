@@ -1,6 +1,6 @@
 /**
  * @file ml_config_httpd.h
- * @brief MicroLink HTTP Config Server — Runtime configuration via web UI
+ * @brief MicroLink HTTP Config Server: Runtime configuration via web UI
  *
  * Provides an HTTP server accessible via the Tailscale VPN IP for:
  * - WiFi/Tailscale/cellular credential management (stored in NVS)
@@ -27,7 +27,7 @@
 extern "C" {
 #endif
 
-/* Forward declare — struct tag only, no typedef (microlink.h owns the typedef) */
+/* Forward declare: struct tag only, no typedef (microlink.h owns the typedef) */
 struct microlink_s;
 
 /* ============================================================================
@@ -165,7 +165,7 @@ uint32_t    ml_config_get_priority_peer_ip(const ml_config_ctx_t *ctx);
 const char *ml_config_get_ctrl_host(const ml_config_ctx_t *ctx);
 uint8_t     ml_config_get_debug_flags(const ml_config_ctx_t *ctx);
 
-/* v3 getter — full custom device name (overrides prefix+MAC) */
+/* v3 getter: full custom device name (overrides prefix+MAC) */
 const char *ml_config_get_device_name_full(const ml_config_ctx_t *ctx);
 
 /**

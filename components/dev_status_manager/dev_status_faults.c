@@ -22,7 +22,7 @@
 
 /**
  * @file dev_status_faults.c
- * @brief Device fault codes — the automotive-DTC idea applied to the
+ * @brief Device fault codes: the automotive-DTC idea applied to the
  *        firmware itself (meatpi 2026-07-19): when a structural problem
  *        fires (registry overflow, settings degraded to defaults, errors
  *        during boot, ...), it is LATCHED to NVS and survives reboots and

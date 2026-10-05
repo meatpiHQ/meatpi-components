@@ -25,7 +25,7 @@
  * @brief Device-side Curve25519 keypair generation (legacy
  *        vpn_keygen.c semantics: 32 random bytes, x25519_base clamps
  *        internally like upstream WireGuard). The private key goes
- *        STRAIGHT into pending settings via settings_manager_set —
+ *        STRAIGHT into pending settings via settings_manager_set:
  *        it never travels over HTTP; the caller gets only the public
  *        key.
  */

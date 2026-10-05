@@ -1,7 +1,7 @@
 /**
  * @file test_obd.c
  * @brief Host suite for the obd.* conversation core (script_engine_obd.c)
- *        over a fake port — SCRIPTING.md §4 item 5. Covers the claim
+ *        over a fake port: SCRIPTING.md §4 item 5. Covers the claim
  *        state machine (claim/extend/busy/release/auto-release), the
  *        no-claim guards on request/isotp, and outcome plumbing.
  */

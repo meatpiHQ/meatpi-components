@@ -27,7 +27,7 @@
  *        on_apply (parses into the boot-applied policy config).
  *
  * Symbol note: the getters use a `sleep_` prefix, not the component's
- * usual `sm_` — socket_manager already links sm_settings_*.
+ * usual `sm_`, socket_manager already links sm_settings_*.
  */
 #include "esp_log.h"
 
@@ -46,7 +46,7 @@ static const settings_field_t FIELDS[] =
     /* shipping default ON, 5 min delay (meatpi 2026-07-18): a parked
        device must not drain the car battery out of the box */
     SETTINGS_BOOL("enabled", true),
-    /* user-facing ranges (meatpi 2026-09-06): a 12 V vehicle battery —
+    /* user-facing ranges (meatpi 2026-09-06): a 12 V vehicle battery,
        below 12 V it is flat (meatpi: 12.0 V floor), above ~14 V the engine
        is charging; a
        sleep delay beyond 30 min only drains the battery; a periodic
@@ -153,7 +153,7 @@ static void clamp_int(cJSON *settings, const char *key, int lo, int hi)
 
 static esp_err_t sleep_settings_migrate(uint32_t from_version, cJSON *settings)
 {
-    /* v1 -> v2 (2026-09-06): tighter user-facing ranges — clamp what a
+    /* v1 -> v2 (2026-09-06): tighter user-facing ranges, clamp what a
        device has stored instead of degrading it */
     if (from_version < 2 && settings != NULL)
     {

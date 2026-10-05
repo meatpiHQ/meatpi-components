@@ -40,7 +40,7 @@ static esp_err_t capture_write(const char *line, size_t len)
 
 static const log_sink_t CAPTURE_SINK = { "capture", capture_write };
 
-/* Burst ABOVE the log task's priority so it cannot drain concurrently —
+/* Burst ABOVE the log task's priority so it cannot drain concurrently:
  * the queue must overflow and drop-oldest (never block us). */
 static volatile bool s_burst_done;
 

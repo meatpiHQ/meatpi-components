@@ -22,7 +22,7 @@
 
 /**
  * @file script_engine_name.c
- * @brief Script-name validation — a PURE guard used before opening a file
+ * @brief Script-name validation: a PURE guard used before opening a file
  *        under /data/scripts (script_engine.c load path + the script.run
  *        event action). Split out of script_engine.c so it can be
  *        host-tested without the Berry VM / filesystem dependencies.

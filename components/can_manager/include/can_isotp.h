@@ -28,10 +28,10 @@
  * registers one here: an add-on component pack at ext init (see
  * ext_manager.h), else the public build's own can_isotp_esp (esp_isotp
  * over this bus; main calls it right after ext_manager_init and it
- * registers only when the slot is still empty — single writer). The
+ * registers only when the slot is still empty: single writer). The
  * provider decides how many sessions per rx id (can_isotp_esp: one).
- * Consumers — uds_manager's "isotp" transport, the
- * J2534 ISO15765 channel — fetch the ops with can_isotp() and treat a
+ * Consumers (uds_manager's "isotp" transport, the
+ * J2534 ISO15765 channel) fetch the ops with can_isotp() and treat a
  * NULL return as "not available in this build" (they degrade with a
  * log line; UDS falls back to the obd_chip transport).
  *
@@ -42,7 +42,7 @@
  *   - open() fails with ESP_ERR_INVALID_STATE while the bus is down.
  *   - recv() returns ESP_OK (+*len), ESP_ERR_TIMEOUT (nothing arrived
  *     within timeout_ms), or ESP_ERR_NO_MEM (the reassembled message
- *     was larger than @p cap and has been CONSUMED — callers use this
+ *     was larger than @p cap and has been CONSUMED: callers use this
  *     to drain stale traffic).
  *   - send() blocks the full transfer (segmentation + flow control);
  *     ESP_ERR_TIMEOUT when the peer's flow control never arrives.

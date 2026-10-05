@@ -1,7 +1,7 @@
-# http_server_manager — on-target test app
+# http_server_manager: on-target test app
 
 Self-contained: serves on the lwIP **loopback** interface and asserts against
-itself with esp_http_client — no network or instruments. Files come through
+itself with esp_http_client, no network or instruments. Files come through
 the `filesystem` component (`/data`); builds against the **main partition
 table** (standard rev 2.1 §7). Run:
 
@@ -11,7 +11,7 @@ table** (standard rev 2.1 §7). Run:
 
 **Erase flash first** when asserting the fetch-on-miss counter: the cached
 file persists on LittleFS by design, so a re-run without erasing serves it
-locally (`fetches=0`) — which is correct cache behavior, but not the
+locally (`fetches=0`), which is correct cache behavior, but not the
 first-run expectation below.
 
 ## What is covered
@@ -22,7 +22,7 @@ asset entry, fetch-on-miss (exactly one fetch via the injected stub, second
 request served locally, destination written atomically via
 `filesystem_write`), 404 for unknown paths, traversal rejected with 400.
 
-## Expected result — serial markers, in this order (clean flash)
+## Expected result: serial markers, in this order (clean flash)
 
 ```
 PING status=200 body={"pong":true}

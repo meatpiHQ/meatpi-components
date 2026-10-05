@@ -24,7 +24,7 @@
  * @file bridge_manager_pump.c
  * @brief The pump: one task per active bridge draining BOTH directions via a
  *        FreeRTOS queue set (README: one 4 KB PSRAM stack per bridge beats
- *        two slim tasks — the queue-set wait serializes the directions with
+ *        two slim tasks, the queue-set wait serializes the directions with
  *        no cross-blocking, and endpoint send() is bounded by the endpoint's
  *        own policy). The raw path moves bytes untouched; translators run
  *        per direction with a per-direction ctx from the static PSRAM pool.
@@ -32,7 +32,7 @@
  * Slow-side policy: this task blocks only in endpoint send() (bounded by the
  * endpoint: socket SO_SNDTIMEO, obd TX mutex). While it is there, the
  * bridge-owned RX queues fill and the PRODUCING endpoint drops-and-counts
- * (obd fan-out drops, socket rx_drops) — a bridge never blocks its faster
+ * (obd fan-out drops, socket rx_drops): a bridge never blocks its faster
  * side indefinitely, and never crashes on overflow.
  */
 #include <string.h>
@@ -399,7 +399,7 @@ static esp_err_t build_bridge(int idx, const bm_bridge_cfg_t *cfg)
                                 s_qa_store[idx], &s_qa_buf[idx]);
     br->qb = xQueueCreateStatic(BM_QUEUE_DEPTH, sizeof(bridge_chunk_t),
                                 s_qb_store[idx], &s_qb_buf[idx]);
-    /* the set is DYNAMIC (internal heap) — under internal-RAM exhaustion
+    /* the set is DYNAMIC (internal heap): under internal-RAM exhaustion
      * it can fail, and a NULL set asserts inside the pump's
      * xQueueSelectFromSet (found live 2026-07-08: boot loop at 7 KB free
      * instead of a degraded bridge) */
@@ -465,7 +465,7 @@ esp_err_t bm_pump_start_all(void)
            degrades ALONE (already logged): the schema default must not
            take every other bridge down with it in a composition without
            those endpoints. A refused second subscribe (INVALID_STATE
-           from a single-stream provider — the BOOT apply can't check
+           from a single-stream provider: the BOOT apply can't check
            the single-consumer rule before the jacks register) degrades
            alone too. Anything else (OOM) still aborts the start. */
         if (err == ESP_ERR_NOT_FOUND || err == ESP_ERR_INVALID_STATE)

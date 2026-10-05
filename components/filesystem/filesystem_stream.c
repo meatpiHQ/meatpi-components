@@ -24,7 +24,7 @@
  * @file filesystem_stream.c
  * @brief Streaming atomic writes for big files (downloads, streamed
  *        uploads): open a TEMP sibling, write chunk by chunk, commit =
- *        fsync + rename — an interrupted stream never leaves a torn
+ *        fsync + rename, an interrupted stream never leaves a torn
  *        file. ONE stream at a time; chunk writes serialize with other
  *        fs operations per chunk (long streams don't starve them).
  */

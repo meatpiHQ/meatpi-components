@@ -1,4 +1,4 @@
-# ota_manager — HTTP API reference
+# ota_manager: HTTP API reference
 
 > **Implemented (2026-07-04)** by the `api_http` glue (`api_http_ota.c`,
 > streaming via the `multipart_upload` component); live-verified both ways.
@@ -9,18 +9,18 @@
 Upload a firmware image. Two body forms, auto-detected by Content-Type:
 
 - **`multipart/form-data`** (the HTML UI): the file part named `firmware`
-  or `ota_file` (any part carrying a filename is accepted). Streamed — no
+  or `ota_file` (any part carrying a filename is accepted). Streamed: no
   full-body buffering.
 - **anything else** = raw image body
   (`curl --data-binary @wican-fw.bin -H "Content-Type: application/octet-stream"`).
 
 **Legacy alias `POST /upload/ota.bin`** (added 2026-07-11, same handler):
 the pre-v5 route the HA integration falls back to (multipart field
-`ota_file`) — the device-contract v2 migration bridge so firmware and
+`ota_file`), the device-contract v2 migration bridge so firmware and
 integration can update in either order. Keep for ≥2 releases.
 
 **Response 200** (then the device reboots ≈1 s later via
-`restart_tracker_restart(OTA_APPLY, WEB_UI)` — the UI should show
+`restart_tracker_restart(OTA_APPLY, WEB_UI)`: the UI should show
 "rebooting" and re-poll `/api/status` until `partition` flips):
 
 ```json

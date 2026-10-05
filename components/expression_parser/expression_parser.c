@@ -22,7 +22,7 @@
 
 /**
  * @file expression_parser.c
- * @brief The Automate expression evaluator — legacy grammar, bounds-checked.
+ * @brief The Automate expression evaluator: legacy grammar, bounds-checked.
  *
  * Adopted from the field-proven legacy evaluator
  * (autopid_legacy/expression_parser.c, shunting-yard over two fixed
@@ -32,7 +32,7 @@
  * both eval and the data-less check() (dry-run mode) so the accepted
  * grammar can never drift between save-time validation and runtime.
  *
- * PURE: no IDF dependencies beyond esp_err.h — compiles unchanged on the
+ * PURE: no IDF dependencies beyond esp_err.h, compiles unchanged on the
  * linux host target. No logging (hot path; errors are return values, and
  * check() carries the human-readable reason for the UI).
  */
@@ -62,7 +62,7 @@ typedef struct
     int     n_operators;
     bool    expect_operand;       /* a value must come next                  */
     bool    unary_ok;             /* '-' here is unary: start or after '('
-                                     ONLY — legacy errored on "3*-2" and we
+                                     ONLY, legacy errored on "3*-2" and we
                                      keep that (write "3*(0-2)" instead)     */
 
     /* outputs */
@@ -134,7 +134,7 @@ static int precedence(char op)
     }
 }
 
-/* Pop one operator and apply it. Bitwise/shift truncate to 32-bit int —
+/* Pop one operator and apply it. Bitwise/shift truncate to 32-bit int:
    the legacy behavior user expressions were written against. */
 static void apply_top(ep_ctx_t *ctx)
 {
@@ -376,7 +376,7 @@ static void evaluate(ep_ctx_t *ctx, double *result)
             char *end = NULL;
             double value = strtod(&s[i], &end);
 
-            /* advance over digits/'.' only — no exponent notation, same
+            /* advance over digits/'.' only: no exponent notation, same
                as legacy (an 'e' after a number is a syntax error) */
             while (isdigit((unsigned char)s[i]) || s[i] == '.')
             {
@@ -436,7 +436,7 @@ static void evaluate(ep_ctx_t *ctx, double *result)
         }
         else if (c == '-' && ctx->unary_ok)
         {
-            /* unary minus at expression start / after '(' — legacy
+            /* unary minus at expression start / after '(': legacy
                accepted exactly these by accident (empty-stack pop gave
                0); defined here as 0 - operand */
             push_operand(ctx, 0.0);

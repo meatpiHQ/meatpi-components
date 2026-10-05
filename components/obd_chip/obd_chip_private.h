@@ -23,7 +23,7 @@
 /**
  * @file obd_chip_private.h
  * @brief Internals shared between the obd_chip sources. The parse section is
- *        PURE (no IDF deps) — the host unit tests compile obd_chip_parse.c
+ *        PURE (no IDF deps): the host unit tests compile obd_chip_parse.c
  *        directly against it.
  */
 #pragma once
@@ -81,7 +81,7 @@ bool obd_parse_is_chip_error(const char *resp);
 bool obd_parse_is_monitor_cmd(const char *cmd);
 
 /* ---- STSLCS sleep-config (obd_chip_stslcs.c, pure, host-testable) -----------
- * Ported from legacy main/obd.c — the sscanf patterns are the accepted
+ * Ported from legacy main/obd.c: the sscanf patterns are the accepted
  * chip-output grammar. */
 
 typedef struct
@@ -149,7 +149,7 @@ bool obd_core_exclusive_held(void);
  * provision sequence on a one-shot task; wire-touching APIs wait here so
  * nothing interleaves with the bare-UART probes. Returns true when
  * bring-up has finished (chip up OR given up) or never launched
- * (degraded start — legacy pass-through behavior); false only if it is
+ * (degraded start: legacy pass-through behavior); false only if it is
  * still in flight after timeout_ms. */
 #define OBD_BRINGUP_WAIT_MS 20000 /* > worst case: hard-reset path + full
                                      2-baud x 3-retry walk + provisioning */
@@ -170,11 +170,11 @@ void      obd_core_release(void);
  *  non-PASS verdict; @p cmd/@p len is the text as the caller received it. */
 void obd_core_guard_note(obd_guard_t v, const char *cmd, size_t len);
 
-/** obd_gate owner identity for the MIC chip (address only — defined in
+/** obd_gate owner identity for the MIC chip (address only, defined in
  *  obd_chip.c, shared with the request engine in obd_chip_cmd.c). */
 extern const char obd_chip_gate_owner[1];
 
-/** Chip UART speed — FIXED, deliberately not a setting (meatpi 2026-09-07:
+/** Chip UART speed: FIXED, deliberately not a setting (meatpi 2026-09-07:
  *  exposing it invited a user changing it, breaking the chip and claiming
  *  warranty). The chip powers on at 115200 until `STWBR`/`ATPP 0F` persist
  *  this as its default; bring-up walks 2 M -> 115200 and switches (`STSBR`). */

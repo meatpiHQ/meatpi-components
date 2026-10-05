@@ -34,7 +34,13 @@ glue depends **down** on them (Architecture §10). Feature components
   (`restart_tracker/HTTP_API.md`): forensics ring newest-first with
   `*_to_str` names; reboot responds `{"ok":true}` first, then
   `restart_tracker_restart(USER_REQUEST, WEB_UI, flags)` — never raw
-  `esp_restart()`.
+  `esp_restart()`. The history also carries each record's crash note,
+  `mode` and `settled`, the crash-loop `brake` and the stored crash
+  `report` (2026-10-05).
+- **`GET` / `DELETE /api/restart/report`** (same document, 2026-10-05):
+  the crash report the tracker keeps in NVS, as `text/plain` for a user
+  to send on (404 when there is none); DELETE forgets it. The one NVS
+  erase runs on the httpd worker, whose stack is internal.
 - **`/api/logs/*`** (`log_manager/HTTP_API.md`): chunked `text/plain` ring
   dump (PSRAM snapshot → internal-RAM chunk buffer per §9.4), ring clear,
   dropped/sink status, ephemeral level + sink toggles.

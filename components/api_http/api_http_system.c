@@ -25,9 +25,12 @@
  * @brief `/api/status` + `/api/info` (dev_status_manager/HTTP_API.md) and
  *        `/api/restart*` (restart_tracker/HTTP_API.md).
  */
+#include <inttypes.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "esp_app_desc.h"
 #include "esp_attr.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
@@ -337,6 +340,125 @@ static esp_err_t tasks_handler(httpd_req_t *req)
 
 /* ---- GET /api/restart/history --------------------------------------------------- */
 
+/** An address as the console prints it: "0x4201a2b3" (what addr2line takes). */
+static void add_hex(cJSON *obj, const char *name, uint32_t value)
+{
+    char text[12];
+
+    snprintf(text, sizeof(text), "0x%08" PRIx32, value);
+    cJSON_AddStringToObject(obj, name, text);
+}
+
+static cJSON *hex_array(const uint32_t *values, int count)
+{
+    cJSON *arr = cJSON_CreateArray();
+
+    for (int i = 0; i < count; i++)
+    {
+        char text[12];
+
+        snprintf(text, sizeof(text), "0x%08" PRIx32, values[i]);
+        cJSON_AddItemToArray(arr, cJSON_CreateString(text));
+    }
+
+    return arr;
+}
+
+/** A crash note as JSON (restart_tracker/HTTP_API.md): the one shape for a
+ *  history record's `crash` and the stored report's. */
+static cJSON *crash_obj(const restart_tracker_crash_t *crash)
+{
+    static char summary[224] EXT_RAM_BSS_ATTR; /* httpd worker: one at a time */
+    cJSON *obj = cJSON_CreateObject();
+
+    restart_tracker_crash_summary(crash, summary, sizeof(summary));
+    cJSON_AddStringToObject(obj, "summary", summary);
+    cJSON_AddStringToObject(obj, "kind",
+                            restart_tracker_crash_kind_to_str(crash->kind));
+    cJSON_AddStringToObject(obj, "reason", crash->reason);
+    cJSON_AddNumberToObject(obj, "cause", crash->cause);
+    add_hex(obj, "pc", crash->pc);
+    add_hex(obj, "excvaddr", crash->excvaddr);
+    cJSON_AddNumberToObject(obj, "core", crash->core);
+    cJSON_AddStringToObject(obj, "task", crash->task);
+    cJSON_AddBoolToObject(obj, "in_isr", crash->in_isr);
+    cJSON_AddNumberToObject(obj, "uptime_s", crash->uptime_s);
+    cJSON_AddStringToObject(obj, "text", crash->text);
+    cJSON_AddItemToObject(obj, "backtrace",
+                          hex_array(crash->bt, crash->bt_len));
+    cJSON_AddBoolToObject(obj, "backtrace_more", crash->bt_more);
+    cJSON_AddBoolToObject(obj, "backtrace_corrupt", crash->bt_corrupt);
+    cJSON_AddItemToObject(obj, "other_core",
+                          hex_array(crash->bt2, crash->bt2_len));
+    cJSON_AddBoolToObject(obj, "nested", crash->nested);
+    cJSON_AddStringToObject(obj, "elf_sha", crash->elf_sha);
+    cJSON_AddBoolToObject(obj, "same_image",
+                          crash->elf_sha[0] != '\0' &&
+                          strcmp(crash->elf_sha,
+                                 esp_app_get_elf_sha256_str()) == 0);
+    cJSON_AddBoolToObject(obj, "complete", crash->complete);
+    return obj;
+}
+
+/** The crash note filed under a boot, or NULL when that boot followed no
+ *  recorded crash. */
+static cJSON *crash_json(uint32_t sequence)
+{
+    static restart_tracker_crash_t crash EXT_RAM_BSS_ATTR; /* as above */
+
+    if (restart_tracker_get_crash(sequence, &crash) != ESP_OK)
+    {
+        return NULL;
+    }
+
+    return crash_obj(&crash);
+}
+
+/** The crash report kept in NVS (it outlives the power, the notes above do
+ *  not), or NULL when none is stored. */
+static cJSON *report_json(void)
+{
+    static restart_tracker_report_t report EXT_RAM_BSS_ATTR; /* as above */
+
+    if (restart_tracker_get_report(&report) != ESP_OK)
+    {
+        return NULL;
+    }
+
+    cJSON *obj = cJSON_CreateObject();
+
+    cJSON_AddNumberToObject(obj, "stored_time", (double)report.stored_unix);
+    cJSON_AddBoolToObject(obj, "time_valid", report.stored_unix > 0);
+    cJSON_AddStringToObject(obj, "firmware", report.firmware);
+    cJSON_AddNumberToObject(obj, "streak", report.streak);
+    cJSON_AddBoolToObject(obj, "parked", report.parked);
+    cJSON_AddItemToObject(obj, "crash", crash_obj(&report.crash));
+    return obj;
+}
+
+/** The crash-loop brake: this boot's verdict and the count as it stands. */
+static cJSON *brake_json(void)
+{
+    restart_tracker_brake_t brake;
+
+    if (restart_tracker_get_brake(&brake) != ESP_OK)
+    {
+        return NULL;
+    }
+
+    cJSON *obj = cJSON_CreateObject();
+
+    cJSON_AddStringToObject(obj, "verdict",
+                            restart_tracker_boot_mode_to_str(brake.verdict));
+    cJSON_AddNumberToObject(obj, "streak", brake.streak);
+    cJSON_AddNumberToObject(obj, "limit", RESTART_TRACKER_BRAKE_STREAK);
+    cJSON_AddNumberToObject(obj, "parks", brake.parks);
+    cJSON_AddBoolToObject(obj, "settled", brake.settled);
+    cJSON_AddNumberToObject(obj, "settle_s", RESTART_TRACKER_SETTLE_S);
+    cJSON_AddNumberToObject(obj, "report_budget", brake.report_budget);
+    return obj;
+}
+
 static esp_err_t history_handler(httpd_req_t *req)
 {
     static restart_tracker_state_t state; /* serialized by httpd worker cfg */
@@ -352,6 +474,22 @@ static esp_err_t history_handler(httpd_req_t *req)
     cJSON_AddNumberToObject(resp, "boot_count", state.boot_count);
     cJSON_AddNumberToObject(resp, "unexpected_resets",
                             state.unexpected_reset_count);
+    /* the running image, as a crash note names the image that crashed */
+    cJSON_AddStringToObject(resp, "elf_sha", esp_app_get_elf_sha256_str());
+
+    cJSON *extra = brake_json();
+
+    if (extra != NULL)
+    {
+        cJSON_AddItemToObject(resp, "brake", extra);
+    }
+
+    extra = report_json();
+
+    if (extra != NULL)
+    {
+        cJSON_AddItemToObject(resp, "report", extra);
+    }
 
     /* valid records (sequence > 0), newest first by sequence */
     int order[RESTART_TRACKER_HISTORY_LEN];
@@ -401,9 +539,58 @@ static esp_err_t history_handler(httpd_req_t *req)
                                 (double)r->request_timestamp);
         cJSON_AddNumberToObject(rec, "request_uptime_ms",
                                 (double)r->request_uptime_ms);
+        cJSON_AddStringToObject(rec, "mode",
+                                restart_tracker_boot_mode_to_str(r->boot_mode));
+        cJSON_AddBoolToObject(rec, "settled", r->settled != 0);
+
+        cJSON *crash = crash_json(r->sequence);
+
+        if (crash != NULL)
+        {
+            cJSON_AddItemToObject(rec, "crash", crash);
+        }
+
         cJSON_AddItemToArray(records, rec);
     }
 
+    return api_send_json(req, resp);
+}
+
+/* ---- GET / DELETE /api/restart/report -------------------------------------------- */
+
+/** The stored crash report as the text a user sends on: the same lines the
+ *  console's `restart_tracker --report` and safe mode's page give. */
+static esp_err_t report_handler(httpd_req_t *req)
+{
+    /* PSRAM; serialized by httpd worker cfg */
+    static restart_tracker_report_t report EXT_RAM_BSS_ATTR;
+    static char text[RESTART_TRACKER_REPORT_TEXT_MAX] EXT_RAM_BSS_ATTR;
+
+    if (restart_tracker_get_report(&report) != ESP_OK)
+    {
+        return api_send_error(req, "404 Not Found",
+                              "no crash report is stored");
+    }
+
+    int len = restart_tracker_report_text(&report, text, sizeof(text));
+
+    if (len >= (int)sizeof(text))
+    {
+        len = (int)sizeof(text) - 1;
+    }
+
+    httpd_resp_set_type(req, "text/plain; charset=utf-8");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_send(req, text, (len > 0) ? len : 0);
+}
+
+static esp_err_t report_clear_handler(httpd_req_t *req)
+{
+    /* one NVS erase, on the worker's internal stack (standard 2) */
+    esp_err_t err = restart_tracker_clear_report();
+    cJSON *resp = cJSON_CreateObject();
+
+    cJSON_AddBoolToObject(resp, "cleared", err == ESP_OK);
     return api_send_json(req, resp);
 }
 
@@ -458,6 +645,10 @@ esp_err_t api_http_register_system(void)
           .handler = info_handler },
         { .uri = "/api/restart/history", .method = HTTP_GET,
           .handler = history_handler },
+        { .uri = "/api/restart/report", .method = HTTP_GET,
+          .handler = report_handler },
+        { .uri = "/api/restart/report", .method = HTTP_DELETE,
+          .handler = report_clear_handler },
         { .uri = "/api/restart", .method = HTTP_POST,
           .handler = restart_handler },
         { .uri = "/api/faults/clear", .method = HTTP_POST,

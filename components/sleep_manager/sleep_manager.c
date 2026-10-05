@@ -91,6 +91,22 @@ static const char *state_name(sleep_manager_state_t st)
     }
 }
 
+void sleep_manager_board_down(void)
+{
+    /* CAN transceiver to standby */
+    gpio_set_direction(SM_CAN_STDBY_GPIO, GPIO_MODE_OUTPUT);
+    gpio_set_level(SM_CAN_STDBY_GPIO, 1);
+
+    (void)obd_chip_sleep(true);
+
+    /* keep the USB power rail off through the naps (legacy) */
+    gpio_set_direction(SM_USB_PWR_GPIO, GPIO_MODE_OUTPUT_OD);
+    gpio_set_level(SM_USB_PWR_GPIO, 0);
+    gpio_sleep_set_pull_mode(SM_USB_PWR_GPIO, GPIO_PULLDOWN_ONLY);
+    gpio_pulldown_en(SM_USB_PWR_GPIO);
+    gpio_hold_en(SM_USB_PWR_GPIO);
+}
+
 static void enter_sleep_sequence(float volts)
 {
     ESP_LOGW(TAG, "entering sleep (%.2f V)", volts);
@@ -112,18 +128,7 @@ static void enter_sleep_sequence(float volts)
         s_prepare_cb(); /* main's ordered component stops */
     }
 
-    /* CAN transceiver to standby */
-    gpio_set_direction(SM_CAN_STDBY_GPIO, GPIO_MODE_OUTPUT);
-    gpio_set_level(SM_CAN_STDBY_GPIO, 1);
-
-    (void)obd_chip_sleep(true);
-
-    /* keep the USB power rail off through the naps (legacy) */
-    gpio_set_direction(SM_USB_PWR_GPIO, GPIO_MODE_OUTPUT_OD);
-    gpio_set_level(SM_USB_PWR_GPIO, 0);
-    gpio_sleep_set_pull_mode(SM_USB_PWR_GPIO, GPIO_PULLDOWN_ONLY);
-    gpio_pulldown_en(SM_USB_PWR_GPIO);
-    gpio_hold_en(SM_USB_PWR_GPIO);
+    sleep_manager_board_down();
 
     ESP_LOGI(TAG, "components down; napping (wake >= %.2f V)",
              sleep_settings_config()->wake_v);
@@ -360,11 +365,29 @@ static void state_task(void *arg)
 
 /* ---- lifecycle -------------------------------------------------------------- */
 
+/* The sleep entry latches the USB rail's enable low with a pad hold
+ * (enter_sleep_sequence), a wake is a reboot, and a hold outlives a reset.
+ * The OBD sleep pin's hold is released at chip bring-up (obd_pin_wake());
+ * this one never was: after the first wake the rail stayed off until the
+ * next power cycle, every USB device on the connector unpowered, `usb vbus
+ * 1` moving nothing and /api/usb still saying vbus on (bench 2026-10-05:
+ * 89 mA awake after a wake against 165 mA after a power cycle; the switch
+ * worth 76 mA after a power cycle and 0 after a wake). Give the pin back
+ * before anyone drives it: released, the board's pull-up has the rail on,
+ * as after a power-on, and usb_host_manager owns it from there. */
+static void usb_rail_release(void)
+{
+    gpio_sleep_set_pull_mode(SM_USB_PWR_GPIO, GPIO_FLOATING);
+    gpio_hold_dis(SM_USB_PWR_GPIO);
+    gpio_reset_pin(SM_USB_PWR_GPIO);
+}
+
 esp_err_t sleep_manager_init(void)
 {
     static const log_descriptor_t LOG_DESC =
         { "sleep_manager", ESP_LOG_INFO };
 
+    usb_rail_release(); /* init runs before usb_host_manager starts */
     log_manager_register(&LOG_DESC);
     sm_events_register();
     return sleep_settings_register();

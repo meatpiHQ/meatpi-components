@@ -40,6 +40,33 @@ them) → CAN transceiver standby (GPIO38) → obd_chip_sleep(true) → USB
 power rail held low (GPIO10, open-drain + hold). Pins via Kconfig
 (`WICAN_SLEEP_*_GPIO`, defaults = WiCAN Pro).
 
+**The board-level half on its own (2026-10-05).** The pin writes of the
+entry (CAN transceiver to standby, the OBD chip's sleep pin, the USB rail off
+and held) are `sleep_manager_board_down()`: public, and usable with nothing
+initialised. The sleep entry calls it; so does the firmware's crash park
+(`main_park.c`), which runs instead of the whole composition after three
+crashes in a row and naps in light sleep on the boot task. One copy of the
+sequence: a pin added to the sleep entry is added to the park. A restart
+after either gives the pins back the same way (below). Bench, 13.5 V, with
+the ESP32 napping: 134 mA with nothing touched, 47 mA after
+`obd_chip_park()` and this call, 44 mA in sleep mode proper (which also shut
+the SD card and the radios down in order).
+
+**What a wake must give back.** A wake is a reboot, and a pad hold outlives
+a reset. `sleep_manager_init()` therefore releases the rail's hold
+(`usb_rail_release()`: hold off, pin reset; released, the board's pull-up
+has the rail on, as after a power-on) before `usb_host_manager` starts and
+drives the pin. Until 2026-10-05 nothing released it (the OBD sleep pin's
+hold is released in `obd_pin_wake()`): after the first wake the rail stayed
+off until the next power cycle, every USB device on the connector
+unpowered, `usb vbus 1` moving nothing and `/api/usb` still saying
+`vbus: true`. Bench: 89 mA awake after a wake against 165 mA after a power
+cycle; the firmware's VBUS switch worth 76 mA after a power cycle and 0
+after a wake. Every sleep scenario had passed over it, because a wake was
+judged as "more current than asleep"; the sleep matrix now holds every wake
+against the current after a power cycle (`back_to_awake()`), and that is the
+check to keep green when the entry sequence gains another latched pin.
+
 ## Bench safety (meatpi 2026-07-07, mandatory)
 
 - The state task arms only after a **15 s boot grace** — a bootloop

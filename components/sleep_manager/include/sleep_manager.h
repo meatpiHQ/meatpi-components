@@ -114,6 +114,14 @@ esp_err_t sleep_manager_set_prepare_cb(sleep_manager_prepare_cb_t cb);
  *  USB-powered bench unit always comes back). */
 esp_err_t sleep_manager_test_sleep(uint32_t wake_after_s);
 
+/** The board-level half of the sleep entry, on its own: CAN transceiver to
+ *  standby, OBD chip's sleep pin, USB power rail off and held. Pins only:
+ *  it needs no init, no settings and no task, so the composition root's
+ *  crash park can call it from a boot that started nothing (one copy of
+ *  the sequence, the sleep entry calls it too). A restart undoes it the
+ *  way a wake does. */
+void sleep_manager_board_down(void);
+
 /** Optional /api/sleep route (§9.1; main wires it). */
 esp_err_t sleep_manager_register_http(void);
 

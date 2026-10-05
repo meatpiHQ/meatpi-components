@@ -45,11 +45,31 @@ static const char *TAG = "autopid";
 
 /* ---- chip choreography ----------------------------------------------------------- */
 
+static bool s_init_pinned;  /* dtc_init set a protocol: the poller's
+                               baseline is due after the job */
+
+bool ap_dtc_obd_init_ok(void)
+{
+    /* the manufacturer-UDS path and a J1939-only vehicle never send it */
+    if (ap_dtc_cfg()->proto == AP_DTC_PROTO_UDS ||
+        autopid_vehicle_dialect() == AP_DIALECT_J1939)
+    {
+        return true;
+    }
+
+    return ap_guard_chain_ok(ap_dtc_cfg()->init, "dtc_init", true, NULL);
+}
+
 /** Optional prep: dtc_init commands (';'-separated) + ATCRA rxheader.
- *  Best-effort — a failed init command doesn't abort the scan. */
+ *  Best-effort — a failed init command doesn't abort the scan. The job
+ *  asked ap_dtc_obd_init_ok() when it started. */
 void ap_dtc_obd_prep(char *resp, size_t resp_len)
 {
     const char *p = ap_dtc_cfg()->init;
+    char pin = '\0';
+
+    (void)ap_guard_chain_allowed(NULL, p, &pin, NULL);
+    s_init_pinned = (pin != '\0');
 
     while (*p != '\0')
     {
@@ -63,6 +83,13 @@ void ap_dtc_obd_prep(char *resp, size_t resp_len)
             one[len] = '\0';
             ap_init_sanitize(one); /* spare the chip's EEPROM */
             (void)ap_be()->request(one, resp, resp_len, AP_DTC_INIT_TIMEOUT);
+
+            if (ap_guard_cmd_resets(one, len))
+            {
+                /* the chip is back on its stored protocol: the one in
+                   effect (the job asked the guard for it) goes out again */
+                ap_runner_send_prelude(ap_std_prelude());
+            }
         }
 
         p += len + ((sep != NULL) ? 1 : 0);
@@ -84,6 +111,14 @@ void ap_dtc_obd_prep(char *resp, size_t resp_len)
 
 void ap_dtc_obd_done(char *resp, size_t resp_len)
 {
+    if (s_init_pinned)
+    {
+        /* the chip sits on dtc_init's protocol: the poller starts from its
+           own prelude again */
+        s_init_pinned = false;
+        ap_runner_baseline_invalidate();
+    }
+
     (void)ap_be()->request("ATH0", resp, resp_len, AP_DTC_INIT_TIMEOUT);
 
     if (ap_dtc_cfg()->rxheader[0] != '\0')

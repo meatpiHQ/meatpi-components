@@ -201,9 +201,17 @@ static void identity_check(ap_dialect_t dialect, char found_proto)
     char proto = (seen.protocol[0] != '\0') ? seen.protocol[0]
                                             : protocol_in_effect();
 
-    ap_runner_send_prelude((seen.protocol[0] != '\0')
-                               ? ap_veh_prelude_for(seen.protocol[0])
-                               : ap_std_prelude());
+    if (seen.protocol[0] == '\0' && !ap_guard_pin_ok(proto))
+    {
+        /* the protocol in effect changed while the poll was out (another
+           car made current from the UI): no identity request on a protocol
+           the bus guard has not ruled on. The next answered poll asks. */
+        ap_core_job_release();
+        return;
+    }
+
+    /* the prelude of the protocol read above, not a second reading */
+    ap_runner_send_prelude(ap_veh_prelude_for(proto));
 
     /* a car that answered a poll but not its dialect's identity requests
        may be another car speaking the other dialect on the same protocol
@@ -307,8 +315,13 @@ static void contact_probe(void)
 {
     ap_dialect_t car = car_dialect();
 
+    if (!ap_runner_baseline_ensure())
+    {
+        return; /* the bus guard has not ruled for this protocol yet: the
+                   next pass asks it, and probes then */
+    }
+
     s_probe_last_us = esp_timer_get_time();
-    ap_runner_baseline_ensure();
 
     if (protocol_in_effect() != '0')
     {

@@ -483,9 +483,9 @@ esp_err_t ap_dtc_clear(const char *codes, const char *mode, bool *cleared,
                                   err_len);
     }
 
-    if (!ap_guard_job_ok(err, err_len))
+    if (!ap_guard_job_ok(err, err_len) || !ap_dtc_obd_init_ok())
     {
-        return ESP_ERR_NOT_SUPPORTED; /* err holds the bus guard's sentence */
+        return ESP_ERR_NOT_SUPPORTED; /* ap_guard_last_reason() says why */
     }
 
     if (!ap_core_job_acquire())

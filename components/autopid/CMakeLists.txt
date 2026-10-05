@@ -3,6 +3,8 @@ idf_component_register(
          "autopid_poller.c"
          "autopid_settings.c"
          "autopid_runner.c"
+         "autopid_publish.c"
+         "autopid_transcript.c"
          "autopid_runner_j1939.c"
          "autopid_j1939_core.c"
          "autopid_j1939_std.c"

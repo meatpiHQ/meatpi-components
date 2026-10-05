@@ -76,6 +76,11 @@ const ap_dtc_cfg_t *ap_dtc_cfg(void);
 
 /* ---- the OBD path (autopid_dtc_obd.c): functional, through the chip ---- */
 
+/** A job that would send dtc_init is about to start: is every protocol the
+ *  chain sets allowed on this bus (ap_guard_chain_ok)? false = do not start
+ *  it; ap_guard_last_reason() says why. True when the chain is not sent at
+ *  all (the manufacturer-UDS path, a J1939-only vehicle). */
+bool ap_dtc_obd_init_ok(void);
 /** dtc_init commands, headers on, ATCRA rxheader. Best-effort. */
 void ap_dtc_obd_prep(char *resp, size_t resp_len);
 void ap_dtc_obd_done(char *resp, size_t resp_len);

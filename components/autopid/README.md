@@ -80,7 +80,9 @@ Decisions log there is authoritative; the big ones:
 | `autopid_poller.c` / `autopid_poller.h` | the poller task (PSRAM stack, notify-driven): pauses, DTC due-check, scheduler -> runner -> bookkeeping (split out of autopid.c 2026-10-02) |
 | `autopid_bus_guard.c` | PURE bus guard: the bitrate a chip protocol transmits at, and the verdict (`allow` / `search` / `park`) for what the native controller heard on the bus, with its one-sentence reason (see "Bus guard" below) |
 | `autopid_guard.c` | the guard's glue: asks `can_manager` what is on the bus before the chip talks (a held listen-only watch until the bitrate is proven), parks the poller, refuses the one-shot jobs, `bus_guard{}` in `GET /api/autopid` |
-| `autopid_runner.c` | the chip-facing poll: type/per-PID init transitions, ATCRA rxheader, request → parse → guard → eval → cache; the chip baseline (prelude) and the borrowed-header rule (a standard row that set its own `ATSH` gives the functional header back before a row that sets none); `ap_runner_publish()` = the publish half (mux, expression, clamp, cache, events) shared with the J1939 runner |
+| `autopid_runner.c` | the chip-facing poll: type/per-PID init transitions, ATCRA rxheader, request, parse, cross-talk guard; the chip baseline (prelude) and the borrowed-header rule (a standard row that set its own `ATSH` gives the functional header back before a row that sets none); the bus guard's word on the protocols the tables set (`row_pins_ok()`) and the prelude behind a reset inside a chain (`after_reset()`) |
+| `autopid_publish.c` | `ap_runner_publish()` = the publish half of a poll (mux, expression, clamp, cache, events), shared by the chip runner and the J1939 runner (out of `autopid_runner.c` 2026-10-05, 700-line rule) |
+| `autopid_transcript.c` | pure: the test-a-PID transcript, one line per exchange (`ap_tr_add()`; out of `autopid_runner.c` 2026-10-05, 700-line rule) |
 | `autopid_runner_j1939.c` | the passive runner (2026-10-03, see "J1939 rows"): a `PGN:` row read from the J1939 listener's store, published when the store holds a message the row has not published yet, stamped with the message's own time; the test-a-PID path for a PGN command |
 | `autopid_j1939_core.c` / `autopid_j1939.h` | PURE J1939 rows: the `PGN:<hex>[@<source>][?]` grammar, the scheduling class of a row (`chip` / `passive` / `bus_tx`), the little-endian expression of one SPN of the j1939 component's built-in table (`(B3+B4*256)*0.125`) |
 | `autopid_j1939_std.c` | the J1939 standard set: the built-in SPN table as config rows (one row per SPN), the listener's view of the vehicle for the detection job and first contact (sources as the responder set, the VIN when broadcast, the rows of the groups heard), and the same from a one second listen-only bus sample when the listener is off (`can_manager_sample_ids`) |
@@ -186,13 +188,81 @@ and C are not judged: `allow`.
   is not final: a vehicle asleep at boot wakes up later at its own bitrate,
   so a listen-only watch stays on the bus meanwhile (it costs nothing while
   the bus is silent).
+- **A verdict is about ONE protocol** (2026-10-05). It is final for the
+  protocol in effect it was taken for: when another one is in effect (another
+  car made current, `POST .../vehicles/<key>/activate`; a search given up)
+  the bus is looked at again. And whoever sends a prelude that pins a
+  protocol (the runner's baseline, its restore after an app or a job, the
+  identity check) reads the protocol ONCE, asks `ap_guard_pin_ok(proto)` and
+  sends the prelude of that reading or nothing: the row fails this pass, the
+  next pass asks the guard (`ap_guard_pin_allowed()`, pure, host-tested).
+  Before that the first verdict stood for the boot and the poller asked at
+  the top of its pass: a 500 kbit/s car activated from the UI while plugged
+  into a 250 kbit/s truck changed the protocol in effect under a pass that
+  already had its "yes", the baseline went out as `ATTP6`, and the truck's
+  adapter was bus-off 40 ms after its first error (about every other
+  activation on the bench; `eu_truck_e2e_bench.py` leg e4 does it on
+  demand and wants zero bus errors at the truck).
+- **The tables' own protocols** (2026-10-05). The verdict is about the
+  protocol autopid pins itself. A chain of the tables can set one too
+  (`ATSP6` in a row's `init`, in a type's init, in the vehicle's own init, in
+  `dtc_init`, in a row tested from the UI: 13 of the 17 vehicle profiles in
+  the firmware repo carry `ATSP6` or `ATSP7`), and such a chain goes to the chip as
+  written. So whoever sends one asks `ap_guard_chain_ok()` first: EVERY
+  protocol the chain sets gets the ruling of a pinned setting on the bus as
+  the guard last saw it (`ap_guard_chain_allowed()`, pure, host-tested: no
+  search to give way to; a silent or unknown bus changes nothing; the same
+  bit rate is allowed, so a profile that mixes 11 and 29 bit keeps working).
+  Refused = NOTHING of the row is sent: not its protocol, not its header on
+  the protocol in effect (an 11-bit header on a truck's 29-bit protocol
+  makes a frame the network has a meaning for), not the request. The poll
+  counts as failed (first contact goes on and finds the vehicle that is
+  there), test-a-PID and the DTC scan / clear answer 409 with the sentence
+  (`the init of row Soc sets protocol 6 (500 kbit/s) and the vehicle bus
+  runs at 250 kbit/s: not sent`), and `GET /api/autopid` counts and explains
+  it (`bus_guard.refused`, `refused_reason`, `refused_ms`: the dashboard
+  shows a banner while it happens). The runner also remembers the protocol
+  a chain left the chip on and asks again before every request that goes out
+  on it (a bus asleep when it was sent may have woken up at another bit
+  rate); refused then, the baseline prelude takes the chip off it. Bench
+  2026-10-05, before this: a row with `ATSP6` on the 250 kbit/s truck (polled
+  after a boot, tested from the UI, or as `dtc_init` / `custom_init`) went
+  out at 500 and the truck's adapter was bus-off 19 to 55 ms after its first
+  error, the chip left on protocol 6 for every poll that followed
+  (`eu_truck_e2e_bench.py --only x5`).
+- **A reset inside a chain** (`ATZ`, `ATD`, `ATWS`; 2026-10-05). The chip
+  comes back as `A<n>`: automatic, starting from the protocol STORED in it
+  (the last vehicle detected), and its first request went out on that one
+  about every third time, without the look at the bus its full search takes
+  (bench: the car's stored 500 kbit/s protocol on the 250 kbit/s truck after
+  `ATWS`, `ATZ` and `ATD`, the truck's adapter bus-off 17 to 32 ms after its
+  first error; 3 of the 7 resets that executed). So whoever sends a reset
+  out of a chain of the tables sends the baseline prelude right behind it
+  (`after_reset()` in the runner, `ap_dtc_obd_prep()`; a reset as a row's
+  `cmd` makes the baseline due), and the rest of the chain builds on the
+  protocol in effect, as at the start of every row. A command sent while
+  the chip is still searching is swallowed as the search's stop (`STOPPED`),
+  resets included. No profile in the repo carries a reset. After the
+  change: 24 resets on the truck's bus, 0 bus errors (leg `x5` step e keeps
+  one in the gate).
+- **The first chip traffic of a boot** (2026-10-05). The driver's bring-up
+  resets the chip, so the same holds from boot until a prelude went out.
+  The poller, the detection, the DTC jobs and first contact all start with
+  one; test-a-PID did not ("leaves the chip state dirty on purpose" was
+  about what it leaves behind). With Automate off, a row tested as the
+  first thing after a boot went out on the chip's stored protocol: 8 of 8
+  boots with the truck's protocol stored (`ATDPN` `9`) and a 500 kbit/s
+  vehicle on the bus, `> 0100 < CAN ERROR`, bus errors at the vehicle every
+  time. `ap_runner_test()` now sends the baseline prelude first when none
+  went out since the chip was last reset (the transcript shows it); 8 of 8
+  clean after (leg `x5` step f).
 - After the poller's first transmission "unreadable" may be the chip's own
   unanswered requests, so only readable frames decide from then on.
 - One-shot chip jobs ask too: the detection / std scan, test-a-PID, the DTC
   scan and clear answer HTTP 409 with the guard's sentence.
 - Visible as `stats.paused_bus` and `bus_guard{bus,bus_kbps,verdict,parked,
-  reason}` in `GET /api/autopid`, one `W` log line per change of mind, and
-  the banner on the Automate dashboard.
+  reason,refused,refused_reason,refused_ms}` in `GET /api/autopid`, one `W`
+  log line per change of mind, and the banner on the Automate dashboard.
 - A protocol learned by the search is stored for the car (the identity check
   asks `ATDPN` before the prelude resets the search).
 
@@ -348,6 +418,17 @@ PASS`): the car switch by the VIN asked for, a `?` row asking at its period
 and publishing, a refused `?` row held, DM2 in the report, the DM11 / DM3
 clear acknowledged and the report empty after it, the asking stopped by a
 J2534 tester's hold.
+
+Both dialects on one vehicle: `tools/testbench/obd/eu_truck_e2e_bench.py`
+(`.\test.ps1 eutruck`, verdict `EU TRUCK E2E PASS`), an EU truck (WWH-OBD
+ECUs and a J1939 network on one bus, one VIN) met by a device that knows an
+OBD-II car. The detection stores `dialect uds` with `j1939 true` and rows of
+both sets (the network read from a bus sample, the native bus still off);
+the one restart the Quick Setup stages brings both live (the chip asks
+`22F4xx` physically, the `PGN:` rows read the listener, the broker snapshot
+carries both); one DTC report holds the `19 42` codes and the DM1 code, the
+legislated clear takes the first and leaves the second heard; moved back to
+the car, the car's rows are polled again and the truck stays in the store.
 
 **Rows.** The standard rows of a `uds` car are ordinary rows of type `std`
 with `cmd` `22F4xx`, expressions shifted by one byte (`[B3:B4]*0.25`), the
@@ -746,7 +827,7 @@ and polls a 24-parameter PID on the simulator — the regression for the
 
 ## Tests
 
-`host_test/` (run: `.\test.ps1 host autopid`, 118 tests): the J1939 rows
+`host_test/` (run: `.\test.ps1 host autopid`, 122 tests): the J1939 rows
 (`test_j1939_rows.c`, 10 cases: the `PGN:` grammar and its refusals, the
 config parser's typed fields and the `init` / `rxheader` refusal, the
 scheduler's class-masked pick and the 20 ms passive floor, the built-in
@@ -778,7 +859,10 @@ responder-set text form, the `vehicles.json` round trip (escaping, the
 `current` key, no per-entry flag in the file), a full 8-car index fits the
 6 KB bound, and the bounds/sanitizing on load (no key, duplicate key,
 bad VIN/protocol, derived keys, out-of-range numbers, the 9th+ entry
-dropped); the bus guard (`test_bus_guard.c`, 7 cases); the OBD dialects
+dropped); the bus guard (`test_bus_guard.c`, 11 cases: the verdict table,
+"a verdict covers one protocol", the protocol an AT command sets in every
+form the chip takes, the ruling on a chain of the tables, the commands that
+reset the chip); the OBD dialects
 (`test_dialect.c`, 17 cases, on reply texts captured from the chip): the
 requests and the expression shift, the bitmap parser for every print shape
 (11-bit, the 29-bit four-token id, headers off, a stale answer of another

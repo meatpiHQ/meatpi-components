@@ -127,7 +127,7 @@ esp_err_t ap_dtc_scan_start(void)
 
     /* bus guard (the periodic check lands here too: while the guard
        parks the chip it looks at the bus again every 15 s at most) */
-    if (!ap_guard_job_ok(NULL, 0))
+    if (!ap_guard_job_ok(NULL, 0) || !ap_dtc_obd_init_ok())
     {
         s_last_scan_us = esp_timer_get_time(); /* not every poller tick */
         return ESP_ERR_NOT_SUPPORTED;

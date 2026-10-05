@@ -40,8 +40,16 @@
  *                                `std_protocol` setting does not transmit
  *   bus live, unreadable         nothing is transmitted (not even a search:
  *                                the chip was only measured at 250 and 500)
+ *
+ * The tables pin protocols too (`ATSP6` in a row's init, a type's init,
+ * `dtc_init`, a row tested from the UI: most vehicle profiles carry one), and
+ * such a chain goes to the chip as written. ap_guard_chain_allowed() gives
+ * every protocol a chain sets the same ruling as a pinned setting: on a bus
+ * that runs at another bit rate the chain, and the row it belongs to, is not
+ * sent (2026-10-05).
  */
 #include <stdio.h>
+#include <string.h>
 
 #include "autopid_private.h"
 
@@ -95,6 +103,195 @@ ap_guard_verdict_t ap_guard_decide(const ap_bus_t *bus, char proto,
     }
 
     return pinned ? AP_GUARD_PARK : AP_GUARD_SEARCH;
+}
+
+bool ap_guard_pin_allowed(char proto, char ruled)
+{
+    /* K-line / J1850 use other pins, B and C are the user's own CAN
+       definitions: not this guard's to judge (as in ap_guard_decide) */
+    if (proto != '0' && proto != '\0' && ap_guard_proto_kbps(proto) == 0)
+    {
+        return true;
+    }
+
+    /* a CAN protocol or the chip's search: only the one the bus was looked
+       at for. Another one (another car made current a moment ago) has had
+       no look yet, whatever the last verdict said. */
+    return ruled != '\0' && proto == ruled;
+}
+
+char ap_guard_cmd_proto(const char *cmd, size_t len)
+{
+    /* as the chip reads a command: no spaces, any case. The longest form
+       is "ATSPAh" */
+    char c[7];
+    size_t n = 0;
+
+    if (cmd == NULL)
+    {
+        return '\0';
+    }
+
+    for (size_t i = 0; i < len && cmd[i] != '\0'; i++)
+    {
+        char ch = cmd[i];
+
+        if (ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n')
+        {
+            continue;
+        }
+
+        if (n >= sizeof(c) - 1)
+        {
+            return '\0'; /* longer than any form of ATSP / ATTP */
+        }
+
+        c[n++] = (ch >= 'a' && ch <= 'z') ? (char)(ch - 'a' + 'A') : ch;
+    }
+
+    if ((n != 5 && n != 6) || c[0] != 'A' || c[1] != 'T' ||
+        (c[2] != 'S' && c[2] != 'T') || c[3] != 'P')
+    {
+        return '\0';
+    }
+
+    /* ATSPh; ATSPAh (h first, the search when h stays silent: the first
+       request still goes out on h); ATSP00 (the search) */
+    char p = c[n - 1];
+
+    if (n == 6 && c[4] != 'A' && !(c[4] == '0' && p == '0'))
+    {
+        return '\0';
+    }
+
+    return ((p >= '0' && p <= '9') || (p >= 'A' && p <= 'C')) ? p : '\0';
+}
+
+bool ap_guard_cmd_resets(const char *cmd, size_t len)
+{
+    /* ATZ, ATD (all to defaults), ATWS (warm start): each one loads the
+       protocol stored in the chip's EEPROM. Not ATDP / ATDPN / ATD0 / ATD1. */
+    char c[5];
+    size_t n = 0;
+
+    if (cmd == NULL)
+    {
+        return false;
+    }
+
+    for (size_t i = 0; i < len && cmd[i] != '\0'; i++)
+    {
+        char ch = cmd[i];
+
+        if (ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n')
+        {
+            continue;
+        }
+
+        if (n >= sizeof(c) - 1)
+        {
+            return false;
+        }
+
+        c[n++] = (ch >= 'a' && ch <= 'z') ? (char)(ch - 'a' + 'A') : ch;
+    }
+
+    c[n] = '\0';
+    return strcmp(c, "ATZ") == 0 || strcmp(c, "ATD") == 0 ||
+           strcmp(c, "ATWS") == 0;
+}
+
+bool ap_guard_chain_allowed(const ap_bus_t *bus, const char *chain,
+                            char *last, char *refused)
+{
+    bool ok = true;
+
+    if (last != NULL)
+    {
+        *last = '\0';
+    }
+
+    if (refused != NULL)
+    {
+        *refused = '\0';
+    }
+
+    for (const char *p = chain; p != NULL && *p != '\0';)
+    {
+        const char *sep = strchr(p, ';');
+        size_t len = (sep != NULL) ? (size_t)(sep - p) : strlen(p);
+        char proto = ap_guard_cmd_proto(p, len);
+
+        if (last != NULL && ap_guard_cmd_resets(p, len))
+        {
+            *last = '\0'; /* the sender puts the baseline prelude behind a
+                             reset: what the chain set before it is gone */
+        }
+
+        if (proto != '\0')
+        {
+            if (last != NULL)
+            {
+                *last = proto;
+            }
+
+            /* the chain's word is its author's, as a pinned setting is the
+               user's: there is no search to give way to. EVERY protocol of
+               the chain counts, not the last one: a chain may carry a
+               request between two of them (a session opener) */
+            if (ok && ap_guard_decide(bus, proto, true) != AP_GUARD_ALLOW)
+            {
+                ok = false;
+
+                if (refused != NULL)
+                {
+                    *refused = proto;
+                }
+            }
+        }
+
+        p += len + ((sep != NULL) ? 1 : 0);
+    }
+
+    return ok;
+}
+
+size_t ap_guard_chain_reason(const ap_bus_t *bus, char proto,
+                             const char *owner, char *out, size_t cap)
+{
+    if (out == NULL || cap == 0)
+    {
+        return 0;
+    }
+
+    int n;
+
+    if (owner == NULL)
+    {
+        owner = "an init";
+    }
+
+    if (bus != NULL && bus->kind == AP_BUS_UNREADABLE)
+    {
+        n = snprintf(out, cap, "%s sets protocol %c and the vehicle bus "
+                               "carries traffic at a bitrate that could not "
+                               "be read: not sent", owner, proto);
+    }
+    else
+    {
+        n = snprintf(out, cap, "%s sets protocol %c (%u kbit/s) and the "
+                               "vehicle bus runs at %u kbit/s: not sent",
+                     owner, proto, (unsigned)ap_guard_proto_kbps(proto),
+                     (bus != NULL) ? (unsigned)bus->kbps : 0u);
+    }
+
+    if (n < 0)
+    {
+        out[0] = '\0';
+        return 0;
+    }
+
+    return ((size_t)n < cap) ? (size_t)n : cap - 1;
 }
 
 const char *ap_guard_verdict_name(ap_guard_verdict_t verdict)

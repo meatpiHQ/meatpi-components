@@ -43,6 +43,11 @@
  * the guard is asked (the caller is the one who would make it talk), so the
  * guard waits: an echo dies, foreign traffic stays (settle_own_echo).
  *
+ * The verdict is about the protocol autopid pins. The chains of the tables
+ * (a row's init, a type's init, dtc_init, a tested row) can pin one too and
+ * go to the chip as written: whoever sends one asks ap_guard_chain_ok()
+ * first, which rules on the bus as it was last seen.
+ *
  * Never touches flash (the poller's stack is PSRAM).
  */
 #include "autopid_private.h"
@@ -50,6 +55,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "esp_attr.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -74,6 +80,15 @@ static ap_bus_t s_ruled;               /* the bus the verdict was taken on:
 static int64_t  s_probe_us;            /* 0 = never probed                  */
 static bool     s_final;               /* the verdict stands for this boot  */
 static bool     s_final_ok;            /* ... and it lets the chip talk     */
+static char     s_ruled_proto;         /* the protocol in effect the standing
+                                          verdict was taken for ('0' = the
+                                          search, also after a SEARCH verdict;
+                                          '\0' = none): another protocol in
+                                          effect means another look         */
+static char     s_ok_proto;            /* ... and the one a prelude may pin:
+                                          s_ruled_proto while the verdict lets
+                                          the chip talk, '\0' otherwise
+                                          (ap_guard_pin_ok)                 */
 static bool     s_watching;            /* we hold can_manager's watch       */
 static bool     s_parked;              /* the poller may not, at the moment */
 static bool     s_chip_sent;           /* the poller transmitted this boot:
@@ -82,6 +97,18 @@ static bool     s_chip_sent;           /* the poller transmitted this boot:
                                           on, and is waited out             */
 static ap_guard_verdict_t s_verdict;
 static char     s_reason[176];
+
+/* chains of the tables that set a protocol this bus cannot take
+   (ap_guard_chain_ok): how many were not sent, the last one's sentence, and
+   what was refused (one log line per change, not per poll) */
+static uint32_t s_refused;
+static int64_t  s_refused_us;          /* ... and when the last one was    */
+static char     s_refused_proto;
+static uint16_t s_refused_kbps;
+static char     s_refused_reason[176] EXT_RAM_BSS_ATTR;
+static char     s_job_reason[176] EXT_RAM_BSS_ATTR; /* why the last job was
+                                                       refused: the verdict's
+                                                       sentence or a chain's */
 
 void ap_guard_init(void)
 {
@@ -218,19 +245,44 @@ static void watch_off(void)
     }
 }
 
+/** The verdict just taken is about the protocol in effect NOW (decide_now()
+ *  may have turned it into the search). Under s_lock. */
+static void ruled_for_now(bool ok)
+{
+    char proto;
+    bool pinned;
+
+    effective_protocol(&proto, &pinned);
+    s_ruled_proto = proto;
+    s_ok_proto = ok ? proto : '\0';
+}
+
 bool ap_guard_poll_ok(void)
 {
-    if (s_final)
-    {
-        return s_final_ok;
-    }
-
     if (s_lock == NULL)
     {
         return true; /* not initialised: behave as before the guard */
     }
 
+    char proto;
+    bool pinned;
+
+    effective_protocol(&proto, &pinned);
+
+    /* a final verdict stands for the protocol it was taken for. Another car
+       made current (its record names another protocol), a fallback given up:
+       the bus is looked at again, for that one. Until 2026-10-05 the first
+       verdict stood for the boot and covered whatever was pinned next. */
+    if (s_final && proto == s_ruled_proto)
+    {
+        /* this pass pins that protocol or nothing (a contact probe's
+           candidate or a job may have borrowed the permission meanwhile) */
+        s_ok_proto = s_final_ok ? proto : '\0';
+        return s_final_ok;
+    }
+
     xSemaphoreTake(s_lock, portMAX_DELAY);
+    s_final = false;
 
     if (!s_watching)
     {
@@ -250,10 +302,13 @@ bool ap_guard_poll_ok(void)
         s_chip_sent = true; /* the caller transmits next */
     }
 
+    ruled_for_now(ok);
+
     if (s_bus.kind == AP_BUS_LIVE)
     {
         /* the bus named its bitrate: that does not change under a device
-           that stays plugged in, so the verdict stands for this boot */
+           that stays plugged in, so the verdict stands for this boot (for
+           the protocol it was taken for) */
         s_final = true;
         s_final_ok = ok;
         watch_off();
@@ -271,13 +326,32 @@ void ap_guard_proven(void)
         return;
     }
 
-    /* an ECU answered on the protocol in effect: its bitrate is the bus's */
+    /* an ECU answered on the protocol the poll was sent on, which is the
+       one this pass's verdict allowed (ap_guard_pin_ok saw to that): its
+       bitrate is the bus's. Not "the protocol in effect now": another car
+       may have been made current while the request was out. */
     xSemaphoreTake(s_lock, portMAX_DELAY);
-    s_final = true;
-    s_final_ok = true;
-    s_parked = false;
-    watch_off();
+
+    if (s_ok_proto != '\0')
+    {
+        s_final = true;
+        s_final_ok = true;
+        s_ruled_proto = s_ok_proto;
+        s_parked = false;
+        watch_off();
+    }
+
     xSemaphoreGive(s_lock);
+}
+
+bool ap_guard_pin_ok(char proto)
+{
+    if (s_lock == NULL)
+    {
+        return true;
+    }
+
+    return ap_guard_pin_allowed(proto, s_ok_proto);
 }
 
 bool ap_guard_job_ok(char *reason, size_t cap)
@@ -299,6 +373,17 @@ bool ap_guard_job_ok(char *reason, size_t cap)
     }
 
     ap_guard_verdict_t v = decide_now();
+
+    snprintf(s_job_reason, sizeof(s_job_reason), "%s", s_reason);
+
+    /* the job's own prelude (its baseline restore) may pin what this
+       verdict was taken for; the poller's standing verdict is not touched
+       (its next pass sets the permission back to its own) */
+    char proto;
+    bool pinned;
+
+    effective_protocol(&proto, &pinned);
+    s_ok_proto = (v != AP_GUARD_PARK) ? proto : '\0';
 
     if (reason != NULL && cap > 0)
     {
@@ -326,6 +411,58 @@ void ap_guard_bus(ap_bus_t *out)
     xSemaphoreTake(s_lock, portMAX_DELAY);
     *out = s_bus;
     xSemaphoreGive(s_lock);
+}
+
+bool ap_guard_chain_ok(const char *chain, const char *owner, bool job,
+                       char *last)
+{
+    ap_bus_t bus;
+    char refused = '\0';
+
+    if (s_lock == NULL)
+    {
+        /* not initialised: behave as before the guard */
+        (void)ap_guard_chain_allowed(NULL, chain, last, NULL);
+        return true;
+    }
+
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    bus = s_bus;
+    xSemaphoreGive(s_lock);
+
+    if (ap_guard_chain_allowed(&bus, chain, last, &refused))
+    {
+        return true;
+    }
+
+    char reason[sizeof(s_refused_reason)];
+
+    (void)ap_guard_chain_reason(&bus, refused, owner, reason, sizeof(reason));
+
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+
+    bool news = (s_refused == 0 || refused != s_refused_proto ||
+                 bus.kbps != s_refused_kbps);
+
+    s_refused++;
+    s_refused_us = esp_timer_get_time();
+    s_refused_proto = refused;
+    s_refused_kbps = bus.kbps;
+    snprintf(s_refused_reason, sizeof(s_refused_reason), "%s", reason);
+
+    if (job)
+    {
+        snprintf(s_job_reason, sizeof(s_job_reason), "%s", reason);
+    }
+
+    xSemaphoreGive(s_lock);
+
+    if (news || job)
+    {
+        ESP_LOGW(TAG, "bus guard: %s", reason);
+    }
+
+    return false;
 }
 
 bool ap_guard_candidate_ok(char proto)
@@ -356,6 +493,10 @@ bool ap_guard_candidate_ok(char proto)
     if (ok)
     {
         s_chip_sent = true;
+
+        /* the caller pins this candidate next; when a car answers on it,
+           the store takes it and the baseline is restored on it */
+        s_ok_proto = proto;
     }
 
     xSemaphoreGive(s_lock);
@@ -365,9 +506,12 @@ bool ap_guard_candidate_ok(char proto)
 void ap_guard_rearm(void)
 {
     /* the protocol in effect changed (another car, a new detection): the
-       poller asks again before its next prelude. Plain flag writes. */
+       poller asks again before its next prelude, and no prelude pins
+       anything until it has. Plain flag writes. */
     s_final = false;
     s_parked = false;
+    s_ok_proto = '\0';
+    s_ruled_proto = '\0';
 }
 
 bool ap_guard_parked(void)
@@ -379,7 +523,9 @@ void ap_guard_last_reason(char *out, size_t cap)
 {
     if (out != NULL && cap > 0)
     {
-        snprintf(out, cap, "%s", s_reason);
+        /* a job asks ap_guard_job_ok() first, then for its chains */
+        snprintf(out, cap, "%s", (s_job_reason[0] != '\0') ? s_job_reason
+                                                            : s_reason);
     }
 }
 
@@ -402,4 +548,13 @@ void ap_guard_status_json(cJSON *obj)
     cJSON_AddStringToObject(g, "verdict", ap_guard_verdict_name(s_verdict));
     cJSON_AddBoolToObject(g, "parked", s_parked);
     cJSON_AddStringToObject(g, "reason", s_reason);
+    cJSON_AddNumberToObject(g, "refused", s_refused);
+
+    if (s_refused > 0)
+    {
+        cJSON_AddStringToObject(g, "refused_reason", s_refused_reason);
+        cJSON_AddNumberToObject(g, "refused_ms",
+                                (double)((esp_timer_get_time() - s_refused_us) /
+                                         1000));
+    }
 }

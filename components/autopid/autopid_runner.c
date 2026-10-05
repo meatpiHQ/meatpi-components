@@ -24,8 +24,9 @@
  * @file autopid_runner.c
  * @brief The chip-facing runner: one PID poll end to end — init strings
  *        on type/PID transitions, ATCRA rxheader management, request,
- *        payload parse + cross-talk guard, expression eval of EVERY
- *        enabled parameter from the ONE response (fix #1) into the cache.
+ *        payload parse + cross-talk guard, then EVERY enabled parameter
+ *        from the ONE response (fix #1) into the cache
+ *        (ap_runner_publish(), autopid_publish.c).
  *
  * Owns the "what is the chip currently set up for" memory. Poller-task
  * context only (plus ap_runner_reset from the scan job / settings). First
@@ -38,8 +39,11 @@
  * header of the protocol is put back, so a custom or specific row finds
  * the same baseline as on an OBD-II car. Only standard rows are tracked: a
  * header set by a custom or specific init stays, as it always did.
+ *
+ * So does a PROTOCOL a custom or specific init sets (`ATSP6`), with one
+ * condition since 2026-10-05: the bus guard must allow it on this bus, when
+ * it is sent and before every request that goes out on it (row_pins_ok).
  */
-#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -48,12 +52,9 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 
-#include "battery_monitor.h"
 #include "obd_chip.h"
 
 #include "autopid_transport.h"
-
-#include "expression_parser.h"
 
 #include "autopid_private.h"
 
@@ -71,6 +72,13 @@ static bool s_rxheader_set;
 static bool s_baseline_sent;    /* the boot prelude went out             */
 static bool s_hdr_borrowed;     /* a standard row's init set the request
                                    header: the functional one is owed back */
+static char s_init_pin;         /* the CAN protocol a chain of the TABLES
+                                   left the chip on ('\0' = the baseline's):
+                                   the bus guard is asked for it again
+                                   before every request (row_pins_ok)      */
+
+static const char *const TYPE_INIT_NAME[3] = { "std_init", "custom_init",
+                                               "specific_init" };
 
 void ap_runner_set_type_init(int type, const char *init)
 {
@@ -90,85 +98,56 @@ void ap_runner_reset(void)
     s_rxheader_set = false;
 }
 
-/* ---- test-a-PID transcript: one line per exchange, "> cmd" / "< reply"
-   (2026-09-16: the UI shows what went out and what came back) ---------- */
-typedef struct
-{
-    char  *buf;                 /* NULL = no transcript wanted           */
-    size_t cap;
-    size_t len;
-} ap_tr_t;
-
-static void tr_add(ap_tr_t *t, char dir, const char *s)
-{
-    if (t == NULL || t->buf == NULL || t->cap == 0)
-    {
-        return;
-    }
-
-    /* replies are flattened to one line (a multi-frame answer arrives as
-       several lines) and capped so a long ISO-TP reply cannot eat the
-       whole buffer; the full raw reply travels separately */
-    char line[200];
-    size_t n = 0;
-
-    line[n++] = dir;
-    line[n++] = ' ';
-
-    const char *p = s;
-
-    for (; *p != '\0' && n < sizeof(line) - 5; p++)
-    {
-        if (*p == '\r' || *p == '\n')
-        {
-            if (line[n - 1] != ' ')
-            {
-                line[n++] = ' ';
-            }
-        }
-        else
-        {
-            line[n++] = *p;
-        }
-    }
-
-    while (n > 2 && line[n - 1] == ' ')
-    {
-        n--;
-    }
-
-    if (*p != '\0')
-    {
-        line[n++] = '.';
-        line[n++] = '.';
-        line[n++] = '.';
-    }
-
-    line[n++] = '\n';
-    line[n] = '\0';
-
-    if (t->len + n < t->cap)
-    {
-        memcpy(t->buf + t->len, line, n + 1);
-        t->len += n;
-    }
-}
-
 /** One chip exchange, logged into the transcript when one is wanted. */
 static esp_err_t request_tr(const char *cmd, char *resp, size_t resp_len,
                             TickType_t timeout, ap_tr_t *tr)
 {
     resp[0] = '\0';
-    tr_add(tr, '>', cmd);
+    ap_tr_add(tr, '>', cmd);
 
     esp_err_t err = ap_be()->request(cmd, resp, resp_len, timeout);
 
-    tr_add(tr, '<', (err != ESP_OK) ? "(no reply)"
+    ap_tr_add(tr, '<', (err != ESP_OK) ? "(no reply)"
                     : (resp[0] == '\0') ? "(empty)" : resp);
     return err;
 }
 
-/** Send a ';'-separated init string, one command at a time. */
+static bool s_chain_cut;        /* a chain was stopped behind a reset (no
+                                   verdict for the protocol in effect)     */
+
+static void send_init_tr(const char *init, ap_tr_t *tr);
+static char baseline_proto(void);
+
+/**
+ * A reset inside a chain of the tables (`ATZ`, `ATD`, `ATWS`) leaves the chip
+ * on the protocol stored in its EEPROM, the last vehicle DETECTED, and its
+ * first request goes out on that whatever bus the device is plugged into
+ * (bench 2026-10-05: the 500 kbit/s car's on the 250 kbit/s truck, bus-off
+ * 17 ms after the first error). So the baseline prelude goes out right
+ * behind the reset and the rest of the chain builds on it.
+ * @return false = the bus guard has no verdict for that protocol right now
+ * (another car made current under the row): the chain is cut.
+ */
+static bool after_reset(ap_tr_t *tr)
+{
+    char proto = baseline_proto();
+
+    if (!ap_guard_pin_ok(proto))
+    {
+        s_baseline_sent = false;
+        s_chain_cut = true;
+        return false;
+    }
+
+    send_init_tr(ap_veh_prelude_for(proto), tr);
+    s_hdr_borrowed = false;
+    s_init_pin = '\0';
+    return true;
+}
+
+/** Send a ';'-separated init string, one command at a time. A chain that
+ *  resets the chip gets the baseline prelude behind the reset; cut there
+ *  when the guard says no (s_chain_cut). */
 static void send_init_tr(const char *init, ap_tr_t *tr)
 {
     char cmd[AP_INIT_LEN];
@@ -187,6 +166,12 @@ static void send_init_tr(const char *init, ap_tr_t *tr)
 
                 (void)request_tr(cmd, resp, sizeof(resp), AP_INIT_TIMEOUT,
                                  tr);
+
+                if (ap_guard_cmd_resets(cmd, n) && !after_reset(tr))
+                {
+                    return;
+                }
+
                 n = 0;
             }
 
@@ -214,6 +199,133 @@ static void send_prelude(const char *prelude)
 {
     send_init(prelude);
     s_hdr_borrowed = false;
+    s_init_pin = '\0'; /* the chip is on the prelude's protocol again */
+}
+
+/**
+ * May this row go out? The tables can pin the chip to a CAN protocol
+ * themselves (`ATSP6` in a row's init, in a type's init, as a row's cmd:
+ * most vehicle profiles do) and the bus guard's verdict is about the
+ * protocol autopid pins, not about theirs. So every protocol the chains
+ * about to be sent set must be allowed on the bus as the guard last saw it;
+ * and when they set none, the one an earlier chain left the chip on must
+ * still be (a bus asleep when it was sent may have woken up at another bit
+ * rate). Refused = NOTHING of the row is sent: neither its protocol, nor
+ * its header on the protocol in effect (an 11-bit header on a truck's
+ * 29-bit protocol makes a frame the network has a meaning for), nor the
+ * request. Bench 2026-10-05: a row with `ATSP6` tested on a 250 kbit/s
+ * truck went out at 500, the truck's adapter was bus-off 19 ms after its
+ * first error and stayed there, the chip left on protocol 6 for every poll
+ * that followed.
+ *
+ * @p name NULL = the row under test (test-a-PID). @p type_init / @p init:
+ * NULL when not due. @p pin_after: the protocol of the tables the chip sits
+ * on once the chains went out ('\0' = the baseline's).
+ */
+static bool row_pins_ok(const char *name, int type, const char *type_init,
+                        const char *init, const char *cmd, bool job,
+                        char *pin_after)
+{
+    char owner[AP_NAME_LEN + 24] = "";
+    char pin = '\0';
+    char last = '\0';
+
+    if (type_init != NULL && type_init[0] != '\0')
+    {
+        if (!ap_guard_chain_ok(type_init,
+                               (type >= 0 && type < 3) ? TYPE_INIT_NAME[type]
+                                                       : "the type's init",
+                               job, &last))
+        {
+            return false;
+        }
+
+        pin = (last != '\0') ? last : pin;
+    }
+
+    if (init != NULL && init[0] != '\0')
+    {
+        if (name != NULL)
+        {
+            snprintf(owner, sizeof(owner), "the init of row %s", name);
+        }
+
+        if (!ap_guard_chain_ok(init, (name != NULL) ? owner
+                                                    : "the tested row's init",
+                               job, &last))
+        {
+            return false;
+        }
+
+        pin = (last != '\0') ? last : pin;
+    }
+
+    if (name != NULL)
+    {
+        snprintf(owner, sizeof(owner), "row %s", name);
+    }
+
+    if (!ap_guard_chain_ok(cmd, (name != NULL) ? owner : "the tested row",
+                           job, &last))
+    {
+        return false;
+    }
+
+    if (pin == '\0' && last == '\0' && s_init_pin != '\0')
+    {
+        /* nothing of this row sets a protocol: its request goes out on the
+           one an earlier chain left behind */
+        const char standing[] = { 'A', 'T', 'T', 'P', s_init_pin, '\0' };
+
+        if (!ap_guard_chain_ok(standing, "an earlier row's init", job, NULL))
+        {
+            /* the prelude takes the chip off it, the inits are due again
+               (and are judged when they are) */
+            s_baseline_sent = false;
+            ap_runner_reset();
+            return false;
+        }
+
+        pin = s_init_pin;
+    }
+
+    *pin_after = (last != '\0') ? last : pin;
+    return true;
+}
+
+/** The protocol the baseline prelude pins right now (as ap_std_prelude()
+ *  would: the setting, else the current car's record, else the search). */
+static char baseline_proto(void)
+{
+    return ap_veh_effective_protocol(ap_core_std_protocol(),
+                                     autopid_vehicle_protocol(),
+                                     ap_runner_proto_fallback());
+}
+
+/**
+ * Send the baseline prelude, when the bus guard's verdict covers the
+ * protocol it pins. The protocol is read ONCE and the prelude built from
+ * that reading: the current car can change under this task (an activation
+ * from the UI, in the HTTP task), and a prelude for the new car's protocol
+ * sent on the strength of the old car's verdict transmits at the wrong bit
+ * rate on a live bus (bench 2026-10-05: a 500 kbit/s car activated on a 250
+ * kbit/s truck; the truck's adapter was bus-off 40 ms later).
+ * @return false = not sent, the baseline is due.
+ */
+static bool baseline_send(void)
+{
+    char proto = baseline_proto();
+
+    if (!ap_guard_pin_ok(proto))
+    {
+        ESP_LOGD(TAG, "baseline for protocol %c waits for the bus guard",
+                 proto);
+        s_baseline_sent = false;
+        return false;
+    }
+
+    send_prelude(ap_veh_prelude_for(proto));
+    return true;
 }
 
 void ap_runner_restore_baseline(void)
@@ -221,8 +333,9 @@ void ap_runner_restore_baseline(void)
     /* the app's ATZ/ATS0/ATH1/ATSH/ATCRA are all still in effect: put
        back what the parser and the std PIDs assume (the same prelude
        the std scan uses - ATTP not ATSP, so no EEPROM write), then let
-       the next poll replay the configured type/PID inits on top */
-    send_prelude(ap_std_prelude());
+       the next poll replay the configured type/PID inits on top. A
+       prelude the guard has no verdict for is left to the next poll. */
+    (void)baseline_send();
     ap_runner_reset();
 }
 
@@ -231,7 +344,7 @@ void ap_runner_send_prelude(const char *prelude)
     send_prelude(prelude);
 }
 
-void ap_runner_baseline_ensure(void)
+bool ap_runner_baseline_ensure(void)
 {
     /* boot baseline, once: spaces/headers/timeout + the protocol the
        setting (or the current car's record under "0") names, BEFORE any
@@ -240,9 +353,15 @@ void ap_runner_baseline_ensure(void)
        (2026-10-01). Re-armed by ap_runner_rebaseline() on a car switch. */
     if (!s_baseline_sent)
     {
-        send_prelude(ap_std_prelude());
+        if (!baseline_send())
+        {
+            return false;
+        }
+
         s_baseline_sent = true;
     }
+
+    return true;
 }
 
 void ap_runner_baseline_invalidate(void)
@@ -259,9 +378,8 @@ static bool row_borrows_header(int type, const char *init)
 /** Put the functional header of the protocol in effect back. */
 static void header_give_back(ap_tr_t *tr)
 {
-    const char *func = ap_veh_func_header(ap_veh_effective_protocol(
-        ap_core_std_protocol(), autopid_vehicle_protocol(),
-        ap_runner_proto_fallback()));
+    char proto = baseline_proto();
+    const char *func = ap_veh_func_header(proto);
 
     if (func != NULL)
     {
@@ -269,11 +387,13 @@ static void header_give_back(ap_tr_t *tr)
 
         (void)request_tr(func, resp, sizeof(resp), AP_INIT_TIMEOUT, tr);
     }
-    else
+    else if (ap_guard_pin_ok(proto))
     {
         /* the chip's search (it picks its own headers), or a protocol
-           without a functional header here: the whole prelude */
-        send_init_tr(ap_std_prelude(), tr);
+           without a functional header here: the whole prelude, which pins
+           that protocol (hence the guard's word, as for the baseline) */
+        send_init_tr(ap_veh_prelude_for(proto), tr);
+        s_init_pin = '\0';
     }
 
     s_hdr_borrowed = false;
@@ -289,20 +409,52 @@ esp_err_t ap_runner_test(int type, const char *type_init, const char *init,
        it switches to this PID's type), the per-PID init, ATCRA, the
        request, ATCRA off. Caller must hold the poller paused
        (ap_core_scan_pause) and this leaves the chip state dirty on
-       purpose — unpausing runs ap_runner_reset(). httpd-task context
-       (internal stack). */
+       purpose — unpausing runs ap_runner_reset(). The baseline prelude
+       goes out first when none went out since the chip was last reset.
+       httpd-task context (internal stack). */
     char resp[64];
     ap_tr_t tr = { transcript, transcript_len, 0 };
     bool borrows = row_borrows_header(type, init);
+    char cmd_s[AP_CMD_LEN];
+    char pin_after = '\0';
 
     if (transcript != NULL && transcript_len > 0)
     {
         transcript[0] = '\0';
     }
 
+    snprintf(cmd_s, sizeof(cmd_s), "%s", cmd);
+    ap_init_sanitize(cmd_s); /* the tested cmd can be an AT command */
+
+    if (!s_baseline_sent)
+    {
+        /* the first chip traffic of this boot (Automate off, or nothing
+           polled yet), or the first after a reset: the chip sits on the
+           protocol STORED in it, not on the one in effect, and its request
+           went out on that one about every third time (bench 2026-10-05).
+           The baseline first, as before a poll (the handler has asked the
+           bus guard for it). */
+        char proto = baseline_proto();
+
+        if (ap_guard_pin_ok(proto))
+        {
+            send_init_tr(ap_veh_prelude_for(proto), &tr);
+            s_hdr_borrowed = false;
+            s_init_pin = '\0';
+            s_baseline_sent = true;
+        }
+    }
+
     if (s_hdr_borrowed && !borrows)
     {
         header_give_back(&tr);  /* as a poll of this row would */
+    }
+
+    if (!row_pins_ok(NULL, type, type_init, init, cmd_s, true, &pin_after))
+    {
+        ap_tr_add(&tr, '!', "not sent: a protocol this row sets is not the "
+                         "vehicle bus's (the bus guard)");
+        return ESP_ERR_NOT_ALLOWED;
     }
 
     if (type_init != NULL && type_init[0] != '\0')
@@ -315,10 +467,20 @@ esp_err_t ap_runner_test(int type, const char *type_init, const char *init,
         send_init_tr(init, &tr);
     }
 
+    if (s_chain_cut)
+    {
+        s_chain_cut = false;
+        ap_tr_add(&tr, '!', "stopped behind a reset: the vehicle was changed "
+                         "while the row went out");
+        return ESP_FAIL;
+    }
+
     if (borrows)
     {
         s_hdr_borrowed = true;
     }
+
+    s_init_pin = pin_after;
 
     bool cra_set = false;
 
@@ -331,13 +493,13 @@ esp_err_t ap_runner_test(int type, const char *type_init, const char *init,
         cra_set = true;
     }
 
-    char cmd_s[AP_CMD_LEN];
-
-    snprintf(cmd_s, sizeof(cmd_s), "%s", cmd);
-    ap_init_sanitize(cmd_s); /* the tested cmd can be an AT command */
-
     int64_t t0 = esp_timer_get_time();
     esp_err_t err = request_tr(cmd_s, raw, raw_len, AP_REQ_TIMEOUT, &tr);
+
+    if (ap_guard_cmd_resets(cmd_s, strlen(cmd_s)))
+    {
+        s_baseline_sent = false; /* the chip is on its stored protocol */
+    }
 
     if (elapsed_us != NULL)
     {
@@ -366,7 +528,12 @@ void ap_runner_send_init(const char *init)
 bool ap_runner_run(const ap_pid_t *pid, int pid_index,
                    const ap_param_t *params)
 {
-    ap_runner_baseline_ensure();
+    if (!ap_runner_baseline_ensure())
+    {
+        /* the protocol in effect changed since this pass asked the bus
+           guard: nothing is sent, the next pass asks again */
+        return false;
+    }
 
     /* a standard row that set its own header gives the functional one
        back before a row that does not set one (the file header) */
@@ -375,6 +542,20 @@ bool ap_runner_run(const ap_pid_t *pid, int pid_index,
     if (s_hdr_borrowed && !borrows && pid_index != s_last_pid)
     {
         header_give_back(NULL);
+    }
+
+    /* the protocols the tables set themselves, before anything of the row
+       is sent */
+    bool type_due = (pid->type != s_last_type);
+    bool row_due = type_due || pid_index != s_last_pid;
+    char pin_after = '\0';
+
+    if (!row_pins_ok(pid->name, pid->type,
+                     type_due ? s_type_init[pid->type] : NULL,
+                     row_due ? pid->init : NULL, pid->cmd, false, &pin_after))
+    {
+        ESP_LOGD(TAG, "%s: not sent (the bus guard)", pid->name);
+        return false;
     }
 
     /* type init once per type transition (legacy behavior kept) */
@@ -422,10 +603,26 @@ bool ap_runner_run(const ap_pid_t *pid, int pid_index,
         s_last_pid = pid_index;
     }
 
+    if (s_chain_cut)
+    {
+        /* a reset in an init found the guard without a verdict: the chip is
+           on its stored protocol, nothing goes out (the next pass asks) */
+        s_chain_cut = false;
+        ap_runner_reset();
+        return false;
+    }
+
+    s_init_pin = pin_after;
+
     static char resp[AP_RESP_MAX] EXT_RAM_BSS_ATTR; /* poller-task only */
 
     esp_err_t err = ap_be()->request(pid->cmd, resp, sizeof(resp),
                                      AP_REQ_TIMEOUT);
+
+    if (ap_guard_cmd_resets(pid->cmd, strlen(pid->cmd)))
+    {
+        s_baseline_sent = false; /* the chip is on its stored protocol */
+    }
 
     if (err != ESP_OK)
     {
@@ -455,67 +652,4 @@ bool ap_runner_run(const ap_pid_t *pid, int pid_index,
 
     return ap_runner_publish(pid, params, payload, payload_len,
                              esp_timer_get_time());
-}
-
-bool ap_runner_publish(const ap_pid_t *pid, const ap_param_t *params,
-                       const uint8_t *payload, size_t payload_len,
-                       int64_t ts_us)
-{
-    float volts = 0;
-
-    (void)battery_monitor_voltage(&volts);
-
-    int64_t now = ts_us;
-    bool any = false;
-
-    for (uint16_t i = 0; i < pid->param_count; i++)
-    {
-        const ap_param_t *prm = &params[i];
-
-        if (!prm->enabled)
-        {
-            continue;
-        }
-
-        /* mux precondition (DBC m<N> signals): the parameter only
-           applies when the switch slice equals its mux value */
-        if (prm->mux_expr[0] != '\0')
-        {
-            double mv = 0;
-
-            if (expression_parser_eval(prm->mux_expr, payload,
-                                       payload_len, (double)volts,
-                                       &mv) != ESP_OK ||
-                fabs(mv - (double)prm->mux_val) > 0.5)
-            {
-                continue;
-            }
-        }
-
-        double value = 0;
-
-        if (expression_parser_eval(prm->expression, payload, payload_len,
-                                   (double)volts, &value) != ESP_OK)
-        {
-            ESP_LOGD(TAG, "%s/%s: expression failed", pid->name,
-                     prm->name);
-            continue;
-        }
-
-        /* plausibility clamp: out-of-range readings are dropped, not
-           published (mirrors legacy min/max) */
-        if ((!isnan(prm->min) && value < prm->min) ||
-            (!isnan(prm->max) && value > prm->max))
-        {
-            ESP_LOGD(TAG, "%s/%s: %f out of range", pid->name, prm->name,
-                     value);
-            continue;
-        }
-
-        ap_cache_put(pid->param_start + i, value, now);
-        ap_events_param(prm, pid->param_start + i, pid->group, value);
-        any = true;
-    }
-
-    return any;
 }

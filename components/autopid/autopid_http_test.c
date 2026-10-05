@@ -182,6 +182,15 @@ esp_err_t test_post_handler(httpd_req_t *req)
             s_raw, sizeof(s_raw), &elapsed_us, s_tr, sizeof(s_tr));
 
         ap_core_scan_pause(false);
+
+        if (err == ESP_ERR_NOT_ALLOWED)
+        {
+            /* a chain of the row sets a protocol at another bit rate than
+               the bus runs at: nothing went out, the guard says why */
+            ap_core_job_release();
+            cJSON_Delete(root);
+            return ap_http_send_guard_error(req);
+        }
     }
 
     cJSON *o = cJSON_CreateObject();

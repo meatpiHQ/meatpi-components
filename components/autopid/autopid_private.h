@@ -335,9 +335,23 @@ void ap_guard_proven(void);
 /** A one-shot chip job is about to start (detection, DTC scan / clear,
  *  test-a-PID): false = nothing may be transmitted; @p reason says why. */
 bool ap_guard_job_ok(char *reason, size_t cap);
+/** Whoever is about to send a prelude that pins @p proto (the runner's
+ *  baseline, its restore): does the standing verdict cover THAT protocol?
+ *  false = do not send; the poller's next ap_guard_poll_ok() looks at the
+ *  bus for it. Plain reads, any task. */
+bool ap_guard_pin_ok(char proto);
+/** A chain of the tables is about to go to the chip as written (@p owner
+ *  names it for the sentence: "the init of row X", "dtc_init"): may it, on
+ *  the bus as the guard last saw it (ap_guard_chain_allowed)? false = send
+ *  nothing of it nor of the request behind it; counted and explained in the
+ *  status (`bus_guard.refused`, `refused_reason`), and for a job (@p job)
+ *  in ap_guard_last_reason(). @p last as in ap_guard_chain_allowed(). */
+bool ap_guard_chain_ok(const char *chain, const char *owner, bool job,
+                       char *last);
 void ap_guard_rearm(void);              /* the protocol in effect changed  */
 bool ap_guard_parked(void);
-void ap_guard_last_reason(char *out, size_t cap); /* the last sentence */
+void ap_guard_last_reason(char *out, size_t cap); /* why the last job was
+                                                     refused            */
 void ap_guard_status_json(cJSON *obj);  /* adds "bus_guard": {...}         */
 
 /* ATMA filter window (autopid_filter.c — poller-task context) */
@@ -349,18 +363,34 @@ bool ap_runner_run_filter(const ap_filter_t *f, const ap_param_t *params);
  *  decides the borrowed-header rule). Caller pauses the poller around it
  *  (ap_core_scan_pause). `transcript` (may be NULL) receives one line
  *  per exchange, "> cmd" then "< reply", so the UI can show what went
- *  out and what came back (2026-09-16). */
+ *  out and what came back (2026-09-16). ESP_ERR_NOT_ALLOWED = a chain of
+ *  the row sets a protocol the bus guard refuses on this bus: nothing of
+ *  the row was sent (ap_guard_last_reason() says why). */
 esp_err_t ap_runner_test(int type, const char *type_init, const char *init,
                          const char *rxheader, const char *cmd, char *raw,
                          size_t raw_len, int64_t *elapsed_us,
                          char *transcript, size_t transcript_len);
+
+/* the transcript of a test (autopid_transcript.c, pure): replies flattened
+   to one line and capped, a line that does not fit is dropped */
+typedef struct
+{
+    char  *buf;                 /* NULL = no transcript wanted           */
+    size_t cap;
+    size_t len;
+} ap_tr_t;
+
+void ap_tr_add(ap_tr_t *t, char dir, const char *s);
 
 /* chip-state memory shared with first contact (autopid_contact.c,
    poller-task context) */
 void ap_runner_send_init(const char *init);      /* a ';'-separated chain  */
 void ap_runner_send_prelude(const char *prelude); /* ... that resets the
                                                     header: nothing borrowed */
-void ap_runner_baseline_ensure(void);            /* the boot prelude, once */
+/** The boot prelude, once. false = it is due and the bus guard has no
+ *  verdict for the protocol it would pin: nothing was sent, do not send a
+ *  request on top (the next poll asks again). */
+bool ap_runner_baseline_ensure(void);
 void ap_runner_baseline_invalidate(void);        /* ... is due again       */
 /** The init chain the poller sends when it switches to this PID type
  *  (what autopid_settings composed from the protocol + *_init). */
@@ -448,6 +478,41 @@ uint16_t ap_guard_proto_kbps(char proto);
  *  word), not the vehicle store (ours, which may give way to the search). */
 ap_guard_verdict_t ap_guard_decide(const ap_bus_t *bus, char proto,
                                    bool pinned);
+
+/** May a prelude pin @p proto now? @p ruled = the protocol the last positive
+ *  verdict was taken for ('0' = the search, '\0' = none stands). A verdict
+ *  is about ONE protocol on the bus as it was looked at: when the protocol
+ *  in effect changes between the look and the prelude (another car made
+ *  current), the prelude waits for the next look. Bench 2026-10-05: a 500
+ *  kbit/s car activated on a 250 kbit/s truck was pinned on the strength of
+ *  the truck's verdict, and the truck's adapter went bus-off in 40 ms. */
+bool ap_guard_pin_allowed(char proto, char ruled);
+
+/** The CAN protocol an AT command sets, as the chip reads it (`ATSP6`,
+ *  `at tp a7`, `ATSP00`): '0'..'9', 'A'..'C'; '\0' = the command sets none. */
+char ap_guard_cmd_proto(const char *cmd, size_t len);
+
+/** True for the commands that reset the chip (`ATZ`, `ATD`, `ATWS`): it
+ *  comes back on the protocol stored in its EEPROM, the last vehicle
+ *  DETECTED, whatever bus the device is plugged into now. Whoever sends one
+ *  out of a chain of the tables sends the baseline prelude right behind it. */
+bool ap_guard_cmd_resets(const char *cmd, size_t len);
+
+/** A ';'-separated chain of the tables (a row's or a type's init, a cmd,
+ *  dtc_init): is EVERY protocol it sets allowed on @p bus, by the ruling a
+ *  pinned setting gets (no search to give way to)? @p last (may be NULL) =
+ *  the protocol the chain leaves the chip on, '\0' when it sets none (or
+ *  resets the chip after the last one it set);
+ *  @p refused (may be NULL) = the first one refused. Bench 2026-10-05: a row
+ *  with `ATSP6` tested on a 250 kbit/s truck, the truck's adapter bus-off
+ *  19 ms after its first error. */
+bool ap_guard_chain_allowed(const ap_bus_t *bus, const char *chain,
+                            char *last, char *refused);
+
+/** The sentence of such a refusal: "<owner> sets protocol 6 (500 kbit/s) and
+ *  the vehicle bus runs at 250 kbit/s: not sent". @return its length. */
+size_t ap_guard_chain_reason(const ap_bus_t *bus, char proto,
+                             const char *owner, char *out, size_t cap);
 
 const char *ap_guard_verdict_name(ap_guard_verdict_t verdict);
 const char *ap_bus_kind_name(ap_bus_kind_t kind);

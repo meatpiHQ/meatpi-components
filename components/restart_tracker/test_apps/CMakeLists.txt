@@ -9,4 +9,8 @@ set(EXTRA_COMPONENT_DIRS "${CMAKE_CURRENT_LIST_DIR}/../..")
 # every test app.)
 set(SDKCONFIG_DEFAULTS "${CMAKE_CURRENT_LIST_DIR}/../../../sdkconfig.defaults;${CMAKE_CURRENT_LIST_DIR}/sdkconfig.defaults")
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+# Only main and what it requires (restart_tracker and its dependencies), not
+# every component of the tree: this app crashes the device fifteen times and
+# gets rebuilt often (2026-10-05, the crash note).
+idf_build_set_property(MINIMAL_BUILD ON)
 project(restart_tracker_test_app)

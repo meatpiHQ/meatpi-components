@@ -71,6 +71,9 @@ typedef enum
     /* sleep_manager's periodic check-in wake (2026-09-07; it shared
        POWER_WAKE before). Appended: records store the numeric value. */
     RESTART_TRACKER_PLANNED_REASON_PERIODIC_WAKE,
+    /* a device the crash-loop brake had parked starts again: the park's
+       timer or the button (2026-10-05). Appended, as above. */
+    RESTART_TRACKER_PLANNED_REASON_PARK_RETRY,
 } restart_tracker_planned_reason_t;
 
 typedef enum
@@ -86,7 +89,18 @@ typedef enum
     RESTART_TRACKER_SOURCE_SLEEP_MODE,
     RESTART_TRACKER_SOURCE_BUTTON,   /* config-mode timeout (2026-07-19) */
     RESTART_TRACKER_SOURCE_PAIRING,  /* espnetlink_link zero-touch pairing */
+    RESTART_TRACKER_SOURCE_PARK,     /* the crash park's own timer         */
 } restart_tracker_source_t;
+
+/** How a boot ran: the whole firmware, or one of the minimal modes. */
+typedef enum
+{
+    RESTART_TRACKER_BOOT_NORMAL = 0,
+    RESTART_TRACKER_BOOT_PARK,      /**< parked asleep by the crash-loop brake */
+    RESTART_TRACKER_BOOT_PARK_BARE, /**< parked without the LED: the park
+                                         itself had crashed                   */
+    RESTART_TRACKER_BOOT_SAFE,      /**< safe mode (the button at power-on)   */
+} restart_tracker_boot_mode_t;
 
 /** One boot in the history ring. */
 typedef struct
@@ -101,7 +115,11 @@ typedef struct
     uint16_t source;              /**< restart_tracker_source_t                 */
     uint8_t  was_planned;         /**< 1 if the previous run announced it       */
     uint8_t  time_valid;          /**< 1 if boot_timestamp is trustworthy       */
-    uint8_t  reserved[2];
+    /* the two bytes below were `reserved`, zero in every record so far: the
+       layout and RT_VERSION are unchanged (2026-10-05) */
+    uint8_t  settled;             /**< 1 once this run was up
+                                       RESTART_TRACKER_SETTLE_S                 */
+    uint8_t  boot_mode;           /**< restart_tracker_boot_mode_t of this run  */
 } restart_tracker_record_t;
 
 /** Restart intent left for the NEXT boot to consume. */
@@ -182,6 +200,153 @@ esp_err_t restart_tracker_register_settings(void);
 const char *restart_tracker_reset_reason_to_str(uint32_t esp_reset_reason);
 const char *restart_tracker_planned_reason_to_str(restart_tracker_planned_reason_t reason);
 const char *restart_tracker_source_to_str(restart_tracker_source_t source);
+
+/* ---- the crash note -------------------------------------------------------
+ * Where the previous run crashed, when it ended in IDF's panic handler: two
+ * link-time hooks around that handler write a 300-byte note into RTC slow
+ * memory (no flash, no PSRAM, no heap), and the next boot files it under its
+ * own record. See README.md, "The crash note". */
+
+typedef enum
+{
+    RESTART_TRACKER_CRASH_NONE = 0,
+    RESTART_TRACKER_CRASH_EXCEPTION, /* a CPU exception nobody handled       */
+    RESTART_TRACKER_CRASH_ABORT,     /* abort(), assert, stack overflow hook */
+    RESTART_TRACKER_CRASH_INT_WDT,   /* interrupt watchdog                   */
+    RESTART_TRACKER_CRASH_TASK_WDT,  /* task watchdog, when it panics        */
+    RESTART_TRACKER_CRASH_DEBUG,     /* debug exception                      */
+} restart_tracker_crash_kind_t;
+
+#define RESTART_TRACKER_CRASH_BT_LEN  16 /* frames kept of the crashed context */
+#define RESTART_TRACKER_CRASH_BT2_LEN 6  /* frames kept of the other core      */
+
+/** A crash note as its readers get it: strings terminated and printable. */
+typedef struct
+{
+    uint32_t sequence;    /**< the boot it is filed under (the one after)     */
+    uint8_t  kind;        /**< restart_tracker_crash_kind_t                   */
+    uint8_t  core;        /**< the core that crashed                          */
+    bool     complete;    /**< false: only kind, core, cause, pc, excvaddr    */
+    bool     pseudo;      /**< cause is one of IDF's PANIC_RSN_ numbers       */
+    bool     in_isr;      /**< the crash happened inside an interrupt handler */
+    bool     nested;      /**< a second panic happened inside the handler     */
+    bool     early;       /**< before restart_tracker_init(): no uptime       */
+    bool     bt_corrupt;  /**< IDF's sanity check ended the stack walk        */
+    bool     bt_more;     /**< the stack went on after the last frame kept    */
+    bool     text_cut;    /**< the abort text was longer than `text`          */
+    uint32_t cause;       /**< EXCCAUSE (28 = LoadProhibited)                 */
+    uint32_t pc;          /**< the register, as IDF's register dump prints it */
+    uint32_t excvaddr;    /**< the address a load / store / fetch faulted on  */
+    uint32_t uptime_s;    /**< seconds the run had been up                    */
+    uint8_t  bt_len;
+    uint8_t  bt2_len;
+    uint8_t  bt2_core;
+    char     elf_sha[17]; /**< first hex characters of the image's ELF SHA-256 */
+    char     task[17];
+    char     reason[33];  /**< IDF's name of the exception; "" for an abort   */
+    char     text[97];    /**< the abort / assert / stack overflow message    */
+    uint32_t bt[RESTART_TRACKER_CRASH_BT_LEN];   /**< the PCs of IDF's
+                               `Backtrace:` line (bt[0] = pc - 3)             */
+    uint32_t bt2[RESTART_TRACKER_CRASH_BT2_LEN]; /**< the other core, when IDF
+                               saved its frame (watchdog, cache error)        */
+} restart_tracker_crash_t;
+
+/** The crash note filed under boot `sequence`. ESP_ERR_NOT_FOUND when that
+ *  boot has none; ESP_ERR_NOT_SUPPORTED on a target without the hooks. */
+esp_err_t restart_tracker_get_crash(uint32_t sequence,
+                                    restart_tracker_crash_t *out);
+
+/** "exception", "abort", "int_wdt", "task_wdt", "debug"; "none" otherwise. */
+const char *restart_tracker_crash_kind_to_str(uint8_t kind);
+
+/** The note in one line (the boot log, the CLI). snprintf semantics. */
+int restart_tracker_crash_summary(const restart_tracker_crash_t *crash,
+                                  char *buf, size_t cap);
+
+/* ---- the crash-loop brake ---------------------------------------------------
+ * Three runs in a row that crashed before they had been up
+ * RESTART_TRACKER_SETTLE_S, and the next boot must not start the firmware
+ * again: its verdict is "park" and the composition root puts the board to
+ * sleep instead (README.md, "The crash-loop brake"). The count lives in RTC
+ * memory beside the crash notes: no flash, no PSRAM, and a power cycle
+ * starts it again. */
+
+#define RESTART_TRACKER_SETTLE_S     600U /* up this long = a healthy run   */
+#define RESTART_TRACKER_BRAKE_STREAK 3U   /* quick crashes in a row to park */
+
+/** What restart_tracker_init() decided for this boot, and the count as it
+ *  stands now. */
+typedef struct
+{
+    uint8_t  verdict;       /**< this boot's: restart_tracker_boot_mode_t
+                                 NORMAL, PARK or PARK_BARE                    */
+    uint8_t  streak;        /**< runs in a row that crashed before settling
+                                 (0 again once this run settled)              */
+    uint8_t  parks;         /**< parks since that streak began, this one in   */
+    uint8_t  report_budget; /**< crash reports that may still be stored       */
+    bool     settled;       /**< this run was up RESTART_TRACKER_SETTLE_S     */
+    uint32_t retry_after_s; /**< parked: start again after this long; 0 =
+                                 stay parked until the power is cycled or
+                                 the button is pressed                        */
+} restart_tracker_brake_t;
+
+/** The verdict of this boot. The composition root asks right after
+ *  restart_tracker_init() and, when it is not NORMAL, parks instead of
+ *  starting anything. ESP_ERR_INVALID_STATE before init. */
+esp_err_t restart_tracker_get_brake(restart_tracker_brake_t *out);
+
+/** Declare how this boot runs (park, safe mode) before the mode does
+ *  anything: the next boot's verdict and the history record read it. */
+esp_err_t restart_tracker_set_boot_mode(restart_tracker_boot_mode_t mode);
+
+/** Call now and then (main's 60 s loop). Marks this run settled once it has
+ *  been up RESTART_TRACKER_SETTLE_S: that ends a crash streak and gives the
+ *  report budget back. `force` marks it at once (the bench's knob). Returns
+ *  true when the run is settled. No flash. */
+bool restart_tracker_settle(bool force);
+
+/** Bench: the next park ends by itself after `seconds` (10..3600; 0 takes
+ *  the knob back). One park only, and gone with the power. */
+esp_err_t restart_tracker_set_test_retry(uint16_t seconds);
+
+/** "normal", "park", "park_bare", "safe". */
+const char *restart_tracker_boot_mode_to_str(uint8_t mode);
+
+/* ---- the stored crash report ------------------------------------------------
+ * The crash notes live in RTC memory and go with the power. The boot that
+ * files a note also stores it in NVS, so that it is still there after the
+ * device was unplugged: for the Status page, GET /api/restart/report, the
+ * console and safe mode. One report, the newest distinct crash, behind a
+ * wear guard (README.md, "The stored crash report"). */
+
+typedef struct
+{
+    int64_t stored_unix;  /**< when it was stored; 0: the clock was not set */
+    uint8_t streak;       /**< quick crashes in a row then, this one in     */
+    bool    parked;       /**< the brake parked the device on this crash    */
+    char    firmware[33]; /**< version of the image that crashed; "" when
+                               another image stored the report             */
+    restart_tracker_crash_t crash;
+} restart_tracker_report_t;
+
+#define RESTART_TRACKER_REPORT_TEXT_MAX 1024 /* holds any report as text */
+
+/** The stored report. ESP_ERR_NOT_FOUND when there is none. */
+esp_err_t restart_tracker_get_report(restart_tracker_report_t *out);
+
+/** Forget the stored report (one NVS erase). Flash: a caller on an
+ *  internal stack only (an HTTP handler, a console command). */
+esp_err_t restart_tracker_clear_report(void);
+
+/** Write the report this boot holds back to NVS, for a caller that erased
+ *  NVS wholesale and initialised it again (safe mode's factory reset).
+ *  ESP_ERR_NOT_FOUND when there is none. Same stack rule. */
+esp_err_t restart_tracker_restore_report(void);
+
+/** The report as text for a person to send on: device, firmware, what
+ *  crashed, the backtrace. snprintf semantics. */
+int restart_tracker_report_text(const restart_tracker_report_t *report,
+                                char *buf, size_t cap);
 
 #ifdef __cplusplus
 }

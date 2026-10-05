@@ -1,0 +1,15 @@
+menu "WiCAN restart_tracker"
+
+    config WICAN_RESTART_TRACKER_PARK_RETRY_MIN
+        int "Crash park: start again by itself after this many minutes (0 = never)"
+        range 0 1440
+        default 0
+        help
+            After three runs in a row that crashed before they settled, the
+            crash-loop brake parks the device asleep (README.md, "The
+            crash-loop brake"). With 0 it stays parked until the power is
+            cycled or the button is pressed. Any other value makes a parked
+            device try one normal start after that many minutes, and park
+            again at once when that start crashes too.
+
+endmenu

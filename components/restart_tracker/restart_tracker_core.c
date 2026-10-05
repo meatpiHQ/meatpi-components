@@ -44,8 +44,9 @@
 #define RT_RST_DEEPSLEEP 8U
 
 /* CRC-32 (IEEE 802.3, poly 0xEDB88320) — same convention as the settings
- * codec; local so the core has zero deps. */
-static uint32_t crc32_bytes(const uint8_t *data, size_t len)
+ * codec; local so the core has zero deps. Shared with the crash note
+ * (restart_tracker_crash_core.c). */
+uint32_t rt_crc32_bytes(const uint8_t *data, size_t len)
 {
     uint32_t crc = 0xFFFFFFFFu;
 
@@ -68,7 +69,7 @@ uint32_t rt_crc32(const restart_tracker_state_t *state)
        excluded — boot-time timing tuning may overwrite it (see header) */
     size_t start = offsetof(restart_tracker_state_t, magic);
 
-    return crc32_bytes((const uint8_t *)state + start,
+    return rt_crc32_bytes((const uint8_t *)state + start,
                        offsetof(restart_tracker_state_t, crc32) - start);
 }
 
@@ -151,6 +152,30 @@ bool rt_record_boot(restart_tracker_state_t *state, const rt_inputs_t *in)
     return was_reset;
 }
 
+void rt_record_set_mode(restart_tracker_state_t *state, uint8_t mode)
+{
+    if (!rt_state_is_valid(state) || state->boot_count == 0U)
+    {
+        return; /* no record of this boot to write into */
+    }
+
+    state->history[state->latest_history_index %
+                   RESTART_TRACKER_HISTORY_LEN].boot_mode = mode;
+    state->crc32 = rt_crc32(state);
+}
+
+void rt_record_set_settled(restart_tracker_state_t *state)
+{
+    if (!rt_state_is_valid(state) || state->boot_count == 0U)
+    {
+        return;
+    }
+
+    state->history[state->latest_history_index %
+                   RESTART_TRACKER_HISTORY_LEN].settled = 1U;
+    state->crc32 = rt_crc32(state);
+}
+
 void rt_mark_planned(restart_tracker_state_t *state, const rt_inputs_t *in,
                      restart_tracker_planned_reason_t reason,
                      restart_tracker_source_t source, uint32_t flags)
@@ -211,6 +236,7 @@ const char *restart_tracker_planned_reason_to_str(restart_tracker_planned_reason
         case RESTART_TRACKER_PLANNED_REASON_POWER_WAKE:        return "power_wake";
         case RESTART_TRACKER_PLANNED_REASON_INTERNAL_RECOVERY: return "internal_recovery";
         case RESTART_TRACKER_PLANNED_REASON_PERIODIC_WAKE:     return "periodic_wake";
+        case RESTART_TRACKER_PLANNED_REASON_PARK_RETRY:        return "park_retry";
         default:                                               return "invalid";
     }
 }
@@ -230,6 +256,7 @@ const char *restart_tracker_source_to_str(restart_tracker_source_t source)
         case RESTART_TRACKER_SOURCE_SLEEP_MODE:    return "sleep_mode";
         case RESTART_TRACKER_SOURCE_BUTTON:        return "button";
         case RESTART_TRACKER_SOURCE_PAIRING:       return "pairing";
+        case RESTART_TRACKER_SOURCE_PARK:          return "park";
         default:                                   return "invalid";
     }
 }

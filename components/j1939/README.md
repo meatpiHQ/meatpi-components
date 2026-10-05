@@ -376,3 +376,11 @@ written once, at the first boot.
   every request answered and the retries counted; autopid's `?` rows, DM2 in
   the DTC report and the DM11 / DM3 clear; a J2534 tester's diagnostics hold
   stopping the asking; listen mode and a listen-only bus with not one frame).
+- **End to end** (`.\test.ps1 eutruck`):
+  `tools/testbench/obd/eu_truck_e2e_bench.py` -> `EU TRUCK E2E PASS`: the
+  listener beside the OBD chip on an EU truck (WWH-OBD ECUs and a J1939
+  network on one bus, one VIN): the network found by a bus sample while the
+  native bus is off, the listener started by the one restart the Quick Setup
+  stages (listen-only at the measured bit rate), its rows live beside the
+  chip's `22F4xx` rows, DM1 in the same DTC report as the `19 42` codes and
+  still heard after the legislated clear (a listener clears nothing).

@@ -74,6 +74,10 @@ static esp_err_t act_indicate(const cJSON *with, const em_event_t *ev)
         {
             st.mode = LED_MANAGER_BLINK_FAST;
         }
+        else if (strcmp(mode->valuestring, "breathe") == 0)
+        {
+            st.mode = LED_MANAGER_BREATHE;
+        }
     }
 
     return led_manager_set(LED_MANAGER_PRIO_ALERT, &st);

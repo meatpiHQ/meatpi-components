@@ -2,7 +2,7 @@
  * @file test_main.c
  * @brief Host tests for led_manager's pure indication arbiter: highest
  *        occupied priority wins, clear falls back, replace-in-place,
- *        bounds. Expected output: 6 Tests 0 Failures 0 Ignored.
+ *        bounds. Expected output: 7 Tests 0 Failures 0 Ignored.
  */
 #include "unity.h"
 
@@ -101,6 +101,31 @@ static void test_bounds(void)
                       lm_arbiter_clear(&s_a, LED_MANAGER_PRIO_COUNT));
 }
 
+static void test_every_mode_is_taken(void)
+{
+    led_manager_state_t out;
+
+    /* the last mode of the enum (breathe, 2026-10-05) is a mode like the
+       others, and the one after it is none */
+    for (int mode = LED_MANAGER_OFF; mode <= LED_MANAGER_BREATHE; mode++)
+    {
+        led_manager_state_t st =
+            { .mode = (led_manager_mode_t)mode, .r = 255 };
+
+        TEST_ASSERT_EQUAL(ESP_OK,
+                          lm_arbiter_set(&s_a, LED_MANAGER_PRIO_ALERT, &st));
+        TEST_ASSERT_EQUAL_INT(LED_MANAGER_PRIO_ALERT,
+                              lm_arbiter_active(&s_a, &out));
+        TEST_ASSERT_EQUAL_INT(mode, out.mode);
+    }
+
+    led_manager_state_t bad =
+        { .mode = (led_manager_mode_t)(LED_MANAGER_BREATHE + 1) };
+
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG,
+                      lm_arbiter_set(&s_a, LED_MANAGER_PRIO_ALERT, &bad));
+}
+
 void app_main(void)
 {
     UNITY_BEGIN();
@@ -110,5 +135,6 @@ void app_main(void)
     RUN_TEST(test_clear_falls_back);
     RUN_TEST(test_replace_in_place);
     RUN_TEST(test_bounds);
+    RUN_TEST(test_every_mode_is_taken);
     UNITY_END();
 }

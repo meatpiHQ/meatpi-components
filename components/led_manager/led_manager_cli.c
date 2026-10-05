@@ -134,6 +134,9 @@ static int cmd_led(int argc, char **argv)
             { 0x04, "GCR2"  }, { 0x30, "LCTR"  }, { 0x31, "LCFG0" },
             { 0x32, "LCFG1" }, { 0x33, "LCFG2" }, { 0x34, "PWM0"  },
             { 0x35, "PWM1"  }, { 0x36, "PWM2"  },
+            /* the red channel's pattern timing: T1|T2, T3|T4, T0|repeat
+               (blink 0x04 / 0x04, breathe 0x61 / 0x68) */
+            { 0x37, "L0T0"  }, { 0x38, "L0T1"  }, { 0x39, "L0T2"  },
         };
 
         for (size_t i = 0; i < sizeof(REGS) / sizeof(REGS[0]); i++)
@@ -157,7 +160,7 @@ static int cmd_led(int argc, char **argv)
     /* bare: what the arbiter is showing right now */
     static const char *PRIO[] = { "idle", "status", "alert", "critical" };
     static const char *MODE[] = { "off", "solid", "blink_slow",
-                                  "blink_fast" };
+                                  "blink_fast", "breathe" };
     led_manager_prio_t prio;
     led_manager_state_t st;
 
@@ -167,8 +170,11 @@ static int cmd_led(int argc, char **argv)
         return 1;
     }
 
+    /* a mode this table does not know must not index past it */
     cmdline_printf("LED: %s %s rgb(%u,%u,%u)\n", PRIO[prio],
-                   MODE[st.mode], st.r, st.g, st.b);
+                   ((size_t)st.mode < sizeof(MODE) / sizeof(MODE[0]))
+                       ? MODE[st.mode] : "?",
+                   st.r, st.g, st.b);
     cmdline_printf("OK\n");
     return 0;
 }

@@ -37,7 +37,7 @@ esp_err_t lm_arbiter_set(lm_arbiter_t *a, int prio,
                          const led_manager_state_t *state)
 {
     if (prio < 0 || prio >= LED_MANAGER_PRIO_COUNT || state == NULL ||
-        (unsigned)state->mode > LED_MANAGER_BLINK_FAST)
+        (unsigned)state->mode > LED_MANAGER_BREATHE)
     {
         return ESP_ERR_INVALID_ARG;
     }

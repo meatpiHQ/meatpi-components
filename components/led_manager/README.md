@@ -19,7 +19,9 @@ stored, not shown, and reappears when the update ends.
 | `led_manager_init()` | Settings + log descriptors. No bus traffic. |
 | `led_manager_start()` | AW2023 bring-up, shows the idle indication. `ESP_ERR_INVALID_STATE` when unconfigured. |
 | `led_manager_stop()` | LED off; the arbitration table survives. |
-| `led_manager_set(prio, state)` | Set/replace the indication at `prio` (`{mode: off/solid/blink_slow/blink_fast, r,g,b}`). |
+| `led_manager_set(prio, state)` | Set/replace the indication at `prio` (`{mode: off/solid/blink_slow/blink_fast/breathe, r,g,b}`). |
+| `led_manager_boot_color(r,g,b)` | Pre-settings direct color: brings the chip up if needed (safe mode, the boot-button feedback). |
+| `led_manager_boot_breathe(r,g,b)` | The same path, breathing, for a caller that sleeps right after and never applies again (the firmware's crash park breathes red). Returns `ESP_OK` only when the pattern-mode bit of every lit channel read back set (three tries). |
 | `led_manager_clear(prio)` | Release; next lower occupied indication shows. |
 | `led_manager_active(*prio, *state)` | What's showing (status/tests). |
 
@@ -35,6 +37,12 @@ use case picks by urgency, no registration needed.
 
 - Blink is the AW2023's **hardware pattern engine** (T1..T4 timers): zero
   CPU after the register writes. Fast ≈ 130 ms on/off, slow ≈ 510 ms.
+- **Breathe (2026-10-05)** is the same engine with its ramps on: 1.04 s up,
+  0.13 s on, 1.04 s down, 2.1 s dark (time codes 6 / 1 / 6 / 8), about one
+  breath every 4.3 s. The chip runs it by itself, so it goes on while the
+  ESP32 is in light sleep: the crash park (firmware `main_park.c`) breathes
+  red through it. A mode like the others: `led_manager_set`, `PUT /api/led`
+  (`"mode":"breathe"`), the `led.indicate` rule action.
 - A mixed color blinks as one: the same pattern timing is written to every
   lit channel.
 - `enabled=false` in settings → start() succeeds but stays dark; set/clear

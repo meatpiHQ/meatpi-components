@@ -26,8 +26,9 @@
  *        legacy led.c onto the shared i2c_bus / i2c_master driver).
  *
  * Channel map (WiCAN Pro): LED0 = red, LED1 = green, LED2 = blue.
- * Blink uses the chip's hardware pattern engine (T1..T4 timers), so a
- * blinking indication costs zero CPU after the register writes.
+ * Blink and breathe use the chip's hardware pattern engine (T1..T4
+ * timers), so such an indication costs zero CPU after the register writes
+ * and keeps running while the ESP32 sleeps.
  */
 #include <stdlib.h>
 
@@ -57,10 +58,13 @@ static const char *TAG = "led_manager";
 
 static i2c_master_dev_handle_t s_dev;
 
-/* chip time codes: 0=0ms 1=130ms 2=260ms 3=380ms 4=510ms ...               */
+/* chip time codes: 0=0ms 1=130ms 2=260ms 3=380ms 4=510ms 5=770ms 6=1.04s
+   7=1.6s 8=2.1s ... (AW2023_driver_reference.md)                           */
 #define T_NONE 0x0
 #define T_130MS 0x1
 #define T_510MS 0x4
+#define T_1040MS 0x6
+#define T_2100MS 0x8
 
 static esp_err_t reg_write(uint8_t reg, uint8_t val)
 {
@@ -173,16 +177,80 @@ esp_err_t led_manager_boot_color(uint8_t r, uint8_t g, uint8_t b)
     return lm_aw2023_apply(&s);
 }
 
+/** Pattern mode really on for every lit channel, and the channels enabled:
+ *  the chip ACKs writes it then drops (lm_aw2023_init has the story). */
+static bool pattern_running(const led_manager_state_t *s)
+{
+    uint8_t level[3] = { s->r, s->g, s->b };
+    uint8_t reg = 0;
+
+    if (reg_read(AW2023_LCTR, &reg) != ESP_OK || (reg & 0x07) != 0x07)
+    {
+        return false;
+    }
+
+    for (int ch = 0; ch < 3; ch++)
+    {
+        if (level[ch] == 0)
+        {
+            continue;
+        }
+
+        if (reg_read(AW2023_LCFG0 + (uint8_t)ch, &reg) != ESP_OK ||
+            (reg & AW2023_MD_BIT) == 0)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+esp_err_t led_manager_boot_breathe(uint8_t r, uint8_t g, uint8_t b)
+{
+    if (s_dev == NULL)
+    {
+        esp_err_t err = lm_aw2023_init();
+
+        if (err != ESP_OK)
+        {
+            return err;
+        }
+    }
+
+    led_manager_state_t s =
+        { .mode = LED_MANAGER_BREATHE, .r = r, .g = g, .b = b };
+    esp_err_t err = ESP_OK;
+
+    /* the caller sleeps right after and nobody applies again: do not take
+       the ACKs for it */
+    for (int attempt = 0; attempt < 3; attempt++)
+    {
+        err = lm_aw2023_apply(&s);
+
+        if (err == ESP_OK && pattern_running(&s))
+        {
+            return ESP_OK;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(5));
+    }
+
+    return (err != ESP_OK) ? err : ESP_ERR_INVALID_RESPONSE;
+}
+
 /** One pattern timing per mode; applied identically to the channels that
- *  are lit so a mixed color blinks as one (T1=T3=0: hard on/off). */
-static esp_err_t pattern_write(int ch, uint8_t hold, uint8_t off)
+ *  are lit so a mixed color blinks (or breathes) as one. rise = fall = 0 is
+ *  a hard on/off. */
+static esp_err_t pattern_write(int ch, uint8_t rise, uint8_t hold,
+                               uint8_t fall, uint8_t off)
 {
     uint8_t base = AW2023_LED0T0 + (uint8_t)(ch * 3);
-    esp_err_t err = reg_write(base, (uint8_t)((T_NONE << 4) | hold));
+    esp_err_t err = reg_write(base, (uint8_t)((rise << 4) | hold));
 
     if (err == ESP_OK)
     {
-        err = reg_write(base + 1, (uint8_t)((T_NONE << 4) | off));
+        err = reg_write(base + 1, (uint8_t)((fall << 4) | off));
     }
 
     if (err == ESP_OK)
@@ -214,6 +282,7 @@ esp_err_t lm_aw2023_apply(const led_manager_state_t *s)
     uint8_t level[3] = { s->r, s->g, s->b };
     bool blink = (s->mode == LED_MANAGER_BLINK_SLOW ||
                   s->mode == LED_MANAGER_BLINK_FAST);
+    bool breathe = (s->mode == LED_MANAGER_BREATHE);
     uint8_t t = (s->mode == LED_MANAGER_BLINK_FAST) ? T_130MS : T_510MS;
     esp_err_t err = ESP_OK;
 
@@ -230,9 +299,11 @@ esp_err_t lm_aw2023_apply(const led_manager_state_t *s)
 
         bool lit = (s->mode != LED_MANAGER_OFF) && (level[ch] > 0);
 
-        if (blink && lit)
+        if ((blink || breathe) && lit)
         {
-            err = pattern_write(ch, t, t);
+            err = breathe ? pattern_write(ch, T_1040MS, T_130MS, T_1040MS,
+                                          T_2100MS)
+                          : pattern_write(ch, T_NONE, t, T_NONE, t);
 
             if (err == ESP_OK)
             {

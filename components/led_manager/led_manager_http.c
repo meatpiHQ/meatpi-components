@@ -51,6 +51,7 @@ static const char *mode_name(led_manager_mode_t mode)
         case LED_MANAGER_SOLID:      return "solid";
         case LED_MANAGER_BLINK_SLOW: return "blink_slow";
         case LED_MANAGER_BLINK_FAST: return "blink_fast";
+        case LED_MANAGER_BREATHE:    return "breathe";
         default:                     return "off";
     }
 }
@@ -153,12 +154,16 @@ static esp_err_t led_put_handler(httpd_req_t *req)
         {
             state.mode = LED_MANAGER_BLINK_FAST;
         }
+        else if (strcmp(m->valuestring, "breathe") == 0)
+        {
+            state.mode = LED_MANAGER_BREATHE;
+        }
         else if (strcmp(m->valuestring, "solid") != 0)
         {
             cJSON_Delete(in);
             return send_simple(req, "400 Bad Request",
                                "{\"error\":\"mode: off|solid|blink_slow|"
-                               "blink_fast\"}");
+                               "blink_fast|breathe\"}");
         }
     }
 

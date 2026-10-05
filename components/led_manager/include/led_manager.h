@@ -71,6 +71,9 @@ typedef enum
     LED_MANAGER_SOLID,
     LED_MANAGER_BLINK_SLOW,     /* ~0.5 s on / 0.5 s off (hardware timed) */
     LED_MANAGER_BLINK_FAST,     /* ~130 ms on / off                       */
+    LED_MANAGER_BREATHE,        /* ~1 s up, ~1 s down, ~2 s dark: the chip's
+                                   own ramp, hardware timed like the blinks
+                                   (2026-10-05)                           */
 } led_manager_mode_t;
 
 typedef struct
@@ -105,6 +108,13 @@ esp_err_t led_manager_clear(led_manager_prio_t prio);
  *  usable before (or without) the settings pass and start(). Normal
  *  indications go through the arbiter (led_manager_set), never this. */
 esp_err_t led_manager_boot_color(uint8_t r, uint8_t g, uint8_t b);
+
+/** The same pre-settings path, breathing: for a caller that goes to sleep
+ *  right after and never applies again (the composition root's crash park
+ *  breathes red). The chip runs the ramp by itself; the pattern-mode bit of
+ *  every lit channel is read back, with a bounded retry, before this returns
+ *  ESP_OK. */
+esp_err_t led_manager_boot_breathe(uint8_t r, uint8_t g, uint8_t b);
 
 /** What the LED is showing right now (for status/tests). */
 esp_err_t led_manager_active(led_manager_prio_t *prio,

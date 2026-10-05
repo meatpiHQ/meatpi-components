@@ -216,6 +216,17 @@ esp_err_t obd_chip_monitor_stop(void);
  *  resets; false = the wake release sequence). */
 esp_err_t obd_chip_sleep(bool sleep);
 
+/** Leave the chip asleep from a boot that never initialised this component
+ *  (the composition root's crash park). Pins only, no init needed. A chip
+ *  that is asleep already (READY high: the boot follows a sleep and the
+ *  sleep pin's hold is still on) is left asleep, its sleep pin never driven
+ *  high. A chip that is awake (a power-on, or the run before had it up) is
+ *  hardware-reset first, so that a session or a monitor left open is closed
+ *  and the sleep pin is obeyed, then put to sleep with the hold: about
+ *  0.6 s. Either way the next normal boot finds it asleep and wakes it as
+ *  after any sleep. */
+esp_err_t obd_chip_park(void);
+
 /** Hardware reset pulse (RESET low 5 ms). A chip mid-monitor (ATMA)
  *  IGNORES the sleep pin — legacy's re-sleep path hard-reset first,
  *  then slept; without it the nap loop burns all its retries and falls

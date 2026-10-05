@@ -95,6 +95,7 @@ zero-copy only with numbers.
 | `obd_chip_is_monitor_cmd(cmd)` | Table-driven monitor-class test (pure). |
 | `obd_chip_monitor_stop()` | The stop byte: **SPACE, never CR** (CR = repeat-last-command → can re-enter ATMA). |
 | `obd_chip_sleep(on)` / `obd_chip_status_ok()` | Sleep pin (hold survives resets; wake = release sequence) / READY pin. |
+| `obd_chip_park()` | (2026-10-05) Leave the chip asleep from a boot that never initialised this component (the firmware's crash park). Pins only. The chip meets a boot in one of two states: **awake** (a power-on, or the run before had it up), then it is hardware-reset first (a session or a monitor left open is closed, and a chip mid-monitor ignores the sleep pin) and put to sleep with the hold, about 0.6 s; or **asleep** (the boot follows a sleep and the sleep pin's hold is still on: READY reads high), then it is left asleep and its sleep pin is never driven high. Either way the next normal boot finds it asleep and wakes it as after any sleep. |
 | `obd_chip_get_version(...)` | `VTVERS` → e.g. `MIC3624 V2.3.22`. |
 | `obd_chip_firmware_update(fs_path, force)` | EXCLUSIVE; the verified legacy flow (below). |
 

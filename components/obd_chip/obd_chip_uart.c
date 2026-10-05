@@ -143,6 +143,37 @@ void obd_pin_reset_pulse(void)
     gpio_set_level(OBD_RESET_PIN, 1);
 }
 
+esp_err_t obd_chip_park(void)
+{
+    /* Pins only: nothing else of the component exists in a boot that
+       parks. The chip meets a boot in one of two states (meatpi
+       2026-10-05): awake, after a power-on or when the run before had it
+       up; or asleep, when the boot follows a sleep and nobody woke it yet
+       (the sleep pin's hold outlives the reset on purpose). */
+    obd_pins_init();
+    vTaskDelay(pdMS_TO_TICKS(5)); /* the READY input, before it is read */
+
+    if (!obd_pin_ready())
+    {
+        /* asleep: leave it there. The sleep pin is confirmed low without
+           ever being driven high (level before direction); under the hold
+           of the sleep before, none of this even reaches the pad. */
+        gpio_set_level(OBD_SLEEP_PIN, 0);
+        gpio_set_direction(OBD_SLEEP_PIN, GPIO_MODE_OUTPUT);
+        obd_pin_sleep();
+        return ESP_OK;
+    }
+
+    /* awake, maybe mid-session or mid-monitor, and then it ignores the
+       sleep pin: hardware reset first, as sleep_manager's re-sleep does */
+    obd_pin_wake(); /* hold off, the sleep pin an output, high */
+    vTaskDelay(pdMS_TO_TICKS(50));
+    obd_pin_reset_pulse();
+    vTaskDelay(pdMS_TO_TICKS(500));
+    obd_pin_sleep();
+    return ESP_OK;
+}
+
 bool obd_pin_ready(void)
 {
     /* ACTIVE LOW: legacy elm327_chip_get_status() maps level directly

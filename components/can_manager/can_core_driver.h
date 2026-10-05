@@ -101,15 +101,27 @@ extern volatile bool      can_drv_evt_recovered;
 /** Create + enable the node at @p baud_kbps, on the configured ISR core.
  *  @p listen_only: no TX pin is routed (the node cannot drive the bus).
  *  Pins and queue depth come from handle->config; the raw RX queue keeps
- *  its frames. */
+ *  its frames. Holds the node lock (can_core_node.c). */
 elm327_err_t can_drv_start_on_core(can_core_handle_t *handle,
                                    uint32_t baud_kbps, bool listen_only);
+
+/** The creation itself, on the calling task's core (can_core_driver.c).
+ *  Only can_drv_start_on_core() calls it, with the node lock held. */
+elm327_err_t can_drv_create(can_core_handle_t *handle, uint32_t baud_kbps,
+                            bool listen_only);
+
+/** The node's status and error record, read under the node lock: false
+ *  while the node is down or being bounced. THE way to read them from a
+ *  task that is not bouncing the node: twai_node_get_info() on a node that
+ *  is being deleted loads through a NULL register pointer (the panic of
+ *  2026-10-05, can_core_node.c). May wait for a bounce (milliseconds). */
+bool can_drv_node_info(twai_node_status_t *info, twai_node_record_t *rec);
 
 /** Create (once) and empty the raw RX queue: at init, never on a bounce. */
 void can_drv_rx_reset(void);
 
-/** Disable + delete the node (no-op while it is down). The caller parks
- *  the RX task first. */
+/** Disable + delete the node (no-op while it is down), under the node
+ *  lock. The caller parks the RX task first. */
 void can_drv_stop(can_core_handle_t *handle);
 
 /** Hold the TX pad recessive as a plain GPIO (output, high): what the pad
@@ -139,7 +151,8 @@ elm327_err_t can_drv_transmit(const can_core_frame_t *frame,
 
 /** Take the controller off the bus NOW, without tearing the node down
  *  (no-op while it is down): for the restart path, where the RX task is
- *  not parked and nothing may block. */
+ *  not parked and nothing may block (a bounce in flight is given 50 ms,
+ *  then the restart goes on). */
 void can_drv_quiesce(void);
 
 #ifdef __cplusplus

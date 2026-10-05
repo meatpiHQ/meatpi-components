@@ -8,6 +8,7 @@ idf_component_register(
          "can_core.c"
          "can_core_clients.c"
          "can_core_driver.c"
+         "can_core_node.c"
          "can_core_link.c"
          "can_core_filter.c"
          "can_core_recovery.c"

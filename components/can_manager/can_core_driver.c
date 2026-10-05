@@ -24,9 +24,10 @@
  * @file can_core_driver.c
  * @brief The TWAI node driver half of can_core (esp_driver_twai node API,
  *        port 2026-07-21): the ISR callbacks that copy every frame into a
- *        static raw queue, node bring-up on the configured ISR core, and
- *        teardown. Split out of can_core.c 2026-10-02 (700-line rule);
- *        behaviour unchanged.
+ *        static raw queue, and the node's creation. Split out of can_core.c
+ *        2026-10-02 (700-line rule); the start on the configured ISR core,
+ *        the stop and the handle's lock are in can_core_node.c since
+ *        2026-10-05.
  */
 
 #include <string.h>
@@ -194,7 +195,7 @@ bool IRAM_ATTR __wrap_twai_hal_read_rx_fifo(void *hal_ctx, void *rx_frame)
 }
 
 /** tx_done: free the slot, or give the lost frame another go (the controller
- *  is single shot: fail_retry_cnt 0, see can_driver_start). The node driver
+ *  is single shot: fail_retry_cnt 0, see can_drv_create). The node driver
  *  takes a transmit from an interrupt (its queue path is ISR-aware).
  *
  *  Two ways a single-shot frame fails, two budgets: lost ARBITRATION (a
@@ -451,8 +452,8 @@ void can_drv_tx_recessive(int tx_gpio)
     gpio_set_direction((gpio_num_t)tx_gpio, GPIO_MODE_OUTPUT);
 }
 
-static elm327_err_t can_driver_start(can_core_handle_t *handle,
-                                     uint32_t baud_kbps, bool listen_only)
+elm327_err_t can_drv_create(can_core_handle_t *handle, uint32_t baud_kbps,
+                            bool listen_only)
 {
     const can_core_config_t *config = &handle->config;
 
@@ -610,102 +611,6 @@ static elm327_err_t can_driver_start(can_core_handle_t *handle,
     }
 
     return ELM327_OK;
-}
-
-/* ---- ISR core affinity (2026-07-21 experiment) ---------------------------
- * esp_intr_alloc binds the node ISR to the CALLING core. The default
- * (core 0) inherits WiFi/BT/USB/i2c neighbours and their slot pool;
- * CONFIG_WICAN_CAN_ISR_CORE=1 runs the driver init on a pinned
- * one-shot task so the CAN interrupt (and rx task) live on core 1. */
-#if CONFIG_WICAN_CAN_ISR_CORE != 0
-typedef struct
-{
-    can_core_handle_t *handle;
-    uint32_t           baud_kbps;
-    bool               listen_only;
-    elm327_err_t       result;
-    SemaphoreHandle_t  done;
-} can_start_ctx_t;
-
-static void can_driver_start_trampoline(void *arg)
-{
-    can_start_ctx_t *ctx = (can_start_ctx_t *)arg;
-
-    ctx->result = can_driver_start(ctx->handle, ctx->baud_kbps,
-                                   ctx->listen_only);
-    xSemaphoreGive(ctx->done);
-    vTaskDelete(NULL);
-}
-#endif
-
-elm327_err_t can_drv_start_on_core(can_core_handle_t *handle,
-                                      uint32_t baud_kbps, bool listen_only)
-{
-    elm327_err_t err;
-
-#if CONFIG_WICAN_CAN_ISR_CORE == 0
-    err = can_driver_start(handle, baud_kbps, listen_only);
-#else
-    static StaticSemaphore_t s_done_buf;
-    can_start_ctx_t ctx =
-    {
-        .handle = handle,
-        .baud_kbps = baud_kbps,
-        .listen_only = listen_only,
-        .result = ELM327_ERR_CAN,
-        .done = xSemaphoreCreateBinaryStatic(&s_done_buf),
-    };
-
-    if (xTaskCreatePinnedToCore(can_driver_start_trampoline, "can_init",
-                                3072, &ctx, 10, NULL,
-                                CONFIG_WICAN_CAN_ISR_CORE) != pdPASS)
-    {
-        /* fallback: this core */
-        err = can_driver_start(handle, baud_kbps, listen_only);
-    }
-    else
-    {
-        (void)xSemaphoreTake(ctx.done, portMAX_DELAY);
-        err = ctx.result;
-    }
-#endif
-
-    if (err == ELM327_OK)
-    {
-        handle->node_baud_kbps = baud_kbps;
-    }
-
-    return err;
-}
-
-void can_drv_stop(can_core_handle_t *handle)
-{
-    if (!handle || can_drv_node == NULL)
-    {
-        return;
-    }
-
-    (void)twai_node_disable(can_drv_node);
-
-    esp_err_t ret = twai_node_delete(can_drv_node);
-
-    if (ret != ESP_OK)
-    {
-        ESP_LOGE(TAG, "twai_node_delete failed: %d", ret);
-    }
-
-    can_drv_node = NULL;
-
-    /* the driver leaves the TX pad floating: hold it recessive ourselves */
-    can_drv_tx_recessive(handle->config.tx_gpio);
-}
-
-void can_drv_quiesce(void)
-{
-    if (can_drv_node != NULL)
-    {
-        (void)twai_node_disable(can_drv_node);
-    }
 }
 
 #endif /* ESP_PLATFORM */

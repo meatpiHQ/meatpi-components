@@ -434,8 +434,9 @@ void can_core_get_stats(can_core_handle_t *handle,
 
     twai_node_status_t info;
     twai_node_record_t rec;
-    if (can_drv_node != NULL &&
-        twai_node_get_info(can_drv_node, &info, &rec) == ESP_OK)
+    /* under the node lock: the link policy may be bouncing the node on
+       the RX task this very moment (can_core_node.c) */
+    if (can_drv_node_info(&info, &rec))
     {
         handle->stats.bus_errors = rec.bus_err_num;
         handle->stats.tx_errors  = info.tx_error_count;

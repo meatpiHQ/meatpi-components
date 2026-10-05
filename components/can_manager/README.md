@@ -169,6 +169,38 @@ nothing as mismatch evidence and bounces the node, and every bounce starts a
 new node with its interrupts on. `rx_storms` on `/api/can` and `can` counts
 the storms; one `W` line per storm.
 
+## The node handle has a lock (`can_core_node.c`, 2026-10-05)
+
+The link policy bounces the TWAI node on the RX task (delete + create)
+whenever it changes the bitrate candidate or the mode, and
+`can_core_get_stats()` reads the node's error counters from any task: the
+bus guard's probe every 10 ms while a listener finds a bus's bitrate, `GET
+/api/can`, the `can` command. `twai_node_delete()` lets the HAL go (its
+register pointer becomes NULL) and frees the node before our handle is
+cleared, so a status read in that window loaded through NULL + 0x3c, the TEC
+register: `Guru Meditation Error: Core 1 panic'ed (LoadProhibited)`,
+`twai_ll_get_tec` <- `twai_node_get_info` <- `can_core_get_stats`. Caught
+with the console on 2026-10-05 02:06:56, 0.27 s after a detection's end on a
+250 kbit/s bus (there every listener starts at 500 and is bounced to 250
+while the probe polls: roughly one panic in a hundred looks; on a 500 kbit/s
+bus there is no bounce and it never happened), and on demand a few minutes
+later through `GET /api/can` asked from four threads while the autobaud
+bench's `n11` / `n12` legs bounced the node (one panic in about 150 s). The
+reset nobody could explain in the EU truck bench's first run (2026-10-03
+16:57) sat at the same spot.
+
+`can_core_node.c` holds a mutex around every create and delete of the handle
+(`can_drv_start_on_core()`, `can_drv_stop()`, moved there from
+`can_core_driver.c`) and `can_drv_node_info()`, THE way to read the node's
+status from a task that is not the one bouncing it (it may wait a few
+milliseconds for a bounce; false while the node is down). `can_drv_quiesce()`
+(the restart path, which may not block) gives a bounce in flight 50 ms.
+Transmits have their own gate (`tx_open` / `tx_users`, `can_core_link.c`);
+the recovery calls run on the task that bounces. A new reader of node state
+from another task goes through `can_drv_node_info()` or takes the same lock.
+Bench: leg `n13` of `can_autobaud_bench.py` (the bouncing node of `n12`,
+its status asked for from four threads for a minute: no reset).
+
 ## Frames the controller loses (`rx_overrun`, 2026-10-03)
 
 The controller's receive FIFO is 64 BYTES: four to five 29-bit frames. When
@@ -218,7 +250,8 @@ counters and traffic after recovery).
   judge: zero error frames on the wire at the right bitrate, at the wrong
   one, in auto, across restarts; the bitrate walk over every setting value;
   autopid's bus guard on top (the OBD chip is never pinned to a protocol the
-  bus contradicts).
+  bus contradicts); the node's status read from four threads while the link
+  policy bounces it (`n13`).
 - `tools/testbench/can/can_conservation_test.py` → `CAN CONSERVATION PASS`
   (exactly-N at three load tiers).
 

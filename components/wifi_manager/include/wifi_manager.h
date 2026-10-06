@@ -120,6 +120,35 @@ typedef struct
 
 void wifi_manager_get_sta_attempt(wifi_manager_sta_attempt_t *out);
 
+/** The connection TRIAL (2026-10-06, Quick Setup: "test it before storing
+ *  and rebooting"): join @p ssid with @p password without saving either,
+ *  wait for the association, the handshake and an address (20 s in all),
+ *  report, let go. Needs a station interface (mode apsta or sta, not
+ *  suspended). The reconnect task stands back meanwhile and re-joins the
+ *  configured network afterwards; a station that was connected drops for
+ *  the trial. A runtime knob, nothing is written.
+ *  @return ESP_OK started (poll wifi_manager_sta_try_status),
+ *          ESP_ERR_INVALID_ARG ssid 1..32 / password 8..63 or empty,
+ *          ESP_ERR_INVALID_STATE a trial is already running,
+ *          ESP_ERR_NOT_SUPPORTED no station interface to try with. */
+esp_err_t wifi_manager_sta_try(const char *ssid, const char *password);
+
+typedef struct
+{
+    char     state[8];   /**< idle | running | done                          */
+    char     result[10]; /**< none | connected | password | not_found |
+                              refused | no_ip | timeout                       */
+    char     ssid[33];
+    char     ip[16];     /**< the address received (connected)              */
+    uint8_t  reason;     /**< the WIFI_REASON_* that ended it, 0 = none      */
+    int8_t   rssi;       /**< dBm at the moment of the address (connected)   */
+    uint8_t  channel;    /**< the network's channel (from the association)   */
+    uint32_t took_ms;    /**< from our connect attempt to the result         */
+    uint32_t age_s;      /**< seconds since the result (done)                */
+} wifi_manager_try_t;
+
+void wifi_manager_sta_try_status(wifi_manager_try_t *out);
+
 /** Copy the AP's current gateway IP (dotted quad) into @p buf.
  *  ESP_ERR_INVALID_STATE when the AP interface has no address. */
 esp_err_t wifi_manager_get_ap_ip(char *buf, size_t buf_len);

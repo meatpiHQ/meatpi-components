@@ -274,6 +274,97 @@ bool wm_sta_pause_for_ap_clients(uint16_t ap_clients, bool ever_connected,
                                  uint32_t pauses_so_far,
                                  uint32_t max_pauses);
 
+/* ---- the connection trial (wifi_manager_trial.c pure, wifi_manager_try.c glue)
+ * 2026-10-06, Quick Setup: join a network with credentials that are never
+ * saved, report connected or the exact failure, let go. The pure machine
+ * takes the driver's events and a clock and answers with the one action the
+ * glue performs. Budgets: 20 s in all, 8 s of it for the address after the
+ * association, 3 s for a station that must let go first. */
+#define WM_TRIAL_TOTAL_MS 20000u
+#define WM_TRIAL_IP_MS     8000u
+#define WM_TRIAL_LEAVE_MS  3000u
+
+typedef enum
+{
+    WM_TRIAL_IDLE = 0,
+    WM_TRIAL_LEAVING,    /* the connected station lets go first         */
+    WM_TRIAL_CONNECTING, /* esp_wifi_connect() issued with the trial     */
+    WM_TRIAL_ASSOCIATED, /* STA_CONNECTED seen: waiting for the address  */
+    WM_TRIAL_DONE,
+} wm_trial_state_t;
+
+typedef enum
+{
+    WM_TRIAL_NONE = 0,
+    WM_TRIAL_CONNECTED, /* an address: the password is right            */
+    WM_TRIAL_PASSWORD,  /* the handshake failed (204, 15, 2, 202)       */
+    WM_TRIAL_NOT_FOUND, /* 201: the name is not in the air here         */
+    WM_TRIAL_REFUSED,   /* any other disconnect reason                   */
+    WM_TRIAL_NO_IP,     /* associated, no address within WM_TRIAL_IP_MS */
+    WM_TRIAL_TIMEOUT,   /* nothing conclusive within WM_TRIAL_TOTAL_MS  */
+} wm_trial_result_t;
+
+typedef enum
+{
+    WM_TRIAL_ACT_NONE = 0,
+    WM_TRIAL_ACT_CONNECT, /* apply the trial config and connect          */
+    WM_TRIAL_ACT_FINISH,  /* the result is in: let go, restore, report    */
+} wm_trial_action_t;
+
+typedef struct
+{
+    wm_trial_state_t  state;
+    wm_trial_result_t result;
+    char              ssid[WM_SSID_LEN];
+    char              password[WM_PASS_LEN];
+    uint8_t           reason;   /* the disconnect reason that ended it   */
+    char              ip[16];
+    int8_t            rssi;
+    uint8_t           channel;
+    uint32_t          t_start;  /* ms: our connect attempt               */
+    uint32_t          t_assoc;
+    uint32_t          t_done;
+} wm_trial_t;
+
+void              wm_trial_init(wm_trial_t *t);
+bool              wm_trial_active(const wm_trial_t *t);
+wm_trial_result_t wm_trial_classify(uint8_t reason);
+const char       *wm_trial_result_name(wm_trial_result_t r);
+const char       *wm_trial_state_name(wm_trial_state_t s);
+uint32_t          wm_trial_took_ms(const wm_trial_t *t);
+/** ACT_CONNECT when the station is idle, ACT_NONE when it must let go first
+ *  (state LEAVING) or when the request is refused (a trial is running, or
+ *  the credentials are out of range: the glue tells which by the state). */
+wm_trial_action_t wm_trial_begin(wm_trial_t *t, const char *ssid,
+                                 const char *password, bool sta_busy,
+                                 uint32_t now_ms);
+wm_trial_action_t wm_trial_on_disconnect(wm_trial_t *t, uint8_t reason,
+                                         uint32_t now_ms);
+void              wm_trial_on_associated(wm_trial_t *t, uint8_t channel,
+                                         uint32_t now_ms);
+wm_trial_action_t wm_trial_on_got_ip(wm_trial_t *t, const char *ip,
+                                     int8_t rssi, uint32_t now_ms);
+wm_trial_action_t wm_trial_tick(wm_trial_t *t, uint32_t now_ms);
+
+/* the glue (wifi_manager_try.c): hooks wifi_manager.c calls from its event
+ * handlers and its reconnect task; each returns true when the event belonged
+ * to a running trial and the normal bookkeeping must stand back */
+bool wm_try_active(void);
+/** True once after a trial ended: the reconnect task re-joins the configured
+ *  network on that lap without the AP-client pause or the backoff (the user
+ *  asked for radio activity; the station was up before the trial). */
+bool wm_try_take_restore_cue(void);
+bool wm_try_on_disconnected(uint8_t reason);
+void wm_try_on_associated(uint8_t channel);
+bool wm_try_on_got_ip(const char *ip);
+
+/* wifi_manager.c internals the glue needs: the station's driver config and
+ * addressing for the trial, and back to the configured network (entry 0,
+ * or an empty config when none is configured) */
+bool      wm_sta_attempt_in_flight(void);
+esp_err_t wm_sta_apply_trial(const char *ssid, const char *password);
+void      wm_sta_restore_config(void);
+
 /* ---- runtime interface suspension (wifi_manager_suspend.c) -----------------
  * EPHEMERAL per-interface suspension driven by interface_manager's policy
  * (BLE/WiFi arbitration). Settings untouched; a reboot resets. */

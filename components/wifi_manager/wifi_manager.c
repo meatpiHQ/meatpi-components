@@ -340,6 +340,75 @@ typedef enum
 static volatile wm_roam_state_t s_roam = WM_ROAM_IDLE;
 static volatile int             s_roam_target = -1;
 
+/* ---- the connection trial's view of the station (wifi_manager_try.c) ---- */
+
+bool wm_sta_attempt_in_flight(void)
+{
+    return s_connect_started_ms != 0 &&
+           now_ms() - s_connect_started_ms < WM_CONNECT_INFLIGHT_MS;
+}
+
+/* the trial's credentials into the driver, DHCP addressing, and no entry
+   index: nothing the attempt memory could charge */
+esp_err_t wm_sta_apply_trial(const char *ssid, const char *password)
+{
+    wifi_config_t cfg = { 0 };
+
+    cfg.sta.threshold.authmode =
+        (password[0] != '\0') ? WIFI_AUTH_WPA_PSK : WIFI_AUTH_OPEN;
+    cfg.sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
+    cfg.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
+    cfg.sta.pmf_cfg.capable = true;
+    cfg.sta.pmf_cfg.required = false;
+    strncpy((char *)cfg.sta.ssid, ssid, sizeof(cfg.sta.ssid) - 1);
+    strncpy((char *)cfg.sta.password, password, sizeof(cfg.sta.password) - 1);
+
+    esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &cfg);
+
+    if (err == ESP_OK && s_sta_netif != NULL)
+    {
+        esp_netif_dhcp_status_t st;
+
+        if (esp_netif_dhcpc_get_status(s_sta_netif, &st) == ESP_OK &&
+            st == ESP_NETIF_DHCP_STOPPED)
+        {
+            esp_netif_ip_info_t zero = { 0 };
+
+            esp_netif_set_ip_info(s_sta_netif, &zero);
+        }
+
+        (void)esp_netif_dhcpc_start(s_sta_netif);
+        s_status.last_attempted_idx = -1;
+        strncpy(s_status.last_attempted_ssid, ssid, WM_SSID_LEN - 1);
+        s_status.last_attempted_ssid[WM_SSID_LEN - 1] = '\0';
+    }
+
+    return err;
+}
+
+/* after a trial: the configured primary back in the driver (the reconnect
+   task re-applies the pick it makes anyway), or an empty config when no
+   network is configured, so the trial's credentials are gone */
+void wm_sta_restore_config(void)
+{
+    const wm_config_t *cfg = wm_settings_config();
+
+    if (cfg != NULL && cfg->sta_count > 0)
+    {
+        (void)apply_sta_network(cfg, 0);
+    }
+    else
+    {
+        wifi_config_t empty = { 0 };
+
+        (void)esp_wifi_set_config(WIFI_IF_STA, &empty);
+        s_status.last_attempted_idx = -1;
+        s_status.last_attempted_ssid[0] = '\0';
+    }
+
+    s_connect_started_ms = 0;
+}
+
 /** Pick the best visible candidate (or rotate blindly) and connect. */
 /** @return true when a connect attempt was actually issued (the retry
  *  counter must only advance on real attempts, not deferred cycles). */
@@ -357,6 +426,11 @@ static bool select_and_connect(void)
     {
         ESP_LOGD(TAG, "connect attempt still in flight; deferring");
         return false;
+    }
+
+    if (wm_try_active())
+    {
+        return false; /* a connection trial has the station */
     }
 
     if (cfg->sta_count == 1)
@@ -422,6 +496,11 @@ static bool select_and_connect(void)
 
     leave_scan_mode(switched);
     xSemaphoreGive(s_lock);
+
+    if (pick >= 0 && wm_try_active())
+    {
+        return false; /* a trial began during the scan: it has the station */
+    }
 
     if (pick >= 0)
     {
@@ -580,6 +659,19 @@ static void on_sta_got_ip(const ip_event_got_ip_t *event)
 {
     const wm_config_t *cfg = wm_settings_config();
 
+    if (wm_try_active())
+    {
+        char ipstr[16];
+
+        snprintf(ipstr, sizeof(ipstr), IPSTR, IP2STR(&event->ip_info.ip));
+        sync_ap_channel_to_sta();
+
+        if (wm_try_on_got_ip(ipstr))
+        {
+            return; /* the trial's address: not a connection of ours */
+        }
+    }
+
     s_status.sta_connected = true;
     s_status.sta_retry_count = 0;
     s_sta_ever_connected = true;
@@ -721,6 +813,10 @@ static void on_sta_disconnected(const wifi_event_sta_disconnected_t *event)
 {
     const wm_config_t *cfg = wm_settings_config();
     bool was_connected = s_status.sta_connected; /* an attempt, or a drop? */
+    /* a connection trial's disconnect (its result, or its letting-go)
+       belongs to the trial: the status still resets below, the attempt
+       memory of the configured networks never hears of it (2026-10-06) */
+    bool trial = wm_try_on_disconnected(event != NULL ? event->reason : 0);
 
     s_status.sta_connected = false;
     s_connected_idx = -1;
@@ -741,7 +837,7 @@ static void on_sta_disconnected(const wifi_event_sta_disconnected_t *event)
         wm_events_sta(false, ""); /* a real drop, not a failed attempt */
     }
 
-    if (event != NULL)
+    if (event != NULL && !trial)
     {
         int idx = s_status.last_attempted_idx;
 
@@ -829,6 +925,14 @@ static void wm_event_handler(void *arg, esp_event_base_t base,
                accepted, usually not, caught by the HIL error budgets
                2026-07-19). The got-ip sync below always lands; the AP
                beacons on the right channel either way (hardware). */
+
+            case WIFI_EVENT_STA_CONNECTED:
+                /* only the trial listens here (its address budget starts
+                   at the association); see the NOTE above for why nothing
+                   else does */
+                wm_try_on_associated(
+                    ((const wifi_event_sta_connected_t *)data)->channel);
+                break;
 
             case WIFI_EVENT_STA_DISCONNECTED:
                 on_sta_disconnected(data);
@@ -934,9 +1038,10 @@ static void reconnect_task(void *arg)
             break;
         }
 
-        if (!s_status.started || wm_suspend_sta_active())
+        if (!s_status.started || wm_suspend_sta_active() ||
+            wm_try_active())
         {
-            continue; /* suspended: the interface policy owns STA now */
+            continue; /* suspended, or a connection trial has the STA */
         }
 
         if (s_status.sta_connected)
@@ -997,6 +1102,17 @@ static void reconnect_task(void *arg)
         {
             cooldown_loops--;
             continue;
+        }
+
+        /* a connection trial just ended: the station was up before it and
+           the user asked for the radio activity, so re-join at once, with
+           no backoff and no deferral for the phone on our AP (2026-10-06) */
+        bool after_trial = wm_try_take_restore_cue();
+
+        if (after_trial)
+        {
+            backoff_loops = 0;
+            ap_pauses = WM_AP_CLIENT_MAX_PAUSES;
         }
 
         if (backoff_loops > 0)

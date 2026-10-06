@@ -35,6 +35,8 @@
 #include "argtable3/argtable3.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #include "cmdline_manager.h"
 
@@ -46,6 +48,8 @@ static struct
     struct arg_lit *info;
     struct arg_lit *scan;
     struct arg_lit *stop;
+    struct arg_str *try_ssid; /* --try <ssid>: the connection trial */
+    struct arg_str *try_pw;   /* --password <pw> for --try           */
     struct arg_end *end;
 } s_args;
 
@@ -232,6 +236,67 @@ static int cmd_wifi(int argc, char **argv)
         return 0;
     }
 
+    if (s_args.try_ssid->count > 0)
+    {
+        /* the connection trial (2026-10-06): start it, then print its
+           result when it lands (a bench and support convenience; the web
+           UI polls GET /api/wifi/try instead) */
+        const char *pw = s_args.try_pw->count > 0 ? s_args.try_pw->sval[0]
+                                                  : "";
+        esp_err_t err = wifi_manager_sta_try(s_args.try_ssid->sval[0], pw);
+
+        if (err == ESP_ERR_INVALID_ARG)
+        {
+            cmdline_printf("Error: ssid 1..32 and password 8..63 (or none "
+                           "for an open network)\n");
+            return 1;
+        }
+
+        if (err == ESP_ERR_INVALID_STATE)
+        {
+            cmdline_printf("Error: a test is already running\n");
+            return 1;
+        }
+
+        if (err != ESP_OK)
+        {
+            cmdline_printf("Error: no station interface to try with (%s)\n",
+                           esp_err_to_name(err));
+            return 1;
+        }
+
+        cmdline_printf("trying '%s' (up to 20 s)...\n",
+                       s_args.try_ssid->sval[0]);
+
+        wifi_manager_try_t t;
+
+        for (int i = 0; i < 25; i++)
+        {
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            wifi_manager_sta_try_status(&t);
+
+            if (strcmp(t.state, "done") == 0)
+            {
+                break;
+            }
+        }
+
+        if (strcmp(t.result, "connected") == 0)
+        {
+            cmdline_printf("connected: %s, %d dBm, channel %u, in %lu ms\n",
+                           t.ip, t.rssi, (unsigned)t.channel,
+                           (unsigned long)t.took_ms);
+        }
+        else
+        {
+            cmdline_printf("%s (reason %u) after %lu ms\n", t.result,
+                           (unsigned)t.reason, (unsigned long)t.took_ms);
+        }
+
+        cmdline_printf("OK\n");
+        return 0;
+    }
+
     if (s_args.scan->count > 0)
     {
         cmdline_printf("scanning...\n");
@@ -272,7 +337,8 @@ esp_err_t wifi_manager_register_cli(void)
     {
         .command = "wifi",
         .help = "WiFi connection control and status",
-        .hint = "Options: -s/--status, -i/--info, --scan, --stop",
+        .hint = "Options: -s/--status, -i/--info, --scan, --stop, "
+                "--try <ssid> [--password <pw>]",
         .func = cmd_wifi,
         .argtable = &s_args,
     };
@@ -283,6 +349,10 @@ esp_err_t wifi_manager_register_cli(void)
     s_args.scan = arg_lit0(NULL, "scan", "Scan for networks (JSON)");
     s_args.stop = arg_lit0(NULL, "stop",
                            "Stop the WiFi radio until reboot (testing)");
-    s_args.end = arg_end(4);
+    s_args.try_ssid = arg_str0(NULL, "try", "<ssid>",
+                               "Try joining a network without saving it");
+    s_args.try_pw = arg_str0(NULL, "password", "<pw>",
+                             "The password for --try");
+    s_args.end = arg_end(6);
     return cmdline_manager_register(&CMD);
 }

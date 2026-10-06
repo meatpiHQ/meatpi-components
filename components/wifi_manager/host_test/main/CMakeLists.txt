@@ -5,7 +5,9 @@ set(comp_dir "${CMAKE_CURRENT_LIST_DIR}/../..")
 idf_component_register(
     SRCS "test_main.c"
          "test_select.c"
+         "test_trial.c"
          "${comp_dir}/wifi_manager_select.c"
+         "${comp_dir}/wifi_manager_trial.c"
     INCLUDE_DIRS "${comp_dir}/include" "${comp_dir}"
     REQUIRES unity
 )

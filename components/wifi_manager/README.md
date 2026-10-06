@@ -49,6 +49,8 @@ by the future button/input manager).
 | `wifi_manager_get_sta_dns(...)` | Main/backup DNS as strings ("N/A" fallback). |
 | `wifi_manager_get_event_group()` | Event group with `WIFI_MANAGER_BIT_*` for waiters. |
 | `wifi_manager_scan_networks()` | Blocking scan → malloc'd JSON (caller frees). |
+| `wifi_manager_sta_try(ssid, password)` | The connection trial (2026-10-06): join with credentials that are never saved, report, let go; `ESP_ERR_INVALID_ARG` out of range, `ESP_ERR_INVALID_STATE` one is running, `ESP_ERR_NOT_SUPPORTED` no station interface. |
+| `wifi_manager_sta_try_status(&out)` | The trial's state / result / address / reason / timing (`wifi_manager_try_t`). |
 | `wifi_manager_set_callbacks(cbs)` | STA up/down + AP client join/leave hooks (event-loop context). |
 
 ## Dependencies
@@ -123,7 +125,8 @@ it" is refused as well; a fresh device still boots with it).
 As a **feature component** it registers its own routes with
 `http_server_manager` at init (unlike core components, which go through the
 `api_http` glue): `GET /api/wifi/status` (wraps the status getters) and
-`GET /api/wifi/scan` (the scan JSON, blocking ≈2 s). Configuration strictly
+`GET /api/wifi/scan` (the scan JSON, blocking ≈2 s), `POST`/`GET /api/wifi/try`
+(the connection trial, 2026-10-06). Configuration strictly
 via the generic `/api/settings/wifi_manager`: no bespoke config routes.
 Passwords are redacted in settings GETs (HTTP_API.md §1).
 
@@ -156,7 +159,38 @@ so a PSRAM stack is compliant with §2.
 
 ## CLI
 
-`wifi_manager_register_cli()` (main, CLI builds) registers the `wifi [scan]` command with cmdline_manager (`wifi_manager_cli.c`).
+`wifi_manager_register_cli()` (main, CLI builds) registers the `wifi [scan]` command with cmdline_manager (`wifi_manager_cli.c`); `wifi --try <ssid> --password <pw>` runs a connection trial and prints its result line (up to 20 s).
+
+## The connection trial (2026-10-06)
+
+Quick Setup's "test it before storing and rebooting" (Ali). `wifi_manager_trial.c`
+is the pure state machine (IDLE, LEAVING when a connected station must let go
+first, CONNECTING, ASSOCIATED, DONE; results connected / password / not_found /
+refused / no_ip / timeout; budgets 20 s in all, 8 s for the address after the
+association, 3 s for a letting-go that never raises its event; host-tested with
+injected events and a clock, 10 tests). `wifi_manager_try.c` is the glue: one
+mutex over the three tasks that touch it (httpd, the WiFi event task, esp_timer
+for the 1 s tick), the driver called outside it; the radio action starts 300 ms
+after the request was accepted so the answer leaves the device first (a page
+over the station would never see it otherwise). `wifi_manager.c` hands its
+events to the trial first: a trial's disconnect (its result, or its own
+letting-go afterwards) never reaches the configured networks' attempt memory,
+a trial's got-IP is not a connection of ours (the status stays down, no
+consumer is told), the AP's channel config follows the trial's network as for
+a real join, and the reconnect task stands back while a trial runs
+(`wm_try_active()`, beside `wm_suspend_sta_active()`) and re-joins the
+configured network on the lap after it ends with no backoff and no AP-client
+pause (`wm_try_take_restore_cue()`: the station was up before the trial and
+the user asked for the radio activity; the bench sees it back in 3 to 13 s).
+Afterwards the driver holds the configured primary again, or an empty config
+when none is configured, so the trial's credentials are gone (the driver's
+storage is RAM anyway). Needs mode `apsta` or `sta`; mode `ap` is not flipped
+live for this (reboot-to-apply). Logging: I lines only (`trying 'X' on
+request`, `trial: 'X' connected, ip, rssi, channel, in N ms` / `did not accept
+the password (reason N)` / `not found (reason 201)`): a failed trial is an
+expected outcome. Memory: one `wm_trial_t` (about 140 B) + two esp_timer
+handles, internal `.bss`, no task. Bench: `tools/testbench/wifi/wifi_try_bench.py`
+(`WIFI TRY PASS`).
 
 ## Factory AP password (2026-09-07)
 

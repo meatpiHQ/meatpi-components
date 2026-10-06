@@ -7,6 +7,8 @@
          "wifi_manager_cli.c"
          "wifi_manager_suspend.c"
          "wifi_manager_events.c"
+         "wifi_manager_trial.c"
+         "wifi_manager_try.c"
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "."
     # public header exposes only esp_err + FreeRTOS event-group types

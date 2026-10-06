@@ -102,3 +102,50 @@ Concurrent scans are serialized internally; a second request simply waits.
 `components/settings_manager/HTTP_API.md`. Reminder: `sta_password`,
 `ap_password`, `fallbackN_password` are redacted to `""` in GETs; sending
 `""` back keeps the stored secret.
+
+## POST /api/wifi/try, GET /api/wifi/try (2026-10-06)
+
+The connection trial, for Quick Setup's "test it before storing and
+rebooting" (Ali): join a network with credentials that are never saved,
+report connected or the exact failure, let go. Needs a station interface
+(mode `apsta` or `sta`, not suspended). The configured station, if it was
+connected, drops for the trial and is re-joined right after (no AP-client
+pause, no backoff: the user asked for the radio activity).
+
+**POST** `{"ssid": "Neighbor", "password": "letmein-please"}`
+(`password` 8..63, or absent/empty for an open network)
+
+- `202 Accepted`: the trial's status (`"state": "running"`). The radio
+  action starts 300 ms after this answer: the station drops inside the
+  trial, and a page that reaches the device over the station would never
+  see its 202 otherwise. The phone on the access point blinks for a few
+  seconds while the radio moves to the network's channel: poll the GET.
+- `400 {"error": "need ssid (1..32) and password (8..63)"}`
+- `409 {"error": "a test is already running"}`: one at a time.
+- `409 {"error": "the station is off: the test needs Access point + Station"}`
+
+**GET** the trial's status, polled once a second by the wizard:
+
+```json
+{"state": "done", "ssid": "Neighbor", "result": "connected",
+ "reason": 0, "ip": "192.168.1.23", "rssi": -61, "channel": 6,
+ "took_ms": 4200, "age_s": 3}
+{"state": "done", "ssid": "Neighbor", "result": "password", "reason": 204, "took_ms": 6100, "age_s": 1}
+{"state": "done", "ssid": "Nieghbor", "result": "not_found", "reason": 201, "took_ms": 2800, "age_s": 1}
+{"state": "idle", "ssid": "", "result": "none", "reason": 0, "took_ms": 0, "age_s": 0}
+```
+
+| `result` | What the driver reported | What the wizard says |
+|---|---|---|
+| `connected` | an address (`ip`, `rssi` at that moment, `channel`, `took_ms` from the connect attempt) | accepted the password |
+| `password` | disconnect reason 204 `HANDSHAKE_TIMEOUT`, 15 `4WAY_HANDSHAKE_TIMEOUT`, 2 `AUTH_EXPIRE`, 202 `AUTH_FAIL` (the bench AP gives 15, the HIL suite's router 204) | did not accept the password |
+| `not_found` | 201 `NO_AP_FOUND` | not found: out of range, 5 GHz only, or a hidden name typed differently |
+| `refused` | any other reason (203, 205, 200, ...) | the router refused or dropped the connection (reason N) |
+| `no_ip` | associated, no `IP_EVENT_STA_GOT_IP` within 8 s | joined, but got no address: a full DHCP table or a MAC filter |
+| `timeout` | nothing conclusive within 20 s | no answer in 20 s |
+
+The last result stays until the next POST (`age_s` counts from it). The
+console's `wifi --try <ssid> --password <pw>` runs the same trial and
+prints the result line. Nothing is written: the credentials live in RAM for
+the seconds of the trial (the driver's config storage is RAM too), and the
+configured networks' attempt-failure memory never hears of it.

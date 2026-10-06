@@ -119,6 +119,111 @@ static esp_err_t wifi_status_handler(httpd_req_t *req)
     return send_json(req, resp);
 }
 
+static esp_err_t send_error(httpd_req_t *req, const char *status,
+                            const char *msg)
+{
+    cJSON *o = cJSON_CreateObject();
+
+    cJSON_AddStringToObject(o, "error", msg);
+    httpd_resp_set_status(req, status);
+    return send_json(req, o);
+}
+
+/* the connection trial's status: what the wizard polls once a second */
+static cJSON *try_json(void)
+{
+    wifi_manager_try_t t;
+    cJSON *o = cJSON_CreateObject();
+
+    wifi_manager_sta_try_status(&t);
+    cJSON_AddStringToObject(o, "state", t.state);
+    cJSON_AddStringToObject(o, "ssid", t.ssid);
+    cJSON_AddStringToObject(o, "result", t.result);
+    cJSON_AddNumberToObject(o, "reason", t.reason);
+
+    if (t.ip[0] != '\0')
+    {
+        cJSON_AddStringToObject(o, "ip", t.ip);
+        cJSON_AddNumberToObject(o, "rssi", t.rssi);
+    }
+
+    if (t.channel != 0)
+    {
+        cJSON_AddNumberToObject(o, "channel", t.channel);
+    }
+
+    cJSON_AddNumberToObject(o, "took_ms", t.took_ms);
+    cJSON_AddNumberToObject(o, "age_s", t.age_s);
+    return o;
+}
+
+static esp_err_t wifi_try_get_handler(httpd_req_t *req)
+{
+    return send_json(req, try_json());
+}
+
+/* POST /api/wifi/try {"ssid": "...", "password": "..."}: start a trial.
+   Asynchronous on purpose: the phone sits on our access point, and the
+   radio moves to the network's channel for the trial, so a request that
+   waited for the result would die with that blink. 202 and poll. */
+static esp_err_t wifi_try_post_handler(httpd_req_t *req)
+{
+    char buf[192];
+    int len = httpd_req_recv(req, buf, (req->content_len < sizeof(buf) - 1)
+                                           ? req->content_len
+                                           : sizeof(buf) - 1);
+
+    if (len <= 0)
+    {
+        return send_error(req, "400 Bad Request", "need ssid and password");
+    }
+
+    buf[len] = '\0';
+
+    cJSON *in = cJSON_Parse(buf);
+    const cJSON *ssid = cJSON_GetObjectItemCaseSensitive(in, "ssid");
+    const cJSON *pw = cJSON_GetObjectItemCaseSensitive(in, "password");
+
+    if (in == NULL || !cJSON_IsString(ssid) ||
+        (pw != NULL && !cJSON_IsString(pw)))
+    {
+        cJSON_Delete(in);
+        return send_error(req, "400 Bad Request", "need ssid and password");
+    }
+
+    esp_err_t err = wifi_manager_sta_try(ssid->valuestring,
+                                         pw != NULL ? pw->valuestring : "");
+
+    cJSON_Delete(in);
+
+    if (err == ESP_ERR_INVALID_ARG)
+    {
+        return send_error(req, "400 Bad Request",
+                          "need ssid (1..32) and password (8..63)");
+    }
+
+    if (err == ESP_ERR_INVALID_STATE)
+    {
+        return send_error(req, "409 Conflict", "a test is already running");
+    }
+
+    if (err == ESP_ERR_NOT_SUPPORTED)
+    {
+        return send_error(req, "409 Conflict",
+                          "the station is off: the test needs Access point "
+                          "+ Station");
+    }
+
+    if (err != ESP_OK)
+    {
+        return send_error(req, "500 Internal Server Error",
+                          esp_err_to_name(err));
+    }
+
+    httpd_resp_set_status(req, "202 Accepted");
+    return send_json(req, try_json());
+}
+
 static esp_err_t wifi_scan_handler(httpd_req_t *req)
 {
     /* blocking ≈2 s (the UI shows a spinner): the JSON goes out verbatim */
@@ -147,6 +252,10 @@ esp_err_t wifi_manager_register_http(void)
           .handler = wifi_status_handler },
         { .uri = "/api/wifi/scan", .method = HTTP_GET,
           .handler = wifi_scan_handler },
+        { .uri = "/api/wifi/try", .method = HTTP_GET,
+          .handler = wifi_try_get_handler },
+        { .uri = "/api/wifi/try", .method = HTTP_POST,
+          .handler = wifi_try_post_handler },
     };
 
     esp_err_t err = http_server_manager_register_handlers(

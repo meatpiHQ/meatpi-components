@@ -45,8 +45,9 @@
  * Boot-loop guard (legacy parity): ≥3 unexpected resets while the
  * battery reads below the error threshold forces sleep instead of
  * another crash lap. Critical floor (2026-10-01): a battery under
- * 11.90 V for 120 s sleeps regardless of the `enabled` setting and of
- * the sleep delay; the normal wake rules apply afterwards.
+ * 11.90 V for 5 min (300 s since 2026-10-06, 120 s before) sleeps
+ * regardless of the `enabled` setting and of a longer sleep delay; the
+ * normal wake rules apply afterwards.
  *
  * Bench-safety (meatpi 2026-07-07): the state task arms only after a
  * 15 s boot grace period (a bootloop still leaves a flash window),
@@ -59,6 +60,13 @@
  * Schema v4 (2026-10-01): `wake_delay_ms` (100..5000, default 500) is how
  * long the battery must stay above the wake voltage before the wake
  * reboot (was a fixed 1 s); older documents get the default.
+ *
+ * The countdown (2026-10-06): the status says which rule will put the
+ * awake device to sleep first (the sleep delay, or the critical floor,
+ * which overtakes a longer delay) and in how many seconds, so the UI can
+ * count it down instead of the device going quiet on the user. The hold
+ * (same day): the UI offers ten more minutes, three times per boot
+ * (sleep_manager_hold(), `POST /api/sleep/hold`, `sleep hold`).
  */
 #pragma once
 
@@ -79,6 +87,14 @@ typedef enum
     SLEEP_MANAGER_WAKE_PENDING,  /**< recovered, stability hold       */
 } sleep_manager_state_t;
 
+/** The rule that will put an awake device to sleep first (2026-10-06). */
+typedef enum
+{
+    SLEEP_MANAGER_PENDING_NONE = 0,
+    SLEEP_MANAGER_PENDING_DELAY,    /**< under sleep_v: the sleep delay runs   */
+    SLEEP_MANAGER_PENDING_CRITICAL, /**< under the critical floor: fixed delay */
+} sleep_manager_pending_t;
+
 typedef struct
 {
     bool                  enabled;
@@ -88,6 +104,13 @@ typedef struct
     float                 wake_v;       /**< boot-applied wake (v3 setting, >= sleep + 0.1) */
     uint32_t              naps;         /**< light-sleep cycles       */
     uint32_t              chip_resleeps;/**< OBD re-sleep retries     */
+    sleep_manager_pending_t pending;    /**< what sleeps it first     */
+    uint32_t              sleep_in_s;   /**< seconds to that entry (0 with none) */
+    float                 critical_v;   /**< the critical floor (fixed) */
+    uint32_t              critical_s;   /**< the floor's fixed delay  */
+    uint32_t              hold_s;       /**< seconds left of a hold (0: none) */
+    uint8_t               holds_left;   /**< holds still allowed this boot */
+    uint8_t               holds_max;    /**< the cap per boot (3)      */
 } sleep_manager_status_t;
 
 /** Ordered shutdown glue the composition root provides (stop radios,
@@ -108,6 +131,14 @@ esp_err_t sleep_manager_status(sleep_manager_status_t *out);
 
 /** Composition-root glue (ONE callback, main wires it). */
 esp_err_t sleep_manager_set_prepare_cb(sleep_manager_prepare_cb_t cb);
+
+/** Keep the device awake for @p minutes more (1..30) on a person's request
+ *  (Ali, 2026-10-06): the sleep delay and the critical floor both move out
+ *  to now + minutes where that is later. Runtime only, never saved, three
+ *  per boot. ESP_ERR_INVALID_ARG out of range, ESP_ERR_INVALID_STATE when
+ *  nothing is counting (healthy battery, or asleep), ESP_ERR_NOT_ALLOWED
+ *  past the third. */
+esp_err_t sleep_manager_hold(uint32_t minutes);
 
 /** Force a sleep entry for the bench: enters the full sequence, then
  *  auto-reboots after @p wake_after_s regardless of voltage (so a

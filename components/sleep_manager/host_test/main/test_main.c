@@ -5,8 +5,13 @@
  *        periodic check-in gating, ms-clock wrap, the wake hold following
  *        wake_delay_ms; and the settings rules (v3 threshold resolver,
  *        v2 -> v3 and v3 -> v4 migration values).
- *        Plus the critical battery floor tracker (2026-10-01).
- *        Expected output: 13 Tests 0 Failures 0 Ignored.
+ *        Plus the critical battery floor tracker (2026-10-01) and the
+ *        countdown the surfaces report (2026-10-06): which rule sleeps
+ *        the device first, the sleep delay or the floor, and in how
+ *        many seconds, through the one word a status read unpacks; and
+ *        the hold (same day): ten more minutes on request, on both
+ *        deadlines.
+ *        Expected output: 23 Tests 0 Failures 0 Ignored.
  */
 #include "unity.h"
 
@@ -205,23 +210,27 @@ static void test_migrated_wake_mv(void)
     TEST_ASSERT_EQUAL_INT(15000, sm_migrated_wake_mv(15500, 12100, 15000));
 }
 
-/* the critical floor: 120 s under 11.90 V trips once, then re-arms */
+/* the critical floor: 5 min under 11.90 V trips once, then re-arms. The
+   delay is pinned here: it was 2 min until 2026-10-06 (Ali made it the
+   default sleep delay), and a trip at 120 s would be the old rule back */
 static void test_critical_floor_trips_after_delay(void)
 {
     sm_critical_t c;
 
+    TEST_ASSERT_EQUAL_UINT32(300000u, SM_CRITICAL_DELAY_MS);
     sm_critical_init(&c);
     TEST_ASSERT_FALSE(sm_critical_eval(&c, 11.7f, 0));         /* arms */
     TEST_ASSERT_FALSE(sm_critical_eval(&c, 11.7f, 60000));
-    TEST_ASSERT_FALSE(sm_critical_eval(&c, 11.7f, 119000));
-    TEST_ASSERT_TRUE(sm_critical_eval(&c, 11.7f, 120000));     /* trip */
+    TEST_ASSERT_FALSE(sm_critical_eval(&c, 11.7f, 120000));    /* not at 2 min */
+    TEST_ASSERT_FALSE(sm_critical_eval(&c, 11.7f, 299000));
+    TEST_ASSERT_TRUE(sm_critical_eval(&c, 11.7f, 300000));     /* trip */
     /* one trip per arming; the next reading under the floor re-arms */
-    TEST_ASSERT_FALSE(sm_critical_eval(&c, 11.7f, 121000));
-    TEST_ASSERT_FALSE(sm_critical_eval(&c, 11.7f, 240000));
-    TEST_ASSERT_TRUE(sm_critical_eval(&c, 11.7f, 241000));
+    TEST_ASSERT_FALSE(sm_critical_eval(&c, 11.7f, 301000));
+    TEST_ASSERT_FALSE(sm_critical_eval(&c, 11.7f, 600000));
+    TEST_ASSERT_TRUE(sm_critical_eval(&c, 11.7f, 601000));
     /* a healthy battery never arms it */
     sm_critical_init(&c);
-    for (uint32_t t = 0; t < 600000; t += 1000)
+    for (uint32_t t = 0; t < 900000; t += 1000)
     {
         TEST_ASSERT_FALSE(sm_critical_eval(&c, 12.4f, t));
     }
@@ -235,18 +244,298 @@ static void test_critical_floor_resets_on_recovery(void)
 
     sm_critical_init(&c);
     sm_critical_eval(&c, 11.7f, 0);                            /* arms */
-    TEST_ASSERT_FALSE(sm_critical_eval(&c, 11.7f, 60000));
-    TEST_ASSERT_FALSE(sm_critical_eval(&c, 12.0f, 61000));     /* reset */
-    TEST_ASSERT_FALSE(sm_critical_eval(&c, 11.7f, 62000));     /* re-arm */
-    TEST_ASSERT_FALSE(sm_critical_eval(&c, 11.7f, 181000));    /* 119 s */
-    TEST_ASSERT_TRUE(sm_critical_eval(&c, 11.7f, 182000));     /* 120 s */
+    TEST_ASSERT_FALSE(sm_critical_eval(&c, 11.7f, 150000));
+    TEST_ASSERT_FALSE(sm_critical_eval(&c, 12.0f, 151000));    /* reset */
+    TEST_ASSERT_FALSE(sm_critical_eval(&c, 11.7f, 152000));    /* re-arm */
+    TEST_ASSERT_FALSE(sm_critical_eval(&c, 11.7f, 451000));    /* 299 s */
+    TEST_ASSERT_TRUE(sm_critical_eval(&c, 11.7f, 452000));     /* 300 s */
     /* 11.92 V sits in the band: keeps an armed timer, arms nothing */
     sm_critical_init(&c);
     TEST_ASSERT_FALSE(sm_critical_eval(&c, 11.92f, 0));
-    TEST_ASSERT_FALSE(sm_critical_eval(&c, 11.92f, 200000));   /* never armed */
-    sm_critical_eval(&c, 11.8f, 300000);                       /* arms */
-    TEST_ASSERT_FALSE(sm_critical_eval(&c, 11.92f, 400000));   /* holds */
-    TEST_ASSERT_TRUE(sm_critical_eval(&c, 11.92f, 420000));    /* trips */
+    TEST_ASSERT_FALSE(sm_critical_eval(&c, 11.92f, 400000));   /* never armed */
+    sm_critical_eval(&c, 11.8f, 500000);                       /* arms */
+    TEST_ASSERT_FALSE(sm_critical_eval(&c, 11.92f, 700000));   /* holds */
+    TEST_ASSERT_TRUE(sm_critical_eval(&c, 11.92f, 800000));    /* trips */
+}
+
+/* ---- the countdown (2026-10-06): which rule sleeps the device first ---- */
+
+/* the whole path of a status read: the task evaluates and publishes one
+   word at `now`, a reader unpacks it at the same instant */
+static void expect_pending(sleep_manager_pending_t cause, uint32_t secs,
+                           bool ladder_on, const sm_critical_t *c,
+                           uint32_t now)
+{
+    uint32_t deadline = now;
+    uint32_t got = 12345;
+    sleep_manager_pending_t evald =
+        sm_pending_eval(&s_p, ladder_on, c, now, &deadline);
+
+    TEST_ASSERT_EQUAL_INT(cause, evald);
+    TEST_ASSERT_EQUAL_INT(cause,
+                          sm_pending_unpack(sm_pending_pack(evald, deadline),
+                                            now, &got));
+    TEST_ASSERT_EQUAL_UINT32(secs, got);
+}
+
+/* nothing counts on a healthy battery, nor once the device is asleep */
+static void test_pending_none_when_healthy_or_asleep(void)
+{
+    sm_critical_t c;
+
+    sm_critical_init(&c);
+    sm_policy_eval(&s_p, &s_cfg, 14.2f, 1000);
+    sm_critical_eval(&c, 14.2f, 1000);
+    expect_pending(SLEEP_MANAGER_PENDING_NONE, 0, true, &c, 1000);
+
+    sm_policy_eval(&s_p, &s_cfg, 11.5f, 2000);  /* LOW_VOLTAGE */
+    sm_critical_eval(&c, 11.5f, 2000);          /* armed       */
+    TEST_ASSERT_EQUAL_INT(SM_ACT_ENTER_SLEEP,
+                          sm_policy_eval(&s_p, &s_cfg, 11.5f, 182000));
+    expect_pending(SLEEP_MANAGER_PENDING_NONE, 0, true, &c, 182000);
+    sm_policy_eval(&s_p, &s_cfg, 14.1f, 190000); /* WAKE_PENDING */
+    expect_pending(SLEEP_MANAGER_PENDING_NONE, 0, true, &c, 190000);
+}
+
+/* above the floor the countdown is the sleep delay, in whole seconds
+   rounded up, never negative, gone when the battery recovers and absent
+   while the ladder does not run (sleep disabled) */
+static void test_pending_counts_the_sleep_delay(void)
+{
+    sm_critical_t c;
+
+    sm_critical_init(&c);
+    sm_policy_eval(&s_p, &s_cfg, 12.4f, 1000);  /* deadline 181000 */
+    sm_critical_eval(&c, 12.4f, 1000);          /* not armed       */
+    expect_pending(SLEEP_MANAGER_PENDING_DELAY, 180, true, &c, 1000);
+    expect_pending(SLEEP_MANAGER_PENDING_DELAY, 180, true, &c, 1001);
+    expect_pending(SLEEP_MANAGER_PENDING_DELAY, 120, true, &c, 61000);
+    expect_pending(SLEEP_MANAGER_PENDING_DELAY, 1, true, &c, 180500);
+    expect_pending(SLEEP_MANAGER_PENDING_DELAY, 0, true, &c, 181000);
+    expect_pending(SLEEP_MANAGER_PENDING_DELAY, 0, true, &c, 185000);
+    expect_pending(SLEEP_MANAGER_PENDING_NONE, 0, false, &c, 61000);
+
+    sm_policy_init(&s_p);
+    sm_policy_eval(&s_p, &s_cfg, 12.4f, 0);
+    sm_policy_eval(&s_p, &s_cfg, 13.8f, 60000); /* alternator back */
+    expect_pending(SLEEP_MANAGER_PENDING_NONE, 0, true, &c, 60000);
+}
+
+/* a sleep delay longer than the floor's 5 min (10 min here): the floor
+   comes first and the countdown names it; when the battery climbs back
+   over the floor but stays under the sleep voltage, the sleep delay is
+   what is left, counted from its own start */
+static void test_pending_floor_overtakes_a_longer_delay(void)
+{
+    sm_critical_t c;
+
+    s_cfg.delay_ms = 600000;
+    sm_critical_init(&c);
+    sm_policy_eval(&s_p, &s_cfg, 11.55f, 0);
+    sm_critical_eval(&c, 11.55f, 0);
+    expect_pending(SLEEP_MANAGER_PENDING_CRITICAL, 300, true, &c, 0);
+    expect_pending(SLEEP_MANAGER_PENDING_CRITICAL, 60, true, &c, 240000);
+    expect_pending(SLEEP_MANAGER_PENDING_CRITICAL, 0, true, &c, 300000);
+
+    sm_policy_eval(&s_p, &s_cfg, 12.4f, 250000);
+    sm_critical_eval(&c, 12.4f, 250000);        /* over the floor: reset */
+    expect_pending(SLEEP_MANAGER_PENDING_DELAY, 350, true, &c, 250000);
+}
+
+/* a sleep delay shorter than the floor's comes first. The report of
+   2026-10-06 was a DEFAULT device (5 min delay) on an 11.6 V supply
+   asleep after the floor's 2 min of the time; with the floor at 5 min it
+   has its 5 minutes: the two deadlines tie, and a tie goes to the floor
+   (the task evaluates it first). A supply that passes 12.5 V on its way
+   down arms the ladder a sample earlier: the delay is the earlier one */
+static void test_pending_shorter_delay_beats_the_floor(void)
+{
+    sm_critical_t c;
+
+    s_cfg.delay_ms = 60000;
+    sm_critical_init(&c);
+    sm_policy_eval(&s_p, &s_cfg, 11.55f, 0);
+    sm_critical_eval(&c, 11.55f, 0);
+    expect_pending(SLEEP_MANAGER_PENDING_DELAY, 60, true, &c, 0);
+    expect_pending(SLEEP_MANAGER_PENDING_DELAY, 15, true, &c, 45000);
+
+    s_cfg.delay_ms = 300000;
+    sm_policy_init(&s_p);
+    sm_critical_init(&c);
+    sm_policy_eval(&s_p, &s_cfg, 11.55f, 0);
+    sm_critical_eval(&c, 11.55f, 0);
+    expect_pending(SLEEP_MANAGER_PENDING_CRITICAL, 300, true, &c, 0);
+    expect_pending(SLEEP_MANAGER_PENDING_CRITICAL, 180, true, &c, 120000);
+
+    sm_policy_init(&s_p);
+    sm_critical_init(&c);
+    sm_policy_eval(&s_p, &s_cfg, 12.5f, 0);     /* on the way down */
+    sm_critical_eval(&c, 12.5f, 0);
+    sm_policy_eval(&s_p, &s_cfg, 11.55f, 3000);
+    sm_critical_eval(&c, 11.55f, 3000);
+    expect_pending(SLEEP_MANAGER_PENDING_DELAY, 297, true, &c, 3000);
+}
+
+/* sleep disabled: the ladder never leaves NORMAL and the floor is the
+   only countdown; the hysteresis band holds it, recovery clears it */
+static void test_pending_floor_alone_with_sleep_disabled(void)
+{
+    sm_critical_t c;
+
+    sm_critical_init(&c);
+    expect_pending(SLEEP_MANAGER_PENDING_NONE, 0, false, &c, 4000);
+    sm_critical_eval(&c, 11.7f, 5000);
+    expect_pending(SLEEP_MANAGER_PENDING_CRITICAL, 300, false, &c, 5000);
+    expect_pending(SLEEP_MANAGER_PENDING_CRITICAL, 1, false, &c, 304001);
+    TEST_ASSERT_FALSE(sm_critical_eval(&c, 11.92f, 60000));    /* holds */
+    expect_pending(SLEEP_MANAGER_PENDING_CRITICAL, 245, false, &c, 60000);
+    sm_critical_eval(&c, 12.0f, 61000);                        /* reset */
+    expect_pending(SLEEP_MANAGER_PENDING_NONE, 0, false, &c, 61000);
+}
+
+/* both deadlines straddling the u32 ms wrap (a 10 min delay, so that the
+   floor is the earlier one) */
+static void test_pending_clock_wrap_safe(void)
+{
+    sm_critical_t c;
+    uint32_t t0 = 0xFFFFFFFFu - 60000u;
+
+    s_cfg.delay_ms = 600000;
+    sm_critical_init(&c);
+    sm_policy_eval(&s_p, &s_cfg, 11.7f, t0);
+    sm_critical_eval(&c, 11.7f, t0);
+    expect_pending(SLEEP_MANAGER_PENDING_CRITICAL, 300, true, &c, t0);
+    expect_pending(SLEEP_MANAGER_PENDING_CRITICAL, 200, true, &c,
+                   t0 + 100000u);               /* wrapped */
+    expect_pending(SLEEP_MANAGER_PENDING_CRITICAL, 0, true, &c,
+                   t0 + 300000u);
+    sm_critical_init(&c);                       /* the ladder alone */
+    expect_pending(SLEEP_MANAGER_PENDING_DELAY, 500, true, &c,
+                   t0 + 100000u);
+}
+
+/* ---- the hold (Ali, 2026-10-06): ten more minutes on request ------------ */
+
+/* a hold moves both deadlines out to now + hold where that is later: a
+   default device at 11.6 V (both at 5 min) held at 4:00 left sleeps 10 min
+   after the press; the countdown follows; the states do not change */
+static void test_hold_moves_both_deadlines(void)
+{
+    sm_critical_t c;
+
+    s_cfg.delay_ms = 300000;
+    sm_critical_init(&c);
+    sm_policy_eval(&s_p, &s_cfg, 11.55f, 0);
+    sm_critical_eval(&c, 11.55f, 0);
+    expect_pending(SLEEP_MANAGER_PENDING_CRITICAL, 240, true, &c, 60000);
+
+    TEST_ASSERT_TRUE(sm_hold_apply(&s_p, true, &c, 60000, 600000));
+    TEST_ASSERT_EQUAL_UINT32(660000, s_p.t_low);
+    TEST_ASSERT_EQUAL_UINT32(660000, c.t_trip);
+    TEST_ASSERT_EQUAL_INT(SLEEP_MANAGER_LOW_VOLTAGE, s_p.state);
+    TEST_ASSERT_TRUE(c.armed);
+    expect_pending(SLEEP_MANAGER_PENDING_CRITICAL, 600, true, &c, 60000);
+    expect_pending(SLEEP_MANAGER_PENDING_CRITICAL, 1, true, &c, 659001);
+
+    /* the ladder keeps its rules: nothing fires before the new deadline,
+       the entry comes at it, a recovery still cancels */
+    TEST_ASSERT_EQUAL_INT(SM_ACT_NONE,
+                          sm_policy_eval(&s_p, &s_cfg, 11.55f, 300000));
+    TEST_ASSERT_FALSE(sm_critical_eval(&c, 11.55f, 300000));
+    TEST_ASSERT_TRUE(sm_critical_eval(&c, 11.55f, 660000));
+    TEST_ASSERT_EQUAL_INT(SM_ACT_ENTER_SLEEP,
+                          sm_policy_eval(&s_p, &s_cfg, 11.55f, 660000));
+}
+
+/* a hold shorter than what is left changes nothing; the ladder alone when
+   the floor is not armed; the floor alone with sleep disabled; nothing to
+   hold on a healthy battery or once asleep */
+static void test_hold_only_what_counts(void)
+{
+    sm_critical_t c;
+
+    sm_critical_init(&c);
+    sm_policy_eval(&s_p, &s_cfg, 12.4f, 0);      /* delay 180 s, floor idle */
+    TEST_ASSERT_TRUE(sm_hold_apply(&s_p, true, &c, 1000, 60000));
+    TEST_ASSERT_EQUAL_UINT32(180000, s_p.t_low); /* 61 s < 180 s: unchanged */
+    TEST_ASSERT_FALSE(c.armed);
+    TEST_ASSERT_TRUE(sm_hold_apply(&s_p, true, &c, 150000, 60000));
+    TEST_ASSERT_EQUAL_UINT32(210000, s_p.t_low);
+
+    sm_policy_init(&s_p);                         /* sleep disabled */
+    sm_critical_init(&c);
+    sm_critical_eval(&c, 11.7f, 0);
+    TEST_ASSERT_TRUE(sm_hold_apply(&s_p, false, &c, 100000, 600000));
+    TEST_ASSERT_EQUAL_UINT32(700000, c.t_trip);
+    TEST_ASSERT_EQUAL_INT(SLEEP_MANAGER_NORMAL, s_p.state);
+    expect_pending(SLEEP_MANAGER_PENDING_CRITICAL, 600, false, &c, 100000);
+
+    sm_policy_init(&s_p);                         /* healthy: nothing */
+    sm_critical_init(&c);
+    sm_policy_eval(&s_p, &s_cfg, 14.0f, 0);
+    TEST_ASSERT_FALSE(sm_hold_apply(&s_p, true, &c, 1000, 600000));
+
+    sm_policy_eval(&s_p, &s_cfg, 12.4f, 2000);    /* asleep: nothing */
+    sm_policy_eval(&s_p, &s_cfg, 12.4f, 182000);
+    TEST_ASSERT_EQUAL_INT(SLEEP_MANAGER_SLEEPING, s_p.state);
+    TEST_ASSERT_FALSE(sm_hold_apply(&s_p, true, &c, 183000, 600000));
+}
+
+/* across the clock wrap the later deadline is still the later one */
+static void test_hold_clock_wrap_safe(void)
+{
+    sm_critical_t c;
+    uint32_t t0 = 0xFFFFFFFFu - 30000u;
+
+    sm_critical_init(&c);
+    sm_policy_eval(&s_p, &s_cfg, 11.7f, t0);      /* t_low = t0 + 180 s */
+    sm_critical_eval(&c, 11.7f, t0);              /* t_trip = t0 + 300 s */
+    TEST_ASSERT_TRUE(sm_hold_apply(&s_p, true, &c, t0 + 20000u, 600000));
+    TEST_ASSERT_EQUAL_UINT32(t0 + 620000u, s_p.t_low);
+    TEST_ASSERT_EQUAL_UINT32(t0 + 620000u, c.t_trip);
+    expect_pending(SLEEP_MANAGER_PENDING_CRITICAL, 600, true, &c, t0 + 20000u);
+}
+
+/* the published word is read later than it was written: the seconds are
+   counted at the read, exact however old the word is; a passed deadline
+   reads 0, across the 30-bit field's wrap and the clock's too */
+static void test_pending_word_is_exact_at_the_read(void)
+{
+    uint32_t s = 12345;
+    uint32_t w = sm_pending_pack(SLEEP_MANAGER_PENDING_DELAY, 181000);
+
+    TEST_ASSERT_EQUAL_INT(SLEEP_MANAGER_PENDING_DELAY,
+                          sm_pending_unpack(w, 1000, &s));
+    TEST_ASSERT_EQUAL_UINT32(180, s);
+    sm_pending_unpack(w, 61400, &s);            /* 119.6 s left */
+    TEST_ASSERT_EQUAL_UINT32(120, s);
+    sm_pending_unpack(w, 180999, &s);
+    TEST_ASSERT_EQUAL_UINT32(1, s);
+    sm_pending_unpack(w, 181000, &s);
+    TEST_ASSERT_EQUAL_UINT32(0, s);
+    TEST_ASSERT_EQUAL_INT(SLEEP_MANAGER_PENDING_DELAY,
+                          sm_pending_unpack(w, 9000000, &s)); /* long past */
+    TEST_ASSERT_EQUAL_UINT32(0, s);
+
+    /* the deadline sits just over the 30-bit boundary, the reader under it */
+    w = sm_pending_pack(SLEEP_MANAGER_PENDING_CRITICAL, 0x40000000u + 5000u);
+    TEST_ASSERT_EQUAL_INT(SLEEP_MANAGER_PENDING_CRITICAL,
+                          sm_pending_unpack(w, 0x40000000u - 115000u, &s));
+    TEST_ASSERT_EQUAL_UINT32(120, s);
+    sm_pending_unpack(w, 0x40000000u + 5001u, &s);
+    TEST_ASSERT_EQUAL_UINT32(0, s);
+
+    /* and over the clock's own wrap */
+    w = sm_pending_pack(SLEEP_MANAGER_PENDING_CRITICAL, 20000u);
+    sm_pending_unpack(w, 0xFFFFFFFFu - 9999u, &s);  /* 30 s before */
+    TEST_ASSERT_EQUAL_UINT32(30, s);
+
+    /* nothing counts: 0 whatever the low bits hold */
+    TEST_ASSERT_EQUAL_INT(SLEEP_MANAGER_PENDING_NONE,
+                          sm_pending_unpack(
+                              sm_pending_pack(SLEEP_MANAGER_PENDING_NONE,
+                                              500000), 1000, &s));
+    TEST_ASSERT_EQUAL_UINT32(0, s);
 }
 
 void app_main(void)
@@ -265,5 +554,15 @@ void app_main(void)
     RUN_TEST(test_migrated_wake_delay_ms);
     RUN_TEST(test_critical_floor_trips_after_delay);
     RUN_TEST(test_critical_floor_resets_on_recovery);
+    RUN_TEST(test_pending_none_when_healthy_or_asleep);
+    RUN_TEST(test_pending_counts_the_sleep_delay);
+    RUN_TEST(test_pending_floor_overtakes_a_longer_delay);
+    RUN_TEST(test_pending_shorter_delay_beats_the_floor);
+    RUN_TEST(test_pending_floor_alone_with_sleep_disabled);
+    RUN_TEST(test_pending_clock_wrap_safe);
+    RUN_TEST(test_pending_word_is_exact_at_the_read);
+    RUN_TEST(test_hold_moves_both_deadlines);
+    RUN_TEST(test_hold_only_what_counts);
+    RUN_TEST(test_hold_clock_wrap_safe);
     UNITY_END();
 }

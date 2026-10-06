@@ -36,6 +36,7 @@
 #include "esp_sleep.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 
 #include "battery_monitor.h"
@@ -66,6 +67,21 @@ static StaticTask_t s_tcb;                    /* internal: FreeRTOS */
 static StackType_t s_stack[4096];
 
 static sleep_manager_status_t s_status;
+
+/* The countdown the surfaces report ("sleeps in N s"): cause and deadline
+ * as ONE word (sm_pending_pack), written under s_lock, so a reader on
+ * another task never sees half an update. */
+static volatile uint32_t s_pending;
+
+/* The hold (Ali, 2026-10-06). The policy and the floor tracker belong to
+ * the state task; a request from the web UI lands on the httpd task, so
+ * the two deadlines are touched under this lock only: the task holds it
+ * for the evaluation of a pass, never across the entry sequence or a nap. */
+static SemaphoreHandle_t s_lock;
+static StaticSemaphore_t s_lock_buf;          /* internal: FreeRTOS */
+static uint32_t s_hold_until;                 /* ms, while s_hold_active */
+static bool     s_hold_active;
+static uint8_t  s_holds_used;                 /* per boot */
 
 /* ---- sleep entry / nap loop ---------------------------------------------- */
 
@@ -200,6 +216,23 @@ static bool bootloop_guard_trips(float volts)
     return rt.unexpected_reset_count >= 3 && volts < SM_ERROR_V;
 }
 
+/* under s_lock: what will put the device to sleep first, and when; a hold
+ * is over once its window has passed or nothing counts any more */
+static void publish_pending(uint32_t now)
+{
+    uint32_t deadline = now;
+    sleep_manager_pending_t cause =
+        sm_pending_eval(&s_policy, s_run, &s_crit, now, &deadline);
+
+    s_pending = sm_pending_pack(cause, deadline);
+
+    if (s_hold_active && (cause == SLEEP_MANAGER_PENDING_NONE ||
+                          (int32_t)(now - s_hold_until) >= 0))
+    {
+        s_hold_active = false;
+    }
+}
+
 /* ---- state task -------------------------------------------------------------- */
 
 static void state_task(void *arg)
@@ -279,26 +312,57 @@ static void state_task(void *arg)
             ESP_LOGE(TAG, "boot-loop guard: %d+ unexpected resets "
                      "below %.2f V, sleeping to protect the battery",
                      3, SM_ERROR_V);
-            enter_sleep_sequence(volts);
+            xSemaphoreTake(s_lock, portMAX_DELAY);
             s_policy.state = SLEEP_MANAGER_SLEEPING;
             s_policy.t_periodic = now + cfg->interval_ms;
+            s_hold_active = false;
+            xSemaphoreGive(s_lock);
+            enter_sleep_sequence(volts);
             s_run = true; /* wake machinery runs even if sleep disabled */
         }
 
-        /* CRITICAL FLOOR (Ali, 2026-10-01): a battery under SM_CRITICAL_V
-         * for SM_CRITICAL_DELAY_MS sleeps whatever the setting says and
-         * without waiting out the user's delay. Awake states only; the
-         * ladder's SLEEPING/WAKE_PENDING rules (wake voltage + hold, no
-         * periodic check-in under the floor) take over after the trip. */
-        if (have_v && !in_sleep_states &&
-            sm_critical_eval(&s_crit, volts, now))
+        /* Under the lock: the floor, the ladder and the countdown they
+         * publish (a hold request from another task edits the same
+         * deadlines). CRITICAL FLOOR (Ali, 2026-10-01): a battery under
+         * SM_CRITICAL_V for SM_CRITICAL_DELAY_MS sleeps whatever the
+         * setting says and without waiting out the user's delay. Awake
+         * states only; the ladder's SLEEPING/WAKE_PENDING rules (wake
+         * voltage + hold, no periodic check-in under the floor) take over
+         * after the trip. */
+        xSemaphoreTake(s_lock, portMAX_DELAY);
+
+        bool floor_trip = have_v && !in_sleep_states &&
+                          sm_critical_eval(&s_crit, volts, now);
+        sm_action_t act = SM_ACT_NONE;
+
+        if (floor_trip)
+        {
+            /* due: a status read during the entry sequence says 0 s */
+            s_pending = sm_pending_pack(SLEEP_MANAGER_PENDING_CRITICAL, now);
+            s_hold_active = false;
+            s_policy.state = SLEEP_MANAGER_SLEEPING;
+            s_policy.t_periodic = now + cfg->interval_ms;
+        }
+        else
+        {
+            /* here too: with sleep disabled the floor is the only countdown */
+            publish_pending(now);
+
+            if (s_run && have_v)
+            {
+                act = sm_policy_eval(&s_policy, cfg, volts, now);
+                publish_pending(now); /* the ladder may have armed or cleared */
+            }
+        }
+
+        xSemaphoreGive(s_lock);
+
+        if (floor_trip)
         {
             ESP_LOGW(TAG, "critical battery: %.2f V under %.2f V for %u s; "
                      "sleeping regardless of the setting", volts,
                      SM_CRITICAL_V, SM_CRITICAL_DELAY_MS / 1000u);
             enter_sleep_sequence(volts);
-            s_policy.state = SLEEP_MANAGER_SLEEPING;
-            s_policy.t_periodic = now + cfg->interval_ms;
             s_status.state = SLEEP_MANAGER_SLEEPING;
             sm_events_state(state_name(s_policy.state), volts);
             s_run = true; /* wake machinery runs even if sleep disabled */
@@ -321,8 +385,6 @@ static void state_task(void *arg)
 
             continue;
         }
-
-        sm_action_t act = sm_policy_eval(&s_policy, cfg, volts, now);
 
         if (s_status.state != s_policy.state)
         {
@@ -388,6 +450,12 @@ esp_err_t sleep_manager_init(void)
         { "sleep_manager", ESP_LOG_INFO };
 
     usb_rail_release(); /* init runs before usb_host_manager starts */
+
+    if (s_lock == NULL)
+    {
+        s_lock = xSemaphoreCreateMutexStatic(&s_lock_buf);
+    }
+
     log_manager_register(&LOG_DESC);
     sm_events_register();
     return sleep_settings_register();
@@ -447,6 +515,27 @@ esp_err_t sleep_manager_status(sleep_manager_status_t *out)
     out->enabled = sleep_settings_enabled();
     out->sleep_v = sleep_settings_config()->sleep_v;
     out->wake_v = sleep_settings_config()->wake_v;
+
+    /* one read of the word: cause and deadline agree; the seconds are
+       counted against the clock now, not against the publisher's pass */
+    out->pending = sm_pending_unpack(s_pending, sm_now_ms(),
+                                     &out->sleep_in_s);
+    out->critical_v = SM_CRITICAL_V;
+    out->critical_s = SM_CRITICAL_DELAY_MS / 1000u;
+    out->hold_s = 0;
+    out->holds_max = SM_HOLD_MAX;
+    out->holds_left = SM_HOLD_MAX;
+
+    if (s_lock != NULL && xSemaphoreTake(s_lock, pdMS_TO_TICKS(200)) == pdTRUE)
+    {
+        int32_t left = (int32_t)(s_hold_until - sm_now_ms());
+
+        out->hold_s = (s_hold_active && left > 0)
+                          ? ((uint32_t)left + 999u) / 1000u : 0;
+        out->holds_left = (uint8_t)(SM_HOLD_MAX - s_holds_used);
+        xSemaphoreGive(s_lock);
+    }
+
     return ESP_OK;
 }
 
@@ -454,6 +543,59 @@ esp_err_t sleep_manager_set_prepare_cb(sleep_manager_prepare_cb_t cb)
 {
     s_prepare_cb = cb;
     return ESP_OK;
+}
+
+esp_err_t sleep_manager_hold(uint32_t minutes)
+{
+    if (minutes < SM_HOLD_MIN_MIN || minutes > SM_HOLD_MAX_MIN)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (s_task == NULL || s_lock == NULL)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    esp_err_t err = ESP_OK;
+
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+
+    if (s_holds_used >= SM_HOLD_MAX)
+    {
+        err = ESP_ERR_NOT_ALLOWED;
+    }
+    else
+    {
+        uint32_t now = sm_now_ms();
+
+        if (!sm_hold_apply(&s_policy, s_run, &s_crit, now, minutes * 60000u))
+        {
+            err = ESP_ERR_INVALID_STATE; /* nothing is counting */
+        }
+        else
+        {
+            s_holds_used++;
+            s_hold_active = true;
+            s_hold_until = now + minutes * 60000u;
+            publish_pending(now);
+        }
+    }
+
+    xSemaphoreGive(s_lock);
+
+    if (err == ESP_OK)
+    {
+        sleep_manager_status_t st;
+
+        (void)sleep_manager_status(&st);
+        ESP_LOGI(TAG, "held awake %lu min on request (%u of %u this boot): "
+                 "sleeps in %lu s", (unsigned long)minutes,
+                 (unsigned)s_holds_used, (unsigned)SM_HOLD_MAX,
+                 (unsigned long)st.sleep_in_s);
+    }
+
+    return err;
 }
 
 esp_err_t sleep_manager_test_sleep(uint32_t wake_after_s)

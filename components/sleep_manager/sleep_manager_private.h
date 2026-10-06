@@ -35,7 +35,10 @@
 #define SM_WAKE_DELTA_V     0.1f     /* minimum wake_v - sleep_v band  */
 #define SM_CRITICAL_V       11.90f   /* below: no periodic wakeups, and the floor */
 #define SM_CRITICAL_HYST_V  0.05f    /* the floor's timer resets above V + this */
-#define SM_CRITICAL_DELAY_MS 120000u /* the floor: this long under V = sleep (Ali) */
+/* the floor: this long under V = sleep. 5 min (Ali, 2026-10-06): the 2 min of
+ * 2026-10-01 put a default device to sleep in the middle of a Quick Setup on
+ * an 11.6 V supply, ahead of its own 5 min sleep delay */
+#define SM_CRITICAL_DELAY_MS 300000u
 #define SM_ERROR_V          12.10f   /* boot-loop guard voltage gate   */
 #define SM_WAKE_DELAY_MS    500u     /* default wake_delay_ms (v4)     */
 #define SM_BOOT_GRACE_MS    15000u   /* meatpi: flash window on loops  */
@@ -88,6 +91,48 @@ typedef struct
 
 void sm_critical_init(sm_critical_t *c);
 bool sm_critical_eval(sm_critical_t *c, float volts, uint32_t now_ms);
+
+/* The COUNTDOWN (2026-10-06): which rule puts an awake device to sleep
+ * first, and its deadline (ms, the clock of @p now_ms; untouched with
+ * NONE). The ladder counts only while it runs (@p ladder_on: sleep
+ * enabled) and sits in LOW_VOLTAGE; the floor counts whenever it is
+ * armed, and overtakes a longer sleep delay (when the floor was 2 min, a
+ * default device at 11.6 V slept after 2 min and not after its 5 min
+ * delay: the report that asked for this). The floor wins a tie, which a
+ * default device under the floor is since the floor is 5 min too: the
+ * task evaluates it first. NONE once asleep. */
+sleep_manager_pending_t sm_pending_eval(const sm_policy_t *p, bool ladder_on,
+                                        const sm_critical_t *c,
+                                        uint32_t now_ms,
+                                        uint32_t *deadline_ms);
+
+/* The HOLD (Ali, 2026-10-06: "prompt the user to extend if he needs more
+ * time"): a person at the web UI asks for more time before the entry, and
+ * both deadlines, the ladder's and the floor's, move out to @p now_ms +
+ * @p hold_ms where that is later than they are (a hold shorter than what is
+ * left changes nothing). Only what is counting moves: the ladder when it
+ * runs (@p ladder_on) and sits in LOW_VOLTAGE, the floor when it is armed.
+ * Returns false when nothing counts (nothing to hold) or the device is
+ * already asleep. States are untouched: a battery that recovers above the
+ * wake voltage still ends the countdown. Not a setting: never saved, and a
+ * restart drops it; the caller counts the presses (SM_HOLD_MAX per boot). */
+#define SM_HOLD_MAX        3u
+#define SM_HOLD_MIN_MIN    1u
+#define SM_HOLD_MAX_MIN    30u
+bool sm_hold_apply(sm_policy_t *p, bool ladder_on, sm_critical_t *c,
+                   uint32_t now_ms, uint32_t hold_ms);
+
+/* The countdown as ONE word, for a reader on another task: the cause in
+ * the top two bits, the low 30 bits of the deadline below; and back, as
+ * the seconds left at @p now_ms (rounded up, 0 when due and with NONE).
+ * A deadline keeps the answer exact at the moment of the read, however
+ * long ago it was published. 30 bits of ms are 12 days and a countdown is
+ * 30 min at most: a deadline more than half that range ahead is one that
+ * has passed. */
+#define SM_PENDING_MS_MASK 0x3FFFFFFFu
+uint32_t sm_pending_pack(sleep_manager_pending_t cause, uint32_t deadline_ms);
+sleep_manager_pending_t sm_pending_unpack(uint32_t word, uint32_t now_ms,
+                                          uint32_t *sleep_in_s);
 
 /* Settings v3 (2026-10-01): the wake voltage is a setting of its own.
  * Resolve the stored millivolt pair into the policy thresholds; a wake

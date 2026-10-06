@@ -27,7 +27,9 @@
  *        are stored as absolute ms and compared by signed subtraction.
  *        Also the pure settings rules of v3: the sleep/wake pair
  *        resolver and the v2 -> v3 wake_mv migration value, and the
- *        critical battery floor tracker (2026-10-01).
+ *        critical battery floor tracker (2026-10-01). The countdown the
+ *        surfaces report (2026-10-06): which of the two puts the device
+ *        to sleep first, and when.
  */
 #include "sleep_manager_private.h"
 
@@ -102,6 +104,99 @@ bool sm_critical_eval(sm_critical_t *c, float volts, uint32_t now_ms)
     }
 
     return false;
+}
+
+static uint32_t ms_left(uint32_t deadline, uint32_t now)
+{
+    int32_t left = (int32_t)(deadline - now);
+
+    return (left > 0) ? (uint32_t)left : 0;
+}
+
+sleep_manager_pending_t sm_pending_eval(const sm_policy_t *p, bool ladder_on,
+                                        const sm_critical_t *c,
+                                        uint32_t now_ms,
+                                        uint32_t *deadline_ms)
+{
+    sleep_manager_pending_t cause = SLEEP_MANAGER_PENDING_NONE;
+
+    if (p->state == SLEEP_MANAGER_SLEEPING ||
+        p->state == SLEEP_MANAGER_WAKE_PENDING)
+    {
+        return SLEEP_MANAGER_PENDING_NONE; /* asleep already */
+    }
+
+    if (ladder_on && p->state == SLEEP_MANAGER_LOW_VOLTAGE)
+    {
+        cause = SLEEP_MANAGER_PENDING_DELAY;
+        *deadline_ms = p->t_low;
+    }
+
+    if (c->armed && (cause == SLEEP_MANAGER_PENDING_NONE ||
+                     ms_left(c->t_trip, now_ms) <=
+                         ms_left(p->t_low, now_ms)))
+    {
+        cause = SLEEP_MANAGER_PENDING_CRITICAL;
+        *deadline_ms = c->t_trip;
+    }
+
+    return cause;
+}
+
+static void push_out(uint32_t *deadline, uint32_t until)
+{
+    if ((int32_t)(until - *deadline) > 0)
+    {
+        *deadline = until;
+    }
+}
+
+bool sm_hold_apply(sm_policy_t *p, bool ladder_on, sm_critical_t *c,
+                   uint32_t now_ms, uint32_t hold_ms)
+{
+    uint32_t until = now_ms + hold_ms;
+    bool counting = false;
+
+    if (p->state == SLEEP_MANAGER_SLEEPING ||
+        p->state == SLEEP_MANAGER_WAKE_PENDING)
+    {
+        return false; /* asleep: nobody can be asking */
+    }
+
+    if (ladder_on && p->state == SLEEP_MANAGER_LOW_VOLTAGE)
+    {
+        push_out(&p->t_low, until);
+        counting = true;
+    }
+
+    if (c->armed)
+    {
+        push_out(&c->t_trip, until);
+        counting = true;
+    }
+
+    return counting;
+}
+
+uint32_t sm_pending_pack(sleep_manager_pending_t cause, uint32_t deadline_ms)
+{
+    return ((uint32_t)cause << 30) | (deadline_ms & SM_PENDING_MS_MASK);
+}
+
+sleep_manager_pending_t sm_pending_unpack(uint32_t word, uint32_t now_ms,
+                                          uint32_t *sleep_in_s)
+{
+    sleep_manager_pending_t cause = (sleep_manager_pending_t)(word >> 30);
+    uint32_t left = (word - now_ms) & SM_PENDING_MS_MASK;
+
+    if (cause == SLEEP_MANAGER_PENDING_NONE ||
+        left > SM_PENDING_MS_MASK / 2u)
+    {
+        left = 0; /* nothing counts, or the deadline has passed */
+    }
+
+    *sleep_in_s = (left + 999u) / 1000u;
+    return cause;
 }
 
 void sm_policy_init(sm_policy_t *p)

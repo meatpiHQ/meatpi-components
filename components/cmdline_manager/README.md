@@ -31,11 +31,12 @@ additions are options too.
 |---|---|
 | `help [cmd]` | cmdline_manager (the registry's own; legacy format) |
 | `version`, `status` | dev_status_manager |
-| `wifi -s/-i/--scan` | wifi_manager (`-s`/`-i` legacy-exact; `--scan` = v6 JSON scan) |
+| `wifi -s/-i/--scan`, `wifi --try <ssid> [--password <pw>]` | wifi_manager (`-s`/`-i` legacy-exact; `--scan` = v6 JSON scan; `--try` = the connection trial of 2026-10-06, joins without saving and prints `connected: ip, rssi dBm, channel N, in N ms` or `password|not_found|refused|no_ip|timeout (reason N) after N ms`, up to 20 s) |
 | `rtc -s/-r/-i` | rtc_manager (sync/read legacy-exact; `-i` = responding probe: the RX8130 has no ID register) |
 | `imu -i/-r` | imu_manager (`-i` legacy-exact; `-r` + bare = v6 activity/accel/temp) |
 | `led -i/-c <r g b>/-b/-x` | led_manager (legacy set-color drives an ALERT-priority indication: the arbiter owns the LED; `-x/--clear` releases it) |
 | `battery` | battery_monitor (new in v6) |
+| `sleep`, `sleep hold <min>`, `sleep test <secs>` | sleep_manager (new in v6: state, the battery against the sleep / wake pair, and since 2026-10-06 a `sleeps in N s (...)` line while the sleep delay or the critical floor counts down and a `held awake on request` line while a hold runs; `hold` keeps the device awake 1..30 min more, three per boot, the web UI's Keep awake button; `test` forces a timed bench sleep). The row was missing from this table until that day |
 | `sdcard -i/-t` | external_storage (`-i` card name/type/capacity/sector/speed from its own sdmmc data; `-t` write/read-back self-test) |
 | `fs` | filesystem (per-backend usage: /data, /sd) |
 | `restart_tracker -l/-a/-p/-n/--panic[=abort\|fault\|wdt]/--report/--clear-report/--settle/--park-retry <s>` | restart_tracker (`--panic` = deliberate test panic: `abort()`, an invalid store, or the interrupt watchdog; `-l` / `-a` print a record's crash note under it, and `mode:` when the boot parked or ran safe mode; v6 flags print as hex. 2026-10-05: `--report` prints the crash report stored in NVS as the text a user sends on, the crash-loop brake in one line (`Brake: verdict=... streak=n/3 ... report_budget=n`) and how full NVS is; `--clear-report` forgets it. The bench's two knobs on the brake: `--settle` marks this run healthy now, so a crash that follows is a first crash; `--park-retry <s>` (10..3600, 0 = off) makes the NEXT park end by itself after that long, once) |

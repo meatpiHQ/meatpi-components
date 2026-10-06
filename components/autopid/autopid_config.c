@@ -545,6 +545,25 @@ esp_err_t autopid_config_load(ap_config_t *cfg)
 
     buf[got] = '\0';
 
+    /* a file with a parameter name twice (the SAE table used to give one
+       name to two PIDs, and the detection stored its rows unvalidated,
+       2026-10-06) is repaired, not emptied: the later name gets a suffix,
+       the file is rewritten once, so the tables load, the boot stays
+       clean and the UI's PUT of what it reads back goes through */
+    int renamed = 0;
+    char *fixed = ap_config_repair_names(buf, &renamed);
+
+    if (fixed != NULL)
+    {
+        ESP_LOGW(TAG, "config file: %d repeated parameter name%s made unique "
+                      "(_2, _3, ...) and the file rewritten",
+                 renamed, renamed == 1 ? "" : "s");
+        free(buf);
+        buf = fixed;
+        got = strlen(buf);
+        (void)filesystem_write(AP_CONFIG_PATH, buf, got);
+    }
+
     char perr[96] = "";
 
     err = ap_config_parse(buf, cfg, perr, sizeof(perr));

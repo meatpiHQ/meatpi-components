@@ -28,6 +28,8 @@ void run_dtc_report_tests(void);
 void run_resp_lines_tests(void);
 /* test_j1939_rows.c: the PGN: rows, their classes, the SPN expressions */
 void run_j1939_rows_tests(void);
+/* test_names.c: parameter names made unique, and the SAE table clean of repeats */
+void run_names_tests(void);
 
 /* ---- helpers ----------------------------------------------------------------- */
 
@@ -2059,6 +2061,7 @@ void app_main(void)
     run_bus_guard_tests();
     run_dialect_tests();
     run_dtc_report_tests();
+    run_names_tests();
     run_resp_lines_tests();
     run_j1939_rows_tests();
 

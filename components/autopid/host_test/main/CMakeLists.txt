@@ -11,6 +11,7 @@ set(j_dir "${CMAKE_CURRENT_LIST_DIR}/../../../j1939")
 
 idf_component_register(
     SRCS "test_main.c"
+         "test_names.c"
          "test_vehicle.c"
          "test_vehicle_index.c"
          "test_bus_guard.c"
@@ -25,6 +26,7 @@ idf_component_register(
          "${comp_dir}/autopid_resp_lines.c"
          "${comp_dir}/autopid_resp_filter.c"
          "${comp_dir}/autopid_config.c"
+         "${comp_dir}/autopid_names.c"
          "${comp_dir}/autopid_std.c"
          "${comp_dir}/autopid_vehicle_core.c"
          "${comp_dir}/autopid_vehicle_index.c"

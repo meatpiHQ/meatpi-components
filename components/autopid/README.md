@@ -93,6 +93,7 @@ Decisions log there is authoritative; the big ones:
 | `autopid_dialect.c` / `autopid_dialect.h` | PURE OBD dialects (`obd2`, `uds`, `j1939`): the requests of a dialect, the data shift of its expressions, the bitmap + responder parser for every print shape of the chip (11-bit, 29-bit as four byte tokens, headers off), the per-ECU support table and the owner of a PID, the physical address of a responder, the CAN protocols a contact probe may use on a given bus |
 | `autopid_filter.c` | the ATMA filter window: MONITOR claim, header/CRA choreography, frame capture (`ap_filter_frame`, pure), retried stop |
 | `autopid_std.c` | standard PIDs: vendored SAE table (obd2_standard_pids.h, included ONLY here), PURE bit_start to expression mapping + bitmap parser, freeze-frame decode, the table JSON view |
+| `autopid_names.c` | PURE (2026-10-06): parameter names made unique, `ap_names_dedupe()` over a `pids` array (config rows or the scan's `supported` entries, the later repeat gets `_2`, `_3`, ...) and `ap_config_repair_names()` for a stored file; see "No parameter name twice" below |
 | `autopid_std_scan.c` | the vehicle DETECTION job (the async support scan, split out 2026-10-01): phases `protocol` (which protocol and which dialect answer: a walk over the pinned CAN protocols the bus guard allows, `0100` then `22F400` on each), `vin` (`autopid_identify.c`), `pids` (`autopid_scan_walk.c`); hands the result to the vehicle store (`autopid_vehicle_detected`), then writes `/data/autopid/std_scan.json`; started by the poller itself on an unknown car; owns `ap_std_prelude()` |
 | `autopid_scan_walk.c` | the job's `pids` phase: the support bitmap walk of the car's dialect (per ECU with headers on for `uds`) and one config row per supported PID that decodes something |
 | `autopid_vehicle_core.c` | PURE vehicle identity (TASK_quick_setup.md): ATDPN parse, VIN from 0902 / 22F190 replies, responder fingerprint (FNV-1a over sorted ECU id + 0100 bitmap pairs), effective-protocol + prelude selection, the first-pass vehicle.json reader (import); `autopid_vehicle.h` holds every vehicle contract |
@@ -609,6 +610,44 @@ straight into the config PUT. The poller starts the job by itself once
 per boot when first contact meets an unknown car; otherwise never without
 the button. Polling pauses during the scan and resumes with its init
 state replayed.
+
+### No parameter name twice (2026-10-06)
+
+Parameter names key the value cache and every API, so `ap_config_parse`
+refuses a name that appears twice. The vendored SAE table gave one name to
+two PIDs in 21 places (`OxySensorN_Volt` under 0x14..0x1B and 0x24..0x2B,
+`OxySensorN_FAER` under 0x24..0x2B and 0x34..0x3B, `EngineFuelRate` 0x5E/0x9D,
+`TurbochargerTemperature` 0x75/0x76, `EngineRunTime_AECD` 0x81/0x82,
+`WWH_OBD_SysInfo` 0x90/0x91, `EGT_Sensor` 0x98/0x99), and the detection
+stored its rows without validating them: a car answering both oxygen-sensor
+sets (Ali's, 92 PIDs found) got a `config.json` its own loader refused at the
+next boot (`E config file invalid: duplicate parameter name 'OxySensor1_Volt',
+empty tables`, a `boot_errors` fault, nothing polled) and the wizard's PUT of
+it was refused with the same words. Fixed three ways, each enough on its own:
+
+1. **The table**: the wide-range rows are `OxySensorN_WR_FAER` /
+   `OxySensorN_WR_Volt` (0x24..0x2B) and `OxySensorN_WRC_FAER` (0x34..0x3B,
+   the current PIDs keep `OxySensorN_Crnt`); `EngineFuelRate_gs` (0x9D),
+   `TurbochargerB_Temperature` (0x76), `EngineRunTime_AECD_6_10` (0x82),
+   `WWH_OBD_SysInfo_2` (0x91), `EGT_Sensor_Bank2` (0x99); the row names
+   follow. A car scanned before keeps its stored rows under the old names;
+   only a new scan uses the new ones (Home Assistant entities of such a
+   re-scan change name). The host suite walks the vendored array and fails on
+   any repeat (`test_std_table_has_no_parameter_name_twice`).
+2. **The scan** runs `ap_names_dedupe()` over its `supported` entries before
+   they are stored (the result document and the car's rows alike): a device
+   can never write a file its own loader refuses, whatever the table says.
+3. **The loader repairs instead of emptying**: `autopid_config_load()` runs
+   `ap_config_repair_names()` first; a file with a repeat gets the later name
+   suffixed, one W line (`config file: N repeated parameter names made unique
+   (_2, _3, ...) and the file rewritten`), and the repaired text written back
+   once (change-guarded: a clean file is never touched), so the tables load,
+   the boot stays clean and `GET /api/autopid/config` returns what the PUT
+   will accept. The PUT itself stays strict.
+
+The web UI's Quick Setup de-duplicates the same way before its Finish PUT
+(the belt). Bench: `tools/testbench/system/autopid_names_bench.py`
+(`AUTOPID NAMES PASS`).
 
 ## Vehicle store (Quick Setup, second pass, 2026-10-01)
 

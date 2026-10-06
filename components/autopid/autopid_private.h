@@ -432,6 +432,19 @@ bool ap_std_scan_parse(const char *resp, uint8_t expect_pid,
 esp_err_t ap_config_parse(const char *json, ap_config_t *cfg, char *err,
                           size_t err_len);
 
+#include "cJSON.h" /* the name helpers hand cJSON trees around */
+/* ---- parameter names made unique (autopid_names.c, PURE, 2026-10-06) ----
+ * Names key the cache and the API; the parser refuses a repeat. The scan's
+ * rows are made unique before they are stored and a stored file with a
+ * repeat is repaired at load (the later name gets _2, _3, ...).         */
+/** Rename every repeated parameter name in a "pids" array (config rows or
+ *  the scan's `supported` entries). @return how many were renamed. */
+int ap_names_dedupe(cJSON *pids);
+/** A config text with repeats -> the repaired text (malloc'd, caller
+ *  frees) and the count; NULL and 0 when nothing needed renaming or the
+ *  text does not parse (the parser then says what is wrong). */
+char *ap_config_repair_names(const char *json, int *renamed);
+
 /** In-place neutralization of EEPROM-writing user init commands
  *  (case-insensitive, whitespace-tolerant: "atsp6", "AT SP 6"):
  *  ATSP -> ATTP (same protocol switch, RAM only) and ATM1 -> ATM0

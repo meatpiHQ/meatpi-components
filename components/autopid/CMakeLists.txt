@@ -1,5 +1,6 @@
 idf_component_register(
     SRCS "autopid.c"
+         "autopid_names.c"
          "autopid_poller.c"
          "autopid_settings.c"
          "autopid_runner.c"

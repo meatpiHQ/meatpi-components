@@ -647,7 +647,7 @@ static const std_parameter_t pid_35_params[] = {
 
 static const std_parameter_t pid_36_params[] = {
     {
-        .name = "OxySensor1_FAER",
+        .name = "OxySensor1_WR_FAER",
         .unit = "ratio",
         .scale = 3.051757813e-05f,
         .offset = 0.0f,
@@ -658,7 +658,7 @@ static const std_parameter_t pid_36_params[] = {
         .class = "gas"
     },
     {
-        .name = "OxySensor1_Volt",
+        .name = "OxySensor1_WR_Volt",
         .unit = "volts",
         .scale = 0.0001220703125f,
         .offset = 0.0f,
@@ -672,7 +672,7 @@ static const std_parameter_t pid_36_params[] = {
 
 static const std_parameter_t pid_37_params[] = {
     {
-        .name = "OxySensor2_FAER",
+        .name = "OxySensor2_WR_FAER",
         .unit = "ratio",
         .scale = 3.051757813e-05f,
         .offset = 0.0f,
@@ -683,7 +683,7 @@ static const std_parameter_t pid_37_params[] = {
         .class = "gas"
     },
     {
-        .name = "OxySensor2_Volt",
+        .name = "OxySensor2_WR_Volt",
         .unit = "volts",
         .scale = 0.0001220703125f,
         .offset = 0.0f,
@@ -697,7 +697,7 @@ static const std_parameter_t pid_37_params[] = {
 
 static const std_parameter_t pid_38_params[] = {
     {
-        .name = "OxySensor3_FAER",
+        .name = "OxySensor3_WR_FAER",
         .unit = "ratio",
         .scale = 3.051757813e-05f,
         .offset = 0.0f,
@@ -708,7 +708,7 @@ static const std_parameter_t pid_38_params[] = {
         .class = "gas"
     },
     {
-        .name = "OxySensor3_Volt",
+        .name = "OxySensor3_WR_Volt",
         .unit = "volts",
         .scale = 0.0001220703125f,
         .offset = 0.0f,
@@ -722,7 +722,7 @@ static const std_parameter_t pid_38_params[] = {
 
 static const std_parameter_t pid_39_params[] = {
     {
-        .name = "OxySensor4_FAER",
+        .name = "OxySensor4_WR_FAER",
         .unit = "ratio",
         .scale = 3.051757813e-05f,
         .offset = 0.0f,
@@ -733,7 +733,7 @@ static const std_parameter_t pid_39_params[] = {
         .class = "gas"
     },
     {
-        .name = "OxySensor4_Volt",
+        .name = "OxySensor4_WR_Volt",
         .unit = "volts",
         .scale = 0.0001220703125f,
         .offset = 0.0f,
@@ -747,7 +747,7 @@ static const std_parameter_t pid_39_params[] = {
 
 static const std_parameter_t pid_40_params[] = {
     {
-        .name = "OxySensor5_FAER",
+        .name = "OxySensor5_WR_FAER",
         .unit = "ratio",
         .scale = 3.051757813e-05f,
         .offset = 0.0f,
@@ -758,7 +758,7 @@ static const std_parameter_t pid_40_params[] = {
         .class = "gas"
     },
     {
-        .name = "OxySensor5_Volt",
+        .name = "OxySensor5_WR_Volt",
         .unit = "volts",
         .scale = 0.0001220703125f,
         .offset = 0.0f,
@@ -772,7 +772,7 @@ static const std_parameter_t pid_40_params[] = {
 
 static const std_parameter_t pid_41_params[] = {
     {
-        .name = "OxySensor6_FAER",
+        .name = "OxySensor6_WR_FAER",
         .unit = "ratio",
         .scale = 3.051757813e-05f,
         .offset = 0.0f,
@@ -783,7 +783,7 @@ static const std_parameter_t pid_41_params[] = {
         .class = "gas"
     },
     {
-        .name = "OxySensor6_Volt",
+        .name = "OxySensor6_WR_Volt",
         .unit = "volts",
         .scale = 0.0001220703125f,
         .offset = 0.0f,
@@ -797,7 +797,7 @@ static const std_parameter_t pid_41_params[] = {
 
 static const std_parameter_t pid_42_params[] = {
     {
-        .name = "OxySensor7_FAER",
+        .name = "OxySensor7_WR_FAER",
         .unit = "ratio",
         .scale = 3.051757813e-05f,
         .offset = 0.0f,
@@ -808,7 +808,7 @@ static const std_parameter_t pid_42_params[] = {
         .class = "gas"
     },
     {
-        .name = "OxySensor7_Volt",
+        .name = "OxySensor7_WR_Volt",
         .unit = "volts",
         .scale = 0.0001220703125f,
         .offset = 0.0f,
@@ -822,7 +822,7 @@ static const std_parameter_t pid_42_params[] = {
 
 static const std_parameter_t pid_43_params[] = {
     {
-        .name = "OxySensor8_FAER",
+        .name = "OxySensor8_WR_FAER",
         .unit = "ratio",
         .scale = 3.051757813e-05f,
         .offset = 0.0f,
@@ -833,7 +833,7 @@ static const std_parameter_t pid_43_params[] = {
         .class = "gas"
     },
     {
-        .name = "OxySensor8_Volt",
+        .name = "OxySensor8_WR_Volt",
         .unit = "volts",
         .scale = 0.0001220703125f,
         .offset = 0.0f,
@@ -959,7 +959,7 @@ static const std_parameter_t pid_51_params[] = {
 
 static const std_parameter_t pid_52_params[] = {
     {
-        .name = "OxySensor1_FAER",
+        .name = "OxySensor1_WRC_FAER",
         .unit = "ratio",
         .scale = 3.051757813e-05f,
         .offset = 0.0f,
@@ -984,7 +984,7 @@ static const std_parameter_t pid_52_params[] = {
 
 static const std_parameter_t pid_53_params[] = {
     {
-        .name = "OxySensor2_FAER",
+        .name = "OxySensor2_WRC_FAER",
         .unit = "ratio",
         .scale = 3.051757813e-05f,
         .offset = 0.0f,
@@ -1009,7 +1009,7 @@ static const std_parameter_t pid_53_params[] = {
 
 static const std_parameter_t pid_54_params[] = {
     {
-        .name = "OxySensor3_FAER",
+        .name = "OxySensor3_WRC_FAER",
         .unit = "ratio",
         .scale = 3.051757813e-05f,
         .offset = 0.0f,
@@ -1034,7 +1034,7 @@ static const std_parameter_t pid_54_params[] = {
 
 static const std_parameter_t pid_55_params[] = {
     {
-        .name = "OxySensor4_FAER",
+        .name = "OxySensor4_WRC_FAER",
         .unit = "ratio",
         .scale = 3.051757813e-05f,
         .offset = 0.0f,
@@ -1059,7 +1059,7 @@ static const std_parameter_t pid_55_params[] = {
 
 static const std_parameter_t pid_56_params[] = {
     {
-        .name = "OxySensor5_FAER",
+        .name = "OxySensor5_WRC_FAER",
         .unit = "ratio",
         .scale = 3.051757813e-05f,
         .offset = 0.0f,
@@ -1084,7 +1084,7 @@ static const std_parameter_t pid_56_params[] = {
 
 static const std_parameter_t pid_57_params[] = {
     {
-        .name = "OxySensor6_FAER",
+        .name = "OxySensor6_WRC_FAER",
         .unit = "ratio",
         .scale = 3.051757813e-05f,
         .offset = 0.0f,
@@ -1109,7 +1109,7 @@ static const std_parameter_t pid_57_params[] = {
 
 static const std_parameter_t pid_58_params[] = {
     {
-        .name = "OxySensor7_FAER",
+        .name = "OxySensor7_WRC_FAER",
         .unit = "ratio",
         .scale = 3.051757813e-05f,
         .offset = 0.0f,
@@ -1134,7 +1134,7 @@ static const std_parameter_t pid_58_params[] = {
 
 static const std_parameter_t pid_59_params[] = {
     {
-        .name = "OxySensor8_FAER",
+        .name = "OxySensor8_WRC_FAER",
         .unit = "ratio",
         .scale = 3.051757813e-05f,
         .offset = 0.0f,
@@ -2125,7 +2125,7 @@ static const std_parameter_t pid_117_params[] = {
 
 static const std_parameter_t pid_118_params[] = {
     {
-        .name = "TurbochargerTemperature",
+        .name = "TurbochargerB_Temperature",
         .unit = "none",
         .scale = 1.0f,
         .offset = 0.0f,
@@ -2293,7 +2293,7 @@ static const std_parameter_t pid_129_params[] = {
 
 static const std_parameter_t pid_130_params[] = {
     {
-        .name = "EngineRunTime_AECD",
+        .name = "EngineRunTime_AECD_6_10",
         .unit = "none",
         .scale = 1.0f,
         .offset = 0.0f,
@@ -2503,7 +2503,7 @@ static const std_parameter_t pid_144_params[] = {
 
 static const std_parameter_t pid_145_params[] = {
     {
-        .name = "WWH_OBD_SysInfo",
+        .name = "WWH_OBD_SysInfo_2",
         .unit = "hours",
         .scale = 1.0f,
         .offset = 0.0f,
@@ -2573,7 +2573,7 @@ static const std_parameter_t pid_152_params[] = {
 
 static const std_parameter_t pid_153_params[] = {
     {
-        .name = "EGT_Sensor",
+        .name = "EGT_Sensor_Bank2",
         .unit = "none",
         .scale = 1.0f,
         .offset = 0.0f,
@@ -2629,7 +2629,7 @@ static const std_parameter_t pid_156_params[] = {
 
 static const std_parameter_t pid_157_params[] = {
     {
-        .name = "EngineFuelRate",
+        .name = "EngineFuelRate_gs",
         .unit = "g/s",
         .scale = 1.0f,
         .offset = 0.0f,
@@ -2991,42 +2991,42 @@ static const std_pid_t pid_array[] = {
         .num_params = 1
     },
     [0x24] = {
-        .base_name = "OxySensor1_FAER",
+        .base_name = "OxySensor1_WR_FAER",
         .params = pid_36_params,
         .num_params = 2
     },
     [0x25] = {
-        .base_name = "OxySensor2_FAER",
+        .base_name = "OxySensor2_WR_FAER",
         .params = pid_37_params,
         .num_params = 2
     },
     [0x26] = {
-        .base_name = "OxySensor3_FAER",
+        .base_name = "OxySensor3_WR_FAER",
         .params = pid_38_params,
         .num_params = 2
     },
     [0x27] = {
-        .base_name = "OxySensor4_FAER",
+        .base_name = "OxySensor4_WR_FAER",
         .params = pid_39_params,
         .num_params = 2
     },
     [0x28] = {
-        .base_name = "OxySensor5_FAER",
+        .base_name = "OxySensor5_WR_FAER",
         .params = pid_40_params,
         .num_params = 2
     },
     [0x29] = {
-        .base_name = "OxySensor6_FAER",
+        .base_name = "OxySensor6_WR_FAER",
         .params = pid_41_params,
         .num_params = 2
     },
     [0x2A] = {
-        .base_name = "OxySensor7_FAER",
+        .base_name = "OxySensor7_WR_FAER",
         .params = pid_42_params,
         .num_params = 2
     },
     [0x2B] = {
-        .base_name = "OxySensor8_FAER",
+        .base_name = "OxySensor8_WR_FAER",
         .params = pid_43_params,
         .num_params = 2
     },
@@ -3071,42 +3071,42 @@ static const std_pid_t pid_array[] = {
         .num_params = 1
     },
     [0x34] = {
-        .base_name = "OxySensor1_FAER",
+        .base_name = "OxySensor1_WRC_FAER",
         .params = pid_52_params,
         .num_params = 2
     },
     [0x35] = {
-        .base_name = "OxySensor2_FAER",
+        .base_name = "OxySensor2_WRC_FAER",
         .params = pid_53_params,
         .num_params = 2
     },
     [0x36] = {
-        .base_name = "OxySensor3_FAER",
+        .base_name = "OxySensor3_WRC_FAER",
         .params = pid_54_params,
         .num_params = 2
     },
     [0x37] = {
-        .base_name = "OxySensor4_FAER",
+        .base_name = "OxySensor4_WRC_FAER",
         .params = pid_55_params,
         .num_params = 2
     },
     [0x38] = {
-        .base_name = "OxySensor5_FAER",
+        .base_name = "OxySensor5_WRC_FAER",
         .params = pid_56_params,
         .num_params = 2
     },
     [0x39] = {
-        .base_name = "OxySensor6_FAER",
+        .base_name = "OxySensor6_WRC_FAER",
         .params = pid_57_params,
         .num_params = 2
     },
     [0x3A] = {
-        .base_name = "OxySensor7_FAER",
+        .base_name = "OxySensor7_WRC_FAER",
         .params = pid_58_params,
         .num_params = 2
     },
     [0x3B] = {
-        .base_name = "OxySensor8_FAER",
+        .base_name = "OxySensor8_WRC_FAER",
         .params = pid_59_params,
         .num_params = 2
     },
@@ -3401,7 +3401,7 @@ static const std_pid_t pid_array[] = {
         .num_params = 1
     },
     [0x76] = {
-        .base_name = "TurbochargerTemperature",
+        .base_name = "TurbochargerB_Temperature",
         .params = pid_118_params,
         .num_params = 1
     },
@@ -3461,7 +3461,7 @@ static const std_pid_t pid_array[] = {
         .num_params = 1
     },
     [0x82] = {
-        .base_name = "EngineRunTime_AECD",
+        .base_name = "EngineRunTime_AECD_6_10",
         .params = pid_130_params,
         .num_params = 1
     },
@@ -3536,7 +3536,7 @@ static const std_pid_t pid_array[] = {
         .num_params = 1
     },
     [0x91] = {
-        .base_name = "WWH_OBD_SysInfo",
+        .base_name = "WWH_OBD_SysInfo_2",
         .params = pid_145_params,
         .num_params = 1
     },
@@ -3561,7 +3561,7 @@ static const std_pid_t pid_array[] = {
         .num_params = 1
     },
     [0x99] = {
-        .base_name = "EGT_Sensor",
+        .base_name = "EGT_Sensor_Bank2",
         .params = pid_153_params,
         .num_params = 1
     },
@@ -3581,7 +3581,7 @@ static const std_pid_t pid_array[] = {
         .num_params = 1
     },
     [0x9D] = {
-        .base_name = "EngineFuelRate",
+        .base_name = "EngineFuelRate_gs",
         .params = pid_157_params,
         .num_params = 1
     },

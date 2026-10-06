@@ -292,8 +292,17 @@ static void scan_store(cJSON *root, const cJSON *supported,
 {
     static ap_veh_entry_t entry EXT_RAM_BSS_ATTR; /* scan task only     */
     bool known = false;
+    /* whatever the table says, no parameter name twice in what is stored
+       (the result document and the car's rows alike) */
+    int renamed = ap_names_dedupe((cJSON *)supported);
     char *tables = ap_scan_rows_config(supported);
     esp_err_t err = ESP_ERR_NO_MEM;
+
+    if (renamed > 0)
+    {
+        ESP_LOGW(TAG, "detection: %d repeated parameter name%s made unique",
+                 renamed, renamed == 1 ? "" : "s");
+    }
 
     seen->std_supported = found;
 

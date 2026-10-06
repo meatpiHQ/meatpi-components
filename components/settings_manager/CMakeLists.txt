@@ -6,6 +6,7 @@ idf_component_register(
          "settings_manager_codec.c"
          "settings_manager_fields.c"
          "settings_manager_storage.c"
+         "settings_manager_lfs.c"
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "."
     # cJSON is a public dependency (the header exposes its types); it is

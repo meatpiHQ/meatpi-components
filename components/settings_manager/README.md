@@ -62,13 +62,31 @@ it. `main` calls `settings_manager_init()` first, then each component's `init`
 `littlefs`-subtype data partition labelled `settings` (the manager mounts it at
 `/settings`, files under `/settings/cfg/<name>.json`).
 
-**First boot:** a never-formatted partition (erased flash, 0xFF) is detected
-by probing the LittleFS superblock pair and formatted explicitly with
-`esp_littlefs_format()` *before* the mount (2026-09-05). Without that,
-`lfs_mount()` logs two "Corrupted dir pair" E lines before
+**First boot, and a partition that is not ours:** before the mount,
+`sm_lfs_probe()` (`settings_manager_lfs.c`, pure, host-tested) reads the
+first 256 bytes of the LittleFS superblock pair (blocks 0 and 1) and says
+what is there. Erased flash (0xFF, a never-formatted partition) is
+formatted explicitly with `esp_littlefs_format()`, one I line (2026-09-05;
+without that `lfs_mount()` logs two "Corrupted dir pair" E lines before
 `format_if_mount_failed` runs, and `dev_status_manager` latched them as a
-`boot_errors` fault on every brand-new device. The same guard lives in
-`filesystem` for `/data`.
+`boot_errors` fault on every brand-new device). Since 2026-10-06 a
+LittleFS superblock whose block count is not the partition's, or a pair
+with no superblock at all, is formatted the same way with one **W** line:
+the factory firmware (legacy v4.5x) keeps its 6 MB LittleFS exactly where
+this partition starts, a flash without an erase leaves it there, and
+LittleFS mounts a superblock whatever block count it claims (the ESP port
+takes the count from the superblock), so until that day the factory
+filesystem "mounted" on these 256 KB and every access past the end failed:
+83 E lines at boot, the `boot_errors` fault, not one setting persisted
+(Ali's fresh unit showed `1 fault`). A LittleFS of our own size that
+fails to mount still takes the loud path: that is real corruption. The
+same guard lives in `filesystem` for `/data` (`fs_lfs_probe()`; the two
+copies are kept apart because this component sits below `filesystem`).
+Bench: `tools/testbench/system/factory_flash_bench.py` (TESTING.md) puts a
+factory-style filesystem under a first boot: 0 E lines, no fault, the
+defaults persisted. A unit bitten before the fix keeps its latched
+`boot_errors` until `faults -c` (or the UI's clear): the fix stops the
+cause, it does not clear the record.
 
 ## Constraints & limitations (read before writing a descriptor)
 

@@ -75,6 +75,10 @@ void test_fields_array_defaults_collected(void);
 void test_fields_settings_json_stringize(void);
 void test_fields_array_rejects_malformed_tables(void);
 
+/* the superblock probe before the mount */
+void test_sm_lfs_probe_blank_ours_and_factory(void);
+void test_sm_lfs_probe_other_and_bad_input(void);
+
 void app_main(void)
 {
     UNITY_BEGIN();
@@ -142,6 +146,8 @@ void app_main(void)
     RUN_TEST(test_fields_array_defaults_collected);
     RUN_TEST(test_fields_settings_json_stringize);
     RUN_TEST(test_fields_array_rejects_malformed_tables);
+    RUN_TEST(test_sm_lfs_probe_blank_ours_and_factory);
+    RUN_TEST(test_sm_lfs_probe_other_and_bad_input);
 
     UNITY_END();
 }

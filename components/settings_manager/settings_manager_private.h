@@ -155,6 +155,24 @@ int sm_fill_missing(cJSON *dst, const cJSON *src);
     persisted_clean. Failure logs but is not fatal. */
 void sm_persist(sm_entry_t *e, const cJSON *data);
 
+/* ---- settings_manager_lfs.c: the superblock probe (pure, host-tested) ----
+ * What the superblock pair of the settings partition holds: BLANK = both
+ * blocks erased (never formatted); LITTLEFS = a version-2 superblock with
+ * @p block_size, its block count in @p block_count (ours when it equals the
+ * partition's; the factory firmware's 6 MB filesystem when it does not);
+ * OTHER = neither. @p blk0 / @p blk1 are the first @p len bytes (>= 36, 256
+ * is plenty) of blocks 0 and 1. */
+typedef enum
+{
+    SM_LFS_BLANK = 0,
+    SM_LFS_LITTLEFS,
+    SM_LFS_OTHER,
+} sm_lfs_kind_t;
+
+sm_lfs_kind_t sm_lfs_probe(const uint8_t *blk0, const uint8_t *blk1,
+                           size_t len, uint32_t block_size,
+                           uint32_t *block_count);
+
 #ifdef __cplusplus
 }
 #endif

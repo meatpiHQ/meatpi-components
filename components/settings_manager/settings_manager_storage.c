@@ -49,48 +49,94 @@
 
 /* LittleFS superblock pair = blocks {0,1}, one 4 KiB flash sector each */
 #define SM_LFS_BLOCK_SIZE 4096u
-#define SM_BLANK_PROBE    64u
+#define SM_PROBE_LEN      256u  /* of each superblock block */
 
 static const char *TAG = "settings_manager";
 static bool s_mounted;
 
 /**
- * True when the settings partition has never been formatted (both
- * superblock blocks read as erased flash, 0xFF). First boot after an
- * erase: formatting it explicitly avoids lfs_mount()'s "Corrupted dir
- * pair" E lines, which latched a boot_errors fault on every new unit.
- * Read errors / a missing partition count as "not blank".
+ * What the settings partition's superblock pair holds (sm_lfs_probe):
+ * BLANK after an erase, a LittleFS with its block count, or something
+ * else. A missing partition or a read error answers LITTLEFS with the
+ * partition's own block count, so the normal mount path runs.
  */
-static bool partition_is_blank(void)
+static sm_lfs_kind_t partition_probe(uint32_t *blocks, uint32_t *found)
 {
     const esp_partition_t *part = esp_partition_find_first(
         ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, SM_PARTITION_LABEL);
+    static uint8_t probe[2][SM_PROBE_LEN]; /* boot only; internal: the
+                                              settings FS lives before PSRAM
+                                              attrs are worth a dependency */
+
+    *blocks = 0;
+    *found = 0;
 
     if (part == NULL)
     {
-        return false;
+        return SM_LFS_LITTLEFS;
     }
 
-    uint8_t probe[SM_BLANK_PROBE];
+    *blocks = part->size / SM_LFS_BLOCK_SIZE;
+    *found = *blocks;
 
     for (uint32_t blk = 0; blk < 2; blk++)
     {
-        if (esp_partition_read(part, blk * SM_LFS_BLOCK_SIZE, probe,
-                               sizeof(probe)) != ESP_OK)
+        if (esp_partition_read(part, blk * SM_LFS_BLOCK_SIZE, probe[blk],
+                               SM_PROBE_LEN) != ESP_OK)
         {
-            return false;
-        }
-
-        for (size_t i = 0; i < sizeof(probe); i++)
-        {
-            if (probe[i] != 0xFF)
-            {
-                return false;
-            }
+            return SM_LFS_LITTLEFS;
         }
     }
 
-    return true;
+    return sm_lfs_probe(probe[0], probe[1], SM_PROBE_LEN, SM_LFS_BLOCK_SIZE,
+                        found);
+}
+
+/**
+ * Format the partition before the mount when it is not ours. First boot
+ * after an erase: both superblock blocks read 0xFF, and letting
+ * lfs_mount() discover that logs "Corrupted dir pair" at E level, which
+ * latched a boot_errors fault on every new unit. A unit flashed over the
+ * factory firmware without an erase (2026-10-06): that firmware's 6 MB
+ * LittleFS starts exactly here, LittleFS mounts it whatever block count
+ * it claims, and every access past our 256 KB fails: 83 E lines at boot,
+ * the fault, no setting persisted. A LittleFS of our own size that fails
+ * to mount still takes the loud path: that IS a fault worth seeing.
+ */
+static void format_if_not_ours(void)
+{
+    uint32_t blocks;
+    uint32_t found;
+    sm_lfs_kind_t kind = partition_probe(&blocks, &found);
+
+    if (kind == SM_LFS_BLANK)
+    {
+        ESP_LOGI(TAG, "'%s' is blank (first boot): formatting", SM_PARTITION_LABEL);
+    }
+    else if (kind == SM_LFS_OTHER)
+    {
+        ESP_LOGW(TAG, "'%s' holds no LittleFS superblock (another firmware's "
+                 "data): formatting", SM_PARTITION_LABEL);
+    }
+    else if (found != blocks)
+    {
+        ESP_LOGW(TAG, "'%s' holds a LittleFS of %lu blocks on a %lu-block "
+                 "partition (another firmware's layout, the factory image?): "
+                 "formatting", SM_PARTITION_LABEL, (unsigned long)found,
+                 (unsigned long)blocks);
+    }
+    else
+    {
+        return;
+    }
+
+    esp_err_t ferr = esp_littlefs_format(SM_PARTITION_LABEL);
+
+    if (ferr != ESP_OK)
+    {
+        ESP_LOGW(TAG, "pre-format failed: %s (mount will retry)",
+                 esp_err_to_name(ferr));
+    }
 }
 
 static void build_path(char *buf, size_t buf_len, const char *name, const char *ext)
@@ -105,18 +151,7 @@ esp_err_t sm_storage_mount(void)
         return ESP_OK;
     }
 
-    if (partition_is_blank())
-    {
-        ESP_LOGI(TAG, "'%s' is blank (first boot): formatting", SM_PARTITION_LABEL);
-
-        esp_err_t ferr = esp_littlefs_format(SM_PARTITION_LABEL);
-
-        if (ferr != ESP_OK)
-        {
-            ESP_LOGW(TAG, "pre-format failed: %s (mount will retry)",
-                     esp_err_to_name(ferr));
-        }
-    }
+    format_if_not_ours();
 
     esp_vfs_littlefs_conf_t conf =
     {

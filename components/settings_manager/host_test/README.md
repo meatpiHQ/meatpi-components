@@ -15,7 +15,7 @@ Pure-logic suite (IDF `linux` target, no hardware). Run via `.\test.ps1 host`
 ## Expected result
 
 ```
-36 Tests 0 Failures 0 Ignored
+60 Tests 0 Failures 0 Ignored
 OK
 ```
 

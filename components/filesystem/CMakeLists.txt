@@ -3,6 +3,7 @@
          "filesystem_settings.c"
          "filesystem_stream.c"
          "filesystem_path.c"
+         "filesystem_mount.c"
          "filesystem_cli.c"
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "."

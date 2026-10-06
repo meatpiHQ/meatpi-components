@@ -86,8 +86,45 @@ esp_err_t fs_path_parent(const char *path, char *out, size_t out_len);
  */
 bool fs_region_is_blank(const uint8_t *buf, size_t len);
 
+/**
+ * What the superblock pair of a LittleFS partition holds (2026-10-06).
+ *
+ * A unit that ran the factory firmware keeps that firmware's 6 MB LittleFS
+ * where this firmware has its partitions, and a flash without an erase
+ * leaves it there. LittleFS mounts a superblock whatever block count it
+ * claims (the ESP port takes the count from the superblock), so a
+ * filesystem from another layout "mounts" and every access past the
+ * partition's end fails: error lines at boot, a latched fault, writes that
+ * fail. Read the pair before mounting: the superblock entry sits at the
+ * start of the pair's blocks as the 8-byte name "littlefs", a 4-byte tag
+ * and the inline struct {version, block_size, block_count, ...} as
+ * little-endian u32s (tags are XOR-chained, the data is not).
+ *
+ * @p blk0 / @p blk1: the first @p len bytes of blocks 0 and 1 (256 is
+ * plenty: the entry is the first thing in a block). @p block_size: the
+ * size this firmware mounts with. BLANK = both erased (never formatted);
+ * LITTLEFS = a superblock of a version-2 filesystem with that block size,
+ * its block count in @p block_count; OTHER = neither (another filesystem,
+ * or data blocks of one). Pure: host-tested. A copy lives in
+ * settings_manager (settings_manager_lfs.c), which sits below this
+ * component. */
+typedef enum
+{
+    FS_LFS_BLANK = 0,
+    FS_LFS_LITTLEFS,
+    FS_LFS_OTHER,
+} fs_lfs_kind_t;
+
+fs_lfs_kind_t fs_lfs_probe(const uint8_t *blk0, const uint8_t *blk1,
+                           size_t len, uint32_t block_size,
+                           uint32_t *block_count);
+
 /* ---- filesystem.c internals shared with filesystem_stream.c (esp target
  * only: never referenced by the host-built path module) ------------------- */
+
+/** filesystem_mount.c: probe the superblock pair of @p label and format a
+ *  blank or foreign partition quietly before the mount (one I or W line). */
+void fs_mount_prepare(const char *label);
 
 esp_err_t fs_check_path(const char *path, fs_backend_t *out_backend);
 esp_err_t fs_mkdirs_in_lock(const char *dir_path); /* call under fs_lock */

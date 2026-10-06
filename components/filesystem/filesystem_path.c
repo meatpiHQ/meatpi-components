@@ -22,7 +22,8 @@
 
 /**
  * @file filesystem_path.c
- * @brief Pure path validation/routing for the filesystem component.
+ * @brief Pure path validation/routing for the filesystem component, and
+ *        the LittleFS superblock probe the mount runs first (2026-10-06).
  *        No IDF/VFS dependencies: compiled as-is by the host unit tests.
  */
 #include "filesystem_private.h"
@@ -202,4 +203,71 @@ bool fs_region_is_blank(const uint8_t *buf, size_t len)
     }
 
     return true;
+}
+
+/* ---- the superblock probe (2026-10-06) ---------------------------------- */
+
+#define FS_LFS_MAGIC      "littlefs"
+#define FS_LFS_MAGIC_LEN  8u
+#define FS_LFS_TAG_LEN    4u
+#define FS_LFS_STRUCT_LEN 24u   /* six little-endian u32s */
+#define FS_LFS_MAX_BLOCKS (1u << 24)
+
+static uint32_t fs_le32(const uint8_t *p)
+{
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) |
+           ((uint32_t)p[3] << 24);
+}
+
+/* the first superblock entry of a block whose struct makes sense */
+static bool fs_block_superblock(const uint8_t *blk, size_t len,
+                                uint32_t block_size, uint32_t *block_count)
+{
+    size_t need = FS_LFS_MAGIC_LEN + FS_LFS_TAG_LEN + FS_LFS_STRUCT_LEN;
+
+    for (size_t m = 0; m + need <= len; m++)
+    {
+        if (memcmp(blk + m, FS_LFS_MAGIC, FS_LFS_MAGIC_LEN) != 0)
+        {
+            continue;
+        }
+
+        const uint8_t *st = blk + m + FS_LFS_MAGIC_LEN + FS_LFS_TAG_LEN;
+        uint32_t version = fs_le32(st);
+        uint32_t bsize = fs_le32(st + 4);
+        uint32_t bcount = fs_le32(st + 8);
+
+        if ((version >> 16) == 2u && bsize == block_size && bcount >= 2u &&
+            bcount <= FS_LFS_MAX_BLOCKS)
+        {
+            *block_count = bcount;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+fs_lfs_kind_t fs_lfs_probe(const uint8_t *blk0, const uint8_t *blk1,
+                           size_t len, uint32_t block_size,
+                           uint32_t *block_count)
+{
+    if (blk0 == NULL || blk1 == NULL || block_count == NULL ||
+        len < FS_LFS_MAGIC_LEN + FS_LFS_TAG_LEN + FS_LFS_STRUCT_LEN)
+    {
+        return FS_LFS_OTHER;
+    }
+
+    if (fs_region_is_blank(blk0, len) && fs_region_is_blank(blk1, len))
+    {
+        return FS_LFS_BLANK;
+    }
+
+    if (fs_block_superblock(blk0, len, block_size, block_count) ||
+        fs_block_superblock(blk1, len, block_size, block_count))
+    {
+        return FS_LFS_LITTLEFS;
+    }
+
+    return FS_LFS_OTHER;
 }

@@ -22,7 +22,7 @@ Pure path-logic suite (`filesystem_path.c` only: no VFS/LittleFS), IDF
 ## Expected result
 
 ```
-10 Tests 0 Failures 0 Ignored
+13 Tests 0 Failures 0 Ignored
 OK
 ```
 

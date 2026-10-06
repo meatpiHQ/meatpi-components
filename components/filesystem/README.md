@@ -85,27 +85,43 @@ exists.
 | Heap (internal) | LittleFS mount (esp_littlefs caches) | ~4–8 KiB while mounted |
 | Task stacks | none (runs in caller context) | 0 |
 
-## First boot (blank partition)
+## First boot, and a partition that is not ours
 
 A never-formatted `storage` partition reads as erased flash (0xFF). Letting
 `esp_vfs_littlefs_register()` discover that makes `lfs_mount()` log
 "Corrupted dir pair" at **E** level before `format_if_mount_failed`
 formats it: two E lines that latched a `boot_errors` fault on every
-brand-new unit (fresh-unit bench 2026-08-31). Since 2026-09-05
-`filesystem_init()` probes the superblock pair (blocks 0 and 1) with
-`fs_region_is_blank()` and, when both are erased, calls
-`esp_littlefs_format()` first (one **I** line, no mount attempt), then
-mounts a clean filesystem. A non-blank partition that fails to mount still
-takes the loud path on purpose: that is real corruption. settings_manager
-does the same for its `settings` partition. Verified: erase-flash + first
-boot = 0 E lines, `WICAN FAULTS active=0`.
+brand-new unit (fresh-unit bench 2026-08-31). Since 2026-09-05 the mount
+probes the superblock pair (blocks 0 and 1) first and formats a blank
+partition explicitly (one **I** line, no mount attempt). Since 2026-10-06
+the probe is `fs_lfs_probe()` (`filesystem_path.c`, pure, host-tested) and
+`fs_mount_prepare()` (`filesystem_mount.c`) also formats, with one **W**
+line, a pair that holds a LittleFS superblock of another block count or no
+superblock at all: a unit that ran the factory firmware (legacy v4.5x)
+keeps that firmware's 6 MB LittleFS under our layout, `settings` starts on
+its superblock and this partition starts in its middle (data blocks, or
+erased ones). LittleFS mounts a superblock whatever block count it claims
+(the ESP port takes the count from the superblock), which is how the
+factory filesystem "mounted" on the 256 KB settings partition until that
+day (83 E lines, a `boot_errors` fault, no setting persisted: Ali's fresh
+unit). A LittleFS of our own size that fails to mount still takes the loud
+path on purpose: that is real corruption. settings_manager does the same
+for its `settings` partition with its own copy of the probe (it sits
+below this component). Verified: erase-flash + first boot = 0 E lines,
+`WICAN FAULTS active=0`; a factory-style filesystem under a first boot
+(`tools/testbench/system/factory_flash_bench.py`, `FACTORY FLASH PASS`
+2026-10-06) = 0 E lines, the two W lines, no fault, the defaults persisted.
 
 ## Tests
 
 - **Host (Unity, `host_test/`):** pure path logic (prefix routing, traversal/`//`
   rejection, length caps, temp-name and parent derivation) plus the
   blank-flash predicate (`fs_region_is_blank`: erased, formatted magic,
-  single stray byte, empty/NULL). 11 tests. `idf.py --preview
+  single stray byte, empty/NULL) and the superblock probe (`fs_lfs_probe`:
+  blank, ours, the factory firmware's 1536 blocks, one erased block of the
+  pair, the entry deeper in a block; a FAT boot sector, data blocks, the
+  name without a struct, another block size, a version-1 filesystem, a
+  struct cut off by the probe's length, bad arguments). 13 tests. `idf.py --preview
   set-target linux && idf.py build` (Linux host required), run the ELF.
 - **On-target (`test_apps/`):** mounts the real `storage` partition and exercises
   write/read roundtrip, atomicity (no temp leftover), nested auto-create,

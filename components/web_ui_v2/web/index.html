@@ -134,6 +134,19 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--primary);outline-of
 .hdr-warn:hover{text-decoration:none;filter:brightness(.97)}
 .hdr-warn svg{width:15px;height:15px;flex:none}
 .hdr-warn[hidden]{display:none}
+/* sleep countdown (meatpi 2026-10-06): a bar under the header on every page,
+   Quick Setup included, while the device counts down to its sleep entry */
+#sleepbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:10px;padding:9px 32px;font-size:13px;font-weight:550;
+  color:var(--text-2);background:var(--primary-tint);border-bottom:1px solid color-mix(in srgb,var(--primary) 25%,transparent)}
+#sleepbar[hidden]{display:none}
+#sleepbar svg{width:16px;height:16px;flex:none;color:var(--primary)}
+#sleepbar b{color:var(--text);font-variant-numeric:tabular-nums}
+#sleepbar .sb-hold{margin-left:auto;white-space:nowrap}
+#sleepbar .sb-hold[hidden]{display:none}
+#sleepbar .sb-hold[hidden]~a{margin-left:auto}
+#sleepbar a{white-space:nowrap;font-weight:700}
+#sleepbar.crit{background:var(--warning-tint);border-bottom-color:color-mix(in srgb,var(--warning) 35%,transparent)}
+#sleepbar.crit svg{color:var(--warning)}
 /* Logger page (meatpi 2026-09-06): state chips + per-stream figure blocks */
 .lg-chips{display:flex;gap:8px;flex-wrap:wrap;margin:2px 0 10px}
 .lg-stream h4{margin:6px 0 2px;font-size:12.5px;font-weight:700;color:var(--text-2);display:flex;align-items:center;gap:7px}
@@ -600,7 +613,7 @@ input[type="range"]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 4px var
     </button>
   </header>
   <nav class="app-nav" id="menu"></nav>
-  <main class="content"><div class="page" id="view"><div class="loading"><div class="spinner"></div></div></div></main>
+  <main class="content"><div id="sleepbar" role="status" hidden></div><div class="page" id="view"><div class="loading"><div class="spinner"></div></div></div></main>
 </div>
 <div id="offline"><span class="d"></span><span id="offtx"></span></div>
 <div id="toasts"></div>
@@ -767,11 +780,116 @@ function paintSleepWarn(){
   if(off&&!el.childElementCount)el.append(ic("alert"),h("span",{},"Sleep mode off: the vehicle battery can drain"));
   el.hidden=!off;
 }
-async function refreshSleep(){
-  const st=await tryGet("/api/sleep");
-  if(st&&typeof st.enabled==="boolean")conn.sleepEnabled=st.enabled;
-  paintSleepWarn();
+/* The sleep countdown (meatpi 2026-10-06). /api/sleep says which rule will
+   put the device to sleep first and in how many seconds (`pending`,
+   `sleep_in_s`): the sleep delay while the battery sits under the sleep
+   voltage, or the critical floor (under 11.9 V for 5 min, whatever the
+   delay and the sleep switch say), which overtakes a longer delay. A bar
+   under the header counts it down on every page, Quick Setup included: a
+   default device on an 11.6 V supply went quiet after 2 min (the floor's
+   delay until that day) in the middle of a setup, with "Sleep after
+   5 min" on the page and nothing saying a sleep was coming. The bar ticks by
+   itself between reads; ping() reads /api/sleep again while the battery is
+   under the sleep voltage (status bit wake_voltage_ok) or a countdown
+   shows. A firmware without `pending` shows no bar.
+   The hold (Ali, 2026-10-06: "prompt the user to extend if he needs more
+   time", in Quick Setup and after): the bar carries a Keep awake 10 min
+   button while a countdown runs, and one minute before the entry the page
+   asks once per deadline (the page's own dialog, on a visible tab only):
+   Let it sleep closes it, Keep awake posts /api/sleep/hold, which moves the
+   sleep delay and the floor out by ten minutes, three times per boot. After
+   a press the bar says so and the button reads 10 min more; with the three
+   used the bar says so instead of a button and the page does not ask. */
+const sleepSoon={cause:"none",until:0,st:null,prompted:0,busy:false,closePrompt:null,promptTime:null};
+function fmtMS(s){s=Math.max(0,Math.round(s));return Math.floor(s/60)+":"+String(s%60).padStart(2,"0");}
+function fmtSpan(s){return s%60===0?(s/60)+" minute"+(s===60?"":"s"):s+" seconds";}
+/* one decimal like every battery voltage in the UI, two when one decimal
+   would print the same number as the threshold it is compared with */
+function voltVs(v,ref){const a=v.toFixed(1);return a===ref.toFixed(1)?v.toFixed(2):a;}
+function sleepSoonLeft(){return Math.max(0,Math.ceil((sleepSoon.until-Date.now())/1000));}
+function sleepSoonWhy(){
+  const st=sleepSoon.st;
+  return sleepSoon.cause==="critical"
+    ?"The battery reads "+voltVs(st.voltage,st.critical_v)+" V, under the "+st.critical_v.toFixed(1)+" V critical floor: WiCAN sleeps after "+fmtSpan(st.critical_s)+" there, whatever the sleep delay and the sleep switch say."
+    :"The battery reads "+voltVs(st.voltage,st.sleep_v)+" V, below the sleep voltage ("+st.sleep_v.toFixed(1)+" V).";
 }
+/* the hold, as the device reports it: a firmware without `holds_left` has no hold */
+function sleepHoldsLeft(){const st=sleepSoon.st;return st&&typeof st.holds_left==="number"?st.holds_left:0;}
+function sleepHoldText(){
+  const st=sleepSoon.st;if(!st||typeof st.holds_left!=="number")return"";
+  if(st.hold_s>0)return"Kept awake on your request ("+st.holds_left+" of "+st.holds_max+" holds left). ";
+  return st.holds_left===0?"Kept awake "+st.holds_max+" times: no further extension. ":"";
+}
+function applySleepStatus(st){
+  if(st&&typeof st.enabled==="boolean")conn.sleepEnabled=st.enabled;
+  if(st&&(st.pending==="delay"||st.pending==="critical")){
+    const until=Date.now()+1000*(st.sleep_in_s||0);
+    /* a deadline that moved out by more than a read's jitter is a new
+       countdown (a hold, from here or from the console): ask about it again */
+    if(until-sleepSoon.until>30000)sleepSoon.prompted=0;
+    sleepSoon.cause=st.pending;sleepSoon.until=until;sleepSoon.st=st;}
+  else if(st)sleepSoon.cause="none";
+}
+async function holdSleep(){
+  if(sleepSoon.busy)return;sleepSoon.busy=true;
+  try{const st=await api("/api/sleep/hold",{method:"POST",body:{minutes:10}});applySleepStatus(st);toast("Kept awake for 10 more minutes","ok");}
+  catch(e){toast(e.message||"Could not keep WiCAN awake","err");refreshSleep();}
+  finally{sleepSoon.busy=false;if(sleepSoon.closePrompt){sleepSoon.closePrompt();sleepSoon.closePrompt=null;}paintSleepSoon();}
+}
+/* one minute before the entry, once per deadline, on a visible tab, and
+   never over another dialog: the page asks */
+function promptSleepHold(left){
+  const root=$("#modal-root");
+  if(root&&root.classList.contains("on"))return;
+  sleepSoon.prompted=sleepSoon.until;
+  const t=h("span",{},fmtMS(left));
+  const st=sleepSoon.st;
+  const clear=()=>{sleepSoon.closePrompt=null;sleepSoon.promptTime=null;root.removeEventListener("click",onRoot);};
+  const onRoot=e=>{if(e.target===root)clear();};  /* dismissed on the backdrop */
+  const close=modal({title:h("span",{},"WiCAN goes to sleep in ",t),
+    body:h("div",{},
+      banner("warn","alert",h("b",{},sleepSoonWhy()),(location.hash.indexOf("#/setup")===0?" You are in the middle of Quick Setup.":"")),
+      h("p",{style:"margin-top:10px"},"Keep WiCAN awake for 10 more minutes? You can ask again when the time is up ("+st.holds_left+" of "+st.holds_max+" holds left this time)."),
+      h("p",{style:"margin-top:8px;color:var(--text-3);font-size:12.5px"},"Asleep, it wakes by itself above "+st.wake_v.toFixed(1)+" V (the engine running).")),
+    actions:[{label:"Let it sleep",fn:clear},{label:"Keep awake 10 minutes",kind:"pri",fn:()=>{clear();holdSleep();}}]});
+  sleepSoon.promptTime=t;
+  sleepSoon.closePrompt=()=>{close();clear();};
+  root.addEventListener("click",onRoot);
+}
+function paintSleepSoon(){
+  const el=$("#sleepbar");if(!el)return;
+  const on=conn.state==="online"&&!!sleepSoon.st&&sleepSoon.cause!=="none";
+  if(!on&&sleepSoon.closePrompt){sleepSoon.closePrompt();sleepSoon.closePrompt=null;}
+  el.hidden=!on;if(!on)return;
+  if(el.dataset.cause!==sleepSoon.cause){
+    el.dataset.cause=sleepSoon.cause;
+    el.classList.toggle("crit",sleepSoon.cause==="critical");
+    el.replaceChildren(ic(sleepSoon.cause==="critical"?"alert":"moon"),
+      h("span",{},h("b",{})," ",h("span",{class:"sb-why"})),
+      h("button",{class:"btn sm pri sb-hold",onclick:holdSleep},"Keep awake 10 min"),
+      h("a",{href:"#/power"},"Power Saving"));
+  }
+  const left=sleepSoonLeft();const st=sleepSoon.st;
+  el.querySelector("b").textContent=left>0?"Going to sleep in "+fmtMS(left)+".":"Going to sleep now.";
+  el.querySelector(".sb-why").textContent=sleepHoldText()+sleepSoonWhy()+" It wakes above "+st.wake_v.toFixed(1)+" V.";
+  const btn=el.querySelector(".sb-hold");const holds=sleepHoldsLeft();
+  btn.hidden=holds===0;btn.disabled=sleepSoon.busy;btn.textContent=st.hold_s>0?"10 min more":"Keep awake 10 min";
+  if(sleepSoon.promptTime)sleepSoon.promptTime.textContent=fmtMS(left);
+  /* once per deadline: a refresh moves `until` by a second or so, a hold by minutes */
+  if(left>0&&left<=60&&holds>0&&Math.abs(sleepSoon.until-sleepSoon.prompted)>30000&&document.visibilityState==="visible")promptSleepHold(left);
+}
+/* the device dropped off the network at the end of its countdown: say so
+   on the offline pill instead of "reconnecting" */
+function sleepSoonGone(){
+  if(sleepSoon.cause==="none"||!sleepSoon.st||Date.now()<sleepSoon.until-8000)return null;
+  const st=sleepSoon.st;
+  return"WiCAN went to sleep (battery under "+(sleepSoon.cause==="critical"?st.critical_v:st.sleep_v).toFixed(1)+" V). It wakes above "+st.wake_v.toFixed(1)+" V.";
+}
+async function refreshSleep(){
+  applySleepStatus(await tryGet("/api/sleep"));
+  paintSleepWarn();paintSleepSoon();
+}
+setInterval(paintSleepSoon,1000);
 function sleepAckModal(){return new Promise(res=>{
   const cb=h("input",{type:"checkbox"});
   const body=h("div",{},
@@ -868,7 +986,7 @@ function setConn(s,txt){
   const off=$("#offline");
   if(s==="online"||s==="connecting")off.style.display="none";
   else{off.style.display="flex";off.dataset.k=s==="reboot"?"reboot":"offline";$("#offtx").textContent=txt||"Device offline, reconnecting…";}
-  paintPill();
+  paintPill();paintSleepSoon();
   if(prev==="reboot"&&s==="online"){toast("Device back online","ok");refreshSleep();route();}
   else if(prev==="offline"&&s==="online"){refreshSleep();route();}
 }
@@ -880,7 +998,12 @@ async function ping(){
     conn.wifi=await tryGet("/api/wifi/status");
     paintApWarn();
     setConn("online");
-  }catch{if(conn.state==="reboot"&&Date.now()<conn.rebootUntil){/*hold*/}else{setConn("offline");}}
+    /* under the sleep voltage, or a countdown on the bar: keep it honest */
+    if((st&&st.bits&&st.bits.wake_voltage_ok===false)||sleepSoon.cause!=="none")refreshSleep();
+  }catch{if(conn.state==="reboot"&&Date.now()<conn.rebootUntil){/*hold*/}
+    /* on the wizard's reconnect screen the phone has usually LEFT the access
+       point this page came from: not a device that went down */
+    else{setConn("offline",location.hash.startsWith("#/setup/reconnect")?"WiCAN's access point is out of reach from here: follow the steps on this screen":sleepSoonGone());}}
 }
 setInterval(ping,3000);
 
@@ -1074,7 +1197,7 @@ const HELP={
   sleep_mv:"The device sleeps once the battery stays below this voltage for the sleep delay.",
   wake_mv:"The device wakes once the battery has stayed above this voltage for the wake-up delay. Keep it above the sleep voltage; a wider gap stops a battery that only rests high from waking it. Quick Setup measures both on your car.",
   wake_delay_ms:"How long the battery must stay above the wake-up voltage before the device wakes: 0.1 to 5 s. Longer ignores short spikes such as a door light or a remote unlock; shorter wakes faster.",
-  sleep_delay_min:"How long the voltage must stay below the threshold before the device sleeps.",
+  sleep_delay_min:"How long the voltage must stay below the threshold before the device sleeps. Under 11.9 V it sleeps after 5 minutes at the latest, whatever this says.",
   periodic_wakeup:"Wake briefly at a fixed interval while sleeping (for example to report position).",
   pause_below_mv:"Polling stops below this battery voltage and resumes 0.3 V above it. 0 = no fixed threshold.",
   pause_follow_sleep:"With no fixed threshold, pause PID requests whenever the battery is below the Power Saving sleep voltage; they resume above its wake-up voltage.",
@@ -1633,11 +1756,14 @@ function crashWords(c){
   if(c.kind==="task_wdt")return "Task watchdog"+where;
   return (c.reason||"Exception")+where;
 }
-/* the page is served over plain HTTP: no navigator.clipboard there */
+/* the page is served over plain HTTP: no navigator.clipboard there. The
+   chunks (setup.js, files.js) copy through this too. Returns whether it worked */
 function copyText(text,okMsg){
-  const ta=h("textarea",{style:"position:fixed;left:-9999px;top:0"});ta.value=text;document.body.append(ta);ta.select();
+  const ta=h("textarea",{readonly:true,style:"position:fixed;left:-9999px;top:0"});ta.value=text;document.body.append(ta);
+  ta.focus();ta.select();try{ta.setSelectionRange(0,text.length);}catch{} /* iOS: select() alone selects nothing */
   let ok=false;try{ok=document.execCommand("copy");}catch{}ta.remove();
-  toast(ok?okMsg:"Could not copy. Open it again and select the text",ok?"ok":"err");
+  toast(ok?okMsg:"Could not copy. Select the text and copy it yourself",ok?"ok":"err");
+  return ok;
 }
 /* The crash report the firmware keeps in flash (2026-10-05): the newest distinct crash,
    still there after the device was unplugged, as the text a user sends on. Safe mode and
@@ -2827,7 +2953,11 @@ PAGES.power=async(view)=>{
         chip(st.state||"normal",st.state==="normal"?"ok":"warn"),
         st.voltage!=null?chip(st.voltage.toFixed(1)+" V","info"):null):null,
       ...rows,
-      note("warn","Disabling sleep continuously drains the vehicle battery when the engine is off. Only disable for testing. One guard stays on regardless: a battery under 11.9 V for 2 minutes puts the device to sleep anyway.")));
+      /* the floor is a rule of its own, not a footnote of the sleep switch
+         (meatpi 2026-10-06): it cuts a longer sleep delay short too */
+      note("","Critical battery floor: under "+(st&&st.critical_v?st.critical_v.toFixed(1):"11.9")+" V for "+fmtSpan(st&&st.critical_s?st.critical_s:300)+" WiCAN goes to sleep without waiting for a longer sleep delay, and with sleep mode off too. It wakes at the wake-up voltage."),
+      note("","Keep awake: while a countdown runs, the bar at the top offers ten more minutes, and the page asks one minute before the entry. A press moves the sleep delay and the critical floor out by ten minutes, three times per start; nothing is saved and a restart drops it."),
+      note("warn","Disabling sleep continuously drains the vehicle battery when the engine is off. Only disable for testing.")));
   }catch(e){wrap.append(banner("crit","alert",e.message));}
   return null;
 };

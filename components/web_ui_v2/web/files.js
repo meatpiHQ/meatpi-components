@@ -209,7 +209,8 @@ PAGES.__files=async(view)=>{
     if(isDir&&/invalid path|not empty|ENOTEMPTY/i.test(m))return"The folder was not deleted: only empty folders can be deleted.";
     if(/503|transfer/i.test(m))return"Another transfer is running. Try again in a moment.";
     return m;}
-  async function copyPath(full){try{await navigator.clipboard.writeText(full);toast("Copied "+full,"ok");}catch{promptModal("Path (copy it from here)",full);}}
+  /* the page's copyText works over plain http (navigator.clipboard does not) */
+  function copyPath(full){if(!copyText(full,"Copied "+full))promptModal("Path (copy it from here)",full);}
   async function del(e){
     const full=join(path,e.name);
     if(!await confirmModal(e.dir?"Delete the folder "+e.name+"? Only an empty folder can be deleted.":"Delete "+e.name+"? This cannot be undone.","Delete"))return;

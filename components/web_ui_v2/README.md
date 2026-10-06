@@ -214,6 +214,59 @@ green afterwards). What changed, and what to keep doing:
   Verified end to end on hardware (stage off → warning; submit → ack →
   reboot → warning persists from device state; re-enable → plain
   confirm → warning gone).
+- **Sleep countdown bar (meatpi 2026-10-06).** A default device on an
+  11.6 V supply went to sleep after 2 minutes in the middle of a Quick
+  Setup, with "Sleep after 5 min" on the page: the critical battery
+  floor (under 11.9 V for 2 min then; 5 min since the same day, Ali)
+  cuts a longer sleep delay short, and nothing on the page said a sleep
+  was coming at all. `/api/sleep` now
+  carries `pending` (`delay` = the sleep delay runs, `critical` = the
+  floor runs) and `sleep_in_s`; `#sleepbar`, the first child of
+  `main.content` (sticky, so it stays while a page scrolls, and it is
+  there in Quick Setup's focused layout), counts it down on every page:
+  "Going to sleep in 1:27. The battery reads 11.6 V, under the 11.9 V
+  critical floor: ... It wakes above 13.2 V." for the floor (warning
+  kind), "... below the sleep voltage (13.1 V)." for the delay (plain
+  kind), with a link to Power Saving. `refreshSleep()` stores the read
+  in `sleepSoon`, `paintSleepSoon()` ticks once a second between reads
+  and on every connection change, and `ping()` reads `/api/sleep` again
+  only while the status bit `wake_voltage_ok` is false or a countdown
+  shows (no extra request on a healthy battery). When the device drops
+  off within 8 s of the countdown's end the offline pill says "WiCAN
+  went to sleep (battery under 11.9 V). It wakes above 13.2 V." instead
+  of "reconnecting" (`sleepSoonGone()`); an earlier drop-off keeps the
+  plain text. A reading that would print the same one decimal as the
+  threshold beside it shows two (`voltVs()`: "13.08 V, below the sleep
+  voltage (13.1 V)"). A firmware without `pending` shows no bar. Power
+  Saving names the floor as a rule of its own (it was a clause of the
+  sleep-off warning; the voltage and the 5 minutes come from
+  `critical_v` / `critical_s` of the route) and the Sleep after help
+  says the floor is the latest it sleeps. Cost: 0.9 KB gzipped. Probe: `probe_sleep_soon.mjs` (23 checks;
+  the mock counts `__mockState.sleepPending = {cause, in_s}` down and
+  stops answering at its end, `asleep = false` wakes it).
+- **Keep awake (Ali, 2026-10-06: "if the user is configuring the device
+  and it is about to sleep, prompt the user to extend; available after the
+  device is configured too").** The countdown bar carries a `Keep awake
+  10 min` button (`.sb-hold`) while a countdown runs and the device still
+  allows a hold (`holds_left` on `/api/sleep`); a press posts
+  `/api/sleep/hold {"minutes":10}` (`holdSleep()`), applies the answer and
+  toasts. One minute before the entry `promptSleepHold()` opens the page's
+  own dialog once per deadline, on a visible tab only and never over
+  another dialog: the rule about to fire, "you are in the middle of Quick
+  Setup" when the wizard is open, the holds left, `Let it sleep` (closes,
+  nothing else) and `Keep awake 10 minutes`; its title counts the seconds.
+  "Once per deadline": `sleepSoon.prompted` keeps the deadline asked about,
+  a deadline within 30 s of it is the same one (a read moves it by a second
+  or so), and a deadline that moves out by more than 30 s (a hold, from here
+  or from the console) resets it. After a press the bar reads "Kept awake on
+  your request (2 of 3 holds left)" and the button "10 min more"; with the
+  three used the button is gone and the bar says so, and the page does not
+  ask. The dialog closes by itself when the device drops off or the
+  countdown clears. Power Saving explains the rule in one note. Probe:
+  `probe_sleep_soon.mjs` (41 checks: the button, a press, the dialog at
+  0:58, Let it sleep, the next deadline asked again, the third press and
+  the cap, a hidden tab not asked and asked once visible; the mock's
+  `/api/sleep/hold` counts `__mockState.holds`).
 - **Terminal readiness.** A fresh device ships with the `ws_cli`
   channel disabled and no `cli ⇄ ws_cli` bridge, so the WiCAN console
   terminal's Connect was refused silently for every new user. The page
@@ -541,11 +594,31 @@ broker, WiFi only; OBD apps / ABRP / logger greyed as later work), details (the 
 install steps for the WiCAN integration, or the broker form), AP password (8 to 63,
 never `@meatpi#`; a device with its own password may keep it), home WiFi (scan via
 `/api/wifi/scan`, one row per SSID with the strongest signal, `auth_mode`, OPEN networks
-cannot be chosen, blank password keeps the stored one for the same SSID), Review and
+cannot be chosen, blank password keeps the stored one for the same SSID; since 2026-10-06
+Continue is **Test and continue**: `POST /api/wifi/try` joins the network with the typed
+credentials before anything is saved, the page polls `GET /api/wifi/try` once a second with
+a 3 s abort per poll (the AP blinks while the radio changes channel, and a page over the
+station loses the device for the trial; the page's offline-to-online re-route rebuilds the
+step, which picks a running test up from `W.testing`), a pass goes straight to Review with
+"Tested: password accepted, <ip>", a failure stays with its card (password: the field
+marked, reason N; not_found; no_ip; refused; timeout; lost contact), Test again, and a
+quiet Continue anyway ("Test failed, continuing anyway" on Review); a pass is remembered
+for those very credentials, a blank password that keeps the stored one needs no test, a
+device in access point only mode skips the test with a note), Review and
 restart (`store.commit()`: PUT wifi_manager apsta + station + `sta_trusted` + AP password,
 optionally mqtt_manager + a data_destinations `~/autopid` row, one submit); then, from the
 mDNS link `http://wican_<id>.local/#/setup/checks` on the home network: Reconnect (link,
-copy, AP fallback, live join status while still reachable), Checks (WiFi / AP / Home
+copy, AP fallback; the live card watches TWO places since 2026-10-06: the page's own
+origin, for a phone or PC that stays on the access point (join status, the station
+address), and the link itself, with a no-CORS `fetch` of `/api/info` every 3 s once the
+restart has had 12 s, for the phone that moved to the home WiFi by itself when the AP
+password changed, which leaves the page's origin out of reach for good; when only the
+link answers the card says so and offers `Continue on <ssid>` as a button to the link
+(never a jump on a timer, Ali's call: this screen is the user's only map and the back
+button cannot return to it, and an opaque answer cannot prove it is WiCAN); until then
+the card says what to do meanwhile, and after 40 s points at the AP fallback with the
+wrong-password hint; the page pill reads "WiCAN's access point is out of reach from
+here" on that screen instead of "Device offline"), Checks (WiFi / AP / Home
 Assistant via `GET /api/webhook` / MQTT via `bits.mqtt_connected`, polled every 3 s, Fix
 links back into the earlier steps), Vehicle (second pass, 2026-10-01 evening: DETECT
 first, profile last. "Detect my vehicle" = `POST /api/autopid/vehicles/detect` (falls back to
@@ -571,8 +644,12 @@ key-off is noticed as two readings 0.5 V under it and the rest is taken once ten
 sit within 0.04 V (60 s cap); the pure `pwrRecommend()` makes sleep = resting + 0.3 V and
 wake = sleep + 0.2 V capped at charging minus 0.4 V, two range sliders keep a 0.1 V band,
 warnings for a wake above charging / a sleep under resting / small margins; under 9 V = a
-desk on USB, the step explains and keeps the current pair. Finish stages `sleep_manager`
-{enabled, sleep_mv, wake_mv} (wake_mv only when the schema has it: sleep_manager v3).
+desk on USB, the step explains and keeps the current pair; the skip is a real button since
+2026-10-06 (Ali), `Skip, keep the defaults (13.1 / 13.2 V)` beside Continue. Finish stages
+`sleep_manager` {enabled, sleep_mv, wake_mv} (wake_mv only when the schema has it:
+sleep_manager v3). Reading the car's Finish de-duplicates parameter names across the config
+it PUTs (`_2`, `_3`, a toast): the firmware refuses a repeat, and a file written by the old
+SAE table could carry one (the loader repairs those since the same day; this is the belt).
 Every battery voltage shows ONE decimal (Ali). The Reading the car step quotes the
 measured pair; Done lists it), Reading the car (2026-10-01 night: the
 autopid polling rules in plain words, prefilled from the device: poll rate 1/2/5/10/custom s

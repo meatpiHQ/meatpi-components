@@ -40,6 +40,14 @@ const SKIP_KEY="wican-setup-skip";
 const W={cur:null,use:"ha",agree:[false,false,false],haInstalled:false,
   apPw:"",apPw2:"",showPw:false,
   ssid:"",wifiAuth:"",wifiPw:"",manual:false,nets:null,scanErr:null,
+  /* the connection test (2026-10-06): tested = {ssid,pw,ip,rssi,took_ms,channel}
+     for the credentials that passed; testNote = "ap" (no station interface
+     until the restart) or "anyway" (a failure the user chose to keep) */
+  tested:null,testNote:null,
+  /* testing = {ssid,pw,t0} while a test runs: the page re-routes after the
+     access point's blink (offline, then online again) and rebuilds this
+     screen, so the new screen picks the running test up from here */
+  testing:null,
   mqtt:{url:"",user:"",pw:"",prefix:"",period:5},
   applied:false,noVeh:false,
   car:null,noProfile:false,proto:"0",plugged:false,ignition:false,
@@ -129,7 +137,10 @@ const CSS=`
 @keyframes qsspin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.qs-spin{animation:none}}
 .qs-link{display:flex;flex-direction:column;gap:10px;padding:18px 20px;border:1px solid color-mix(in srgb,var(--primary) 35%,transparent);border-radius:12px;background:var(--primary-tint)}
-.qs-link .url{font-family:var(--mono);font-size:15px;font-weight:600;word-break:break-all;color:var(--text)}
+.qs-link .url{font-family:var(--mono);font-size:15px;font-weight:600;word-break:break-all;color:var(--text);user-select:all;-webkit-user-select:all}
+.qs-link .url.alt{font-weight:500;color:var(--text-2);font-size:13px}
+.qs-link .url.alt .u{color:var(--text);font-weight:600;user-select:all;-webkit-user-select:all}
+.qs-row input.qs-bad{box-shadow:0 0 0 2px var(--warning)}
 .qs-link .acts{display:flex;gap:8px;flex-wrap:wrap}
 .qs-sub{display:flex;align-items:center;gap:10px;margin-top:6px}
 .qs-sub h3{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);margin:0}
@@ -201,10 +212,24 @@ const check=(kind,icon,title,text,chipEl)=>h("div",{class:"qs-check "+(kind||"")
 const sub=t=>h("div",{class:"qs-sub"},h("h3",{},t));
 const row=(label,ctl,help,err)=>h("div",{class:"qs-row"},h("label",{for:ctl.id||null},label),h("div",{class:"ctl"},ctl),help?h("div",{class:"help"+(err?" err":"")},help):null);
 const steps=items=>h("ol",{class:"qs-steps"},...items.map(([b,s])=>h("li",{},h("b",{},b),h("span",{},...(Array.isArray(s)?s:[s])))));
-function copyText(txt,b){
-  const done=()=>{if(b){b.textContent="Copied";setTimeout(()=>{b.replaceChildren(ic("copy"),"Copy link");},1500);}toast("Copied","ok");};
-  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(done).catch(()=>toast(txt,""));}
-  else toast(txt,"");
+/* copying uses the page's copyText (index.html): the page is served over plain
+   http, where navigator.clipboard does not exist (2026-10-06, Ali's phone) */
+/* Is WiCAN reachable from this browser at the link? A no-CORS fetch answers
+   (opaque) on any HTTP reply and rejects when the name does not resolve or
+   nothing listens: enough to know this phone has arrived on the home WiFi and
+   WiCAN is there. Nothing to add on the device for it. */
+/* a GET that gives up after ms: a poll must not hang on a link that is
+   down for the moment (the AP blinks, or the page rides the station the
+   test drops: through a tunnel such a request sat for 40 s) */
+async function tryGetTimed(p,ms){
+  const ac=new AbortController();const t=setTimeout(()=>ac.abort(),ms);
+  try{return await api(p,{signal:ac.signal});}catch(_){return null;}finally{clearTimeout(t);}
+}
+async function linkAnswers(origin){
+  const ac=new AbortController();const t=setTimeout(()=>ac.abort(),2500);
+  try{await fetch(origin+"/api/info",{mode:"no-cors",cache:"no-store",signal:ac.signal});return true;}
+  catch(_){return false;}
+  finally{clearTimeout(t);}
 }
 function skipSetup(){try{sessionStorage.setItem(SKIP_KEY,"1");}catch(_){}location.hash="#/status";}
 
@@ -308,7 +333,7 @@ SCREENS.details=async()=>{
   }
   /* Home Assistant */
   const id=deviceId()||"<device id>";
-  const copyBtn=btn("Copy repository link",()=>copyText(HA_REPO,null),"sm",{icon:"copy"});
+  const copyBtn=btn("Copy repository link",()=>copyText(HA_REPO,"Repository link copied"),"sm",{icon:"copy"});
   return screen("Install the WiCAN integration in Home Assistant","Do this part in Home Assistant, on any device, before or after WiCAN joins your WiFi. Nothing to type on WiCAN itself.",
     [h("label",{class:"qs-agree"},h("input",{type:"checkbox",id:"qs-ha-installed",checked:W.haInstalled,onchange:e=>{W.haInstalled=e.target.checked;}}),
        h("div",{},h("b",{},"The WiCAN integration is already installed in my Home Assistant"),h("span",{},"Then only step 5 applies."))),
@@ -364,20 +389,74 @@ SCREENS.wifi=async()=>{
   const pwInp=h("input",{id:"qs-wifi-pw",type:"password",value:W.wifiPw,autocomplete:"off"});
   const pwLabel=h("label",{for:"qs-wifi-pw"},"Password");
   const pwHelp=h("div",{class:"help"});
-  const next=btn("Continue",()=>go("review"),"pri");
+  const testBox=h("div",{});
+  /* Continue tests first (2026-10-06, Ali: "test the station connect before
+     storing and rebooting"): WiCAN joins the network with these credentials
+     while the phone is still on the access point, reports, lets go. A pass
+     for these very credentials is remembered, so Back and forth does not
+     retest; a blank password that keeps the stored one cannot be tested. */
+  const passed=()=>!!(W.tested&&W.tested.ssid===W.ssid&&W.tested.pw===W.wifiPw);
+  const next=btn("Test and continue",()=>{if(passed()||(W.ssid===stored&&!W.wifiPw))go("review");else testWifi();},"pri",{icon:"wifi"});
   const selNet=()=>(W.nets||[]).find(n=>n.ssid===W.ssid);
   const update=()=>{
     const n=selNet();const open=n?isOpen(n):false;W.wifiAuth=n?netAuth(n):"";
     pwLabel.textContent="Password for "+(W.ssid||"the network");
-    pwInp.disabled=open;
+    pwInp.disabled=open;pwInp.classList.remove("qs-bad");
     const keep=W.ssid&&W.ssid===stored&&!W.wifiPw;
     pwHelp.replaceChildren(keep?"Blank keeps the password already stored for "+stored+". WiCAN treats this network as trusted: you can manage it from any device on it."
       :"WiCAN treats this network as trusted: you can manage it from any device on it.");
     openWarn.replaceChildren(open?banner("crit","alert",h("b",{},W.ssid+" has no password."),
       " Quick Setup does not join open networks: anyone nearby could reach WiCAN. Pick a protected network."):null);
     next.disabled=!W.ssid||open||!(W.wifiPw.length>=8||keep);
+    next.replaceChildren(ic(passed()||keep?"check":"wifi"),passed()||keep?"Continue":"Test and continue");
     list.querySelectorAll(".qs-net").forEach(el=>el.classList.toggle("sel",el.dataset.ssid===W.ssid));};
   pwInp.oninput=e=>{W.wifiPw=e.target.value;update();};
+  const anyway=()=>btn("Continue anyway",()=>{W.tested=null;W.testNote="anyway";go("review");},"sm gh");
+  const failCard=(title,text)=>{
+    W.tested=null;
+    testBox.replaceChildren(check("warn","alert",title,text,anyway()));
+    next.disabled=false;next.replaceChildren(ic("refresh"),"Test again");};
+  async function testWifi(resume){
+    const ssid=W.ssid,pw=W.wifiPw;
+    if(!resume){W.tested=null;W.testNote=null;W.testing={ssid,pw,t0:Date.now()};}
+    pwInp.classList.remove("qs-bad");
+    next.disabled=true;next.replaceChildren(h("span",{class:"qs-spin",style:"width:14px;height:14px;border-width:2px"}),"Testing");
+    const cw=conn.wifi||{};
+    const overSta=!!(cw.sta_connected&&location.hostname!==(cw.ap_ip||"192.168.0.10"));
+    testBox.replaceChildren(check("run",null,"Trying "+ssid,["Up to 20 seconds. WiCAN joins ",h("b",{},ssid)," with this password and lets go again; nothing is saved. ",
+      overSta?"WiCAN leaves its current network for the test: this page loses it for a moment and reconnects after.":"The access point may pause for a few seconds while the radio changes channel: stay on this screen, it keeps asking."]));
+    if(!resume){
+      const ac=new AbortController();const tmo=setTimeout(()=>ac.abort(),4000);
+      try{await api("/api/wifi/try",{method:"POST",body:{ssid,password:pw},signal:ac.signal});}
+      catch(e){
+        const m=e.message||"";
+        if(/station is off/i.test(m)){W.testing=null;W.testNote="ap";go("review");return;}   /* AP only until the restart: nothing to test with */
+        /* the answer was lost with the link (the station the page rides drops for the test, the AP blinks), or a test is already under way: the poll below tells */
+        const lost=e.name==="AbortError"||(e instanceof TypeError)||/failed to fetch|networkerror|load failed/i.test(m);
+        if(!lost&&!/already running/i.test(m)){W.testing=null;failCard("The test could not start",m);return;}
+      }
+      finally{clearTimeout(tmo);}}
+    const t0=(W.testing&&W.testing.t0)||Date.now();let st=null;
+    while(Date.now()-t0<30000&&testBox.isConnected){
+      await new Promise(r=>setTimeout(r,1000));
+      const s=await tryGetTimed("/api/wifi/try",3000);
+      if(s&&s.state==="done"&&s.ssid===ssid){st=s;break;}
+      if(s&&s.state==="idle"){st=s;break;}}
+    if(!testBox.isConnected)return;   /* the screen was rebuilt: its successor carries on */
+    W.testing=null;
+    if(ssid!==W.ssid||pw!==W.wifiPw){update();testBox.replaceChildren();return;}   /* edited meanwhile */
+    if(!st||st.state!=="done"){failCard("Lost contact with WiCAN during the test",["If this phone dropped off ",h("code",{},apName()),", join it again, then test again."]);return;}
+    const r=st.result,reason=st.reason?" (reason "+st.reason+")":"";
+    if(r==="connected"){
+      W.tested={ssid,pw,ip:st.ip||"",rssi:st.rssi,took_ms:st.took_ms,channel:st.channel};W.testNote=null;
+      go("review");return;}
+    if(r==="password"){pwInp.classList.add("qs-bad");pwInp.focus();
+      failCard(ssid+" did not accept the password",["WiCAN found the network, the handshake failed",reason,". Nine times out of ten a typo: fix it and test again. Continue anyway keeps this password; you would sort it out from the access point after the restart."]);return;}
+    if(r==="not_found"){failCard(ssid+" was not found",["WiCAN cannot see this network from where it is",reason,": out of range, 5 GHz only, or a hidden name typed differently (case matters). Move WiCAN closer or check the name, then test again."]);return;}
+    if(r==="no_ip"){failCard("Joined "+ssid+", but got no address",["The router accepted WiCAN and then gave it no IP address within 8 s. A full DHCP table or a MAC filter does this. Check the router, then test again."]);return;}
+    if(r==="timeout"){failCard("No answer from "+ssid+" in 20 s",["WiCAN could not finish joining in time. Move it closer to the router, or test again."]);return;}
+    failCard(ssid+" refused the connection",["The router dropped WiCAN before it had an address",reason,". A MAC filter, a full router, or a band WiCAN cannot use. Check the router, then test again."]);
+  }
   const render=()=>{
     const scanning=W.nets===null;
     const nets=W.nets||[];
@@ -411,14 +490,19 @@ SCREENS.wifi=async()=>{
     [h("div",{class:"rowflex",style:"flex-wrap:wrap"},count,grow(),rescan),list,openWarn,
      h("details",{class:"qs-details",open:W.manual||null},h("summary",{},"Network not listed? Enter it by hand"),
        row("Network name (SSID)",manual,"Hidden networks and 5 GHz-only names do not appear in the scan. WiCAN connects on 2.4 GHz.")),
-     h("div",{class:"qs-row"},pwLabel,h("div",{class:"ctl"},pwInp),pwHelp)],
+     h("div",{class:"qs-row"},pwLabel,h("div",{class:"ctl"},pwInp),pwHelp),testBox],
     [back("ap"),grow(),next]);
   if(W.nets)render();else{W.nets=null;render();scan();}
+  /* a test that was running when this screen was rebuilt (the AP's blink
+     re-routes the page): carry on with it, within its own 30 s */
+  if(W.testing&&W.testing.ssid===W.ssid&&W.testing.pw===W.wifiPw&&Date.now()-W.testing.t0<30000)testWifi(true);
+  else W.testing=null;
   return el;
 };
 
 SCREENS.review=()=>{
   const err=h("div",{});
+  const tested=(W.tested&&W.tested.ssid===W.ssid&&W.tested.pw===W.wifiPw&&W.tested.ip)?W.tested:null;
   const save=btn("Save and restart",()=>applyAll(save,err),"pri",{icon:"power"});
   const useRow=W.use==="ha"?[chip("Ready for discovery","ok"),h("span",{},"Home Assistant registers itself after the restart")]
     :W.use==="mqtt"?[h("code",{},W.mqtt.url.trim()),h("span",{},"as "+(W.mqtt.user||"anonymous")+", vehicle data every "+W.mqtt.period+" s")]
@@ -426,14 +510,16 @@ SCREENS.review=()=>{
   const apRow=W.apPw?[h("code",{},apName()),chip("New password","ok")]:[h("code",{},apName()),chip("Password kept","")];
   const kv=h("dl",{class:"qs-kv"},
     h("dt",{},"Access point"),h("dd",{},...apRow),
-    h("dt",{},"Home WiFi"),h("dd",{},h("code",{},W.ssid),chip(W.wifiAuth&&W.wifiAuth!=="OPEN"?(W.wifiAuth.includes("WPA3")?"WPA2/3":"WPA2"):"protected",""),h("span",{},"mode Access point + Station")),
+    h("dt",{},"Home WiFi"),h("dd",{},h("code",{},W.ssid),chip(W.wifiAuth&&W.wifiAuth!=="OPEN"?(W.wifiAuth.includes("WPA3")?"WPA2/3":"WPA2"):"protected",""),
+      tested?chip("Tested: password accepted, "+tested.ip,"ok"):W.testNote==="anyway"?chip("Test failed, continuing anyway","warn"):W.testNote==="ap"?chip("Not tested: WiCAN is access point only until the restart",""):null,
+      h("span",{},"mode Access point + Station")),
     h("dt",{},W.use==="mqtt"?"MQTT broker":"Home Assistant"),h("dd",{},...useRow),
     h("dt",{},"Vehicle data"),h("dd",{},chip("After the restart",""),h("span",{},"profile, protocol and standard PIDs come next")));
   return screen("Review, then restart","Everything below is saved together in one restart. Nothing has been written to WiCAN yet.",
     [kv,err,sub("What happens next"),
      steps([["WiCAN saves and restarts","About 15 seconds."],
        [W.apPw?"Your phone drops off "+apName():"Your phone may drop off "+apName()+" for a moment",W.apPw?"The access point comes back with the new password.":"The access point comes back with the same password."],
-       ["Connect your phone to "+W.ssid+" and open the link on the next screen","Quick Setup continues there."]])],
+       ["Connect your phone to "+W.ssid+" and open the link on the next screen",tested?["Quick Setup continues there. The page also offers ",h("code",{},"http://"+tested.ip+"/#/setup/checks"),", the address "+W.ssid+" gave WiCAN in the test."]:"Quick Setup continues there."]])],
     [back("wifi"),grow(),save]);
 };
 
@@ -483,35 +569,80 @@ async function applyAll(saveBtn,errEl){
   }
 }
 
+/* This page was loaded from the access point. When the AP password changes
+   the phone drops off and joins its known home network by itself, and the
+   AP address is then out of reach for good: the page's own connection state
+   can never say "online" again (2026-10-06, Ali: stuck at "Restarting" until
+   he typed the link by hand). So the screen watches two places: its own
+   origin, for a phone or PC that stays on the AP, and the mDNS link, for the
+   phone that has moved. When only the link answers it says so and offers
+   the way on as a button: the user leaves when it looks stable to them, and
+   this screen (the instructions, the fallback) stays until they do. A jump
+   on a timer could strand them on a browser error with no way back here
+   (the origin is the AP), and an opaque answer cannot prove it is WiCAN
+   (Ali, 2026-10-06). */
+const RECONNECT_PATIENCE_S=40;   /* a restart (about 15 s) plus the join */
 SCREENS.reconnect=()=>{
   const ssid=W.ssid||(D.wifi&&D.wifi.sta_ssid)||"your home WiFi";
-  const link="http://"+mdnsHost()+"/#/setup/checks";
+  const host=mdnsHost(),origin="http://"+host,link=origin+"/#/setup/checks";
+  const apLink="http://"+((D.wifi&&D.wifi.ap_ip)||"192.168.0.10")+"/#/setup/checks";
+  /* the address the network gave WiCAN in the connection test: usually the
+     same after the restart (same MAC, same lease), and a way in for phones
+     that cannot open .local names. Probed beside the name; preferred when
+     it answers. */
+  const tip=(W.tested&&W.tested.ssid===ssid&&W.tested.ip)?W.tested.ip:"";
+  const ipOrigin=tip?"http://"+tip:"",ipLink=ipOrigin?ipOrigin+"/#/setup/checks":"";
   const live=h("div",{});
+  const t0=Date.now();let found=false,probing=false;
+  const since=()=>Math.round((Date.now()-t0)/1000);
   const paintLive=async()=>{
-    if(conn.state!=="online"){live.replaceChildren(check("run",null,"Restarting","Waiting for WiCAN, up to 90 s. This page keeps trying."));return;}
-    const w=await tryGet("/api/wifi/status");
-    if(!w){live.replaceChildren(check("run",null,"Reconnecting","Waiting for WiCAN."));return;}
-    if(w.sta_connected&&w.ip){
-      live.replaceChildren(check("ok","wifi","WiCAN joined "+ssid,["Address ",h("code",{},w.ip),". If the link above does not open, use ",h("a",{href:"http://"+w.ip+"/#/setup/checks"},"http://"+w.ip+"/#/setup/checks"),"."],chip("Connected","ok")));
+    if(found)return;
+    if(conn.state==="online"){
+      const w=await tryGet("/api/wifi/status");
+      if(!w){live.replaceChildren(check("run",null,"Reconnecting","Waiting for WiCAN."));return;}
+      if(w.sta_connected&&w.ip){
+        live.replaceChildren(check("ok","wifi","WiCAN joined "+ssid,["Address ",h("code",{},w.ip),". If the link above does not open, use ",h("a",{href:"http://"+w.ip+"/#/setup/checks"},"http://"+w.ip+"/#/setup/checks"),"."],chip("Connected","ok")));
+        return;}
+      const at=w.sta_attempt||{};
+      if(at.fail_count>0||(at.reason&&at.reason!==0)){
+        live.replaceChildren(check("warn","alert","WiCAN could not join "+(at.ssid||ssid)+" yet",
+          ["Last attempt failed (reason "+at.reason+", "+at.fail_count+" tries). A wrong password is the usual cause. "],
+          btn("Fix WiFi",()=>go("wifi"),"sm")));return;}
+      live.replaceChildren(check("run",null,"Joining "+ssid,"Usually a few seconds."));
       return;}
-    const at=w.sta_attempt||{};
-    if(at.fail_count>0||(at.reason&&at.reason!==0)){
-      live.replaceChildren(check("warn","alert","WiCAN could not join "+(at.ssid||ssid)+" yet",
-        ["Last attempt failed (reason "+at.reason+", "+at.fail_count+" tries). A wrong password is the usual cause. "],
-        btn("Fix WiFi",()=>go("wifi"),"sm")));return;}
-    live.replaceChildren(check("run",null,"Joining "+ssid,"Usually a few seconds."));
+    /* the access point is out of reach from here: WiCAN is still restarting,
+       or this device has moved to the home WiFi. Look for WiCAN there, once
+       the restart has had its time (the name also answers over the AP, and
+       must not pull the page away a second before the restart) */
+    if(since()>=12&&!probing){
+      probing=true;
+      const[byName,byIp]=await Promise.all([linkAnswers(origin),ipOrigin?linkAnswers(ipOrigin):false]);
+      probing=false;
+      if((byName||byIp)&&!found&&conn.state!=="online"){
+        found=true;
+        const to=byIp?ipLink:link,at=byIp?tip:host;
+        live.replaceChildren(check("ok","wifi","WiCAN answers on "+ssid,["Quick Setup continues at ",h("code",{},at),"."],
+          h("a",{class:"btn pri sm",href:to},ic("send"),"Continue on "+ssid)));
+        return;}}
+    if(found)return;
+    if(since()<RECONNECT_PATIENCE_S)
+      live.replaceChildren(check("run",null,"Restarting",["About 15 s, then WiCAN joins ",h("b",{},ssid),". Join ",h("b",{},ssid)," on this device meanwhile: this page tells you when it finds WiCAN there."]));
+    else
+      live.replaceChildren(check("warn","alert","Still looking for WiCAN on "+ssid,
+        ["Is this device on ",h("b",{},ssid),"? If it is and WiCAN did not join (a wrong password is the usual cause), join ",h("code",{},apName())," with your new password and open ",h("a",{href:apLink},apLink),": that page says so and lets you fix it."]));
   };
   paintLive();every(3000,paintLive);
-  const copyBtn=btn("Copy link",()=>copyText(link,copyBtn),"",{icon:"copy"});
+  const copyBtn=btn("Copy link",()=>{if(copyText(link,"Link copied")){copyBtn.textContent="Copied";setTimeout(()=>{copyBtn.replaceChildren(ic("copy"),"Copy link");},1500);}},"",{icon:"copy"});
   return screen("Now switch networks",["Connect this phone or PC to ",h("b",{},ssid),", then open the link. Quick Setup picks up where it left off."],
     [h("div",{class:"qs-link"},
        h("div",{class:"rowflex",style:"flex-wrap:wrap"},chip("Step 1: join "+ssid+" on this device","info"),chip("Step 2: open","info")),
        h("span",{class:"url"},link),
+       ipLink?h("span",{class:"url alt"},"or ",h("span",{class:"u"},ipLink)," (the address "+ssid+" gave WiCAN in the test; usually the same after the restart, and the one for phones that cannot open .local names)"):null,
        h("div",{class:"acts"},h("a",{class:"btn pri",href:link},ic("send"),"Open WiCAN"),copyBtn)),
      live,
      h("details",{class:"qs-details"},h("summary",{},"The link does not open?"),
        steps([["Give it a moment","WiCAN needs a few seconds to join. Some Android phones cannot open .local names at all."],
-         ["Use the access point instead",["Join ",h("code",{},apName())," with your new password and open ",h("code",{},"http://"+((D.wifi&&D.wifi.ap_ip)||"192.168.0.10")+"/#/setup/checks"),". That page shows the address WiCAN received on "+ssid+", and whether the join worked."]],
+         ["Use the access point instead",["Join ",h("code",{},apName())," with your new password and open ",h("code",{},apLink),". That page shows the address WiCAN received on "+ssid+", and whether the join worked."]],
          ["Wrong WiFi password?","The same page says so and lets you fix it. WiCAN keeps its access point on, so you are never locked out."]]))],
     [h("span",{class:"ghost"},"Stay on this screen until you have switched networks.")]);
 };
@@ -950,8 +1081,8 @@ SCREENS.power=async()=>{
   render();
   await tick();
   every(1000,tick);
-  const keepLabel=p.phase==="nobatt"?"Continue with the current values":"Keep the current values ("+fmtV(devSleep)+" / "+fmtV(devWake)+" V)";
-  const keep=btn(keepLabel,()=>{p.skipped=true;p.measured=false;go("polling");},p.phase==="nobatt"?"pri":"gh sm");keep.id="qs-pwr-keep";
+  const keepLabel=p.phase==="nobatt"?"Continue with the current values":"Skip, keep the defaults ("+fmtV(devSleep)+" / "+fmtV(devWake)+" V)";
+  const keep=btn(keepLabel,()=>{p.skipped=true;p.measured=false;go("polling");},p.phase==="nobatt"?"pri":"",{title:"Keep the sleep and wake voltages as they are; you can measure them later under Power Saving"});keep.id="qs-pwr-keep";
   const cont=p.phase==="nobatt"?null:btn("Continue",()=>{p.measured=true;p.skipped=false;go("polling");},"pri",{disabled:p.phase!=="rested"});if(cont)cont.id="qs-pwr-continue";
   /* the footer follows the phase (Continue unlocks once both readings are in) */
   const refreshFoot=()=>{if(cont)cont.disabled=p.phase!=="rested";};
@@ -1079,6 +1210,16 @@ async function finishVehicle(finishBtn,errEl,maxName){
     }
     cfg.groups[0].period_ms=Math.max(1,rateS)*1000;
     for(const pd of cfg.pids){if(pd.period_ms===oldPeriod||pd.period_ms===1000)pd.period_ms=0;}
+    /* no parameter name twice in what is sent: the firmware refuses a repeat
+       (names key its cache), and a file written by an older table could carry
+       one (OxySensor1_Volt under 0x14 and 0x24; the loader repairs those since
+       2026-10-06, this is the belt): the later one gets _2, _3, ... */
+    {const seen=new Set();let n=0;
+     for(const pd of cfg.pids)for(const pr of (pd.parameters||[])){
+       if(!pr.name)continue;
+       if(seen.has(pr.name)){let k=2;while(seen.has(pr.name+"_"+k))k++;pr.name=pr.name+"_"+k;n++;}
+       seen.add(pr.name);}
+     if(n)toast(n+" repeated parameter name"+(n>1?"s":"")+" made unique (_2, _3)","");}
     await api("/api/autopid/config",{method:"PUT",body:cfg});
     /* 3. the settings: polling on, protocol follows the store, the reading rules, the profile name for the backup */
     const av=strip(D.autopid||await api("/api/settings/autopid"));

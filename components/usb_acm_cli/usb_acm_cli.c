@@ -53,6 +53,7 @@
 #include "log_manager.h"
 
 #include "usb_acm_cli_private.h"
+#include "usb_acm_nmea.h"
 
 static const char *TAG = "usb_acm_cli";
 
@@ -124,9 +125,31 @@ static StaticTask_t s_gps_tcb;
 EXT_RAM_BSS_ATTR static StackType_t s_gps_stack[ACM_GPS_STACK];
 static volatile bool s_gps_run;
 
+/* a plain GNSS receiver on the console (2026-10-07): it streams NMEA by
+ * itself, so the RX task parses the sentences and nothing is ever sent to
+ * it (the poll task's `gps -p -j` is the ESPNetLink's console, not NMEA) */
+static usb_acm_nmea_t s_nmea;
+static volatile bool s_nmea_mode;
+
 static uint32_t now_ms(void)
 {
     return (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
+}
+
+/* the one writer of the fix cache: NULL = no live fix */
+static void gps_cache_set(const usb_acm_gps_t *fix)
+{
+    xSemaphoreTake(s_gps_lock, portMAX_DELAY);
+    if (fix != NULL)
+    {
+        s_gps = *fix;
+    }
+    else
+    {
+        s_gps.valid = false;
+    }
+    s_gps_stamp_ms = now_ms();
+    xSemaphoreGive(s_gps_lock);
 }
 
 /* ---- write ---------------------------------------------------------------- */
@@ -230,6 +253,32 @@ static void rx_task(void *arg)
             (void)xStreamBufferSend(s_rx_sb, s_rx_dma, (size_t)r, 0);
             /* passthrough path: fan to bridge subscribers */
             fan_to_subs(s_rx_dma, (size_t)r);
+
+            /* NMEA path: a GNSS receiver's sentences straight into the fix
+             * cache (an RMC with a fix refreshes it, one without clears it);
+             * the first well-formed sentence turns the console into a
+             * receiver for as long as it stays attached */
+            usb_acm_gps_t fix;
+            int n = usb_acm_nmea_feed_bytes(&s_nmea, s_rx_dma, (size_t)r, &fix);
+
+            if (!s_nmea_mode && s_nmea.sentences > 0)
+            {
+                s_nmea_mode = true;
+                ESP_LOGI(TAG, "NMEA on the console: a GNSS receiver, reading "
+                         "its sentences (nothing is sent to it)");
+            }
+            if (n > 0)
+            {
+                gps_cache_set(&fix);
+                if (s_gps_sink != NULL)
+                {
+                    s_gps_sink(&fix); /* → autopid publisher (main-wired) */
+                }
+            }
+            else if (n < 0)
+            {
+                gps_cache_set(NULL);
+            }
         }
         else if (r < 0 && r != -USB_ERR_TIMEOUT)
         {
@@ -261,6 +310,8 @@ void usbh_cdc_acm_run(struct usbh_cdc_acm *cdc_acm_class)
     /* no xStreamBufferReset here: the RX task may be mid-send (it is the
      * buffer's one writer), usb_acm_cli_command() drains stale bytes
      * reader-side before every request instead */
+    usb_acm_nmea_init(&s_nmea);   /* a new device: console until it says NMEA */
+    s_nmea_mode = false;
     s_acm = cdc_acm_class;
     (void)usbh_cdc_acm_set_line_state(cdc_acm_class, true, true); /* DTR+RTS */
 
@@ -281,6 +332,7 @@ void usbh_cdc_acm_stop(struct usbh_cdc_acm *cdc_acm_class)
     if (s_acm == cdc_acm_class)
     {
         s_acm = NULL;
+        s_nmea_mode = false;
         ESP_LOGI(TAG, "CDC-ACM console detached");
     }
 }
@@ -290,6 +342,21 @@ void usbh_cdc_acm_stop(struct usbh_cdc_acm *cdc_acm_class)
 bool usb_acm_cli_connected(void)
 {
     return s_acm != NULL;
+}
+
+bool usb_acm_cli_reading(void)
+{
+    return s_acm != NULL && s_rx_task != NULL;
+}
+
+const char *usb_acm_cli_mode(void)
+{
+    return s_nmea_mode ? "nmea" : "console";
+}
+
+uint32_t usb_acm_cli_nmea_sentences(void)
+{
+    return s_nmea.sentences;
 }
 
 esp_err_t usb_acm_cli_command(const char *line, char *resp, size_t resp_cap,
@@ -494,7 +561,8 @@ static void gps_task(void *arg)
     {
         vTaskDelay(pdMS_TO_TICKS(ACM_GPS_POLL_MS));
 
-        if (!s_gps_run || !usb_acm_cli_connected())
+        /* a receiver streaming NMEA is read by the RX task: no command */
+        if (!s_gps_run || !usb_acm_cli_connected() || s_nmea_mode)
         {
             continue;
         }
@@ -512,17 +580,11 @@ static void gps_task(void *arg)
         if (!usb_acm_gps_parse(resp, &fix))
         {
             /* no live fix: mark the cache invalid so readers see no-fix */
-            xSemaphoreTake(s_gps_lock, portMAX_DELAY);
-            s_gps.valid = false;
-            s_gps_stamp_ms = now_ms();
-            xSemaphoreGive(s_gps_lock);
+            gps_cache_set(NULL);
             continue;
         }
 
-        xSemaphoreTake(s_gps_lock, portMAX_DELAY);
-        s_gps = fix;
-        s_gps_stamp_ms = now_ms();
-        xSemaphoreGive(s_gps_lock);
+        gps_cache_set(&fix);
 
         if (s_gps_sink != NULL)
         {

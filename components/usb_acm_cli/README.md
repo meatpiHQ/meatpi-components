@@ -43,6 +43,23 @@ fix is published; a cached AGNSS position is never reported as current.
 The console is the attached device's OWN CLI (e.g. the espnetlink dongle's
 `esp>` prompt: `ver`, `lte -s/-r/-o/-i`, `gps`, `speedtest`, …), not raw AT.
 
+## A plain USB GNSS receiver (NMEA, 2026-10-07)
+
+A receiver such as the bench u-blox 7 (`1546:01a7`, CDC-ACM) streams NMEA
+0183 by itself (RMC, GGA, GSA, GSV, GLL, VTG at 1 Hz) and understands no
+console. The RX task feeds every chunk to `usb_acm_nmea.c` (pure,
+host-tested: bytes in any chunking, a checksum-verified sentence out, a fix
+out of every RMC with status A merged with the last GGA's satellites, HDOP
+and altitude; an RMC with status V clears the fix). The first well-formed
+sentence after an attach turns the console into a receiver
+(`usb_acm_cli_mode()` "nmea"): the poll task stops sending `gps -p -j` and
+the fix cache, `GET /api/gps`, the sink to autopid and the fallback rule are
+exactly the dongle's. `GET /api/usb/acm` carries `reading` (a bound device
+nobody reads, the console off in settings, is not), `mode` and
+`nmea_sentences`. The console must be enabled for any of this (the RX task
+is the reader): Quick Setup's USB step turns it on when it finds a receiver.
+Who is on the connector (ids, class) is `usb_host_manager`'s `device`.
+
 **Never bound: `303A:1001`**, an ESP32-S3's ROM/bootloader USB-Serial-JTAG
 is on the pads for ~1.5 s after a power-on (the ESPNetLink's app detaches
 it before its real `303A:4007` composite device enumerates). CherryUSB's
@@ -52,10 +69,14 @@ resets the chip (2026-08-24).
 
 ## Testing
 
-Host suite (`host_test/`, 6 tests): the pure `usb_acm_gps_parse`, the
+Host suite (`host_test/`, 11 tests): the pure `usb_acm_gps_parse`, the
 `gps -p -j` → fix mapping incl. the `"lat"` vs `"cached_lat"` quote
 disambiguation and the "valid:false → not a fix, cached position not
-adopted" rule. The rest of the component is inseparable from live USB
+adopted" rule; and the NMEA reader (2026-10-07): GGA then RMC = a fix with
+the merged satellites, altitude and HDOP accuracy, an RMC alone and a GN
+talker, a lost fix (status V) and the sentences that only count (GSV, VTG,
+a GGA without a fix), a flipped byte rejected by the checksum, bytes fed
+seven at a time across sentence boundaries, an over-long line dropped whole. The rest of the component is inseparable from live USB
 host I/O + DMA (no pure unit on the `linux` target); it's covered on the
 bench: driven end-to-end against the espnetlink dongle's console
 (`ESPNETLINK TARGET PASS`, `tools/testbench/espnetlink_bench.py`): the

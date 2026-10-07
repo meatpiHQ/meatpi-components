@@ -1,6 +1,7 @@
 idf_component_register(
     SRCS "usb_acm_cli.c"
          "usb_acm_gps.c"
+         "usb_acm_nmea.c"
          "usb_acm_cli_settings.c"
          "usb_acm_cli_http.c"
          "usb_acm_cli_cli.c"

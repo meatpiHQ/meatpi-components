@@ -62,6 +62,11 @@ static esp_err_t status_handler(httpd_req_t *req)
     cJSON *o = cJSON_CreateObject();
 
     cJSON_AddBoolToObject(o, "connected", usb_acm_cli_connected());
+    /* 2026-10-07: whether anyone reads the device (the console must be
+     * enabled), and what it turned out to be */
+    cJSON_AddBoolToObject(o, "reading", usb_acm_cli_reading());
+    cJSON_AddStringToObject(o, "mode", usb_acm_cli_mode());
+    cJSON_AddNumberToObject(o, "nmea_sentences", usb_acm_cli_nmea_sentences());
     return send_json(req, o);
 }
 

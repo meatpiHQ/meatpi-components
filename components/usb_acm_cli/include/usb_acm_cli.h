@@ -42,6 +42,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "esp_err.h"
 
@@ -57,6 +58,19 @@ esp_err_t usb_acm_cli_stop(void);
 
 /** True while a CDC-ACM device is attached and bound. */
 bool usb_acm_cli_connected(void);
+
+/** True while a device is bound AND the RX task reads it (the console is
+ *  enabled in settings): a bound device nobody reads is not "reading". */
+bool usb_acm_cli_reading(void);
+
+/** "console" (a prompt-driven console such as the ESPNetLink's, polled with
+ *  `gps -p -j`) or "nmea" (a GNSS receiver streaming NMEA 0183 sentences,
+ *  parsed as they arrive, nothing sent to it; 2026-10-07). Decided by the
+ *  first well-formed sentence after the device attached. */
+const char *usb_acm_cli_mode(void);
+
+/** Well-formed NMEA sentences read from the device since it attached. */
+uint32_t usb_acm_cli_nmea_sentences(void);
 
 /**
  * The last GPS fix from the dongle's periodic `gps -p -j` poll (cache

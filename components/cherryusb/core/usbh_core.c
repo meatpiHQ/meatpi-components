@@ -527,6 +527,10 @@ int usbh_enumerate(struct usbh_hubport *hport)
     memcpy(hport->raw_config_desc, ep0_request_buffer[hport->bus->busid], wTotalLength);
     hport->raw_config_desc[wTotalLength] = '\0';
 
+    /* MeatPi (2026-10-07): the product string, kept for the mount hook below
+     * (the string buffer is reused for the serial number) */
+    char product_str[64] = "";
+
 #ifdef CONFIG_USBHOST_GET_STRING_DESC
     uint8_t string_buffer[128];
 
@@ -554,6 +558,7 @@ int usbh_enumerate(struct usbh_hubport *hport)
         }
 
         USB_LOG_INFO("Product: %s\r\n", string_buffer);
+        strncpy(product_str, (const char *)string_buffer, sizeof(product_str) - 1);
     } else {
         USB_LOG_WRN("Do not support Product string\r\n");
     }
@@ -618,6 +623,10 @@ int usbh_enumerate(struct usbh_hubport *hport)
         ret = CLASS_CONNECT(hport, i);
     }
 
+    /* MeatPi (2026-10-07): the device is enumerated, class driver or not:
+     * tell the application what is on the port */
+    usbh_device_mount_done_callback(hport, product_str);
+
 errout:
     if (hport->raw_config_desc) {
         usb_osal_free(hport->raw_config_desc);
@@ -626,11 +635,27 @@ errout:
     return ret;
 }
 
+/* MeatPi (2026-10-07): application hooks for the device itself, whatever
+ * its class (the class driver hooks only fire for interfaces a driver
+ * binds: a GNSS receiver bound as CDC-ACM or a memory stick nobody binds
+ * were invisible to the status surfaces). Weak: override to use. */
+__WEAK void usbh_device_mount_done_callback(struct usbh_hubport *hport, const char *product)
+{
+    (void)hport;
+    (void)product;
+}
+
+__WEAK void usbh_device_unmount_done_callback(struct usbh_hubport *hport)
+{
+    (void)hport;
+}
+
 void usbh_hubport_release(struct usbh_hubport *hport)
 {
     if (hport->connected) {
         hport->connected = false;
         usbh_free_devaddr(hport);
+        usbh_device_unmount_done_callback(hport);
         for (uint8_t i = 0; i < hport->config.config_desc.bNumInterfaces; i++) {
             if (hport->config.intf[i].class_driver && hport->config.intf[i].class_driver->disconnect) {
                 CLASS_DISCONNECT(hport, i);

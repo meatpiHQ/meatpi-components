@@ -261,6 +261,15 @@ int usbh_control_transfer(struct usbh_hubport *hport, struct usb_setup_packet *s
 int usbh_get_string_desc(struct usbh_hubport *hport, uint8_t index, uint8_t *output, uint16_t output_len);
 
 /**
+ * @brief MeatPi (2026-10-07): called once a device is enumerated (class
+ *        drivers loaded or not) with its product string ("" when the device
+ *        has none or strings are not read), and once when it goes. Weak:
+ *        the application overrides them to know what is on the port.
+ */
+void usbh_device_mount_done_callback(struct usbh_hubport *hport, const char *product);
+void usbh_device_unmount_done_callback(struct usbh_hubport *hport);
+
+/**
  * @brief Sets the alternate setting for a USB interface on a specific hub port.
  *
  * This function is responsible for setting the alternate setting of the

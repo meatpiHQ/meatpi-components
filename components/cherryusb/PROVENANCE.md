@@ -128,3 +128,18 @@ usbh_*_run/stop/eth_input symbols would bypass our netif glue.
   as its first instruction, so nothing races it. Reproduce with the
   bench CLI `sleep test 20` with a device on the connector.
 
+- `core/usbh_core.c` / `core/usbh_core.h` (2026-10-07): two application
+  hooks for the device itself, whatever its class:
+  `usbh_device_mount_done_callback(hport, product)` at the end of
+  `usbh_enumerate()` (after the class drivers were loaded, driver or no
+  driver) and `usbh_device_unmount_done_callback(hport)` at the start of
+  `usbh_hubport_release()`. Weak no-ops in the core; `usb_eth_host`
+  (`usb_eth_host_device.c`) overrides them to record idVendor, idProduct,
+  the device and first-interface classes and the product string, which
+  `/api/usb` reports as `device`. Needed because the class-driver hooks
+  only fire for interfaces a driver binds: a u-blox GNSS receiver bound as
+  CDC-ACM or a memory stick nobody binds were invisible to the status
+  surfaces, and Quick Setup's USB step names what is on the connector.
+  The product string is "" on this port (`CONFIG_USBHOST_GET_STRING_DESC`
+  stays off: in this core a failed string read fails the enumeration).
+

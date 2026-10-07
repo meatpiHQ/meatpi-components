@@ -370,6 +370,27 @@ esp_err_t usb_host_manager_status(usb_host_manager_status_t *out)
     }
 
     *out = s_status;
+
+    /* the enumerated device, from the host's mount hook (2026-10-07) */
+    usb_eth_host_device_t d;
+
+    out->dev_present = s_status.host_active &&
+                       usb_eth_host_get_attached_device(&d);
+    if (out->dev_present)
+    {
+        out->dev_vid = d.vid;
+        out->dev_pid = d.pid;
+        out->dev_class = d.intf_class != 0 ? d.intf_class : d.dev_class;
+        strncpy(out->dev_product, d.product, sizeof(out->dev_product) - 1);
+        out->dev_product[sizeof(out->dev_product) - 1] = '\0';
+    }
+    else
+    {
+        out->dev_vid = 0;
+        out->dev_pid = 0;
+        out->dev_class = 0;
+        out->dev_product[0] = '\0';
+    }
     return ESP_OK;
 }
 

@@ -69,6 +69,13 @@ typedef struct
     uint16_t vid;          /**< idVendor of the enumerated device   */
     uint16_t pid;          /**< idProduct (0 when none / unknown)   */
     bool vbus_on;          /**< rail state as last driven by us     */
+    /* the enumerated device itself, whatever its class (2026-10-07; the
+       vid/pid above only know the one behind an Ethernet driver) */
+    bool     dev_present;
+    uint16_t dev_vid;
+    uint16_t dev_pid;
+    uint8_t  dev_class;    /**< the first interface's class, else the device's */
+    char     dev_product[48];
 } usb_host_manager_status_t;
 
 /** Register descriptors (settings/log/events). No hardware access. */

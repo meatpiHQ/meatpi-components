@@ -35,23 +35,86 @@
 
 static const char *TAG = "usb_host_manager";
 
+/* the USB class code as a word, for the pages (the wizard names a device
+ * by its ids and product string; this is what the class means) */
+static const char *class_name(uint8_t c)
+{
+    switch (c)
+    {
+        case 0x02: return "cdc";
+        case 0x0a: return "cdc_data";
+        case 0x03: return "hid";
+        case 0x08: return "mass_storage";
+        case 0x09: return "hub";
+        case 0xe0: return "wireless";
+        case 0xff: return "vendor";
+        default:   return "other";
+    }
+}
+
+/* this port does not read USB string descriptors at enumeration
+ * (CONFIG_USBHOST_GET_STRING_DESC off: a failed string read would fail
+ * the whole enumeration in CherryUSB), so the product name of the devices
+ * WiCAN knows comes from here; an unknown device shows its ids */
+static const char *known_product(uint16_t vid, uint16_t pid)
+{
+    if (vid == 0x303a && pid == 0x4007) return "ESPNetLink";
+    if (vid == 0x1546) return "u-blox GNSS receiver";
+    if (vid == 0x0b95) return "ASIX USB Ethernet adapter";
+    if (vid == 0x0bda && (pid == 0x8152 || pid == 0x8153)) return "Realtek USB Ethernet adapter";
+    return "";
+}
+
 static esp_err_t usb_handler(httpd_req_t *req)
 {
     usb_host_manager_status_t st;
-    char body[288];
+    char body[440];
+    char product[sizeof(st.dev_product)];
 
     (void)usb_host_manager_status(&st);
-    snprintf(body, sizeof(body),
+    if (st.dev_present && st.dev_product[0] == '\0')
+    {
+        snprintf(st.dev_product, sizeof(st.dev_product), "%s",
+                 known_product(st.dev_vid, st.dev_pid));
+    }
+
+    /* the product string is the device's own: keep it JSON-safe */
+    for (size_t i = 0; i < sizeof(product); i++)
+    {
+        char c = st.dev_product[i];
+
+        product[i] = (c == '"' || c == '\\' || (c != '\0' && c < 0x20)) ? ' ' : c;
+        if (c == '\0')
+        {
+            break;
+        }
+    }
+    product[sizeof(product) - 1] = '\0';
+
+    int n = snprintf(body, sizeof(body),
              "{\"enabled\":%s,\"device_present\":%s,\"host_active\":%s,"
              "\"eth_connected\":%s,\"driver\":\"%s\",\"ip\":\"%s\","
              "\"attaches\":%lu,\"vid\":\"%04x\",\"pid\":\"%04x\","
-             "\"vbus\":%s}",
+             "\"vbus\":%s,",
              st.enabled ? "true" : "false",
              st.device_present ? "true" : "false",
              st.host_active ? "true" : "false",
              st.eth_connected ? "true" : "false",
              st.driver, st.ip, (unsigned long)st.attaches,
              st.vid, st.pid, st.vbus_on ? "true" : "false");
+
+    /* 2026-10-07: the enumerated device, whatever its class */
+    if (st.dev_present && n > 0 && (size_t)n < sizeof(body))
+    {
+        snprintf(body + n, sizeof(body) - (size_t)n,
+                 "\"device\":{\"vid\":\"%04x\",\"pid\":\"%04x\","
+                 "\"class\":\"%s\",\"product\":\"%s\"}}",
+                 st.dev_vid, st.dev_pid, class_name(st.dev_class), product);
+    }
+    else if (n > 0 && (size_t)n < sizeof(body))
+    {
+        snprintf(body + n, sizeof(body) - (size_t)n, "\"device\":null}");
+    }
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_send(req, body, HTTPD_RESP_USE_STRLEN);
 }

@@ -614,7 +614,36 @@ ticked by default (`wifi_manager.mode` sta / apsta, `ap_auto_disable`); a config
 already running AP + Station with a network keeps that choice as the default of a re-run;
 the choice is free because a station that cannot join is never a lockout: a 5 s press of
 the button is button_manager's config mode, the configured access point up for 10 minutes,
-and the wizard says so wherever it used to promise the access point), Review and
+and the wizard says so wherever it used to promise the access point), **USB devices**
+(2026-10-07, Ali: "quick setup for usb devices such as espnetlink, usb to ethernet and gps";
+mock https://claude.ai/code/artifact/14acea5f-2625-4728-8ce3-8e64bb4a26bd): the host side of
+the connector is on by default, so the step reads what is plugged in live, before the
+restart: `/api/usb`, `/api/espnetlink`, `/api/usb/acm` and `/api/gps` every 3 s
+(`usbLive()` / `usbKind()`: an adapter by the Ethernet driver with a known id, the dongle by
+the link task's state or 303a:4007, a receiver by the enumerated `device` (u-blox 1546, or a
+GPS/GNSS product name: `/api/usb` reports the enumerated device for any class since the same
+night, and `/api/usb/acm` says whether it is read (`reading`) and as what (`mode` nmea for a
+receiver streaming NMEA, parsed by usb_acm_cli)), else unknown / none);
+three information tiles with the found one lit "Found", one card (`usbSummary()`, shared with
+Checks and Done) and the one question the device has, default = the device's setting:
+ESPNetLink **USB Ethernet (recommended, `usb_rndis`)** with the note that a GPS that never
+gets a fix this way wants WiFi modem, or WiFi modem (a dongle already paired keeps the mode
+it was paired with), plus "Carrier settings (optional)" (APN, username, password: the
+`espnetlink.apn` / `apn_user` / `apn_password` settings the pairing pass writes to the
+dongle); under the dongle card the basics as rows in the same box (`nlRows()`, `.qs-nlcard`):
+SIM (found / not found with what to do / PIN locked, dongle api 8; a dongle without the key
+counts as found when attached), network and type, signal in dBm with a word (good above -65,
+fair to -80, weak below with the antenna hint), internet with the carrier address, GPS (fix
+with satellites, or the sky hint plus the switch-to-WiFi-modem hint on USB Ethernet), APN;
+no SIM turns the card to a warning and leaves out the rows that need one. Adapter: internet
+over the cable only when WiFi is down (the default) or always (`prefer_usb_route`). GPS
+receiver: nothing to ask; a fresh device says it is read after the restart (the save turns
+`usb_acm_cli.enabled` on). A connector in device mode offers to switch it back to host at the
+restart. Nothing plugged in is a plain Continue. The save carries only what changed
+(`espnetlink` enabled / mode / carrier, `usb_host_manager` route preference or host role,
+`usb_acm_cli` enabled); Review gets a USB connector row only when there is something to say
+(`usbReview()`); Checks and Done read the routes again, so a page that arrived by the link
+shows the same card (the pairing's own extra restart is named on it)), Review and
 restart (a checklist since 2026-10-07, Ali's sketch after "the location of the green pills
 looks off or random": `.qs-rv`, a circle per row (the rail's own: green check = settled by
 this save, empty = comes after the restart, amber = a warning), the title in a column of

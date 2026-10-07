@@ -1180,6 +1180,7 @@ const LABELS={
   /* espnetlink */
   "espnetlink.mode":"Uplink mode",auto_pair:"Automatic pairing","espnetlink.ssid":"Dongle AP name","espnetlink.device_id":"Dongle device ID",
   "espnetlink.host":"Dongle address",gps_poll_s:"GPS poll interval (s)",health_poll_s:"Health poll interval (s)",cut_retries:"USB cut retries",
+  "espnetlink.apn":"APN","espnetlink.apn_user":"APN username","espnetlink.apn_password":"APN password",
   /* usb_host_manager */
   role:"Connector role",device_class:"USB device class",ip_mode:"IP assignment",static_ip:"Static IP address",
   static_netmask:"Subnet mask",static_gw:"Gateway",prefer_usb_route:"Prefer USB uplink over WiFi",
@@ -1246,6 +1247,7 @@ const HELP={
   "espnetlink.mode":"WiFi modem keeps the dongle's USB as power only (best GPS reception). USB Ethernet keeps the data lines on and uses the cable as the uplink.",
   auto_pair:"Read the dongle's AP key over USB automatically the first time it is plugged in.",
   cut_retries:"How many times to retry cutting the dongle's USB data lines before giving up.",
+  "espnetlink.apn":"Only if your carrier gave you one: most SIMs work without it. WiCAN sends it to the dongle the next time the dongle is on the cable; the dongle restarts once to apply it. Blank keeps the dongle's own.",
   role:"Host: an adapter or dongle plugs into the WiCAN. Device: the WiCAN appears as a network adapter on a PC.",
   prefer_usb_route:"Use the USB-Ethernet uplink even when WiFi is connected.",
   "vpn_manager.type":"WireGuard: point-to-point tunnel to your own server. Tailscale: zero-config mesh (needs an auth key).",
@@ -3935,7 +3937,9 @@ PAGES.usb=async(view,sub)=>{
       ["IP",u.ip||"-"],
       ["VBUS",u.host_active?(u.vbus?"on":"off"):"-"],
       ["Enumerations",u.attaches],
-      ["Dongle console",acm?(acm.connected?"connected":"not bound"):"-"]]));
+      /* 2026-10-07: what the enumerated device is, and what the console turned out to be */
+      ...(u.device?[["Attached device",(u.device.product||"")+" ("+u.device.vid+":"+u.device.pid+", "+u.device.class+")"]]:[]),
+      ["Dongle console",acm?(acm.mode==="nmea"?"GNSS receiver, NMEA ("+(acm.nmea_sentences||0)+" sentences)":acm.connected?(acm.reading===false?"bound, not read (console disabled)":"connected"):"not bound"):"-"]]));
     const on=!!(acm&&acm.connected);
     acmOn=on;
     consEl.style.display=on?"":"none";consOff.style.display=on?"none":"";
@@ -3979,6 +3983,11 @@ PAGES.usb=async(view,sub)=>{
       ["Dongle address",e.host||"-"],
       ["USB attached",(e.usb||{}).attached?"yes":"no"],
       ["LTE",d.valid?(d.lte_connected?chip((d.operator||"connected")+(d.network_type?" · "+d.network_type:"")+(d.rssi_dbm?" · "+d.rssi_dbm+" dBm":""),"ok"):chip("not connected","warn")):(e.health_unsupported?chip("no health API in this dongle firmware","warn"):"-")],
+      /* dongle api 8 (2026-10-07): the SIM as the dongle found it, the stage, the carrier address; the reading's age (kept while on the home WiFi) */
+      ...(d.valid?[
+        ["SIM",d.sim==="ready"?chip("found","ok"):d.sim==="missing"?chip("not found: insert a SIM, then plug the dongle in again","crit"):d.sim==="pin"?chip("PIN locked","warn"):"-"],
+        ["LTE stage",(d.stage||"-")+(d.ip?" · "+d.ip:"")+(d.age_s>30?" · read "+(d.age_s<120?d.age_s+" s":Math.round(d.age_s/60)+" min")+" ago":"")]]:[]),
+      ...(e.apn||e.carrier_synced===false?[["APN",e.carrier_synced===false?chip((e.apn||"carrier settings")+": not on the dongle"+(e.carrier_note?" ("+e.carrier_note+")":""),"warn"):e.apn+" (on the dongle)"]]:[]),
       ["GPS (dongle)",d.valid?(d.gps_fix?chip("fix","ok"):chip("no fix","")):"-"],
       ["GPS (cached fix)",g.valid?(g.satellites+" sats · "+(g.age_ms/1000).toFixed(1)+" s old"):"-"],
       ["Counters","cuts "+((e.usb||{}).cuts??0)+" · VBUS cycles "+((e.usb||{}).vbus_cycles??0)+" · errors "+((e.usb||{}).errors??0)+" · polls "+(e.polls??0)+" / failed "+(e.failures??0)]];
@@ -4099,7 +4108,7 @@ PAGES.usb=async(view,sub)=>{
   try{
     const nlRows=await settingsForm("espnetlink",null,{visible:st=>{
       if(!st.enabled)return["enabled"];
-      const base=["enabled","mode","auto_pair","ssid","host","gps_poll_s","health_poll_s","cli"];
+      const base=["enabled","mode","auto_pair","ssid","host","apn","apn_user","apn_password","gps_poll_s","health_poll_s","cli"];
       return st.mode==="wifi_modem"?[...base,"cut_retries"]:base;
     }});
     paneSettings.append(card("ESPNetLink Settings","settings",...nlRows));

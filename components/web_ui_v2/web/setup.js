@@ -38,7 +38,7 @@ const SKIP_KEY="wican-setup-skip";
 
 /* wizard state: survives in-page navigation and re-routes (module scope),
    not a reload on another address (the second half reads the device) */
-const W={cur:null,use:"ha",agree:[false,false,false],haInstalled:false,
+const W={cur:null,use:"ha",agree:[false,false,false],haInstalled:false,mdata:false,
   apPw:"",apPw2:"",showPw:false,
   ssid:"",wifiAuth:"",wifiPw:"",manual:false,nets:null,scanErr:null,
   /* after it joins (2026-10-07): "sta" = Station only (recommended), "apsta"
@@ -243,6 +243,16 @@ const CSS=`
 const deviceId=()=>(conn.info&&conn.info.device_id)||(conn.status&&conn.status.device_id)||"";
 const apName=()=>deviceId()?"WiCAN_"+deviceId():"the WiCAN access point";
 const routerName=()=>"wican_"+(deviceId()||"");   /* the DHCP host name: a router's device list shows it */
+/* this page rides the access point: a phone (or computer) on WiCAN's own
+   network, which has no internet. The setting's address, the live status's
+   before the settings are loaded, the factory default last. */
+const onAp=()=>location.hostname===((D.wifi&&D.wifi.ap_ip)||(conn.wifi&&conn.wifi.ap_ip)||"192.168.0.10");
+/* the one request of the phone (Ali, 2026-10-08: his phone dropped off the
+   access point at the WiFi test and came back; one with mobile data on may
+   not): the first screen carries it in full, the WiFi step repeats the
+   short form before the test */
+const mobileDataOff=()=>banner("info","phone",h("b",{},"On a phone: turn off mobile data until WiCAN is on your WiFi."),
+  " WiCAN's network has no internet. With mobile data on, your phone may leave it for the internet during the two short pauses ahead (the WiFi test and the restart), and this page stops answering. The switch is under Settings > Mobile data (Cellular on some phones). A computer has nothing to turn off.");
 const strip=o=>{const c={...(o||{})};delete c.degraded;delete c.pending_reboot;return c;};
 const bars=r=>{const n=r>-55?4:r>-67?3:r>-78?2:1;return "▂▄▆█".slice(0,n).padEnd(4,"·");};
 const netAuth=n=>String(n.auth_mode||n.auth||"").toUpperCase();
@@ -323,7 +333,8 @@ const grow=()=>h("span",{class:"grow"});
 /* ---------- screens ---------- */
 const SCREENS={};
 
-SCREENS.safety=()=>{
+SCREENS.safety=async()=>{
+  if(!D.wifi)D.wifi=strip(await tryGet("/api/settings/wifi_manager"));
   const items=[
     ["Private networks only","I will connect WiCAN only to a private WiFi network I control, such as my home network. Never a public, hotel, cafe, office or guest network."],
     ["Keep the access point password private","I will set my own access point password and will not share the WiCAN network with people I do not trust."],
@@ -335,7 +346,7 @@ SCREENS.safety=()=>{
   const fresh=apDefaultPassword();
   return screen("Keep your WiCAN private",
     "WiCAN sits on your car's diagnostic port and on your WiFi. Read these three rules before it goes online. Each one needs a tick.",
-    [...boxes,note("","The web interface has no login by default. Anyone on the same private network can open it. You can add a password later under Settings.")],
+    [...(onAp()?[mobileDataOff()]:[]),...boxes,note("","The web interface has no login by default. Anyone on the same private network can open it. You can add a password later under Settings.")],
     [btn(fresh?"Skip setup for now":"Exit setup",fresh?skipSetup:()=>{location.hash="#/status";},"gh sm"),grow(),next]);
 };
 
@@ -442,6 +453,10 @@ SCREENS.wifi=async()=>{
   const pwLabel=h("label",{for:"qs-wifi-pw"},"Password");
   const pwHelp=h("div",{class:"help"});
   const testBox=h("div",{});
+  /* the phone's mobile data once more, where it bites: the test moves the
+     radio to the network's channel and the phone drops off the access point
+     for a few seconds (over the access point only, until a pass) */
+  const dataBox=h("div",{});
   /* after it joins (Ali, 2026-10-07): Station only, recommended, or Access
      point + Station with the access point off while WiCAN is on the network
      (wifi_manager's ap_auto_disable, back whenever the station is lost). A
@@ -477,7 +492,10 @@ SCREENS.wifi=async()=>{
       :"WiCAN treats this network as trusted: you can manage it from any device on it.");
     openWarn.replaceChildren(open?banner("crit","alert",h("b",{},W.ssid+" has no password."),
       " Quick Setup does not join open networks: anyone nearby could reach WiCAN. Pick a protected network."):null);
-    next.disabled=!W.ssid||open||!(W.wifiPw.length>=8||keep);
+    const askData=onAp()&&!passed()&&!keep;
+    dataBox.replaceChildren(askData?h("label",{class:"qs-agree"},h("input",{type:"checkbox",id:"qs-mdata",checked:W.mdata,onchange:e=>{W.mdata=e.target.checked;update();}}),
+      h("div",{},h("b",{},"Mobile data is off on this phone"),h("span",{},"The test moves WiCAN's radio to "+(W.ssid||"the network")+"'s channel: your phone drops off "+apName()+" for a few seconds and rejoins by itself, unless mobile data (or another saved network) pulls it away. Nothing to do on a computer: tick and go on."))):null);
+    next.disabled=!W.ssid||open||!(W.wifiPw.length>=8||keep)||(askData&&!W.mdata);
     next.replaceChildren(ic(passed()||keep?"check":"wifi"),passed()||keep?"Continue":"Test and continue");
     list.querySelectorAll(".qs-net").forEach(el=>el.classList.toggle("sel",el.dataset.ssid===W.ssid));
     paintMode();};
@@ -492,13 +510,19 @@ SCREENS.wifi=async()=>{
     if(!resume){W.tested=null;W.testNote=null;W.testing={ssid,pw,t0:Date.now()};}
     pwInp.classList.remove("qs-bad");
     next.disabled=true;next.replaceChildren(h("span",{class:"qs-spin",style:"width:14px;height:14px;border-width:2px"}),"Testing");
+    dataBox.replaceChildren();
     const cw=conn.wifi||{};
     const overSta=!!(cw.sta_connected&&location.hostname!==(cw.ap_ip||"192.168.0.10"));
     testBox.replaceChildren(check("run",null,"Trying "+ssid,["Up to 20 seconds. WiCAN joins ",h("b",{},ssid)," with this password and lets go again; nothing is saved. ",
-      overSta?"WiCAN leaves its current network for the test: this page loses it for a moment and reconnects after.":"The access point may pause for a few seconds while the radio changes channel: stay on this screen, it keeps asking."]));
+      overSta?"WiCAN leaves its current network for the test: this page loses it for a moment and reconnects after.":"Your phone may drop off "+apName()+" for a few seconds while WiCAN's radio changes channel, and rejoins by itself: stay on this screen, it keeps asking."]));
     if(!resume){
       const ac=new AbortController();const tmo=setTimeout(()=>ac.abort(),4000);
-      try{await api("/api/wifi/try",{method:"POST",body:{ssid,password:pw},signal:ac.signal});}
+      /* the scan row's channel goes with the request (2026-10-08): the
+         station scans that one channel instead of all thirteen, during
+         which the access point cannot beacon and the phone on it gives
+         up; a name typed by hand has none */
+      const sn=selNet();
+      try{await api("/api/wifi/try",{method:"POST",body:{ssid,password:pw,channel:(sn&&sn.channel)||0},signal:ac.signal});}
       catch(e){
         const m=e.message||"";
         if(/station is off/i.test(m)){W.testing=null;W.testNote="ap";go("usb");return;}   /* AP only until the restart: nothing to test with */
@@ -521,7 +545,7 @@ SCREENS.wifi=async()=>{
     if(!testBox.isConnected)return;   /* the screen was rebuilt: its successor carries on */
     W.testing=null;
     if(ssid!==W.ssid||pw!==W.wifiPw){update();testBox.replaceChildren();return;}   /* edited meanwhile */
-    if(!st||st.state!=="done"){failCard("Lost contact with WiCAN during the test",["If this phone dropped off ",h("code",{},apName()),", join it again, then test again."]);return;}
+    if(!st||st.state!=="done"){failCard("Lost contact with WiCAN during the test",["If this phone dropped off ",h("code",{},apName())," and did not come back, join it again (mobile data off), then test again."]);return;}
     const r=st.result,reason=st.reason?" (reason "+st.reason+")":"";
     if(r==="connected"){
       W.tested={ssid,pw,ip:st.ip||"",rssi:st.rssi,took_ms:st.took_ms,channel:st.channel};W.testNote=null;
@@ -566,7 +590,7 @@ SCREENS.wifi=async()=>{
     [h("div",{class:"rowflex",style:"flex-wrap:wrap"},count,grow(),rescan),list,openWarn,
      h("details",{class:"qs-details",open:W.manual||null},h("summary",{},"Network not listed? Enter it by hand"),
        row("Network name (SSID)",manual,"Hidden networks and 5 GHz-only names do not appear in the scan. WiCAN connects on 2.4 GHz.")),
-     h("div",{class:"qs-row"},pwLabel,h("div",{class:"ctl"},pwInp),pwHelp),modeBox,testBox],
+     h("div",{class:"qs-row"},pwLabel,h("div",{class:"ctl"},pwInp),pwHelp),modeBox,dataBox,testBox],
     [back("ap"),grow(),next]);
   if(W.nets)render();else{W.nets=null;render();scan();}
   /* a test that was running when this screen was rebuilt (the AP's blink

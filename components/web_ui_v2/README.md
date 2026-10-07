@@ -607,7 +607,17 @@ step, which picks a running test up from `W.testing`), a pass goes straight to R
 the field marked, reason N; not_found; no_ip; refused; timeout; lost contact), Test again,
 and a quiet Continue anyway ("Test failed · continuing anyway" on Review, an amber circle);
 a pass is remembered for those very credentials, a blank password that keeps the stored one
-needs no test, a device in access point only mode skips the test with a note; **after it
+needs no test, a device in access point only mode skips the test with a note; since
+2026-10-08 the POST carries the scan row's `channel` (0 for a hand-typed name) so the
+station scans that one channel and the access point's clients see the announced switch
+within a second instead of three seconds of silence; **the phone's mobile data** (Ali,
+2026-10-08, "ask the user to shut down his 5G/4G before they continue": when the page rides
+the access point, `onAp()`, the settings' `ap_ip`): the first screen asks for mobile data
+off before the three rules (the two pauses ahead, Settings > Mobile data or Cellular, a
+computer has nothing to turn off), and the WiFi step carries a tick "Mobile data is off on
+this phone" naming the network and the access point that gates Test and continue until
+ticked (kept for the visit, gone while the test runs and after a pass); the Trying card says
+the phone may drop off the access point for a few seconds and rejoin by itself; **after it
 joins** (Ali, 2026-10-07): Station only, recommended and the default on a fresh device, or
 Access point + Station, which reveals "turn the access point off while WiCAN is on X",
 ticked by default (`wifi_manager.mode` sta / apsta, `ap_auto_disable`); a configured device

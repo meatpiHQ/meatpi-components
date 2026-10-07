@@ -589,8 +589,11 @@ app repo): the first-run wizard. Opens by itself while the access point still ha
 factory password (`route()` sends an empty hash to `#/setup`; "Skip setup for now" is a
 sessionStorage flag), later from the first sidebar entry or System > Maintenance; the
 sidebar hides while it runs (`#app.setup-focus`). Ten screens on a step rail in two
-halves: safety rules (three acknowledgements), use case (Home Assistant, own MQTT
-broker, WiFi only; OBD apps / ABRP / logger greyed as later work), details (the HACS
+halves: safety rules (three acknowledgements), use case (three tiles: Home Assistant, own
+MQTT broker, and "Just connect WiCAN to my WiFi" since 2026-10-07 (Ali; it was a small
+radio under the tiles before): chosen, the details step is skipped and leaves the rail
+(`hide` on the step, the numbers follow), Review has no Home Assistant row, Checks and Done
+no Home Assistant card; OBD apps / ABRP / logger greyed as later work), details (the HACS
 install steps for the WiCAN integration, or the broker form), AP password (8 to 63,
 never `@meatpi#`; a device with its own password may keep it), home WiFi (scan via
 `/api/wifi/scan`, one row per SSID with the strongest signal, `auth_mode`, OPEN networks
@@ -600,33 +603,74 @@ credentials before anything is saved, the page polls `GET /api/wifi/try` once a 
 a 3 s abort per poll (the AP blinks while the radio changes channel, and a page over the
 station loses the device for the trial; the page's offline-to-online re-route rebuilds the
 step, which picks a running test up from `W.testing`), a pass goes straight to Review with
-"Tested: password accepted, <ip>", a failure stays with its card (password: the field
-marked, reason N; not_found; no_ip; refused; timeout; lost contact), Test again, and a
-quiet Continue anyway ("Test failed, continuing anyway" on Review); a pass is remembered
-for those very credentials, a blank password that keeps the stored one needs no test, a
-device in access point only mode skips the test with a note), Review and
-restart (`store.commit()`: PUT wifi_manager apsta + station + `sta_trusted` + AP password,
-optionally mqtt_manager + a data_destinations `~/autopid` row, one submit); then, from the
-mDNS link `http://wican_<id>.local/#/setup/checks` on the home network: Reconnect (link,
-copy, AP fallback; the live card watches TWO places since 2026-10-06: the page's own
-origin, for a phone or PC that stays on the access point (join status, the station
-address), and the link itself, with a no-CORS `fetch` of `/api/info` every 3 s once the
-restart has had 12 s, for the phone that moved to the home WiFi by itself when the AP
-password changed, which leaves the page's origin out of reach for good; when only the
-link answers the card says so and offers `Continue on <ssid>` as a button to the link
+"Password accepted · <ip>" on the Home WiFi row, a failure stays with its card (password:
+the field marked, reason N; not_found; no_ip; refused; timeout; lost contact), Test again,
+and a quiet Continue anyway ("Test failed · continuing anyway" on Review, an amber circle);
+a pass is remembered for those very credentials, a blank password that keeps the stored one
+needs no test, a device in access point only mode skips the test with a note; **after it
+joins** (Ali, 2026-10-07): Station only, recommended and the default on a fresh device, or
+Access point + Station, which reveals "turn the access point off while WiCAN is on X",
+ticked by default (`wifi_manager.mode` sta / apsta, `ap_auto_disable`); a configured device
+already running AP + Station with a network keeps that choice as the default of a re-run;
+the choice is free because a station that cannot join is never a lockout: a 5 s press of
+the button is button_manager's config mode, the configured access point up for 10 minutes,
+and the wizard says so wherever it used to promise the access point), Review and
+restart (a checklist since 2026-10-07, Ali's sketch after "the location of the green pills
+looks off or random": `.qs-rv`, a circle per row (the rail's own: green check = settled by
+this save, empty = comes after the restart, amber = a warning), the title in a column of
+its own, the value with its short attributes beside it and the verdict or note under it,
+joined by middle dots, no pills; the mode on the rows and in the steps: "off after the
+restart, hold the button 5 s to bring it up when needed" / "off while WiCAN is on X, back
+whenever X is lost"; `store.commit()`: PUT wifi_manager mode sta or apsta (+
+`ap_auto_disable` as ticked) + station + `sta_trusted` + AP password, optionally
+mqtt_manager + a data_destinations `~/autopid` row, one submit); then, from the address
+link `http://<address>/#/setup/checks` on the home network (no mDNS name anywhere in the
+wizard since 2026-10-07, Ali: "it's simpler to just use IP"; the address is the connection
+test's, usually the same after the restart (same MAC, same lease), else the live station
+address when the device is already on that network (a re-run), else the card says the
+address is not known yet, that this page shows it as soon as WiCAN joins while the phone
+stays on the access point, and that the router's device list shows WiCAN as `wican_<id>`,
+its DHCP host name (`routerName()`)): Reconnect (the link, Open WiCAN and Copy link; the
+live card watches TWO places since 2026-10-06: the page's own origin, for a phone or PC
+that stays on the access point (join status, the station address), and the address, with
+a no-CORS `fetch` of `/api/info` every 3 s once the restart has had 12 s, for the phone
+that moved to the home WiFi by itself (the AP password changed, or the access point went
+off once WiCAN joined), which leaves the page's origin out of reach for good; when the
+address answers the card says so and offers `Continue on <ssid>` as a button to the link
 (never a jump on a timer, Ali's call: this screen is the user's only map and the back
-button cannot return to it, and an opaque answer cannot prove it is WiCAN); until then
-the card says what to do meanwhile, and after 40 s points at the AP fallback with the
-wrong-password hint; the page pill reads "WiCAN's access point is out of reach from
-here" on that screen instead of "Device offline"), Checks (WiFi / AP / Home
+button cannot return to it, and an opaque answer cannot prove it is WiCAN), and a success
+popup comes up once per visit (Ali, 2026-10-07: "popup when the device is connected to the
+desired network and ask the user to press"; `.qs-pop`: a large green check, "WiCAN
+successfully connected to X", the address and the link, ONE button `Continue on X` with the
+open-in-new mark, the only way on; a tap beside it closes it and the card keeps the same
+button); the popup also comes when the page's origin stays reachable and the device
+reports the join after the restart's time (then it says to join X first when the phone is
+still on the access point); until then
+the card says what to do meanwhile, and after 40 s points at the way back with the
+wrong-password hint: the access point for AP + Station, the router's device list and the
+5 s button for Station only; the page pill reads "WiCAN's access point is out of reach
+from here" on that screen instead of "Device offline"), Checks (WiFi with the address and
+the router's name for it / the access point: "off: Station only" with the button, "off
+while WiCAN is on X" for the auto choice, else secured or factory password / Home
 Assistant via `GET /api/webhook` / MQTT via `bits.mqtt_connected`, polled every 3 s, Fix
-links back into the earlier steps), Vehicle (second pass, 2026-10-01 evening: DETECT
+links back into the earlier steps; the mode read from `/api/settings/wifi_manager` after
+the restart's reload), Vehicle (second pass, 2026-10-01 evening: DETECT
 first, profile last. "Detect my vehicle" = `POST /api/autopid/vehicles/detect` (falls back to
 `POST /api/autopid/std_scan` on older firmware), the phases protocol / vin / pids from
 `GET /api/autopid/std_scan`, then the result card from `/std_scan/result` + the store
 `GET /api/autopid/vehicles` (VIN or "identified by its ECUs", detected protocol, PID
-count, a name field defaulting to the VIN's manufacturer + last 4), a "Welcome back" card
-for a known car; profile suggestions filtered by the VIN's manufacturer code (the `WMI`
+count, a name field defaulting to the VIN's manufacturer + last 4; the facts as muted text
+beside the values, no pills, 2026-10-07), a "Welcome back" card for a known car;
+**2. Standard PIDs** (2026-10-07, Ali: the scan found what the car answers, the user
+chooses what WiCAN reads): Choose PIDs opens the page's standard-PID picker
+(`pickStdRows()` in index.html, the one Automate > Parameters opens on a scan: a scrollable
+list, tick | request | name | unit, Select all, Clear, a count, Add selected), nothing
+ticked for a new car, a car the store already had comes with its current rows ticked
+(`W.stdDefault` = the config's std rows after the scan, since a re-scan keeps a known car's
+own tables; `W.stdPick` once the picker was used), none is allowed and Continue does not
+wait for it; the card's Standard PIDs row says "N chosen" / "none chosen yet"; a J1939-only
+vehicle has no requests and no section 2; then the profile as section 3: suggestions
+filtered by the VIN's manufacturer code (the `WMI`
 table in setup.js), the shared `vehicleProfilePicker()` for the rest, "keep it without a
 profile", a protocol-mismatch warning when the profile's init names another protocol than
 the detected one, and **Test profile**: one `POST /api/autopid/test` per profile PID
@@ -634,9 +678,14 @@ the detected one, and **Test profile**: one `POST /api/autopid/test` per profile
 parameter with value / unit / request, a summary chip, Use this profile. The store list
 ("Vehicles this WiCAN knows") with Current / Profile pending chips and Forget
 (`DELETE /api/autopid/vehicles/<key>`). Finish = `PUT /api/autopid/vehicles/<key>` {name,
-profile, specific_init} (empty profile = standard PIDs only), `PUT /api/autopid/config`
-with the profile's rows via `profileToPids()`, staged autopid {enabled, std_protocol "0",
-vehicle, specific_init} through `store.commit()`), Battery and sleep (2026-10-01 night, Ali:
+profile, specific_init} (empty profile = the chosen standard PIDs only), `PUT
+/api/autopid/config` with the standard rows cut to the chosen ones (the firmware stored
+every row the scan found under a new car; a chosen row the config lacks is added from the
+scan, one row per request, so a request the profile already carries is not added twice; a
+car switch snapshots the result into the car's file, so the choice comes back with the car;
+no firmware change), the profile's rows via `profileToPids()`, custom rows kept, staged
+autopid {enabled, std_protocol "0", vehicle, specific_init} through `store.commit()`),
+Battery and sleep (2026-10-01 night, Ali:
 the Power Saving pair measured on the car. `GET /api/battery` once a second into a 90 s SVG
 trace; the charging voltage is captured by itself from six stable readings at or above
 13.3 V (a smart alternator: a 0.4 V climb then 12 s stable, or "Use the current reading"),
@@ -658,9 +707,12 @@ inheriting it (a fresh device gets the recommended 5 s, a device already polling
 its rate), `min_event_interval_ms` as "report a change at most every N s", when the car is
 off = pause with Power Saving (`pause_follow_sleep`, the sleep voltage quoted from
 `/api/settings/sleep_manager`) / below a chosen voltage (`pause_below_mv`, 12 to 14.5 V) /
-never (battery warning), `pause_mode` as "while paused, also stop listening", the three
-PID-type switches (vehicle-specific greyed without a profile), trouble codes
-(`dtc_enabled` + `dtc_scan_period_min`); Finish lives here now and stages it all),
+never (battery warning), `pause_mode` as "while paused, also stop listening", the Standard
+PIDs switch reading the vehicle step's choice ("The N of the M the scan found that you
+chose"; off and greyed with none chosen) and the vehicle-specific one (greyed without a
+profile); the Custom PIDs switch left the wizard on 2026-10-07 (Ali) and `custom_enabled`
+stays as the device has it; trouble codes (`dtc_enabled` + `dtc_scan_period_min`); Finish
+lives here now and stages it all),
 Done (addresses, states, the reading rules, the sleep-off note, where to go next). Wizard state lives in the
 chunk; the second half rebuilds from device state. Probe: `probe_setup.mjs`.
 · Status (stat cards + network/system tables; a Quick Setup pointer while AutoPID is off) · Settings (WiFi/AP

@@ -686,6 +686,7 @@ const IC={
   clock:'<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
   home:'<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
   send:'<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
+  ext:'<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
   list:'<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>',
   upload:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>',
   download:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>',
@@ -754,6 +755,40 @@ function promptModal(label,def=""){return new Promise(res=>{
   const inp=h("input",{value:def});
   modal({title:label,body:h("div",{},inp),actions:[{label:"Cancel",fn:()=>res(null)},{label:"OK",kind:"pri",fn:()=>res(inp.value)}]});
   setTimeout(()=>inp.focus(),30);});}
+/* the ECU a row addresses by itself (its init sets the request header):
+   "ECU 58" for 18DA58F1, "ECU 7E0" on 11-bit ids; "" for a row asked of
+   every ECU */
+const rowEcu=pd=>{const m=/(?:^|;)\s*AT\s*SH\s*(?:18DA([0-9A-F]{2})F1|(7E[0-7]))\s*(?:;|$)/i.exec(String((pd&&pd.init)||""));
+  return m?"ECU "+(m[1]||m[2]).toUpperCase():"";};
+/* The standard-PID picker, shared by Automate > Parameters (the scan
+   results) and Quick Setup's vehicle step (2026-10-07): a scrollable list,
+   tick | request | name | unit, Select all and Clear. Rows in `taken` are
+   listed but cannot be ticked (", already configured"); `preset` rows start
+   ticked. Resolves with the ticked rows, null on Cancel. */
+function pickStdRows(rows,o={}){return new Promise(res=>{
+  const norm=c=>String(c||"").replace(/\s+/g,"").toUpperCase();
+  const taken=o.taken||new Set(),preset=o.preset||new Set();
+  const count=h("span",{style:"font-size:12.5px;color:var(--text-3);margin-left:auto"});
+  const boxes=rows.map(row=>{
+    const key=norm(row.cmd),dup=taken.has(key);
+    const cb=h("input",{type:"checkbox",checked:!dup&&preset.has(key),disabled:dup,onchange:()=>paint()});
+    const prm=(row.parameters&&row.parameters[0])||{};
+    return{row,cb,el:h("label",{style:"display:grid;grid-template-columns:24px 130px 1fr 90px;gap:8px;align-items:center;padding:5px 4px;border-top:1px solid var(--border);cursor:pointer;opacity:"+(dup?".55":"1")},
+      cb,h("span",{class:"mono"},row.cmd),h("span",{},row.name+(rowEcu(row)?" · "+rowEcu(row):"")+(dup?", already configured":"")),
+      h("span",{class:"mono",style:"color:var(--text-3)"},prm.unit||""))};
+  });
+  const paint=()=>{count.textContent=boxes.filter(b=>b.cb.checked).length+" ticked";};
+  const setAll=on=>{boxes.forEach(b=>{if(!b.cb.disabled)b.cb.checked=on;});paint();};
+  paint();
+  const body=h("div",{},
+    h("div",{style:"font-size:13px;color:var(--text-2);margin-bottom:6px"},o.lead||(rows.length+" supported PIDs reported by the vehicle. Tick the ones to add:")),
+    h("div",{style:"display:flex;gap:8px;align-items:center;margin-bottom:4px"},
+      h("button",{class:"btn sm gh",type:"button",onclick:()=>setAll(true)},"Select all"),h("button",{class:"btn sm gh",type:"button",onclick:()=>setAll(false)},"Clear"),count),
+    h("div",{style:"max-height:min(60vh,420px);overflow:auto"},...boxes.map(b=>b.el)));
+  modal({title:o.title||"Scan results",body,actions:[
+    {label:"Cancel",fn:()=>res(null)},
+    {label:o.addLabel||"Add selected",kind:"pri",fn:()=>res(boxes.filter(b=>b.cb.checked).map(b=>b.row))}]});
+});}
 
 /* ============================================================ SUBMIT STORE (header button) */
 /* Sleep mode off = the WiCAN never sleeps and can flatten the vehicle
@@ -2532,50 +2567,32 @@ PAGES.automate=async(view,sub)=>{
     /* scan-results picker: firmware stores ready-made config rows,
        review, tick, merge into the table (then Apply). Nothing is ticked
        by default: the user picks what to poll (2026-09-22). */
-    /* the ECU a row addresses by itself (its init sets the request header):
-       "ECU 58" for 18DA58F1, "ECU 7E0" on 11-bit ids; "" for a row asked of
-       every ECU */
-    const rowEcu=pd=>{const m=/(?:^|;)\s*AT\s*SH\s*(?:18DA([0-9A-F]{2})F1|(7E[0-7]))\s*(?:;|$)/i.exec(String((pd&&pd.init)||""));
-      return m?"ECU "+(m[1]||m[2]).toUpperCase():"";};
-    function offerScanResults(r){
+    async function offerScanResults(r){
       const rows=(r&&r.supported)||[];
       if(!rows.length)return toast("Scan stored no supported PIDs","err");
       const norm=c=>String(c||"").replace(/\s+/g,"").toUpperCase();
-      const have=new Set(cfg.pids.map(p=>norm(p.cmd)));
-      const boxes=rows.map(row=>{
-        const dup=have.has(norm(row.cmd));
-        const cb=h("input",{type:"checkbox",checked:false,disabled:dup});
-        const prm=(row.parameters&&row.parameters[0])||{};
-        return{row,cb,el:h("label",{style:"display:grid;grid-template-columns:24px 130px 1fr 90px;gap:8px;align-items:center;padding:5px 4px;border-top:1px solid var(--border);cursor:pointer;opacity:"+(dup?".55":"1")},
-          cb,h("span",{class:"mono"},row.cmd),h("span",{},row.name+(rowEcu(row)?" · "+rowEcu(row):"")+(dup?", already configured":"")),
-          h("span",{class:"mono",style:"color:var(--text-3)"},prm.unit||""))};
-      });
-      const body=h("div",{},
-        h("div",{style:"font-size:13px;color:var(--text-2);margin-bottom:6px"},
-          rows.length+" supported PIDs reported by the vehicle. Tick the ones to add:"),
-        h("div",{style:"max-height:320px;overflow:auto"},...boxes.map(b=>b.el)));
-      modal({title:"Scan results",body,actions:[
-        {label:"Cancel"},
-        {label:"Add selected",kind:"pri",fn:()=>{
-          let n=0;
-          /* re-derive from the live table so repeat visits (Last Scan
-             Results) and same-cmd scan rows can never duplicate */
-          const now=new Set(cfg.pids.map(p=>norm(p.cmd)));
-          for(const b of boxes){if(!b.cb.checked)continue;
-            const key=norm(b.row.cmd);
-            if(now.has(key))continue;
-            now.add(key);
-            /* a scan row of an ISO 27145 car names the ECU that owns the
-               value (init = its address): dropped here, the row would be
-               asked of every ECU at once (2026-10-03) */
-            const add={name:b.row.name,cmd:b.row.cmd,group:"default",period_ms:1000,type:"std",
-              parameters:(b.row.parameters||[]).map(p=>({...p}))};
-            if(b.row.init)add.init=b.row.init;
-            if(b.row.rxheader)add.rxheader=b.row.rxheader;
-            cfg.pids.push(add);n++;}
-          paneEl.replaceChildren(pidsPane());
-          toast(n?n+" PIDs added: press Apply Configuration to activate":"Nothing new to add",n?"ok":"");}},
-      ]});
+      /* the page's picker (pickStdRows); rows already in the table are
+         shown but cannot be ticked */
+      const picked=await pickStdRows(rows,{taken:new Set(cfg.pids.map(p=>norm(p.cmd)))});
+      if(!picked)return;
+      let n=0;
+      /* re-derive from the live table so repeat visits (Last Scan
+         Results) and same-cmd scan rows can never duplicate */
+      const now=new Set(cfg.pids.map(p=>norm(p.cmd)));
+      for(const row of picked){
+        const key=norm(row.cmd);
+        if(now.has(key))continue;
+        now.add(key);
+        /* a scan row of an ISO 27145 car names the ECU that owns the
+           value (init = its address): dropped here, the row would be
+           asked of every ECU at once (2026-10-03) */
+        const add={name:row.name,cmd:row.cmd,group:"default",period_ms:1000,type:"std",
+          parameters:(row.parameters||[]).map(p=>({...p}))};
+        if(row.init)add.init=row.init;
+        if(row.rxheader)add.rxheader=row.rxheader;
+        cfg.pids.push(add);n++;}
+      paneEl.replaceChildren(pidsPane());
+      toast(n?n+" PIDs added: press Apply Configuration to activate":"Nothing new to add",n?"ok":"");
     }
     /* one editable table per PID type (std / custom / specific).
        TWO-LEVEL: a PID is ONE request; each of its parameters is a

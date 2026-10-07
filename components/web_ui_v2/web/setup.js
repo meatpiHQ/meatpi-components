@@ -16,7 +16,7 @@
 const STEPS=[
   {id:"safety",t:"Safety first",g:"Before the restart"},
   {id:"use",t:"How you use WiCAN"},
-  {id:"details",t:()=>W.use==="mqtt"?"MQTT broker":W.use==="wifi"?"WiFi only":"Home Assistant"},
+  {id:"details",t:()=>W.use==="mqtt"?"MQTT broker":"Home Assistant",hide:()=>W.use==="wifi"},
   {id:"ap",t:"Access point"},
   {id:"wifi",t:"Home WiFi"},
   {id:"review",t:"Review and restart"},
@@ -40,6 +40,9 @@ const SKIP_KEY="wican-setup-skip";
 const W={cur:null,use:"ha",agree:[false,false,false],haInstalled:false,
   apPw:"",apPw2:"",showPw:false,
   ssid:"",wifiAuth:"",wifiPw:"",manual:false,nets:null,scanErr:null,
+  /* after it joins (2026-10-07): "sta" = Station only (recommended), "apsta"
+     with apAuto = the access point off while WiCAN is on the network */
+  wifiMode:"sta",apAuto:true,modeSeeded:false,
   /* the connection test (2026-10-06): tested = {ssid,pw,ip,rssi,took_ms,channel}
      for the credentials that passed; testNote = "ap" (no station interface
      until the restart) or "anyway" (a failure the user chose to keep) */
@@ -51,9 +54,9 @@ const W={cur:null,use:"ha",agree:[false,false,false],haInstalled:false,
   mqtt:{url:"",user:"",pw:"",prefix:"",period:5},
   applied:false,noVeh:false,
   car:null,noProfile:false,proto:"0",plugged:false,ignition:false,
-  scan:"idle",scanStatus:null,scanResult:null,stdSel:new Set(),
+  scan:"idle",scanStatus:null,scanResult:null,stdPick:null,stdDefault:[],
   vehPhase:null,veh:null,vehName:"",profChoice:null,profCar:null,profList:undefined,
-  poll:{rate:5,rateCustom:3,minEvent:1,pause:"sleep",pauseV:12.5,pauseAll:false,std:true,specific:true,custom:true,dtc:false,dtcMin:60},pollSeeded:false,
+  poll:{rate:5,rateCustom:3,minEvent:1,pause:"sleep",pauseV:12.5,pauseAll:false,std:true,specific:true,dtc:false,dtcMin:60},pollSeeded:false,
   /* step 10, battery and sleep: the live trace, the two readings, the chosen pair */
   pwr:{phase:"idle",trace:[],base:null,charging:null,resting:null,tC:0,tD:0,tR:0,sleep:13.1,wake:13.2,touched:false,narrow:false,measured:false,skipped:false,misses:0}};
 /* device documents fetched while the wizard is open */
@@ -77,7 +80,7 @@ const CSS=`
 .qs-rail .restart svg{width:14px;height:14px;flex:none}
 .qs-screen{padding:26px 30px 22px;display:flex;flex-direction:column;gap:18px;min-width:0}
 .qs-screen h2{font-size:20px;font-weight:800;letter-spacing:-.015em;margin:0}
-.qs-lead{color:var(--text-2);max-width:62ch;margin:0}
+.qs-lead{color:var(--text-2);max-width:62ch;margin:0 0 8px}
 .qs-body{display:flex;flex-direction:column;gap:14px;flex:1}
 .qs-foot{display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-top:1px solid var(--border);padding-top:16px;margin-top:4px}
 .qs-foot .ghost{color:var(--text-3);font-size:12.5px}
@@ -120,6 +123,34 @@ const CSS=`
 .qs-kv{display:grid;grid-template-columns:170px 1fr;gap:8px 18px;margin:0}
 .qs-kv dt{color:var(--text-3);font-weight:600;font-size:12.5px;padding-top:2px}
 .qs-kv dd{margin:0;display:flex;gap:8px;align-items:center;flex-wrap:wrap;min-width:0}
+.qs-kv dd .d2{color:var(--text-2);font-size:12.5px}
+.qs-rv{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.qs-rv li{display:grid;grid-template-columns:30px 170px minmax(0,1fr);gap:0 16px;align-items:start;position:relative;padding:14px 0 15px}
+.qs-rv li:first-child{padding-top:2px}
+.qs-rv li::before{content:"";position:absolute;left:14px;top:0;bottom:0;width:2px;background:var(--border)}
+.qs-rv li:first-child::before{top:6px}
+.qs-rv li:last-child::before{bottom:auto;height:18px}
+.qs-rv li+li::after{content:"";position:absolute;left:46px;right:0;top:0;height:1px;background:var(--border)}
+.qs-rv .ci{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:var(--success);color:#fff;position:relative;z-index:1}
+.qs-rv .ci svg{width:16px;height:16px}
+.qs-rv .ci.pend{background:var(--surface);border:2px solid var(--border-strong)}
+.qs-rv .ci.warn{background:var(--warning)}
+.qs-rv b{font-size:15px;color:var(--text);padding-top:5px}
+.qs-rv .c{min-width:0;display:flex;flex-direction:column;gap:4px;padding-top:5px}
+.qs-rv .v{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;font-size:14px}
+.qs-rv .d2{color:var(--text-2);font-size:12.5px;line-height:1.55}
+.qs-rv .d2 i{font-style:normal;color:var(--text-3);padding:0 7px}
+.qs-pop-modal{max-width:580px;padding:26px 28px 24px}
+.qs-pop{display:flex;gap:18px;align-items:flex-start}
+.qs-pop .ci{width:56px;height:56px;border-radius:50%;display:grid;place-items:center;background:var(--success);color:#fff;flex:none}
+.qs-pop .ci svg{width:30px;height:30px;stroke-width:3}
+.qs-pop h3{margin:0 0 10px;font-size:21px;line-height:1.25}
+.qs-pop p{margin:0 0 10px;font-size:15px;line-height:1.55}
+.qs-pop p.help{font-size:14px;margin-top:4px}
+.qs-pop code{font-size:14px;padding:2px 7px;border-radius:5px;background:var(--surface-2)}
+.qs-pop-modal .acts{margin-top:8px}
+.qs-pop-modal .acts .btn{padding:12px 20px;font-size:15px}
+.qs-pop-modal .acts .btn svg{width:18px;height:18px}
 .qs-steps{display:flex;flex-direction:column;gap:12px;counter-reset:s;margin:0;padding:0}
 .qs-steps li{display:grid;grid-template-columns:26px minmax(0,1fr);gap:2px 12px;align-items:start;list-style:none}
 .qs-steps li::before{counter-increment:s;content:counter(s);grid-column:1;grid-row:1;width:24px;height:24px;border-radius:50%;background:var(--primary);color:var(--on-primary);display:grid;place-items:center;font-size:12px;font-weight:700;margin-top:1px}
@@ -137,9 +168,9 @@ const CSS=`
 @keyframes qsspin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.qs-spin{animation:none}}
 .qs-link{display:flex;flex-direction:column;gap:10px;padding:18px 20px;border:1px solid color-mix(in srgb,var(--primary) 35%,transparent);border-radius:12px;background:var(--primary-tint)}
-.qs-link .url{font-family:var(--mono);font-size:15px;font-weight:600;word-break:break-all;color:var(--text);user-select:all;-webkit-user-select:all}
-.qs-link .url.alt{font-weight:500;color:var(--text-2);font-size:13px}
-.qs-link .url.alt .u{color:var(--text);font-weight:600;user-select:all;-webkit-user-select:all}
+.qs-link .url{font-family:var(--mono);font-size:15px;font-weight:600;overflow-wrap:anywhere;color:var(--text);user-select:all;-webkit-user-select:all}
+.qs-link .alt{margin:0;color:var(--text-2);font-size:13px;line-height:1.5}
+.qs-link .alt .u{font-family:var(--mono);font-weight:600;overflow-wrap:anywhere}
 .qs-row input.qs-bad{box-shadow:0 0 0 2px var(--warning)}
 .qs-link .acts{display:flex;gap:8px;flex-wrap:wrap}
 .qs-sub{display:flex;align-items:center;gap:10px;margin-top:6px}
@@ -151,10 +182,6 @@ const CSS=`
 .qs-radios{display:flex;flex-direction:column;gap:6px}
 .qs-radios label{display:flex;gap:9px;align-items:center;font-size:13.5px;cursor:pointer}
 .qs-radios input{width:16px;height:16px;margin:0;accent-color:var(--primary)}
-.qs-pids{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:6px 14px;max-height:200px;overflow:auto;padding:8px 2px}
-.qs-pids label{display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--text);cursor:pointer}
-.qs-pids label code{color:var(--text-3);font-size:12px}
-.qs-pids input{width:15px;height:15px;margin:0;accent-color:var(--primary)}
 .qs-next{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
 .qs-next a{display:flex;flex-direction:column;gap:3px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;text-decoration:none;color:var(--text);background:var(--surface)}
 .qs-next a b{color:var(--primary)}
@@ -193,6 +220,8 @@ const CSS=`
   .qs-step{grid-template-columns:22px auto;padding:5px 8px}
   .qs-screen{padding:20px 18px}
   .qs-row,.qs-kv{grid-template-columns:1fr}
+  .qs-rv li{grid-template-columns:30px minmax(0,1fr)}
+  .qs-rv .c{grid-column:2;padding-top:0}
   .qs-row .help{grid-column:1}
   .qs-net{grid-template-columns:1fr 50px 70px}
 }`;
@@ -200,7 +229,7 @@ const CSS=`
 /* ---------- small helpers ---------- */
 const deviceId=()=>(conn.info&&conn.info.device_id)||(conn.status&&conn.status.device_id)||"";
 const apName=()=>deviceId()?"WiCAN_"+deviceId():"the WiCAN access point";
-const mdnsHost=()=>deviceId()?"wican_"+deviceId()+".local":location.hostname;
+const routerName=()=>"wican_"+(deviceId()||"");   /* the DHCP host name: a router's device list shows it */
 const strip=o=>{const c={...(o||{})};delete c.degraded;delete c.pending_reboot;return c;};
 const bars=r=>{const n=r>-55?4:r>-67?3:r>-78?2:1;return "▂▄▆█".slice(0,n).padEnd(4,"·");};
 const netAuth=n=>String(n.auth_mode||n.auth||"").toUpperCase();
@@ -212,6 +241,8 @@ const check=(kind,icon,title,text,chipEl)=>h("div",{class:"qs-check "+(kind||"")
 const sub=t=>h("div",{class:"qs-sub"},h("h3",{},t));
 const row=(label,ctl,help,err)=>h("div",{class:"qs-row"},h("label",{for:ctl.id||null},label),h("div",{class:"ctl"},ctl),help?h("div",{class:"help"+(err?" err":"")},help):null);
 const steps=items=>h("ol",{class:"qs-steps"},...items.map(([b,s])=>h("li",{},h("b",{},b),h("span",{},...(Array.isArray(s)?s:[s])))));
+const radio=(name,id,checked,title,text,onpick,extra)=>h("label",{class:"qs-agree",style:"padding:10px 14px"},
+  h("input",{type:"radio",name,id,checked,onchange:onpick}),h("div",{},h("b",{},title),h("span",{},...(Array.isArray(text)?text:[text])),extra||null));
 /* copying uses the page's copyText (index.html): the page is served over plain
    http, where navigator.clipboard does not exist (2026-10-06, Ali's phone) */
 /* Is WiCAN reachable from this browser at the link? A no-CORS fetch answers
@@ -232,6 +263,10 @@ async function linkAnswers(origin){
   finally{clearTimeout(t);}
 }
 function skipSetup(){try{sessionStorage.setItem(SKIP_KEY,"1");}catch(_){}location.hash="#/status";}
+/* the resume hash: the checks step, and the use case when it is not the
+   default (the page state is lost at the new origin; without this the
+   screens after the restart would wait for Home Assistant on every run) */
+const resumeHash=()=>"#/setup/checks"+(W.use==="ha"?"":"/"+W.use);
 
 /* ---------- navigation ---------- */
 let railEl=null,scrEl=null,timers=[];
@@ -246,8 +281,10 @@ function go(id){
 function paintRail(){
   const curIdx=IDS.indexOf(W.cur);
   railEl.replaceChildren();
-  let lastG=null;
+  let lastG=null,n=0;
   STEPS.forEach((s,i)=>{
+    if(s.hide&&s.hide())return;   /* a step this run does not have (the use-case screen of a WiFi-only run) */
+    n++;
     if(s.g&&s.g!==lastG){
       if(lastG){railEl.append(h("div",{class:"div"}),h("div",{class:"restart"},ic("power"),"WiCAN restarts, your phone changes network"));}
       railEl.append(h("div",{class:"grp"},s.g));lastG=s.g;}
@@ -255,7 +292,7 @@ function paintRail(){
     const label=typeof s.t==="function"?s.t():s.t;
     /* earlier steps can be revisited (Fix WiFi, change the broker); later ones wait their turn */
     railEl.append(h("button",{class:"qs-step "+k,type:"button",disabled:i>curIdx,"data-step":s.id,onclick:()=>{if(i<=curIdx)go(s.id);}},
-      h("span",{class:"n"},k==="done"?ic("check"):String(i+1)),h("span",{},label)));
+      h("span",{class:"n"},k==="done"?ic("check"):String(n)),h("span",{},label)));
   });
 }
 function paint(){
@@ -294,16 +331,17 @@ SCREENS.use=()=>{
     tag?h("span",{class:"tag chip ok"},tag):null,h("span",{class:"ticon"},ic(icon)),h("h3",{},title),h("p",{},body));
   const later=(icon,title,body)=>h("div",{class:"qs-tile later","aria-disabled":"true"},
     h("span",{class:"tag chip"},"Not in Quick Setup yet"),h("span",{class:"ticon"},ic(icon)),h("h3",{},title),h("p",{},body));
-  const onlyWifi=h("label",{class:"qs-agree",style:"margin-top:4px"},
-    h("input",{type:"radio",name:"qs-use",id:"qs-use-wifi",checked:W.use==="wifi",onchange:()=>{W.use="wifi";paint();}}),
-    h("div",{},h("b",{},"Just put WiCAN on my WiFi for now"),h("span",{},"Skips the use case screen. You can run Quick Setup again later.")));
+  /* WiFi only is a tile like the two others (Ali, 2026-10-07: "for users who
+     want just to connect their car to WiFi without Home Assistant"): the
+     use-case screen is skipped, and the screens after the restart learn the
+     choice from the resume link */
   return screen("How will you use WiCAN?","Pick the one that matters most. Everything else stays available in the full interface afterwards.",
     [h("div",{class:"qs-tiles"},
       tile("ha","home","Home Assistant","Live vehicle data as Home Assistant entities through the WiCAN integration. Nothing to type here: Home Assistant finds WiCAN on your network.","Most common"),
       tile("mqtt","cloud","My own MQTT broker","Publish vehicle data to Mosquitto, HiveMQ, Node-RED or any broker. You enter the broker address and login on the next screen."),
+      tile("wifi","wifi","Just connect WiCAN to my WiFi","No Home Assistant or broker. WiCAN joins your WiFi; OBD apps and this web interface reach it there. Add Home Assistant or MQTT any time by running Quick Setup again."),
       later("plug","OBD app over WiFi or Bluetooth","Car Scanner, Torque and similar apps. Works out of the box on the access point; set up in Settings."),
-      later("route","ABRP, HTTP endpoints, data logger","Data destinations and the SD card logger live under Automate and Logger.")),
-     onlyWifi],
+      later("route","ABRP, HTTP endpoints, data logger","Data destinations and the SD card logger live under Automate and Logger."))],
     [back("safety"),grow(),btn("Continue",()=>go(W.use==="wifi"?"ap":"details"),"pri")]);
 };
 
@@ -342,7 +380,7 @@ SCREENS.details=async()=>{
        ["Add the WiCAN repository to HACS",["HACS > three-dot menu > Custom repositories. Repository ",h("code",{},HA_REPO),", type ",h("b",{},"Integration"),", Add."]],
        ["Download the integration",["Search HACS for ",h("b",{},"WiCAN"),", open it, press Download."]],
        ["Restart Home Assistant","Settings > System > Restart. Home Assistant asks for this after a download."],
-       ["Add WiCAN when it is discovered",["After WiCAN joins your WiFi (next screens), Settings > Devices & services shows ",h("b",{},"Discovered: WiCAN "+id),". Press Add. If it does not appear, press Add Integration, search WiCAN and enter ",h("code",{},mdnsHost()),"."]]]),
+       ["Add WiCAN when it is discovered",["After WiCAN joins your WiFi (next screens), Settings > Devices & services shows ",h("b",{},"Discovered: WiCAN "+id),". Press Add. If it does not appear, press Add Integration, search WiCAN and enter WiCAN's address on your network: the Checks screen shows it."]]]),
      banner("info","info","Home Assistant then registers itself with WiCAN and receives status and vehicle data every 60 s, and right away when a value changes. Both must be on the same network: discovery uses mDNS, which home routers pass and guest networks do not."),
      h("div",{class:"qs-inline"},copyBtn,h("span",{},"The checks screen after the restart shows when Home Assistant has connected."))],
     [back("use"),grow(),btn("Continue",()=>go("ap"),"pri")]);
@@ -382,6 +420,7 @@ SCREENS.ap=()=>{
 SCREENS.wifi=async()=>{
   if(!D.wifi)D.wifi=strip(await tryGet("/api/settings/wifi_manager"));
   if(!W.ssid&&D.wifi.sta_ssid)W.ssid=D.wifi.sta_ssid;
+  if(!W.modeSeeded){W.modeSeeded=true;if(!apDefaultPassword()&&D.wifi.sta_ssid&&D.wifi.mode==="apsta")W.wifiMode="apsta";}
   const stored=D.wifi.sta_ssid||"";
   const list=h("div",{class:"qs-nets"});
   const count=chip("…","");
@@ -390,6 +429,24 @@ SCREENS.wifi=async()=>{
   const pwLabel=h("label",{for:"qs-wifi-pw"},"Password");
   const pwHelp=h("div",{class:"help"});
   const testBox=h("div",{});
+  /* after it joins (Ali, 2026-10-07): Station only, recommended, or Access
+     point + Station with the access point off while WiCAN is on the network
+     (wifi_manager's ap_auto_disable, back whenever the station is lost). A
+     station that cannot join is never a lockout: a 5 s press of the button
+     brings the configured access point up for 10 minutes (button_manager's
+     config mode), so the choice is free even without a passed test. */
+  const modeBox=h("div",{});
+  const paintMode=()=>{
+    const net=W.ssid||"your WiFi";
+    modeBox.replaceChildren(sub("After it joins"),h("div",{class:"qs-radios",style:"gap:8px"},
+      radio("qs-mode","qs-mode-sta",W.wifiMode==="sta","Station only (recommended)",
+        "WiCAN's own access point stays off; you reach WiCAN at its address on "+net+". If it ever cannot join, hold its button for 5 seconds: the access point comes up for 10 minutes with your password.",
+        ()=>{W.wifiMode="sta";paintMode();}),
+      radio("qs-mode","qs-mode-apsta",W.wifiMode==="apsta","Access point + Station","WiCAN keeps its own network as a second way in.",()=>{W.wifiMode="apsta";paintMode();}),
+      W.wifiMode==="apsta"?h("label",{class:"qs-agree",style:"margin-left:28px;padding:8px 12px"},
+        h("input",{type:"checkbox",id:"qs-ap-auto",checked:W.apAuto,onchange:e=>{W.apAuto=e.target.checked;}}),
+        h("div",{},h("b",{},"Turn the access point off while WiCAN is on "+net+" (recommended)"),h("span",{},"It comes back by itself whenever "+net+" is lost."))):null));
+  };
   /* Continue tests first (2026-10-06, Ali: "test the station connect before
      storing and rebooting"): WiCAN joins the network with these credentials
      while the phone is still on the access point, reports, lets go. A pass
@@ -409,7 +466,8 @@ SCREENS.wifi=async()=>{
       " Quick Setup does not join open networks: anyone nearby could reach WiCAN. Pick a protected network."):null);
     next.disabled=!W.ssid||open||!(W.wifiPw.length>=8||keep);
     next.replaceChildren(ic(passed()||keep?"check":"wifi"),passed()||keep?"Continue":"Test and continue");
-    list.querySelectorAll(".qs-net").forEach(el=>el.classList.toggle("sel",el.dataset.ssid===W.ssid));};
+    list.querySelectorAll(".qs-net").forEach(el=>el.classList.toggle("sel",el.dataset.ssid===W.ssid));
+    paintMode();};
   pwInp.oninput=e=>{W.wifiPw=e.target.value;update();};
   const anyway=()=>btn("Continue anyway",()=>{W.tested=null;W.testNote="anyway";go("review");},"sm gh");
   const failCard=(title,text)=>{
@@ -451,7 +509,7 @@ SCREENS.wifi=async()=>{
       W.tested={ssid,pw,ip:st.ip||"",rssi:st.rssi,took_ms:st.took_ms,channel:st.channel};W.testNote=null;
       go("review");return;}
     if(r==="password"){pwInp.classList.add("qs-bad");pwInp.focus();
-      failCard(ssid+" did not accept the password",["WiCAN found the network, the handshake failed",reason,". Nine times out of ten a typo: fix it and test again. Continue anyway keeps this password; you would sort it out from the access point after the restart."]);return;}
+      failCard(ssid+" did not accept the password",["WiCAN found the network, the handshake failed",reason,". Nine times out of ten a typo: fix it and test again. Continue anyway keeps this password; afterwards you would fix it from the access point (Station only: hold WiCAN's button for 5 seconds to bring it up)."]);return;}
     if(r==="not_found"){failCard(ssid+" was not found",["WiCAN cannot see this network from where it is",reason,": out of range, 5 GHz only, or a hidden name typed differently (case matters). Move WiCAN closer or check the name, then test again."]);return;}
     if(r==="no_ip"){failCard("Joined "+ssid+", but got no address",["The router accepted WiCAN and then gave it no IP address within 8 s. A full DHCP table or a MAC filter does this. Check the router, then test again."]);return;}
     if(r==="timeout"){failCard("No answer from "+ssid+" in 20 s",["WiCAN could not finish joining in time. Move it closer to the router, or test again."]);return;}
@@ -486,11 +544,11 @@ SCREENS.wifi=async()=>{
     rescan.disabled=false;rescan.replaceChildren(ic("refresh"),"Scan again");render();};
   const rescan=btn("Scan again",scan,"sm",{icon:"refresh"});
   const manual=h("input",{id:"qs-man-ssid",placeholder:"exact name, case matters",value:W.manual?W.ssid:"",oninput:e=>{W.ssid=e.target.value.trim();W.manual=true;update();}});
-  const el=screen("Join your home WiFi","Pick the network your phone, Home Assistant or broker are on. WiCAN joins it after the restart and stays an access point as well.",
+  const el=screen("Join your home WiFi","Pick the network your phone, Home Assistant or broker are on. WiCAN joins it after the restart.",
     [h("div",{class:"rowflex",style:"flex-wrap:wrap"},count,grow(),rescan),list,openWarn,
      h("details",{class:"qs-details",open:W.manual||null},h("summary",{},"Network not listed? Enter it by hand"),
        row("Network name (SSID)",manual,"Hidden networks and 5 GHz-only names do not appear in the scan. WiCAN connects on 2.4 GHz.")),
-     h("div",{class:"qs-row"},pwLabel,h("div",{class:"ctl"},pwInp),pwHelp),testBox],
+     h("div",{class:"qs-row"},pwLabel,h("div",{class:"ctl"},pwInp),pwHelp),modeBox,testBox],
     [back("ap"),grow(),next]);
   if(W.nets)render();else{W.nets=null;render();scan();}
   /* a test that was running when this screen was rebuilt (the AP's blink
@@ -504,22 +562,42 @@ SCREENS.review=()=>{
   const err=h("div",{});
   const tested=(W.tested&&W.tested.ssid===W.ssid&&W.tested.pw===W.wifiPw&&W.tested.ip)?W.tested:null;
   const save=btn("Save and restart",()=>applyAll(save,err),"pri",{icon:"power"});
-  const useRow=W.use==="ha"?[chip("Ready for discovery","ok"),h("span",{},"Home Assistant registers itself after the restart")]
-    :W.use==="mqtt"?[h("code",{},W.mqtt.url.trim()),h("span",{},"as "+(W.mqtt.user||"anonymous")+", vehicle data every "+W.mqtt.period+" s")]
-    :[chip("Not now",""),h("span",{},"Run Quick Setup again to add one")];
-  const apRow=W.apPw?[h("code",{},apName()),chip("New password","ok")]:[h("code",{},apName()),chip("Password kept","")];
-  const kv=h("dl",{class:"qs-kv"},
-    h("dt",{},"Access point"),h("dd",{},...apRow),
-    h("dt",{},"Home WiFi"),h("dd",{},h("code",{},W.ssid),chip(W.wifiAuth&&W.wifiAuth!=="OPEN"?(W.wifiAuth.includes("WPA3")?"WPA2/3":"WPA2"):"protected",""),
-      tested?chip("Tested: password accepted, "+tested.ip,"ok"):W.testNote==="anyway"?chip("Test failed, continuing anyway","warn"):W.testNote==="ap"?chip("Not tested: WiCAN is access point only until the restart",""):null,
-      h("span",{},"mode Access point + Station")),
-    h("dt",{},W.use==="mqtt"?"MQTT broker":"Home Assistant"),h("dd",{},...useRow),
-    h("dt",{},"Vehicle data"),h("dd",{},chip("After the restart",""),h("span",{},"profile, protocol and standard PIDs come next")));
+  /* a checklist: the state is the circle (settled by this save, a warning,
+     or still to come after the restart), the label is the title, the value
+     under it, the details as muted lines joined by middle dots */
+  const line=(...parts)=>h("span",{class:"d2"},...parts.flatMap((p,i)=>i?[h("i",{},"\u00b7"),p]:[p]));
+  /* circle | title | value (with its short attributes beside it) and the
+     lines under it */
+  const item=(state,title,value,beside,...lines)=>h("li",{},
+    h("span",{class:"ci "+(state==="ok"?"":state)},state==="ok"?ic("check"):state==="warn"?ic("alert"):null),
+    h("b",{},title),
+    h("div",{class:"c"},h("span",{class:"v"},h("span",{},value),beside),...lines));
+  const auth=W.wifiAuth&&W.wifiAuth!=="OPEN"?(W.wifiAuth.includes("WPA3")?"WPA2/3":"WPA2"):"protected";
+  const kept=!W.wifiPw&&!!(D.wifi&&W.ssid===D.wifi.sta_ssid);
+  const wifiState=tested||kept?"ok":W.testNote==="anyway"?"warn":"pend";
+  const wifiVerdict=tested?line("Password accepted",tested.ip)
+    :kept?line("Stored password kept")
+    :W.testNote==="anyway"?line("Test failed","continuing anyway: the next screen says whether WiCAN joined")
+    :line("Not tested","access point only until the restart");
+  const useItem=W.use==="ha"?item("ok","Home Assistant","Automatic discovery",null,line("Home Assistant will register WiCAN after the restart."))
+    :W.use==="mqtt"?item("ok","MQTT broker",W.mqtt.url.trim(),null,line("As "+(W.mqtt.user||"anonymous"),"vehicle data every "+W.mqtt.period+" s"))
+    :item("pend","Home Assistant","Skipped for now",null,line("Run Quick Setup again to add one."));
+  const sta=W.wifiMode==="sta",auto=!sta&&W.apAuto;
+  const link=tested?"http://"+tested.ip+"/"+resumeHash():"";
+  const kv=h("ul",{class:"qs-rv"},
+    item("ok","Access point",apName(),line(W.apPw?"New password":"Password kept"),
+      sta?line("Off after the restart","hold the button 5 s to bring it up when needed"):auto?line("Off while WiCAN is on "+W.ssid,"back whenever "+W.ssid+" is lost"):null),
+    item(wifiState,"Home WiFi",W.ssid,line(auth,sta?"Station only":"Access point + Station"),wifiVerdict),
+    useItem,
+    item("pend","Vehicle data","Profile, protocol and standard PIDs",null,line("Configured after the restart.")));
+  const step2=sta?["Your phone drops off "+apName()+" for good","The access point turns off; WiCAN lives on "+W.ssid+" from now on."]
+    :auto?["Your phone drops off "+apName()+" once WiCAN is on "+W.ssid,"The access point turns off while WiCAN is on your network and comes back whenever "+W.ssid+" is lost."]
+    :[W.apPw?"Your phone drops off "+apName():"Your phone may drop off "+apName()+" for a moment",W.apPw?"The access point comes back with the new password.":"The access point comes back with the same password."];
+  const step3=link?["Connect your phone to "+W.ssid+" and open "+link,"Quick Setup continues there; the next screen has the link and a Copy button."]
+    :["Connect your phone to "+W.ssid+" and open WiCAN's address there","The next screen says how to find it."];
   return screen("Review, then restart","Everything below is saved together in one restart. Nothing has been written to WiCAN yet.",
     [kv,err,sub("What happens next"),
-     steps([["WiCAN saves and restarts","About 15 seconds."],
-       [W.apPw?"Your phone drops off "+apName():"Your phone may drop off "+apName()+" for a moment",W.apPw?"The access point comes back with the new password.":"The access point comes back with the same password."],
-       ["Connect your phone to "+W.ssid+" and open the link on the next screen",tested?["Quick Setup continues there. The page also offers ",h("code",{},"http://"+tested.ip+"/#/setup/checks"),", the address "+W.ssid+" gave WiCAN in the test."]:"Quick Setup continues there."]])],
+     steps([["WiCAN saves and restarts","About 15 seconds."],step2,step3])],
     [back("wifi"),grow(),save]);
 };
 
@@ -529,10 +607,13 @@ async function applyAll(saveBtn,errEl){
   try{
     if(!D.wifi)D.wifi=strip(await api("/api/settings/wifi_manager"));
     const wf=strip(D.wifi);
-    wf.mode="apsta";wf.sta_ssid=W.ssid;wf.sta_trusted=true;
+    wf.mode=W.wifiMode==="sta"?"sta":"apsta";
+    if(W.wifiMode==="apsta")wf.ap_auto_disable=!!W.apAuto;
+    wf.sta_ssid=W.ssid;wf.sta_trusted=true;
     if(W.wifiPw)wf.sta_password=W.wifiPw;
     if(W.apPw)wf.ap_password=W.apPw;
     store.stage("wifi_manager",wf);staged.push("wifi_manager");
+    D.wifi=wf;   /* the screens after the restart read the mode from here until the reload */
     if(W.use==="mqtt"){
       const mv=strip(D.mqtt||await api("/api/settings/mqtt_manager"));
       mv.enabled=true;mv.url=W.mqtt.url.trim();mv.username=W.mqtt.user||"";mv.topic_prefix=(W.mqtt.prefix||"").trim();
@@ -574,7 +655,7 @@ async function applyAll(saveBtn,errEl){
    AP address is then out of reach for good: the page's own connection state
    can never say "online" again (2026-10-06, Ali: stuck at "Restarting" until
    he typed the link by hand). So the screen watches two places: its own
-   origin, for a phone or PC that stays on the AP, and the mDNS link, for the
+   origin, for a phone or PC that stays on the AP, and the address link, for the
    phone that has moved. When only the link answers it says so and offers
    the way on as a button: the user leaves when it looks stable to them, and
    this screen (the instructions, the fallback) stays until they do. A jump
@@ -582,17 +663,45 @@ async function applyAll(saveBtn,errEl){
    (the origin is the AP), and an opaque answer cannot prove it is WiCAN
    (Ali, 2026-10-06). */
 const RECONNECT_PATIENCE_S=40;   /* a restart (about 15 s) plus the join */
-SCREENS.reconnect=()=>{
+SCREENS.reconnect=async()=>{
   const ssid=W.ssid||(D.wifi&&D.wifi.sta_ssid)||"your home WiFi";
-  const host=mdnsHost(),origin="http://"+host,link=origin+"/#/setup/checks";
-  const apLink="http://"+((D.wifi&&D.wifi.ap_ip)||"192.168.0.10")+"/#/setup/checks";
-  /* the address the network gave WiCAN in the connection test: usually the
-     same after the restart (same MAC, same lease), and a way in for phones
-     that cannot open .local names. Probed beside the name; preferred when
-     it answers. */
-  const tip=(W.tested&&W.tested.ssid===ssid&&W.tested.ip)?W.tested.ip:"";
-  const ipOrigin=tip?"http://"+tip:"",ipLink=ipOrigin?ipOrigin+"/#/setup/checks":"";
+  const sta=W.wifiMode==="sta";
+  const apLink="http://"+((D.wifi&&D.wifi.ap_ip)||"192.168.0.10")+"/"+resumeHash();
+  /* the address the network gave WiCAN: the connection test's (usually the
+     same after the restart: same MAC, same lease), or the live station
+     address when the device is on that network already (a re-run; fetched
+     here when the page has none yet: a screen entered by its URL). No mDNS
+     name (Ali, 2026-10-07: "it's simpler to just use IP"). */
+  const cw=conn.wifi||(await tryGet("/api/wifi/status"))||{};
+  const ip=(W.tested&&W.tested.ssid===ssid&&W.tested.ip)?W.tested.ip
+    :(cw.sta_connected&&cw.ip&&(!W.ssid||W.ssid===(D.wifi&&D.wifi.sta_ssid)))?cw.ip:"";
+  const origin=ip?"http://"+ip:"",link=origin?origin+"/"+resumeHash():"";
+  const name=routerName();
+  /* the way back for a Station only device that cannot join: button_manager's
+     config mode (fresh nodes each time: a node has one place) */
+  const buttonWay=()=>["hold WiCAN's button for 5 seconds: its access point ",h("code",{},apName())," comes up for 10 minutes (LED blinking yellow and blue); join it with your password and open ",h("a",{href:apLink},apLink)];
   const live=h("div",{});
+  /* the moment WiCAN is on the network, once per visit: a popup with the way
+     on (Ali, 2026-10-07: "popup when the device is connected to the desired
+     network and ask the user to press to go to the address"; a green check
+     and "successfully connected"; one button, since the address is the only
+     way on). The press is the user's, never a timer; a tap beside the popup
+     closes it and the card behind carries the same button. */
+  const onAp=location.hostname===((D.wifi&&D.wifi.ap_ip)||"192.168.0.10");
+  let popped=false;
+  const offerPopup=()=>{
+    if(popped||!link)return;popped=true;
+    modal({title:null,
+      body:h("div",{class:"qs-pop"},h("span",{class:"ci"},ic("check")),
+        h("div",{},h("h3",{},"WiCAN successfully connected to "+ssid),
+          h("p",{},"Its address there is ",h("code",{},ip),". Quick Setup continues at ",h("code",{},link),"."),
+          h("p",{class:"help"},conn.state==="online"&&onAp?"This phone is still on "+apName()+": join "+ssid+", then press Continue.":"Press Continue to open it there."))),
+      actions:[{label:"Continue on "+ssid,kind:"pri",fn:()=>{location.href=link;}}]});
+    /* Ali's sketch (2026-10-07): wider, a large check, the button with the
+       open-in-new mark */
+    const m=document.querySelector("#modal-root .modal");
+    if(m){m.classList.add("qs-pop-modal");const b=m.querySelector(".acts button.pri");if(b)b.prepend(ic("ext"));}
+  };
   const t0=Date.now();let found=false,probing=false;
   const since=()=>Math.round((Date.now()-t0)/1000);
   const paintLive=async()=>{
@@ -601,7 +710,9 @@ SCREENS.reconnect=()=>{
       const w=await tryGet("/api/wifi/status");
       if(!w){live.replaceChildren(check("run",null,"Reconnecting","Waiting for WiCAN."));return;}
       if(w.sta_connected&&w.ip){
-        live.replaceChildren(check("ok","wifi","WiCAN joined "+ssid,["Address ",h("code",{},w.ip),". If the link above does not open, use ",h("a",{href:"http://"+w.ip+"/#/setup/checks"},"http://"+w.ip+"/#/setup/checks"),"."],chip("Connected","ok")));
+        live.replaceChildren(check("ok","wifi","WiCAN joined "+ssid,["Address ",h("code",{},w.ip),
+          ...(w.ip!==ip?[". On that network open ",h("a",{href:"http://"+w.ip+"/"+resumeHash()},"http://"+w.ip+"/"+resumeHash())]:[]),"."],chip("Connected","ok")));
+        if(since()>=12)offerPopup();   /* after the restart's time: the join seen at the moment of Save is the old one */
         return;}
       const at=w.sta_attempt||{};
       if(at.fail_count>0||(at.reason&&at.reason!==0)){
@@ -611,45 +722,50 @@ SCREENS.reconnect=()=>{
       live.replaceChildren(check("run",null,"Joining "+ssid,"Usually a few seconds."));
       return;}
     /* the access point is out of reach from here: WiCAN is still restarting,
-       or this device has moved to the home WiFi. Look for WiCAN there, once
-       the restart has had its time (the name also answers over the AP, and
-       must not pull the page away a second before the restart) */
-    if(since()>=12&&!probing){
+       or this device has moved to the home WiFi. Look for WiCAN at its
+       address there, once the restart has had its time */
+    if(since()>=12&&!probing&&origin){
       probing=true;
-      const[byName,byIp]=await Promise.all([linkAnswers(origin),ipOrigin?linkAnswers(ipOrigin):false]);
+      const ok=await linkAnswers(origin);
       probing=false;
-      if((byName||byIp)&&!found&&conn.state!=="online"){
+      if(ok&&!found&&conn.state!=="online"){
         found=true;
-        const to=byIp?ipLink:link,at=byIp?tip:host;
-        live.replaceChildren(check("ok","wifi","WiCAN answers on "+ssid,["Quick Setup continues at ",h("code",{},at),"."],
-          h("a",{class:"btn pri sm",href:to},ic("send"),"Continue on "+ssid)));
+        live.replaceChildren(check("ok","wifi","WiCAN answers on "+ssid,["Quick Setup continues at ",h("code",{},ip),"."],
+          h("a",{class:"btn pri sm",href:link},ic("send"),"Continue on "+ssid)));
+        offerPopup();
         return;}}
     if(found)return;
     if(since()<RECONNECT_PATIENCE_S)
-      live.replaceChildren(check("run",null,"Restarting",["About 15 s, then WiCAN joins ",h("b",{},ssid),". Join ",h("b",{},ssid)," on this device meanwhile: this page tells you when it finds WiCAN there."]));
+      live.replaceChildren(check("run",null,"Restarting",["About 15 s, then WiCAN joins ",h("b",{},ssid),". Join ",h("b",{},ssid)," on this device meanwhile",link?": this page tells you when it finds WiCAN there.":"."]));
+    else if(sta)
+      live.replaceChildren(check("warn","alert","Still looking for WiCAN on "+ssid,
+        ["Is this device on ",h("b",{},ssid),"? Your router's device list shows WiCAN as ",h("code",{},name)," with its address. If WiCAN did not join (a wrong password is the usual cause), ",...buttonWay(),": that page says so and lets you fix it."]));
     else
       live.replaceChildren(check("warn","alert","Still looking for WiCAN on "+ssid,
         ["Is this device on ",h("b",{},ssid),"? If it is and WiCAN did not join (a wrong password is the usual cause), join ",h("code",{},apName())," with your new password and open ",h("a",{href:apLink},apLink),": that page says so and lets you fix it."]));
   };
   paintLive();every(3000,paintLive);
   const copyBtn=btn("Copy link",()=>{if(copyText(link,"Link copied")){copyBtn.textContent="Copied";setTimeout(()=>{copyBtn.replaceChildren(ic("copy"),"Copy link");},1500);}},"",{icon:"copy"});
-  return screen("Now switch networks",["Connect this phone or PC to ",h("b",{},ssid),", then open the link. Quick Setup picks up where it left off."],
+  return screen("Now switch networks",["Connect this phone or PC to ",h("b",{},ssid),", then open "+(link?"the link":"WiCAN's address")+". Quick Setup picks up where it left off."],
     [h("div",{class:"qs-link"},
-       h("div",{class:"rowflex",style:"flex-wrap:wrap"},chip("Step 1: join "+ssid+" on this device","info"),chip("Step 2: open","info")),
-       h("span",{class:"url"},link),
-       ipLink?h("span",{class:"url alt"},"or ",h("span",{class:"u"},ipLink)," (the address "+ssid+" gave WiCAN in the test; usually the same after the restart, and the one for phones that cannot open .local names)"):null,
-       h("div",{class:"acts"},h("a",{class:"btn pri",href:link},ic("send"),"Open WiCAN"),copyBtn)),
+       link?h("span",{class:"url"},link)
+         :h("p",{class:"alt"},"WiCAN's address on "+ssid+" is not known yet. This page shows it as soon as WiCAN joins, while this phone stays on "+apName()+"; your router's device list shows it too, as ",h("b",{},name),"."),
+       link?h("div",{class:"acts"},h("a",{class:"btn pri",href:link},ic("send"),"Open WiCAN"),copyBtn):null),
      live,
      h("details",{class:"qs-details"},h("summary",{},"The link does not open?"),
-       steps([["Give it a moment","WiCAN needs a few seconds to join. Some Android phones cannot open .local names at all."],
-         ["Use the access point instead",["Join ",h("code",{},apName())," with your new password and open ",h("code",{},apLink),". That page shows the address WiCAN received on "+ssid+", and whether the join worked."]],
-         ["Wrong WiFi password?","The same page says so and lets you fix it. WiCAN keeps its access point on, so you are never locked out."]]))],
+       steps(sta?[["Give it a moment","WiCAN needs a few seconds to join."],
+           ["Find the address",["Your router's device list shows WiCAN as ",h("code",{},name),"; the address is usually the one from the test."]],
+           ["Wrong WiFi password?",["In Station only mode WiCAN has no access point of its own, so ",...buttonWay(),": that page says so and lets you fix it."]]]
+         :[["Give it a moment","WiCAN needs a few seconds to join."],
+           ["Use the access point instead",["Join ",h("code",{},apName())," with your new password and open ",h("code",{},apLink),". That page shows the address WiCAN received on "+ssid+", and whether the join worked."]],
+           ["Wrong WiFi password?","The same page says so and lets you fix it. WiCAN keeps its access point on, so you are never locked out."]]))],
     [h("span",{class:"ghost"},"Stay on this screen until you have switched networks.")]);
 };
 
 SCREENS.checks=async()=>{
   const cards=h("div",{class:"qs-body"});
   if(!D.mqtt)D.mqtt=strip(await tryGet("/api/settings/mqtt_manager"));
+  if(!D.wifi){const ws=await tryGet("/api/settings/wifi_manager");if(ws)D.wifi=strip(ws);}   /* the mode, after the restart's reload */
   const mqttOn=!!(D.mqtt&&D.mqtt.enabled)||W.use==="mqtt";
   const haOn=W.use==="ha"||(!mqttOn&&W.use!=="wifi")||W.use==="wifi"&&false;
   const refresh=async()=>{
@@ -657,10 +773,13 @@ SCREENS.checks=async()=>{
     const b=(conn.status&&conn.status.bits)||{};
     const ssid=W.ssid||(w&&w.sta_attempt&&w.sta_attempt.ssid)||(D.wifi&&D.wifi.sta_ssid)||"your WiFi";
     const out=[];
-    if(w&&w.sta_connected)out.push(check("ok","wifi","WiFi: joined "+ssid,["Address ",h("code",{},w.ip||""),". Also reachable as ",h("code",{},"http://"+mdnsHost()),"."],chip("Connected","ok")));
+    if(w&&w.sta_connected)out.push(check("ok","wifi","WiFi: joined "+ssid,["Address ",h("code",{},w.ip||""),"; your router's device list shows it as ",h("code",{},routerName()),"."],chip("Connected","ok")));
     else out.push(check("warn","wifi","WiFi: not connected"+(w&&w.sta_attempt&&w.sta_attempt.ssid?" to "+w.sta_attempt.ssid:""),
       w&&w.sta_attempt&&w.sta_attempt.fail_count?"Last attempt failed (reason "+w.sta_attempt.reason+"). Check the password.":"WiCAN is still trying, or the network is out of range.",btn("Fix WiFi",()=>go("wifi"),"sm")));
-    if(w&&w.ap_default_password===false||(!w&&!apDefaultPassword()))out.push(check("ok","lock","Access point secured",[h("code",{},apName())," now uses your password. It stays on as a fallback way in."],chip("Done","ok")));
+    const wm=(D.wifi&&D.wifi.mode)||"apsta",autoOff=!!(D.wifi&&D.wifi.ap_auto_disable);
+    if(wm==="sta")out.push(check("ok","lock","Access point off: Station only",["WiCAN is reached at its address on "+ssid+". Hold its button for 5 seconds whenever you need ",h("code",{},apName())," back for a while."],chip("Off","")));
+    else if(autoOff&&w&&w.sta_connected)out.push(check("ok","lock","Access point off while WiCAN is on "+ssid,[h("code",{},apName())," comes back by itself whenever "+ssid+" is lost, with your password."],chip("Off for now","")));
+    else if(w&&w.ap_default_password===false||(!w&&!apDefaultPassword()))out.push(check("ok","lock","Access point secured",[h("code",{},apName())," now uses your password. It stays on as a fallback way in."],chip("Done","ok")));
     else out.push(check("warn","lock","Access point still has the factory password","Set your own password so nobody else can join.",btn("Set password",()=>go("ap"),"sm")));
     if(haOn){
       const url=wh&&wh.url;
@@ -669,7 +788,7 @@ SCREENS.checks=async()=>{
         const ok=wh.status==="ok"||(wh.success_count||0)>0;
         out.push(check(ok?"ok":"warn","home",ok?"Home Assistant is connected":"Home Assistant registered, first push pending",
           ["Registered from ",h("code",{},host),". ",age!=null&&ok?"Last push "+age+" s ago, ":"",(wh.success_count||0)+" pushes, "+(wh.fail_count||0)+" failed."+(wh.last_error?" Last error: "+wh.last_error:"")],chip(ok?"Connected":"Waiting",ok?"ok":"warn")));}
-      else out.push(check("warn","home","Waiting for Home Assistant",["In Home Assistant open Settings > Devices & services. ",h("b",{},"Discovered: WiCAN "+(deviceId()||""))," should be there. Press Add. This card turns green within a minute. If it does not appear, press Add Integration, search WiCAN and enter ",h("code",{},mdnsHost()),"."],chip("Waiting","warn")));
+      else out.push(check("warn","home","Waiting for Home Assistant",["In Home Assistant open Settings > Devices & services. ",h("b",{},"Discovered: WiCAN "+(deviceId()||""))," should be there. Press Add. This card turns green within a minute. If it does not appear, press Add Integration, search WiCAN and enter ",h("code",{},(w&&w.ip)||"WiCAN's address"),"."],chip("Waiting","warn")));
     }
     if(mqttOn){
       const url=(D.mqtt&&D.mqtt.url)||W.mqtt.url;
@@ -719,6 +838,18 @@ SCREENS.vehicle=async()=>{
   const picker=vehicleProfilePicker({current:()=>W.profCar?W.profCar.car_model:(W.veh&&W.veh.profile)||"",onPick:car=>{W.profCar=car;W.profChoice="car";render();}});
   const entries=()=>(D.vehicles&&Array.isArray(D.vehicles.vehicles))?D.vehicles.vehicles:[];
   const protoName=p=>PROTO[String(p)]||(String(p)==="0"||!p?"Automatic":"protocol "+p);
+  const norm=c=>String(c||"").replace(/\s+/g,"").toUpperCase();
+  const stdRows=()=>((W.scanResult&&W.scanResult.supported)||[]).filter(r=>r&&r.cmd);
+  const stdPick=()=>W.stdPick||W.stdDefault||[];
+  /* the popup is the page's standard-PID picker, the one Automate >
+     Parameters opens on a scan (Ali, 2026-10-07: "like in the autopid"):
+     every PID the scan found, the chosen ones ticked (none for a new car) */
+  async function openStdPicker(){
+    const sup=stdRows();
+    const picked=await pickStdRows(sup,{title:"Standard PIDs this car answers",preset:new Set(stdPick()),
+      lead:sup.length+" supported PIDs reported by the vehicle. Tick the ones WiCAN should read:"});
+    if(picked){W.stdPick=picked.map(r=>norm(r.cmd));render();}
+  }
   const render=()=>{
     const out=[];
     const v=W.veh;
@@ -747,15 +878,28 @@ SCREENS.vehicle=async()=>{
       if(known)out.push(banner("ok","check",h("b",{},"Welcome back: "+(v.name||defaultName(v))+". "),"WiCAN set this car up before and already switched to its profile, PIDs and protocol. Nothing to do here unless you want to change something."));
       else if(j1939Only)out.push(banner("ok","check",h("b",{},"J1939 vehicle. "),"This vehicle speaks SAE J1939, the network of trucks, buses and agricultural machines. Its controllers broadcast their values; WiCAN listens and never asks. "+(v.std_supported||0)+" standard parameters were heard and stored under this vehicle."+(v.vin?"":" No VIN was broadcast: it is remembered by the set of controllers on its network.")));
       else if(!v.vin)out.push(banner("info","info",h("b",{},"New vehicle. "),"This car gave no VIN, so WiCAN remembers it by the set of ECUs that answered (that works for one car; two identical models would look the same). Give it a name below."));
-      else out.push(banner("ok","check",h("b",{},v.known?"Vehicle recognised. ":"New vehicle. "),"WiCAN stored the protocol, VIN and "+(v.std_supported||0)+" standard PIDs under this car. Pick a profile below so it can read the vehicle-specific values too."));
+      else out.push(banner("ok","check",h("b",{},v.known?"Vehicle recognised. ":"New vehicle. "),"WiCAN stored the protocol and VIN under this car and found "+(v.std_supported||0)+" standard PIDs it answers. Choose the ones to read below, and a profile for the vehicle-specific values."));
       if(v.j1939&&!v.j1939Listening)out.push(banner("warn","alert",h("b",{},"One more restart for the J1939 listener. "),"The J1939 network is read by WiCAN's own CAN controller, which is off on a new device. Finish turns it on in listen-only mode (it never transmits) together with the J1939 listener; the values arrive after that restart."));
       else if(v.j1939&&!j1939Only)out.push(banner("info","info",h("b",{},"A J1939 network as well. "),"This vehicle answers OBD requests and broadcasts J1939 groups. Both sets of parameters are stored under it."));
       const nameInp=h("input",{id:"qs-veh-name",value:W.vehName,placeholder:"e.g. Family car",style:"max-width:260px",oninput:e=>{W.vehName=e.target.value;}});
+      const d2=t=>h("span",{class:"d2"},t);
       out.push(h("dl",{class:"qs-kv"},
-        h("dt",{},"VIN"),h("dd",{},v.vin?[h("code",{},v.vin),chip(j1939Only?"Broadcast by the vehicle":"Read from the car","ok")]:[chip("VIN not available","warn"),h("span",{},(j1939Only?"identified by its controllers":"identified by its ECUs")+(v.fingerprint?" ("+v.fingerprint+")":""))]),
-        h("dt",{},j1939Only?"Network":"OBD protocol"),h("dd",{},j1939Only?[h("span",{id:"qs-veh-dialect"},"SAE J1939"+(v.busKbps?", "+v.busKbps+" kbit/s":"")),chip("Heard","ok")]:[protoName(v.protocol),DIALECT[v.dialect]?h("span",{id:"qs-veh-dialect"},DIALECT[v.dialect]):null,PROTO[String(v.protocol)]?chip("Detected","ok"):chip("Automatic",""),v.j1939?chip("J1939 network","ok"):null]),
-        h("dt",{},j1939Only?"Standard parameters":"Standard PIDs"),h("dd",{},(v.std_supported||0)+(j1939Only?" heard":" supported"),chip("Stored","ok")),
+        h("dt",{},"VIN"),h("dd",{},v.vin?[h("code",{},v.vin),d2(j1939Only?"broadcast by the vehicle":"read from the car")]:[h("span",{},"not available"),d2((j1939Only?"identified by its controllers":"identified by its ECUs")+(v.fingerprint?" ("+v.fingerprint+")":""))]),
+        h("dt",{},j1939Only?"Network":"OBD protocol"),h("dd",{},j1939Only?[h("span",{id:"qs-veh-dialect"},"SAE J1939"+(v.busKbps?", "+v.busKbps+" kbit/s":"")),d2("heard")]:[protoName(v.protocol),DIALECT[v.dialect]?h("span",{id:"qs-veh-dialect"},DIALECT[v.dialect]):null,d2(PROTO[String(v.protocol)]?"detected":"automatic"),v.j1939?d2("and a J1939 network"):null]),
+        h("dt",{},j1939Only?"Standard parameters":"Standard PIDs"),h("dd",{},(v.std_supported||0)+(j1939Only?" heard":" answered"),d2(j1939Only?"stored under this vehicle":stdPick().length?stdPick().length+" chosen":"none chosen yet")),
         h("dt",{},"Name"),h("dd",{},nameInp,h("span",{class:"help",style:"font-size:12px"},"shown on the Status page and in Home Assistant"))));
+      /* 2. the standard PIDs: the scan found what the car answers, the user
+         chooses what WiCAN reads (nothing ticked for a new car, none is
+         allowed: Ali, 2026-10-07); a J1939-only vehicle has no requests */
+      if(!j1939Only){
+        out.push(sub("2. Standard PIDs"));
+        const sup=stdRows(),pick=stdPick();
+        const names=pick.map(c=>(sup.find(r=>norm(r.cmd)===c)||{}).name||c);
+        out.push(h("p",{class:"qs-lead",style:"font-size:13px"},"The scan found "+sup.length+" standard PIDs this car answers: speed, RPM, coolant, fuel level and the like. Choose the ones WiCAN should read. Each one is a request every polling round, so fewer means faster updates for the ones you keep; the rest can be added any time under Automate > Parameters."));
+        out.push(h("div",{class:"qs-pick"},btn(pick.length?"Change":"Choose PIDs",openStdPicker,pick.length?"sm":"pri sm",{icon:"check"}),
+          h("span",{class:"help",style:"font-size:12.5px"},pick.length?pick.length+" of "+sup.length+" chosen: "+names.slice(0,4).join(", ")+(names.length>4?" and "+(names.length-4)+" more":"")
+            :"None chosen yet. That is allowed: WiCAN then reads nothing from the standard set, only what the profile asks for.")));
+      }
       /* 2. profile (a J1939-only vehicle has no OBD requests for a profile to add) */
       if(j1939Only&&!known){
         if(W.profChoice===null){W.profChoice="none";W.profCar=null;}
@@ -764,7 +908,7 @@ SCREENS.vehicle=async()=>{
       }
       const chosen=W.profChoice==="car"?W.profCar:null;
       if(!(j1939Only&&!known)){
-      out.push(sub("2. Vehicle profile"));
+      out.push(sub((j1939Only?"2":"3")+". Vehicle profile"));
       const testBtn=btn("Test profile",()=>testProfile(chosen||(known?{car_model:v.profile,fromStore:true}:null)),"sm",{icon:"refresh",disabled:!(chosen||known)});
       if(known&&W.profChoice===null){
         out.push(h("div",{class:"qs-pick"},h("span",{class:"sel"},ic("car"),v.profile),btn("Change profile",()=>picker.open(),"sm",{icon:"search"}),testBtn,btn("Scan again",startDetect,"sm",{icon:"refresh"})));
@@ -816,7 +960,8 @@ SCREENS.vehicle=async()=>{
         try{await api("/api/autopid/vehicles/detect",{method:"POST",body:{}});}
         catch(e){if(/404|not found/i.test(e.message))await api("/api/autopid/std_scan",{method:"POST",body:{}});else throw e;}
       }
-      W.vehPhase="detecting";W.veh=null;W.profChoice=null;W.profCar=null;
+      const list0=entries();   /* the store before this scan: a new car is one it did not have */
+      W.vehPhase="detecting";W.veh=null;W.profChoice=null;W.profCar=null;W.stdPick=null;W.stdDefault=[];
       W.scanStatus=(await tryGet("/api/autopid/std_scan"))||{status:"running"};render();
       loadProfiles();
       let ticks=0;
@@ -834,6 +979,10 @@ SCREENS.vehicle=async()=>{
           std_supported:(r.supported||[]).length||e.std_supported||0,known:!!(r.known||e.profile),name:r.name||e.name||"",profile:e.profile||"",specific_init:e.specific_init||"",pending_profile:e.pending_profile,
           j1939:!!(r.j1939||e.j1939),j1939Listening:r.j1939_listening!==false,busKbps:r.bus_kbps||0};
         W.scanResult=r;W.vehName=W.veh.name||defaultName(W.veh);
+        {const sup=(r.supported||[]).map(x=>norm(x.cmd));
+         const cfgNow=await tryGet("/api/autopid/config");
+         const inCfg=new Set(((cfgNow&&cfgNow.pids)||[]).filter(x=>x&&x.type==="std").map(x=>norm(x.cmd)));
+         W.stdDefault=W.veh.dialect==="j1939"?sup:list0.some(x=>x.key===W.veh.key)?sup.filter(c=>inCfg.has(c)):[];}
         await loadProfiles();
         W.vehPhase="result";render();
       });
@@ -1115,7 +1264,6 @@ SCREENS.polling=async()=>{
     else p.pause=a.pause_follow_sleep===false?"never":"sleep";
     p.pauseAll=a.pause_mode==="all";
     if(typeof a.std_enabled==="boolean")p.std=a.std_enabled;
-    if(typeof a.custom_enabled==="boolean")p.custom=a.custom_enabled;
     if(typeof a.specific_enabled==="boolean")p.specific=a.specific_enabled;
     p.dtc=!!a.dtc_enabled;if(a.dtc_scan_period_min>0)p.dtcMin=a.dtc_scan_period_min;
     W.pollSeeded=true;
@@ -1130,8 +1278,6 @@ SCREENS.polling=async()=>{
   const finish=btn("Finish and restart",()=>finishVehicle(finish,err,maxName),"pri",{icon:"power"});
   const render=()=>{
     const out=[];
-    const radio=(name,id,checked,title,text,onpick,extra)=>h("label",{class:"qs-agree",style:"padding:10px 14px"},
-      h("input",{type:"radio",name,id,checked,onchange:onpick}),h("div",{},h("b",{},title),h("span",{},...(Array.isArray(text)?text:[text])),extra||null));
     const sw=(id,label,desc,on,disabled,onchange,tail)=>h("div",{class:"qs-check",style:"grid-template-columns:minmax(0,1fr) auto"},
       h("div",{},h("b",{},label),h("span",{class:"d2"},desc),tail||null),
       h("label",{class:"switch",title:disabled?"Not available":""},h("input",{type:"checkbox",id,checked:on,disabled,onchange:e=>onchange(e.target.checked)}),h("span",{class:"sw"}),h("span",{class:"swl"},disabled?"n/a":on?"On":"Off")));
@@ -1157,10 +1303,10 @@ SCREENS.polling=async()=>{
     if(p.pause==="never")out.push(banner("warn","alert",h("b",{},"This keeps the car's modules awake. "),"With the engine off for days it can drain the 12 V battery. Pick this only for a bench or a car on a charger."));
     out.push(sw("qs-pauseall","While paused, also stop listening","Off: the J1939 rows, which are read from WiCAN's own CAN listener and transmit nothing, keep running while requests are paused. On: they stop too and nothing is read at all.",p.pauseAll,false,v=>{p.pauseAll=v;render();}));
     out.push(sub("3. What to read"));
-    const nStd=(W.veh&&W.veh.std_supported)||0;
-    out.push(sw("qs-std","Standard PIDs","Speed, RPM, coolant, fuel level and the other values every car reports."+(nStd?" The scan found "+nStd+" of them on this car.":""),p.std,false,v=>{p.std=v;render();}));
+    const nSup=(W.veh&&W.veh.std_supported)||0,nStd=(W.stdPick||W.stdDefault||[]).length;
+    if(!nStd)p.std=false;
+    out.push(sw("qs-std","Standard PIDs",nStd?"The "+nStd+" of the "+nSup+" the scan found that you chose on the vehicle step.":"None chosen on the vehicle step (the scan found "+nSup+"). Go back to choose some, or add them later under Automate > Parameters.",p.std,!nStd,v=>{p.std=v;render();}));
     out.push(sw("qs-specific","Vehicle-specific values",hasProfile?"Battery state of charge, charging power and the other values your profile knows how to ask for.":"No profile chosen for this car yet. Pick one on the previous step, or later under Automate > Parameters.",hasProfile&&p.specific,!hasProfile,v=>{p.specific=v;render();}));
-    out.push(sw("qs-custom","Custom PIDs","Requests you add yourself under Automate > Parameters.",p.custom,false,v=>{p.custom=v;render();}));
     out.push(sub("4. Trouble codes"));
     const dtcIn=h("input",{id:"qs-dtcmin",type:"number",min:5,max:10080,value:p.dtcMin,style:"width:90px;display:inline;padding:3px 6px",onchange:e=>{p.dtcMin=Math.max(5,Math.min(10080,Number(e.target.value)||60));}});
     out.push(sw("qs-dtc","Check for trouble codes","Reads the stored fault codes (the check-engine light) and shows them under Trouble Codes and in Home Assistant. Clearing codes stays a manual action, off unless you allow it there.",p.dtc,false,v=>{p.dtc=v;render();},
@@ -1202,10 +1348,15 @@ async function finishVehicle(finishBtn,errEl,maxName){
       if(car){const r=profileToPids(car,keep);cfg.pids=keep.concat(r.pids);if(r.renamed.length)toast(r.renamed.length+" duplicate parameter name"+(r.renamed.length>1?"s":"")+" renamed","");}
       else cfg.pids=keep;
     }
-    /* a firmware without the store never scanned by itself: add the found standard rows */
-    if(!D.vehicles&&W.scanResult&&W.scanResult.supported){
-      const norm=c=>String(c||"").replace(/\s+/g,"").toUpperCase();const have=new Set(cfg.pids.map(x=>norm(x.cmd)));
-      for(const rw of W.scanResult.supported){if(have.has(norm(rw.cmd)))continue;have.add(norm(rw.cmd));
+    /* the standard rows: the ones chosen on the vehicle step and no other
+       (a new car starts with none: Ali, 2026-10-07). The firmware stored
+       every row the scan found, a firmware without the store none: drop
+       what was not chosen, add what is missing */
+    if(W.scanResult&&W.scanResult.supported){
+      const norm=c=>String(c||"").replace(/\s+/g,"").toUpperCase();const want=new Set(W.stdPick||W.stdDefault||[]);
+      cfg.pids=cfg.pids.filter(pd=>pd.type!=="std"||want.has(norm(pd.cmd)));
+      const have=new Set(cfg.pids.map(x=>norm(x.cmd)));
+      for(const rw of W.scanResult.supported){const c=norm(rw.cmd);if(!want.has(c)||have.has(c))continue;have.add(c);
         cfg.pids.push({name:rw.name,cmd:rw.cmd,group:"default",period_ms:0,type:"std",parameters:(rw.parameters||[]).map(x=>({...x}))});}
     }
     cfg.groups[0].period_ms=Math.max(1,rateS)*1000;
@@ -1224,7 +1375,7 @@ async function finishVehicle(finishBtn,errEl,maxName){
     /* 3. the settings: polling on, protocol follows the store, the reading rules, the profile name for the backup */
     const av=strip(D.autopid||await api("/api/settings/autopid"));
     av.enabled=true;av.std_protocol="0";
-    av.std_enabled=!!p.std;av.custom_enabled=!!p.custom;
+    av.std_enabled=!!p.std;
     if(car){av.vehicle=String(car.car_model||"").slice(0,maxName);av.specific_init=car.init||"";av.specific_enabled=!!p.specific;}
     else if(none){av.vehicle="";av.specific_init="";av.specific_enabled=false;}
     else if(v.known&&v.profile){av.specific_enabled=!!p.specific;}
@@ -1276,8 +1427,9 @@ SCREENS.done=async()=>{
     const b=(conn.status&&conn.status.bits)||{};
     const mqttOn=!!(D.mqtt&&D.mqtt.enabled)||W.use==="mqtt";
     const kv=[];
-    kv.push(h("dt",{},"Reach WiCAN at"),h("dd",{},h("code",{},"http://"+mdnsHost()),w&&w.ip?[h("span",{},"or"),h("code",{},"http://"+w.ip)]:null));
-    kv.push(h("dt",{},"Access point"),h("dd",{},h("code",{},apName()),chip(w&&w.ap_default_password===false?"Your password":"Check the password",w&&w.ap_default_password===false?"ok":"warn")));
+    kv.push(h("dt",{},"Reach WiCAN at"),h("dd",{},w&&w.ip?h("code",{},"http://"+w.ip):h("span",{},"its address on your network"),h("span",{class:"help"},"shown as "+routerName()+" in your router's device list")));
+    kv.push(h("dt",{},"Access point"),h("dd",{},h("code",{},apName()),w&&w.ap_started===false?chip("Off","")
+      :chip(w&&w.ap_default_password===false?"Your password":"Check the password",w&&w.ap_default_password===false?"ok":"warn")));
     if(mqttOn)kv.push(h("dt",{},"MQTT broker"),h("dd",{},chip(b.mqtt_connected?"Connected":"Not connected",b.mqtt_connected?"ok":"crit"),h("code",{},(D.mqtt&&D.mqtt.url)||W.mqtt.url||"")));
     else if(W.use!=="wifi"){const wh=await tryGet("/api/webhook");kv.push(h("dt",{},"Home Assistant"),h("dd",{},chip(wh&&wh.url?"Connected":"Waiting for discovery",wh&&wh.url?"ok":"warn")));}
     const vehOn=ap&&ap.enabled;
@@ -1317,6 +1469,7 @@ PAGES.__setup=async(view,subId)=>{
   p.append(h("div",{class:"qs"},railEl,scrEl));
   if(IDS.includes(subId))W.cur=subId;
   else if(!W.cur)W.cur="safety";
+  {const seg=(location.hash.split("/")[3]||"").toLowerCase();if(seg==="wifi"||seg==="mqtt"||seg==="ha")W.use=seg;}   /* the resume link's use case */
   if(!D.wifi)D.wifi=strip(await tryGet("/api/settings/wifi_manager"));
   paint();
   return ()=>{stopTimers();railEl=null;scrEl=null;};

@@ -87,6 +87,14 @@ typedef struct
     int  rssi_dbm;       /**< 0 when absent                             */
     char operator_name[24];
     char network_type[12];
+    /* 2026-10-07 (dongle api 8, absent before: ""): the SIM as the
+       dongle's bring-up found it ("ready" | "missing" | "pin" |
+       "unknown"), the bring-up stage ("not_started" | "connecting" |
+       "connected" | "ppp_disconnected" | "network_detached") and the
+       carrier address while connected */
+    char sim[8];
+    char stage[20];
+    char ip[16];
     bool gps_valid;
     bool gps_fix;
     int  ap_clients;

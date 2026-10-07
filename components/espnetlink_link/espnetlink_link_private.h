@@ -49,6 +49,10 @@ typedef struct
     int  gps_poll_s;
     int  health_poll_s;
     int  cut_retries;
+    /* the carrier settings relayed to the dongle ("" = its own) */
+    char apn[64];
+    char apn_user[33];
+    char apn_password[33];
     bool cli;
 } espnl_config_t;
 
@@ -116,3 +120,11 @@ void espnl_engine_dongle_rebooting(void);
  *  ("" clears). Any store/identify failure should name itself here:
  *  the pair_state label alone proved misleading (field 2026-09-07). */
 void espnl_status_set_last_error(const char *msg);
+
+/** A health document read over the cable during the pairing pass
+ *  (2026-10-07): the same cache the link polls fill, stamped now. */
+void espnl_engine_note_health(const espnl_health_t *h);
+
+/** The carrier settings' state after a pass: synced (the dongle holds
+ *  them, or there is nothing to relay) or not, with the reason. */
+void espnl_engine_note_carrier(bool synced, const char *note);

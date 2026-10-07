@@ -67,6 +67,13 @@ static const settings_field_t FIELDS[] =
     SETTINGS_INT ("health_poll_s", 5, 300, 10),
     /* POST usb_data attempts before a VBUS recovery cycle */
     SETTINGS_INT ("cut_retries", 1, 5, 2),
+    /* the carrier settings the pairing pass writes to the dongle
+       (its lte_upstream_pppos apn / apn_user / apn_password; the dongle
+       restarts once when they changed). "" = leave the dongle's own
+       (2026-10-07, Quick Setup's USB step; additive, no version bump) */
+    SETTINGS_STR ("apn", 63, ""),
+    SETTINGS_STR ("apn_user", 32, ""),
+    SETTINGS_STR ("apn_password", 32, ""),
     SETTINGS_BOOL("cli", true),
 };
 
@@ -126,6 +133,10 @@ static esp_err_t on_apply(const cJSON *settings)
     s_cfg.gps_poll_s    = get_int(settings, "gps_poll_s", 2);
     s_cfg.health_poll_s = get_int(settings, "health_poll_s", 10);
     s_cfg.cut_retries   = get_int(settings, "cut_retries", 2);
+    get_str(settings, "apn", s_cfg.apn, sizeof(s_cfg.apn));
+    get_str(settings, "apn_user", s_cfg.apn_user, sizeof(s_cfg.apn_user));
+    get_str(settings, "apn_password", s_cfg.apn_password,
+            sizeof(s_cfg.apn_password));
     s_cfg.cli           = get_bool(settings, "cli", true);
     s_configured = true;
 

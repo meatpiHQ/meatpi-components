@@ -244,6 +244,9 @@ bool espnl_core_parse_health(const char *json, espnl_health_t *out)
                       sizeof(out->operator_name));
         (void)val_str(s, e, "\"network_type\":", out->network_type,
                       sizeof(out->network_type));
+        (void)val_str(s, e, "\"sim\":", out->sim, sizeof(out->sim));
+        (void)val_str(s, e, "\"stage\":", out->stage, sizeof(out->stage));
+        (void)val_str(s, e, "\"ip\":", out->ip, sizeof(out->ip));
     }
 
     if (section(obj, "\"gps\":", &s, &e))

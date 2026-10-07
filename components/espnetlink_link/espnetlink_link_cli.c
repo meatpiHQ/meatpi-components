@@ -105,7 +105,8 @@ static int cmd_espnetlink(int argc, char **argv)
                        st.last_error);
     }
     cmdline_printf("  gps: valid=%d age=%lu ms | dongle: valid=%d%s lte=%d "
-                   "rssi=%d op='%s' net=%s fix=%d usb_data=%d | polls=%lu "
+                   "rssi=%d op='%s' net=%s fix=%d usb_data=%d sim=%s "
+                   "stage=%s ip=%s age=%lu s | polls=%lu "
                    "fail=%lu link_ups=%lu\n",
                    (int)st.gps_valid, (unsigned long)st.gps_age_ms,
                    (int)st.health_valid,
@@ -115,8 +116,18 @@ static int cmd_espnetlink(int argc, char **argv)
                    st.operator_name, st.network_type[0] ? st.network_type
                                                         : "-",
                    (int)st.dongle_gps_fix, (int)st.dongle_usb_data,
+                   st.dongle_sim[0] ? st.dongle_sim : "-",
+                   st.dongle_stage[0] ? st.dongle_stage : "-",
+                   st.dongle_ip[0] ? st.dongle_ip : "-",
+                   (unsigned long)(st.health_age_ms / 1000),
                    (unsigned long)st.polls, (unsigned long)st.failures,
                    (unsigned long)st.link_ups);
+    if (st.apn[0] != '\0' || !st.carrier_synced)
+    {
+        cmdline_printf("  carrier: apn='%s' %s%s%s\n", st.apn,
+                       st.carrier_synced ? "on the dongle" : "NOT on the dongle",
+                       st.carrier_note[0] ? ": " : "", st.carrier_note);
+    }
 
     if (st.gps_valid)
     {

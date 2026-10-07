@@ -111,6 +111,23 @@ explaining why the class stayed CDC-NCM. `/api/info`'s `fw_version` /
 a level below the minimum is flagged in the UI even when the routes
 happen to exist.
 
+**The basics over the cable, and the carrier settings (2026-10-07, for
+Quick Setup's USB step):** the pairing pass reads `GET /api/wifi_modem`
+over USB before the key (`usb_read_health`), so a fresh WiCAN parked on
+hold already shows the dongle's SIM (`sim`: ready / missing / pin, dongle
+api 8), signal, carrier, stage and address; the reading is kept with its
+age (`age_s`) when the WiCAN is on its home WiFi instead of being
+dropped (the fix is still never served stale). The same pass relays the
+WiCAN's `apn` / `apn_user` / `apn_password` settings onto the dongle's
+`lte_upstream_pppos` (`ensure_dongle_carrier`: one GET, one full-object
+PUT when `apn` or `apn_user` differ or the dongle holds them staged but
+unapplied, one submit; the dongle restarts once, the link drops within a
+second and the machine starts over from the re-enumeration with nothing
+left to write; the key read reports FAIL for that pass so no cut is
+attempted on a rebooting dongle). `carrier_synced` / `carrier_note` in
+the status say whether the dongle holds them. A dongle without the LTE
+settings API (404) is tolerated with the note.
+
 
 A fresh WiCAN boots with `wifi_manager.mode=ap` and no STA networks; the
 pairing store flips it to `apsta` and the one reboot after the cut
@@ -201,6 +218,9 @@ gained the GPS fallback provider; `wifi_manager_sta_reconnect()`.
 | `gps_poll_s` | 1..60 `2` | |
 | `health_poll_s` | 5..300 `10` | |
 | `cut_retries` | 1..5 `2` | POST `usb_data` attempts before a VBUS recovery |
+| `apn` | str ≤63 `""` | carrier settings relayed to the dongle's `lte_upstream_pppos` by the pairing pass (2026-10-07, Quick Setup's USB step); "" = the dongle keeps its own |
+| `apn_user` | str ≤32 `""` | |
+| `apn_password` | str ≤32 `""` | redacted on GET, "" on PUT keeps it (the api_http `_password` rule); rides along whenever `apn` or `apn_user` change (it cannot be read back from the dongle) |
 | `cli` | bool `true` | |
 
 Migration v1 → v2 (`espnl_settings_migrate`, host-tested): a v1 object

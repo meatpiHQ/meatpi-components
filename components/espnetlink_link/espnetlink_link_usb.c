@@ -157,10 +157,180 @@ static espnl_sm_event_t act_get_info(void)
     return ESPNL_EV_OK;
 }
 
+/* ---- the dongle's basics and carrier settings, over the cable ------------ */
+
+/* GET /api/wifi_modem over USB: the SIM, the signal and the stage before
+ * any link is up, so a fresh WiCAN parked on hold shows them (2026-10-07,
+ * Quick Setup's USB step). Best effort: nothing to report on failure. */
+static void usb_read_health(void)
+{
+    http_client_response_t resp;
+    espnl_health_t h;
+
+    if (!usb_request("/api/wifi_modem", HTTP_CLIENT_GET, NULL, &resp))
+    {
+        return;
+    }
+
+    bool ok = resp.status_code == 200 && resp.data != NULL &&
+              espnl_core_parse_health(resp.data, &h);
+
+    http_client_manager_free(&resp);
+    if (ok)
+    {
+        espnl_engine_note_health(&h);
+    }
+}
+
+/* POST /api/settings/submit on the dongle: it reboots to apply. */
+static bool dongle_submit(void)
+{
+    http_client_response_t resp;
+    bool ok = usb_request("/api/settings/submit", HTTP_CLIENT_POST, "{}",
+                          &resp);
+    int status = ok ? resp.status_code : -1;
+
+    if (ok)
+    {
+        http_client_manager_free(&resp);
+    }
+    if (status != 200)
+    {
+        ESP_LOGW(TAG, "dongle settings submit: status %d", status);
+        return false;
+    }
+    return true;
+}
+
+/* The carrier settings this WiCAN carries (espnetlink.apn / apn_user /
+ * apn_password; "" = leave the dongle's own) onto the dongle's
+ * lte_upstream_pppos: one GET, and when apn or apn_user differ one PUT of
+ * the whole object (the password cannot be read back: it rides along
+ * whenever the others change) and one submit. The dongle restarts once to
+ * apply, the link drops within a second and the machine starts over from
+ * the re-enumeration with nothing left to write. Runs in both modes, before
+ * any cut. Returns true when a submit was sent. */
+static bool ensure_dongle_carrier(void)
+{
+    const espnl_config_t *cfg = espnl_config();
+    http_client_response_t resp;
+
+    if (cfg->apn[0] == '\0' && cfg->apn_user[0] == '\0')
+    {
+        espnl_engine_note_carrier(true, "");
+        return false;
+    }
+    if (!usb_request("/api/settings/lte_upstream_pppos", HTTP_CLIENT_GET,
+                     NULL, &resp))
+    {
+        return false;
+    }
+    if (resp.status_code == 404)
+    {
+        http_client_manager_free(&resp);
+        ESP_LOGW(TAG, "carrier settings: the dongle firmware has no LTE "
+                 "settings API (404): update the dongle firmware");
+        espnl_engine_note_carrier(false, "the dongle firmware has no LTE "
+                                         "settings API: update it");
+        return false;
+    }
+
+    cJSON *obj = (resp.status_code == 200 && resp.data != NULL)
+                     ? cJSON_Parse(resp.data) : NULL;
+
+    http_client_manager_free(&resp);
+    if (!cJSON_IsObject(obj))
+    {
+        cJSON_Delete(obj);
+        return false;
+    }
+
+    const cJSON *a = cJSON_GetObjectItemCaseSensitive(obj, "apn");
+    const cJSON *u = cJSON_GetObjectItemCaseSensitive(obj, "apn_user");
+    bool same = cJSON_IsString(a) && strcmp(a->valuestring, cfg->apn) == 0 &&
+                cJSON_IsString(u) &&
+                strcmp(u->valuestring, cfg->apn_user) == 0;
+    /* staged by an interrupted earlier pass, never applied (the same trap
+     * ensure_dongle_setting met on 2026-08-25): submit anyway */
+    bool pending = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(
+        obj, "pending_reboot"));
+
+    if (same && !pending)
+    {
+        cJSON_Delete(obj);
+        espnl_engine_note_carrier(true, "");
+        return false;
+    }
+
+    if (!same)
+    {
+        /* §6 full-object replace; a "" password keeps the dongle's */
+        cJSON_DeleteItemFromObjectCaseSensitive(obj, "apn");
+        cJSON_AddStringToObject(obj, "apn", cfg->apn);
+        cJSON_DeleteItemFromObjectCaseSensitive(obj, "apn_user");
+        cJSON_AddStringToObject(obj, "apn_user", cfg->apn_user);
+        cJSON_DeleteItemFromObjectCaseSensitive(obj, "apn_password");
+        cJSON_AddStringToObject(obj, "apn_password", cfg->apn_password);
+
+        char *body = cJSON_PrintUnformatted(obj);
+
+        cJSON_Delete(obj);
+        if (body == NULL)
+        {
+            return false;
+        }
+
+        bool ok = usb_request("/api/settings/lte_upstream_pppos",
+                              HTTP_CLIENT_PUT, body, &resp);
+        int status = ok ? resp.status_code : -1;
+
+        free(body);
+        if (ok)
+        {
+            http_client_manager_free(&resp);
+        }
+        if (status != 200)
+        {
+            ESP_LOGW(TAG, "carrier settings: PUT status %d", status);
+            espnl_engine_note_carrier(false, "the dongle refused the "
+                                             "carrier settings");
+            return false;
+        }
+    }
+    else
+    {
+        cJSON_Delete(obj);
+    }
+
+    if (!dongle_submit())
+    {
+        espnl_engine_note_carrier(false, "the dongle did not take the "
+                                         "settings submit");
+        return false;
+    }
+
+    ESP_LOGI(TAG, "carrier settings sent to the dongle (APN '%s'%s%s): it "
+             "restarts once to apply them", cfg->apn,
+             cfg->apn_user[0] ? ", user " : "", cfg->apn_user);
+    espnl_engine_note_carrier(true, "");
+    espnl_engine_dongle_rebooting();
+    return true;
+}
+
 static espnl_sm_event_t act_get_key(void)
 {
     http_client_response_t resp;
     espnl_creds_t creds;
+
+    /* the basics and the carrier settings first: both want the cable,
+     * which a wifi_modem pass cuts a moment later (2026-10-07) */
+    usb_read_health();
+    if (ensure_dongle_carrier())
+    {
+        /* the dongle restarts to apply them: the link drops in a second
+         * and the machine starts over from the re-enumeration */
+        return ESPNL_EV_FAIL;
+    }
 
     if (!usb_request("/api/wifi_modem/credentials", HTTP_CLIENT_GET, NULL,
                      &resp))

@@ -85,6 +85,9 @@ static espnetlink_gps_sink_t s_sink;
 static usb_acm_gps_t s_gps;
 static uint32_t s_gps_stamp_ms;
 static espnl_health_t s_health;
+static uint32_t s_health_stamp_ms;   /* when s_health was read (valid)     */
+static bool s_carrier_synced = true; /* nothing to relay until a pass says */
+static char s_carrier_note[96];
 static espnetlink_link_status_t s_st;
 static int s_consec_fail;          /* polls failed in a row (task-only) */
 static volatile uint32_t s_poll_hold_until_ms;
@@ -156,6 +159,15 @@ esp_err_t espnetlink_link_status(espnetlink_link_status_t *out)
     out->network_type[sizeof(out->network_type) - 1] = '\0';
     out->dongle_gps_fix = s_health.gps_fix;
     out->dongle_usb_data = s_health.usb_data;
+    snprintf(out->dongle_sim, sizeof(out->dongle_sim), "%s", s_health.sim);
+    snprintf(out->dongle_stage, sizeof(out->dongle_stage), "%s",
+             s_health.stage);
+    snprintf(out->dongle_ip, sizeof(out->dongle_ip), "%s", s_health.ip);
+    out->health_age_ms = s_health.valid ? now_ms() - s_health_stamp_ms : 0;
+    snprintf(out->apn, sizeof(out->apn), "%s", espnl_config()->apn);
+    out->carrier_synced = s_carrier_synced;
+    snprintf(out->carrier_note, sizeof(out->carrier_note), "%s",
+             s_carrier_note);
     xSemaphoreGive(s_lock);
 
     out->usb_attached = usb.attached;
@@ -190,6 +202,32 @@ void espnl_status_set_last_error(const char *msg)
     xSemaphoreTake(s_lock, portMAX_DELAY);
     snprintf(s_st.last_error, sizeof(s_st.last_error), "%s",
              msg != NULL ? msg : "");
+    xSemaphoreGive(s_lock);
+}
+
+void espnl_engine_note_health(const espnl_health_t *h)
+{
+    if (h == NULL || !h->valid || s_lock == NULL)
+    {
+        return;
+    }
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    s_health = *h;
+    s_health_stamp_ms = now_ms();
+    s_st.health_unsupported = false;
+    xSemaphoreGive(s_lock);
+}
+
+void espnl_engine_note_carrier(bool synced, const char *note)
+{
+    if (s_lock == NULL)
+    {
+        return;
+    }
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    s_carrier_synced = synced;
+    snprintf(s_carrier_note, sizeof(s_carrier_note), "%s",
+             note != NULL ? note : "");
     xSemaphoreGive(s_lock);
 }
 
@@ -371,6 +409,7 @@ static void poll_health(const char *host)
         bool was_up = s_health.valid && s_health.lte_connected;
 
         s_health = h;
+        s_health_stamp_ms = now_ms();
         if (!was_up && h.lte_connected)
         {
             ESP_LOGI(TAG, "dongle LTE up (%s %s, %d dBm)",
@@ -553,8 +592,10 @@ static void link_task(void *arg)
             }
             else
             {
+                /* the fix is never served stale; the health reading stays
+                 * with its age (2026-10-07: a WiCAN on its home WiFi shows
+                 * what the dongle said last, the UI names how long ago) */
                 s_gps.valid = false;
-                s_health.valid = false;
                 s_st.health_unsupported = false;
             }
             xSemaphoreGive(s_lock);

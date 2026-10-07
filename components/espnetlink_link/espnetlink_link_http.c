@@ -100,6 +100,10 @@ static esp_err_t status_handler(httpd_req_t *req)
     cJSON_AddNumberToObject(o, "dongle_api", st.dongle_api);
     cJSON_AddNumberToObject(o, "dongle_api_min", ESPNL_MIN_API_LEVEL);
     cJSON_AddBoolToObject(o, "health_unsupported", st.health_unsupported);
+    /* the carrier settings relayed to the dongle (2026-10-07) */
+    cJSON_AddStringToObject(o, "apn", st.apn);
+    cJSON_AddBoolToObject(o, "carrier_synced", st.carrier_synced);
+    cJSON_AddStringToObject(o, "carrier_note", st.carrier_note);
 
     cJSON *u = cJSON_AddObjectToObject(o, "usb");
 
@@ -146,6 +150,11 @@ static esp_err_t status_handler(httpd_req_t *req)
             cJSON_AddStringToObject(d, "network_type", st.network_type);
             cJSON_AddBoolToObject(d, "gps_fix", st.dongle_gps_fix);
             cJSON_AddBoolToObject(d, "usb_data", st.dongle_usb_data);
+            /* dongle api 8 (2026-10-07): "" from an older one */
+            cJSON_AddStringToObject(d, "sim", st.dongle_sim);
+            cJSON_AddStringToObject(d, "stage", st.dongle_stage);
+            cJSON_AddStringToObject(d, "ip", st.dongle_ip);
+            cJSON_AddNumberToObject(d, "age_s", st.health_age_ms / 1000);
         }
     }
 

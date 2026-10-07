@@ -121,6 +121,19 @@ typedef struct
     char     network_type[12];
     bool     dongle_gps_fix;
     bool     dongle_usb_data;  /**< data lines routed (live state)       */
+    /* 2026-10-07 (dongle api 8; "" from an older one): the SIM as the
+       dongle found it, the bring-up stage, the carrier address, and how
+       old this reading is (the pairing pass reads it over the cable, so
+       a WiCAN on its home WiFi keeps the last one instead of nothing) */
+    char     dongle_sim[8];    /**< "ready" | "missing" | "pin" | "unknown" | "" */
+    char     dongle_stage[20];
+    char     dongle_ip[16];
+    uint32_t health_age_ms;    /**< since the reading; 0 when none       */
+    /* the carrier settings relayed to the dongle (espnetlink.apn, ...) */
+    char     apn[64];          /**< "" = the dongle keeps its own         */
+    bool     carrier_synced;   /**< the last pass found the dongle holding
+                                    them (or nothing to relay)           */
+    char     carrier_note[96]; /**< why not, "" = fine                    */
     /* counters */
     uint32_t polls;
     uint32_t failures;

@@ -23,8 +23,10 @@ static const char *HEALTH =
     "\"napt\":true,"
     "\"ap\":{\"ssid\":\"ESPNetLink_A1B2C3\",\"ip\":\"192.168.80.1\","
     "\"started\":true,\"clients\":1},"
-    "\"lte\":{\"valid\":true,\"attached\":true,\"connected\":true,"
-    "\"rssi_dbm\":-51,\"operator\":\"ALDI Mobile\",\"network_type\":\"eMTC\"},"
+    "\"lte\":{\"valid\":true,\"sim\":\"ready\",\"stage\":\"connected\","
+    "\"attached\":true,\"connected\":true,"
+    "\"rssi_dbm\":-51,\"operator\":\"ALDI Mobile\",\"network_type\":\"eMTC\","
+    "\"ip\":\"10.86.12.44\"},"
     "\"gps\":{\"valid\":true,\"fix\":false,\"satellites\":0,\"age_ms\":120},"
     "\"uptime_s\":42,\"device_id\":\"abcdef\"}";
 
@@ -99,9 +101,34 @@ void test_health_parse(void)
     TEST_ASSERT_EQUAL_INT(-51, h.rssi_dbm);
     TEST_ASSERT_EQUAL_STRING("ALDI Mobile", h.operator_name);
     TEST_ASSERT_EQUAL_STRING("eMTC", h.network_type);
+    /* api 8 (2026-10-07): the SIM state, the stage and the carrier address */
+    TEST_ASSERT_EQUAL_STRING("ready", h.sim);
+    TEST_ASSERT_EQUAL_STRING("connected", h.stage);
+    TEST_ASSERT_EQUAL_STRING("10.86.12.44", h.ip);
     TEST_ASSERT_TRUE(h.gps_valid);
     TEST_ASSERT_FALSE(h.gps_fix);
     TEST_ASSERT_EQUAL_INT(1, h.ap_clients);
+}
+
+/* a dongle with no SIM says so before any attach (api 8), and an older
+ * dongle (no sim/stage keys) leaves the strings empty */
+void test_health_parse_sim_states(void)
+{
+    static const char *NO_SIM =
+        "{\"usb_mode\":\"auto\",\"usb_data\":true,\"napt\":false,"
+        "\"lte\":{\"valid\":false,\"sim\":\"missing\",\"stage\":\"connecting\"},"
+        "\"gps\":{\"valid\":false,\"fix\":false}}";
+    espnl_health_t h;
+
+    TEST_ASSERT_TRUE(espnl_core_parse_health(NO_SIM, &h));
+    TEST_ASSERT_FALSE(h.lte_valid);
+    TEST_ASSERT_EQUAL_STRING("missing", h.sim);
+    TEST_ASSERT_EQUAL_STRING("connecting", h.stage);
+    TEST_ASSERT_EQUAL_STRING("", h.ip);
+
+    TEST_ASSERT_TRUE(espnl_core_parse_health(HEALTH_LTE_DOWN, &h));
+    TEST_ASSERT_EQUAL_STRING("", h.sim);
+    TEST_ASSERT_EQUAL_STRING("", h.stage);
 }
 
 void test_health_parse_lte_down(void)
@@ -311,6 +338,7 @@ void app_main(void)
     RUN_TEST(test_ssid_match);
     RUN_TEST(test_health_parse);
     RUN_TEST(test_health_parse_lte_down);
+    RUN_TEST(test_health_parse_sim_states);
     RUN_TEST(test_health_parse_garbage);
     RUN_TEST(test_info_parse);
     RUN_TEST(test_credentials_parse);

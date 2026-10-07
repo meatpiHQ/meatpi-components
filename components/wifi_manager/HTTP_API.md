@@ -112,8 +112,14 @@ report connected or the exact failure, let go. Needs a station interface
 connected, drops for the trial and is re-joined right after (no AP-client
 pause, no backoff: the user asked for the radio activity).
 
-**POST** `{"ssid": "Neighbor", "password": "letmein-please"}`
-(`password` 8..63, or absent/empty for an open network)
+**POST** `{"ssid": "Neighbor", "password": "letmein-please", "channel": 11}`
+(`password` 8..63, or absent/empty for an open network; `channel` optional,
+the network's channel from the scan row, 1..13: the station scans that
+channel first and alone, about one dwell instead of the thirteen during
+which the access point cannot beacon (bench 2026-10-08: about 3 s of
+silence, which is what a phone on the access point drops on; the switch
+itself is announced and followed). Absent or out of range = all channels,
+the case of a name typed by hand.)
 
 - `202 Accepted`: the trial's status (`"state": "running"`). The radio
   action starts 300 ms after this answer: the station drops inside the

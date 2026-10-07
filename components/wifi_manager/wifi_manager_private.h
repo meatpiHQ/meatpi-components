@@ -320,7 +320,9 @@ typedef struct
     uint8_t           reason;   /* the disconnect reason that ended it   */
     char              ip[16];
     int8_t            rssi;
-    uint8_t           channel;
+    uint8_t           channel;  /* from the association                  */
+    uint8_t           hint;     /* the scan row's channel to scan first,
+                                   0 = all (2026-10-08)                  */
     uint32_t          t_start;  /* ms: our connect attempt               */
     uint32_t          t_assoc;
     uint32_t          t_done;
@@ -334,10 +336,11 @@ const char       *wm_trial_state_name(wm_trial_state_t s);
 uint32_t          wm_trial_took_ms(const wm_trial_t *t);
 /** ACT_CONNECT when the station is idle, ACT_NONE when it must let go first
  *  (state LEAVING) or when the request is refused (a trial is running, or
- *  the credentials are out of range: the glue tells which by the state). */
+ *  the credentials are out of range: the glue tells which by the state).
+ *  @p hint is the channel to scan first (1..13, anything else = all). */
 wm_trial_action_t wm_trial_begin(wm_trial_t *t, const char *ssid,
-                                 const char *password, bool sta_busy,
-                                 uint32_t now_ms);
+                                 const char *password, uint8_t hint,
+                                 bool sta_busy, uint32_t now_ms);
 wm_trial_action_t wm_trial_on_disconnect(wm_trial_t *t, uint8_t reason,
                                          uint32_t now_ms);
 void              wm_trial_on_associated(wm_trial_t *t, uint8_t channel,
@@ -362,8 +365,13 @@ bool wm_try_on_got_ip(const char *ip);
  * addressing for the trial, and back to the configured network (entry 0,
  * or an empty config when none is configured) */
 bool      wm_sta_attempt_in_flight(void);
-esp_err_t wm_sta_apply_trial(const char *ssid, const char *password);
+esp_err_t wm_sta_apply_trial(const char *ssid, const char *password,
+                             uint8_t channel);
 void      wm_sta_restore_config(void);
+/** Remember the channel of the network the station is on, for the one
+ *  re-join after a trial that makes it let go: that connect scans the
+ *  channel first and stops there (2026-10-08). */
+void      wm_sta_note_rejoin_hint(void);
 
 /* ---- runtime interface suspension (wifi_manager_suspend.c) -----------------
  * EPHEMERAL per-interface suspension driven by interface_manager's policy

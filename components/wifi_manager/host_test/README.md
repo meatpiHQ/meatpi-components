@@ -4,7 +4,7 @@ Pure selection/failure-memory suite (`wifi_manager_select.c` only: no esp_wifi),
 IDF `linux` target. Run via `.\test.ps1 host` or manually per
 `components/TESTBENCH.md` §4.
 
-## What is covered (23 tests)
+## What is covered (35 tests)
 
 | Case | What it proves |
 |---|---|
@@ -26,11 +26,13 @@ IDF `linux` target. Run via `.\test.ps1 host` or manually per
 | duplicate SSID entries independent | same name, two passwords: strikes on one never block the other |
 | roam never to same SSID | the same name as the working connection is the same AP: stay |
 | parse / netmask / backoff / AP-client pause | unchanged helpers |
+| trial (10 cases, `test_trial.c`) | the connection trial's pure machine (2026-10-06): the address verdict, a wrong password by reason, not found / refused, the address and total budgets, a busy station lets go first, a letting-go that never comes, bad credentials and a second run refused, foreign events, the clock wrap |
+| trial channel hint kept and bounded | the scan row's channel rides the trial (2026-10-08); 14 or 0 means all channels; a busy station still lets go first |
 
 ## Expected result
 
 ```
-23 Tests 0 Failures 0 Ignored
+35 Tests 0 Failures 0 Ignored
 OK
 ```
 

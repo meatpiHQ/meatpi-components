@@ -49,7 +49,7 @@ by the future button/input manager).
 | `wifi_manager_get_sta_dns(...)` | Main/backup DNS as strings ("N/A" fallback). |
 | `wifi_manager_get_event_group()` | Event group with `WIFI_MANAGER_BIT_*` for waiters. |
 | `wifi_manager_scan_networks()` | Blocking scan → malloc'd JSON (caller frees). |
-| `wifi_manager_sta_try(ssid, password)` | The connection trial (2026-10-06): join with credentials that are never saved, report, let go; `ESP_ERR_INVALID_ARG` out of range, `ESP_ERR_INVALID_STATE` one is running, `ESP_ERR_NOT_SUPPORTED` no station interface. |
+| `wifi_manager_sta_try(ssid, password, channel)` | The connection trial (2026-10-06): join with credentials that are never saved, report, let go; `ESP_ERR_INVALID_ARG` out of range, `ESP_ERR_INVALID_STATE` one is running, `ESP_ERR_NOT_SUPPORTED` no station interface. `channel` (1..13, 0 = all) is the scan row's, scanned first and alone (2026-10-08): the access point cannot beacon while the station walks all thirteen channels, about 3 s, and that silence is what a phone on it drops on; the announced switch at the association is followed. The re-join of the configured network after a trial scans the channel it left first, the same way. |
 | `wifi_manager_sta_try_status(&out)` | The trial's state / result / address / reason / timing (`wifi_manager_try_t`). |
 | `wifi_manager_set_callbacks(cbs)` | STA up/down + AP client join/leave hooks (event-loop context). |
 
@@ -101,7 +101,7 @@ by the future button/input manager).
 | `ap_password` | string 8..64 | `@meatpi#` | legacy default; key material; auth mode set by `ap_auth`. **Cannot be kept** (2026-09-07): after the boot pass a write whose effective password is still the factory one is refused, `/api/wifi/status` reports `ap_default_password`, the web UI stops Submit until a new one is typed |
 | `ap_auth` | enum auto/wpa2/wpa2wpa3/wpa3 (`open` removed in v7, 2026-09-07: a stored `open` migrates to `auto`) | `auto` | v4: `auto` = WPA2 with a password (the 8-char minimum rules OPEN out). WPA3 + mixed enable PMF; an encrypted mode with no password is rejected |
 | `ap_ip` | string (IPv4) | `192.168.0.10` | v4: AP gateway address; `/24` assumed, DHCP pool follows it. Validated dotted-quad, host octet 1..254. Live value echoed in `/api/wifi/status` `ap_ip`. Legacy default = the classic ELM327-WiFi-adapter address (`192.168.0.10:35000`) so OBD apps work unconfigured |
-| `ap_channel` | int 1..13 | `6` | In APSTA the single radio parks on the associated upstream AP's channel, so once the STA connects the softAP FOLLOWS it (config synced from `esp_wifi_sta_get_ap_info` on association / got-IP / `WIFI_EVENT_HOME_CHANNEL_CHANGE`, incl. upstream-router CSA) and stays there across STA drops; this setting only takes effect while the STA is unassociated (HIL S8) |
+| `ap_channel` | int 1..13 | `6` | In APSTA the single radio parks on the associated upstream AP's channel, so once the STA connects the softAP FOLLOWS it (config synced from `esp_wifi_sta_get_ap_info` on got-IP / `WIFI_EVENT_HOME_CHANNEL_CHANGE`, incl. upstream-router CSA; never while clients are on the AP, since the write restarts the soft AP and kicks them: 2026-10-08, caught up when the last leaves) and stays there across STA drops; this setting only takes effect while the STA is unassociated (HIL S8) |
 | `ap_bandwidth` | enum ht20/ht40 | `ht20` | v4: 40 MHz for throughput vs 20 MHz for robustness |
 | `ap_max_connections` | int 1..10 | `4` | |
 | `ap_hidden` | bool | `false` | v4: don't beacon the SSID |
@@ -177,11 +177,18 @@ events to the trial first: a trial's disconnect (its result, or its own
 letting-go afterwards) never reaches the configured networks' attempt memory,
 a trial's got-IP is not a connection of ours (the status stays down, no
 consumer is told), the AP's channel config follows the trial's network as for
-a real join, and the reconnect task stands back while a trial runs
-(`wm_try_active()`, beside `wm_suspend_sta_active()`) and re-joins the
-configured network on the lap after it ends with no backoff and no AP-client
-pause (`wm_try_take_restore_cue()`: the station was up before the trial and
-the user asked for the radio activity; the bench sees it back in 3 to 13 s).
+a real join (but never written while clients are on the AP, see below), and
+the reconnect task stands back while a trial runs (`wm_try_active()`, beside
+`wm_suspend_sta_active()`) and re-joins the configured network on the lap
+after it ends with no backoff and no AP-client pause
+(`wm_try_take_restore_cue()`: the station was up before the trial and the
+user asked for the radio activity), straight back to the entry the trial made
+it leave with that entry's channel scanned first (`wm_sta_note_rejoin_hint()`
+at the trial's start; the bench sees it back in 0.45 s since 2026-10-08, 3 to
+13 s before). The trial's own connect takes the scan row's `channel` the same
+way: the switch of the AP comes 0.4 to 0.9 s after the request instead of 3 to
+4 s (the station's all-channel scan, during which the AP cannot beacon and a
+phone on it gives up).
 Afterwards the driver holds the configured primary again, or an empty config
 when none is configured, so the trial's credentials are gone (the driver's
 storage is RAM anyway). Needs mode `apsta` or `sta`; mode `ap` is not flipped
@@ -211,4 +218,13 @@ a fresh device over its AP (the ESPNetLink zero-touch pairing story) was
 otherwise never getting an uplink, field-hit on a fresh WiCAN Pro, and
 the pause is **bounded** to `WM_AP_CLIENT_MAX_PAUSES` × 10 s (60 s), so
 an uplink outage never lasts as long as a phone stays parked on the AP.
-The client sees at most one channel hop.
+The client sees at most one channel hop, and the hop itself is announced
+(the driver's CSA, 3 beacons: a client that follows it stays connected;
+bench 2026-10-08 with the Pi's mt76x2u as the client). What knocks a client
+off is the silence before it (the station's all-channel scan) and, until
+2026-10-08, the AP config write that mirrored the new channel
+(`sync_ap_channel_to_sta`): `esp_wifi_set_config(WIFI_IF_AP)` restarts the
+soft AP and deauthenticates its stations (`station leave, reason = 2` within
+7 ms of got-IP). The write is skipped while `ap_station_count > 0` and done
+when the last client leaves; the radio is on the station's channel either
+way.

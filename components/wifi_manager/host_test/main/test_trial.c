@@ -34,7 +34,7 @@ static void begin_idle(void)
 {
     wm_trial_init(&s_t);
     TEST_ASSERT_EQUAL_INT(WM_TRIAL_ACT_CONNECT,
-                          wm_trial_begin(&s_t, "Home", "letmein-please",
+                          wm_trial_begin(&s_t, "Home", "letmein-please", 0,
                                          false, 1000));
     TEST_ASSERT_EQUAL_INT(WM_TRIAL_CONNECTING, s_t.state);
     TEST_ASSERT_TRUE(wm_trial_active(&s_t));
@@ -124,7 +124,7 @@ void test_trial_busy_station_lets_go_first(void)
 {
     wm_trial_init(&s_t);
     TEST_ASSERT_EQUAL_INT(WM_TRIAL_ACT_NONE,
-                          wm_trial_begin(&s_t, "Home", "letmein-please",
+                          wm_trial_begin(&s_t, "Home", "letmein-please", 0,
                                          true, 1000));
     TEST_ASSERT_EQUAL_INT(WM_TRIAL_LEAVING, s_t.state);
     TEST_ASSERT_TRUE(wm_trial_active(&s_t));
@@ -142,7 +142,7 @@ void test_trial_busy_station_lets_go_first(void)
 void test_trial_leave_that_never_comes(void)
 {
     wm_trial_init(&s_t);
-    wm_trial_begin(&s_t, "Home", "letmein-please", true, 1000);
+    wm_trial_begin(&s_t, "Home", "letmein-please", 0, true, 1000);
     TEST_ASSERT_EQUAL_INT(WM_TRIAL_ACT_NONE, wm_trial_tick(&s_t, 3999));
     TEST_ASSERT_EQUAL_INT(WM_TRIAL_ACT_CONNECT, wm_trial_tick(&s_t, 4000));
     TEST_ASSERT_EQUAL_INT(WM_TRIAL_CONNECTING, s_t.state);
@@ -152,11 +152,11 @@ void test_trial_refuses_bad_credentials_and_a_second_run(void)
 {
     wm_trial_init(&s_t);
     TEST_ASSERT_EQUAL_INT(WM_TRIAL_ACT_NONE,
-                          wm_trial_begin(&s_t, "", "letmein-please", false,
+                          wm_trial_begin(&s_t, "", "letmein-please", 0, false,
                                          0));
     TEST_ASSERT_EQUAL_INT(WM_TRIAL_IDLE, s_t.state);
     TEST_ASSERT_EQUAL_INT(WM_TRIAL_ACT_NONE,
-                          wm_trial_begin(&s_t, "Home", "short", false, 0));
+                          wm_trial_begin(&s_t, "Home", "short", 0, false, 0));
     TEST_ASSERT_EQUAL_INT(WM_TRIAL_IDLE, s_t.state);
 
     char long_ssid[WM_SSID_LEN + 2];
@@ -164,16 +164,16 @@ void test_trial_refuses_bad_credentials_and_a_second_run(void)
     memset(long_ssid, 'a', sizeof(long_ssid) - 1);
     long_ssid[sizeof(long_ssid) - 1] = '\0';
     TEST_ASSERT_EQUAL_INT(WM_TRIAL_ACT_NONE,
-                          wm_trial_begin(&s_t, long_ssid, "letmein-please",
+                          wm_trial_begin(&s_t, long_ssid, "letmein-please", 0,
                                          false, 0));
 
     /* an open network: no password is allowed */
     TEST_ASSERT_EQUAL_INT(WM_TRIAL_ACT_CONNECT,
-                          wm_trial_begin(&s_t, "Cafe", "", false, 0));
+                          wm_trial_begin(&s_t, "Cafe", "", 0, false, 0));
 
     /* one at a time */
     TEST_ASSERT_EQUAL_INT(WM_TRIAL_ACT_NONE,
-                          wm_trial_begin(&s_t, "Home", "letmein-please",
+                          wm_trial_begin(&s_t, "Home", "letmein-please", 0,
                                          false, 10));
     TEST_ASSERT_EQUAL_STRING("Cafe", s_t.ssid);
 }
@@ -203,10 +203,28 @@ void test_trial_events_when_idle_or_done_are_not_ours(void)
 void test_trial_clock_wrap(void)
 {
     wm_trial_init(&s_t);
-    wm_trial_begin(&s_t, "Home", "letmein-please", false, 0xFFFFF000u);
+    wm_trial_begin(&s_t, "Home", "letmein-please", 0, false, 0xFFFFF000u);
     TEST_ASSERT_EQUAL_INT(WM_TRIAL_ACT_NONE, wm_trial_tick(&s_t, 0x00000F00u));
     TEST_ASSERT_EQUAL_INT(WM_TRIAL_ACT_FINISH,
                           wm_trial_tick(&s_t, 0xFFFFF000u + 20000u));
     TEST_ASSERT_EQUAL_INT(WM_TRIAL_TIMEOUT, s_t.result);
     TEST_ASSERT_EQUAL_UINT32(20000, wm_trial_took_ms(&s_t));
+}
+
+void test_trial_channel_hint_kept_and_bounded(void)
+{
+    /* the scan row's channel rides the trial (2026-10-08); outside the
+       2.4 GHz range it means all channels */
+    wm_trial_init(&s_t);
+    TEST_ASSERT_EQUAL_INT(WM_TRIAL_ACT_CONNECT,
+                          wm_trial_begin(&s_t, "Home", "letmein-please", 11,
+                                         false, 1000));
+    TEST_ASSERT_EQUAL_UINT8(11, s_t.hint);
+    wm_trial_init(&s_t);
+    wm_trial_begin(&s_t, "Home", "letmein-please", 14, false, 1000);
+    TEST_ASSERT_EQUAL_UINT8(0, s_t.hint);
+    wm_trial_init(&s_t);
+    wm_trial_begin(&s_t, "Home", "letmein-please", 0, true, 1000);
+    TEST_ASSERT_EQUAL_UINT8(0, s_t.hint);
+    TEST_ASSERT_EQUAL_INT(WM_TRIAL_LEAVING, s_t.state);
 }

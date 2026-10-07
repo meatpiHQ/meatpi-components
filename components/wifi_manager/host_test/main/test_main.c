@@ -38,6 +38,7 @@ void test_trial_leave_that_never_comes(void);
 void test_trial_refuses_bad_credentials_and_a_second_run(void);
 void test_trial_events_when_idle_or_done_are_not_ours(void);
 void test_trial_clock_wrap(void);
+void test_trial_channel_hint_kept_and_bounded(void);
 
 void app_main(void)
 {
@@ -76,5 +77,6 @@ void app_main(void)
     RUN_TEST(test_trial_refuses_bad_credentials_and_a_second_run);
     RUN_TEST(test_trial_events_when_idle_or_done_are_not_ours);
     RUN_TEST(test_trial_clock_wrap);
+    RUN_TEST(test_trial_channel_hint_kept_and_bounded);
     UNITY_END();
 }

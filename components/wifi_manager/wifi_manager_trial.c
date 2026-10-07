@@ -111,8 +111,8 @@ static wm_trial_action_t finish(wm_trial_t *t, wm_trial_result_t r,
 }
 
 wm_trial_action_t wm_trial_begin(wm_trial_t *t, const char *ssid,
-                                 const char *password, bool sta_busy,
-                                 uint32_t now_ms)
+                                 const char *password, uint8_t hint,
+                                 bool sta_busy, uint32_t now_ms)
 {
     size_t sl = strlen(ssid), pl = strlen(password);
 
@@ -130,6 +130,7 @@ wm_trial_action_t wm_trial_begin(wm_trial_t *t, const char *ssid,
     memset(t, 0, sizeof(*t));
     strcpy(t->ssid, ssid);
     strcpy(t->password, password);
+    t->hint = (hint >= 1 && hint <= 13) ? hint : 0; /* 2.4 GHz, or all */
     t->t_start = now_ms;
 
     /* a station that is connected, or mid-attempt, must let go first: the

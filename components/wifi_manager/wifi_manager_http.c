@@ -183,6 +183,7 @@ static esp_err_t wifi_try_post_handler(httpd_req_t *req)
     cJSON *in = cJSON_Parse(buf);
     const cJSON *ssid = cJSON_GetObjectItemCaseSensitive(in, "ssid");
     const cJSON *pw = cJSON_GetObjectItemCaseSensitive(in, "password");
+    const cJSON *ch = cJSON_GetObjectItemCaseSensitive(in, "channel");
 
     if (in == NULL || !cJSON_IsString(ssid) ||
         (pw != NULL && !cJSON_IsString(pw)))
@@ -191,8 +192,15 @@ static esp_err_t wifi_try_post_handler(httpd_req_t *req)
         return send_error(req, "400 Bad Request", "need ssid and password");
     }
 
+    /* the scan row's channel, optional (2026-10-08): scanned first and
+       alone; anything but 1..13 means all channels */
+    uint8_t channel = (cJSON_IsNumber(ch) && ch->valuedouble >= 1 &&
+                       ch->valuedouble <= 13)
+                          ? (uint8_t)ch->valuedouble : 0;
+
     esp_err_t err = wifi_manager_sta_try(ssid->valuestring,
-                                         pw != NULL ? pw->valuestring : "");
+                                         pw != NULL ? pw->valuestring : "",
+                                         channel);
 
     cJSON_Delete(in);
 

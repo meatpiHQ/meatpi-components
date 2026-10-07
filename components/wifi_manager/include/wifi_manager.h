@@ -126,12 +126,15 @@ void wifi_manager_get_sta_attempt(wifi_manager_sta_attempt_t *out);
  *  report, let go. Needs a station interface (mode apsta or sta, not
  *  suspended). The reconnect task stands back meanwhile and re-joins the
  *  configured network afterwards; a station that was connected drops for
- *  the trial. A runtime knob, nothing is written.
+ *  the trial. A runtime knob, nothing is written. @p channel (1..13) is
+ *  the network's channel from the scan, scanned first and alone so the
+ *  access point's clients see no long silence (2026-10-08); 0 = all.
  *  @return ESP_OK started (poll wifi_manager_sta_try_status),
  *          ESP_ERR_INVALID_ARG ssid 1..32 / password 8..63 or empty,
  *          ESP_ERR_INVALID_STATE a trial is already running,
  *          ESP_ERR_NOT_SUPPORTED no station interface to try with. */
-esp_err_t wifi_manager_sta_try(const char *ssid, const char *password);
+esp_err_t wifi_manager_sta_try(const char *ssid, const char *password,
+                               uint8_t channel);
 
 typedef struct
 {

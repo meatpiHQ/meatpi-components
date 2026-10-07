@@ -192,7 +192,22 @@ static void apply_sta_addressing(const wm_config_t *wcfg, size_t idx)
     }
 }
 
-static esp_err_t apply_sta_network(const wm_config_t *wcfg, size_t idx)
+/* the entry the station was on, and its channel, when a connection trial
+   made it let go (wm_sta_note_rejoin_hint): the one re-join after the
+   trial goes straight back to that entry, no scan of our own, and the
+   driver scans that channel first and stops there, so the phone on our
+   access point sees one announced hop and no second silence while the
+   radio walks all thirteen channels (bench 2026-10-08: that silence, not
+   the announced switch, is what a phone drops on) */
+static volatile uint8_t s_rejoin_hint;
+static volatile int     s_rejoin_idx = -1;
+static volatile int     s_connected_idx; /* defined below, with its section */
+
+/* `first_channel` 1..13: scan it first and stop there (one association
+   only; a mesh may land on a weaker node for it, roaming sorts that out);
+   0: all channels, by signal */
+static esp_err_t apply_sta_network(const wm_config_t *wcfg, size_t idx,
+                                   uint8_t first_channel)
 {
     const wm_network_t *net = &wcfg->sta[idx];
     wifi_config_t cfg = { 0 };
@@ -201,7 +216,9 @@ static esp_err_t apply_sta_network(const wm_config_t *wcfg, size_t idx)
         (net->password[0] != '\0') ? WIFI_AUTH_WPA_PSK : WIFI_AUTH_OPEN;
     cfg.sta.rm_enabled = 1;
     cfg.sta.btm_enabled = 1;
-    cfg.sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
+    cfg.sta.channel = first_channel;
+    cfg.sta.scan_method = (first_channel != 0) ? WIFI_FAST_SCAN
+                                               : WIFI_ALL_CHANNEL_SCAN;
     cfg.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
     cfg.sta.pmf_cfg.capable = true;
     cfg.sta.pmf_cfg.required = false;
@@ -348,15 +365,32 @@ bool wm_sta_attempt_in_flight(void)
            now_ms() - s_connect_started_ms < WM_CONNECT_INFLIGHT_MS;
 }
 
+void wm_sta_note_rejoin_hint(void)
+{
+    wifi_ap_record_t ap = { 0 };
+    bool on = s_status.sta_connected &&
+              esp_wifi_sta_get_ap_info(&ap) == ESP_OK;
+
+    s_rejoin_hint = on ? ap.primary : 0;
+    s_rejoin_idx = on ? s_connected_idx : -1;
+}
+
 /* the trial's credentials into the driver, DHCP addressing, and no entry
-   index: nothing the attempt memory could charge */
-esp_err_t wm_sta_apply_trial(const char *ssid, const char *password)
+   index: nothing the attempt memory could charge. `channel` is the scan
+   row's when the wizard knows it (2026-10-08): the station scans that
+   channel first and stops there, about one dwell instead of the thirteen
+   during which the access point cannot beacon; 0 keeps the full scan (a
+   name typed by hand). */
+esp_err_t wm_sta_apply_trial(const char *ssid, const char *password,
+                             uint8_t channel)
 {
     wifi_config_t cfg = { 0 };
 
     cfg.sta.threshold.authmode =
         (password[0] != '\0') ? WIFI_AUTH_WPA_PSK : WIFI_AUTH_OPEN;
-    cfg.sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
+    cfg.sta.channel = channel;
+    cfg.sta.scan_method = (channel != 0) ? WIFI_FAST_SCAN
+                                         : WIFI_ALL_CHANNEL_SCAN;
     cfg.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
     cfg.sta.pmf_cfg.capable = true;
     cfg.sta.pmf_cfg.required = false;
@@ -395,7 +429,7 @@ void wm_sta_restore_config(void)
 
     if (cfg != NULL && cfg->sta_count > 0)
     {
-        (void)apply_sta_network(cfg, 0);
+        (void)apply_sta_network(cfg, 0, 0);
     }
     else
     {
@@ -407,6 +441,28 @@ void wm_sta_restore_config(void)
     }
 
     s_connect_started_ms = 0;
+}
+
+/* one entry into the driver and a connect attempt, no scan of our own */
+static bool connect_entry(const wm_config_t *cfg, size_t idx,
+                          uint8_t first_channel)
+{
+    apply_sta_network(cfg, idx, first_channel);
+
+    /* stamp BEFORE the call: a fast DISCONNECTED (e.g. NO_AP_FOUND
+     * from the driver's cached scan) can land in the event task and
+     * clear the guard before esp_wifi_connect() even returns: the
+     * late stamp then blocked the next WM_CONNECT_INFLIGHT_MS worth
+     * of cycles per attempt (bench 2026-08-22, ESPNetLink AP coming
+     * up ~10 s after the WiCAN's first attempt) */
+    s_connect_started_ms = now_ms();
+
+    if (esp_wifi_connect() != ESP_OK)
+    {
+        s_connect_started_ms = 0;
+    }
+
+    return true;
 }
 
 /** Pick the best visible candidate (or rotate blindly) and connect. */
@@ -433,6 +489,22 @@ static bool select_and_connect(void)
         return false; /* a connection trial has the station */
     }
 
+    /* the entry a connection trial made the station leave, and its
+       channel: one shot, taken whether or not it is usable */
+    int     rejoin = s_rejoin_idx;
+    uint8_t first = s_rejoin_hint;
+
+    s_rejoin_idx = -1;
+    s_rejoin_hint = 0;
+
+    if (rejoin >= 0 && rejoin < (int)cfg->sta_count)
+    {
+        ESP_LOGD(TAG, "back to '%s' after the trial, channel %u first",
+                 cfg->sta[rejoin].ssid, first);
+        note_last_resort(rejoin);
+        return connect_entry(cfg, (size_t)rejoin, first);
+    }
+
     if (cfg->sta_count == 1)
     {
         /* single network: no scan, and no deferral either, a network
@@ -441,22 +513,7 @@ static bool select_and_connect(void)
         (void)wm_select_sequential(&s_select, cfg->sta, cfg->sta_count,
                                    now_ms());
         note_last_resort(0);
-        apply_sta_network(cfg, 0);
-
-        /* stamp BEFORE the call: a fast DISCONNECTED (e.g. NO_AP_FOUND
-         * from the driver's cached scan) can land in the event task and
-         * clear the guard before esp_wifi_connect() even returns: the
-         * late stamp then blocked the next WM_CONNECT_INFLIGHT_MS worth
-         * of cycles per attempt (bench 2026-08-22, ESPNetLink AP coming
-         * up ~10 s after the WiCAN's first attempt) */
-        s_connect_started_ms = now_ms();
-
-        if (esp_wifi_connect() != ESP_OK)
-        {
-            s_connect_started_ms = 0;
-        }
-
-        return true;
+        return connect_entry(cfg, 0, 0);
     }
 
     xSemaphoreTake(s_lock, portMAX_DELAY);
@@ -508,22 +565,7 @@ static bool select_and_connect(void)
         ESP_LOGD(TAG, "connecting to candidate %d: %s", pick,
                  cfg->sta[pick].ssid);
         note_last_resort(pick);
-        apply_sta_network(cfg, (size_t)pick);
-
-        /* stamp BEFORE the call: a fast DISCONNECTED (e.g. NO_AP_FOUND
-         * from the driver's cached scan) can land in the event task and
-         * clear the guard before esp_wifi_connect() even returns: the
-         * late stamp then blocked the next WM_CONNECT_INFLIGHT_MS worth
-         * of cycles per attempt (bench 2026-08-22, ESPNetLink AP coming
-         * up ~10 s after the WiCAN's first attempt) */
-        s_connect_started_ms = now_ms();
-
-        if (esp_wifi_connect() != ESP_OK)
-        {
-            s_connect_started_ms = 0;
-        }
-
-        return true;
+        return connect_entry(cfg, (size_t)pick, 0);
     }
 
     ESP_LOGD(TAG, "no eligible network this cycle; deferring connect");
@@ -627,7 +669,15 @@ bool wifi_manager_http_request_allowed(int sockfd)
    channel into the AP config so it survives a STA drop (no hop back to the
    stale configured channel) and so status/scan behaviour stay consistent.
    The STA config's own channel field is a scan hint we never set: the
-   associated AP record is the authoritative source. */
+   associated AP record is the authoritative source.
+   Never while somebody is on the AP (2026-10-08): writing the AP config
+   restarts the soft AP and deauthenticates its stations (reason 2, 2 ms
+   after the station's got-ip on the bench: the phone on the access point
+   was kicked at every successful Quick Setup WiFi test). The radio already
+   beacons on the station's channel; the config catches up when the last
+   client leaves. */
+static bool s_ap_channel_stale;
+
 static void sync_ap_channel_to_sta(void)
 {
     wifi_mode_t mode;
@@ -649,6 +699,17 @@ static void sync_ap_channel_to_sta(void)
     if (esp_wifi_get_config(WIFI_IF_AP, &ap_cfg) == ESP_OK &&
         ap_cfg.ap.channel != ap_info.primary)
     {
+        if (s_status.ap_station_count > 0)
+        {
+            ESP_LOGD(TAG, "AP config stays on channel %d while %u clients "
+                          "are on it (the radio is on %d)",
+                     ap_cfg.ap.channel, s_status.ap_station_count,
+                     ap_info.primary);
+            s_ap_channel_stale = true;
+            return;
+        }
+
+        s_ap_channel_stale = false;
         ESP_LOGI(TAG, "moving AP to STA channel %d", ap_info.primary);
         ap_cfg.ap.channel = ap_info.primary;
         esp_wifi_set_config(WIFI_IF_AP, &ap_cfg);
@@ -1001,6 +1062,14 @@ static void wm_event_handler(void *arg, esp_event_base_t base,
                 if (s_callbacks.ap_station_disconnected != NULL)
                 {
                     s_callbacks.ap_station_disconnected(e->mac, e->aid);
+                }
+
+                /* the AP config catches up with the radio's channel once
+                   nobody is on the AP to be kicked by the write */
+                if (s_status.ap_station_count == 0 && s_ap_channel_stale &&
+                    s_status.sta_connected)
+                {
+                    sync_ap_channel_to_sta();
                 }
                 break;
             }
@@ -1481,7 +1550,7 @@ esp_err_t wifi_manager_start(void)
            (each candidate carries its own static/DHCP choice) */
         if (cfg->sta_count > 0)
         {
-            apply_sta_network(cfg, 0);
+            apply_sta_network(cfg, 0, 0);
         }
     }
 

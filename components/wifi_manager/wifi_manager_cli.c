@@ -243,7 +243,8 @@ static int cmd_wifi(int argc, char **argv)
            UI polls GET /api/wifi/try instead) */
         const char *pw = s_args.try_pw->count > 0 ? s_args.try_pw->sval[0]
                                                   : "";
-        esp_err_t err = wifi_manager_sta_try(s_args.try_ssid->sval[0], pw);
+        esp_err_t err = wifi_manager_sta_try(s_args.try_ssid->sval[0], pw,
+                                             0); /* all channels */
 
         if (err == ESP_ERR_INVALID_ARG)
         {

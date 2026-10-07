@@ -35,6 +35,7 @@
  */
 #include "wifi_manager.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #include "esp_log.h"
@@ -111,7 +112,8 @@ static void timer_run(bool on)
 /* the one place a trial's connect attempt is issued */
 static void act_connect(void)
 {
-    esp_err_t err = wm_sta_apply_trial(s_trial.ssid, s_trial.password);
+    esp_err_t err = wm_sta_apply_trial(s_trial.ssid, s_trial.password,
+                                       s_trial.hint);
 
     if (err == ESP_OK)
     {
@@ -345,11 +347,13 @@ bool wm_try_on_got_ip(const char *ip)
 
 /* ---- the public surface ------------------------------------------------------ */
 
-esp_err_t wifi_manager_sta_try(const char *ssid, const char *password)
+esp_err_t wifi_manager_sta_try(const char *ssid, const char *password,
+                               uint8_t channel)
 {
     const wm_config_t *cfg = wm_settings_config();
     wm_trial_action_t act;
     bool busy;
+    char hint[24] = "";
 
     if (ssid == NULL || password == NULL)
     {
@@ -396,7 +400,7 @@ esp_err_t wifi_manager_sta_try(const char *ssid, const char *password)
     }
 
     s_leave_pending = false; /* a letting-go that never came is forgotten */
-    act = wm_trial_begin(&s_trial, ssid, password, busy, now_ms());
+    act = wm_trial_begin(&s_trial, ssid, password, channel, busy, now_ms());
 
     if (!wm_trial_active(&s_trial))
     {
@@ -404,9 +408,20 @@ esp_err_t wifi_manager_sta_try(const char *ssid, const char *password)
         return ESP_ERR_INVALID_ARG; /* the credentials are out of range */
     }
 
+    if (s_trial.hint != 0)
+    {
+        snprintf(hint, sizeof(hint), " (channel %u first)", s_trial.hint);
+    }
+
     unlock();
 
-    ESP_LOGI(TAG, "trying '%s' on request%s", ssid,
+    if (busy)
+    {
+        wm_sta_note_rejoin_hint(); /* the re-join after the trial scans
+                                      the channel it is leaving first */
+    }
+
+    ESP_LOGI(TAG, "trying '%s' on request%s%s", ssid, hint,
              busy ? " (the station lets go of its network first)" : "");
     s_start_act = act;
     s_start_busy = busy;

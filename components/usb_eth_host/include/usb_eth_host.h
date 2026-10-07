@@ -114,6 +114,21 @@ bool usb_eth_host_get_active_ifkey(char *ifkey, size_t ifkey_len);
 // ESPNetLink dongle is 0x303A:0x4007). False when no driver is active.
 bool usb_eth_host_get_active_device_ids(uint16_t *vid, uint16_t *pid);
 
+// The enumerated device itself, whatever its class (2026-10-07): a GNSS
+// receiver bound as CDC-ACM (u-blox 1546:01a7), a memory stick nobody
+// binds. From CherryUSB's mount hook; false when nothing is enumerated.
+typedef struct
+{
+    uint16_t vid;
+    uint16_t pid;
+    uint8_t  dev_class;    /* bDeviceClass (0 = per interface)          */
+    uint8_t  intf_class;   /* the first interface's bInterfaceClass     */
+    uint8_t  interfaces;
+    char     product[48];  /* the product string, "" when it has none   */
+} usb_eth_host_device_t;
+
+bool usb_eth_host_get_attached_device(usb_eth_host_device_t *out);
+
 // Reports the RNDIS media/carrier state as last seen by the class driver.
 // Returns ESP_ERR_NOT_FOUND if no RNDIS device is attached.
 esp_err_t usb_eth_host_rndis_get_link(bool *connected);

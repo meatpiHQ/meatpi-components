@@ -19,6 +19,7 @@ as lwIP's resolver 0 and re-asserted by a 5 s guard.
 | `usb_eth_host_driver_is_allowed(d)`, `_driver_to_str(d)` | Runtime driver mask. |
 | `usb_eth_host_get_active_driver(&d)`, `_get_active_ifkey(buf,len)` | Which class is bound and its netif key (→ `esp_netif_get_handle_from_ifkey`). |
 | `usb_eth_host_get_active_device_ids(&vid,&pid)` | (2026-08-24) `idVendor`/`idProduct` of the device behind the active driver: the ESPNetLink is `303A:4007`. False when none. |
+| `usb_eth_host_get_attached_device(&dev)` | (2026-10-07) the enumerated device itself, whatever its class: ids, the device and first-interface classes, the product string ("" on this port). From CherryUSB's mount / unmount hooks (`usb_eth_host_device.c`, MeatPi additions to the vendored core, see `cherryusb/PROVENANCE.md`); a u-blox receiver bound as CDC-ACM or a memory stick nobody binds had no ids before. False when nothing is enumerated. |
 | `usb_eth_host_rndis_get_link(&up)` | RNDIS carrier state. |
 | `usb_eth_host_get_netif_config()`, `_netif_apply(ifkey,cfg)` | The netif config in force / re-apply to a live netif. |
 

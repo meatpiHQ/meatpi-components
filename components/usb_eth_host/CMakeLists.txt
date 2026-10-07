@@ -1,5 +1,6 @@
 idf_component_register(
     SRCS "usb_eth_host.c"
+         "usb_eth_host_device.c"
          "usb_eth_netif_glue.c"
          "usb_eth_rtl8152.c"
          "usb_eth_asix.c"

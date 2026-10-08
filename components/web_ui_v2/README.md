@@ -614,11 +614,12 @@ within a second instead of three seconds of silence; **the phone's mobile data**
 2026-10-08, "ask the user to shut down his 5G/4G before they continue": when the page rides
 the access point, `onAp()`, the settings' `ap_ip`): the first screen asks for mobile data
 off before the three rules (the two pauses ahead, Settings > Mobile data or Cellular, a
-computer has nothing to turn off), and the WiFi step carries a tick "Mobile data is off on
-this phone" naming the network and the access point that gates Test and continue until
-ticked (kept for the visit, gone while the test runs and after a pass); the Trying card says
-the phone may drop off the access point for a few seconds and rejoin by itself; **after it
-joins** (Ali, 2026-10-07): Station only, recommended and the default on a fresh device, or
+computer has nothing to turn off), and Test and continue opens the page's popup once per
+visit (the phone icon, "Make sure mobile data is off on this phone", the why with the
+network's and the access point's names, where the switch is, one Continue that starts the
+test; a tap beside it closes it without testing; Ali asked for the popup after seeing a tick
+on his phone); the Trying card says the phone may drop off the access point for a few
+seconds and rejoin by itself; **after it joins** (Ali, 2026-10-07): Station only, recommended and the default on a fresh device, or
 Access point + Station, which reveals "turn the access point off while WiCAN is on X",
 ticked by default (`wifi_manager.mode` sta / apsta, `ap_auto_disable`); a configured device
 already running AP + Station with a network keeps that choice as the default of a re-run;

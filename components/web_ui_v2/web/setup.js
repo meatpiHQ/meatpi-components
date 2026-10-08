@@ -38,7 +38,7 @@ const SKIP_KEY="wican-setup-skip";
 
 /* wizard state: survives in-page navigation and re-routes (module scope),
    not a reload on another address (the second half reads the device) */
-const W={cur:null,use:"ha",agree:[false,false,false],haInstalled:false,mdata:false,
+const W={cur:null,use:"ha",agree:[false,false,false],haInstalled:false,mdataOk:false,
   apPw:"",apPw2:"",showPw:false,
   ssid:"",wifiAuth:"",wifiPw:"",manual:false,nets:null,scanErr:null,
   /* after it joins (2026-10-07): "sta" = Station only (recommended), "apsta"
@@ -157,6 +157,7 @@ const CSS=`
 .qs-pop{display:flex;gap:18px;align-items:flex-start}
 .qs-pop .ci{width:56px;height:56px;border-radius:50%;display:grid;place-items:center;background:var(--success);color:#fff;flex:none}
 .qs-pop .ci svg{width:30px;height:30px;stroke-width:3}
+.qs-pop .ci.info{background:var(--primary)}
 .qs-pop h3{margin:0 0 10px;font-size:21px;line-height:1.25}
 .qs-pop p{margin:0 0 10px;font-size:15px;line-height:1.55}
 .qs-pop p.help{font-size:14px;margin-top:4px}
@@ -453,10 +454,6 @@ SCREENS.wifi=async()=>{
   const pwLabel=h("label",{for:"qs-wifi-pw"},"Password");
   const pwHelp=h("div",{class:"help"});
   const testBox=h("div",{});
-  /* the phone's mobile data once more, where it bites: the test moves the
-     radio to the network's channel and the phone drops off the access point
-     for a few seconds (over the access point only, until a pass) */
-  const dataBox=h("div",{});
   /* after it joins (Ali, 2026-10-07): Station only, recommended, or Access
      point + Station with the access point off while WiCAN is on the network
      (wifi_manager's ap_auto_disable, back whenever the station is lost). A
@@ -481,7 +478,21 @@ SCREENS.wifi=async()=>{
      for these very credentials is remembered, so Back and forth does not
      retest; a blank password that keeps the stored one cannot be tested. */
   const passed=()=>!!(W.tested&&W.tested.ssid===W.ssid&&W.tested.pw===W.wifiPw);
-  const next=btn("Test and continue",()=>{if(passed()||(W.ssid===stored&&!W.wifiPw))go("usb");else testWifi();},"pri",{icon:"wifi"});
+  /* the phone's mobile data, asked once per visit at the moment it matters
+     (Ali, 2026-10-08, after the tick on his phone: "a pop up when the user
+     clicks Test and continue: make sure your mobile data is off, and a
+     continue button"); over the access point only, where the first screen
+     said it in full. The press is the user's: Continue starts the test. */
+  const askMobileData=()=>{
+    modal({title:null,
+      body:h("div",{class:"qs-pop"},h("span",{class:"ci info"},ic("phone")),
+        h("div",{},h("h3",{},"Make sure mobile data is off on this phone"),
+          h("p",{},"The test moves WiCAN's radio to "+(W.ssid||"the network")+"'s channel: your phone drops off "+apName()+" for a few seconds and rejoins by itself, unless mobile data (or another saved network) pulls it away."),
+          h("p",{class:"help"},"Settings > Mobile data (Cellular on some phones). Nothing to do on a computer."))),
+      actions:[{label:"Continue",kind:"pri",fn:()=>{W.mdataOk=true;testWifi();}}]});
+    const m=document.querySelector("#modal-root .modal");if(m)m.classList.add("qs-pop-modal");
+  };
+  const next=btn("Test and continue",()=>{if(passed()||(W.ssid===stored&&!W.wifiPw))go("usb");else if(onAp()&&!W.mdataOk)askMobileData();else testWifi();},"pri",{icon:"wifi"});
   const selNet=()=>(W.nets||[]).find(n=>n.ssid===W.ssid);
   const update=()=>{
     const n=selNet();const open=n?isOpen(n):false;W.wifiAuth=n?netAuth(n):"";
@@ -492,10 +503,7 @@ SCREENS.wifi=async()=>{
       :"WiCAN treats this network as trusted: you can manage it from any device on it.");
     openWarn.replaceChildren(open?banner("crit","alert",h("b",{},W.ssid+" has no password."),
       " Quick Setup does not join open networks: anyone nearby could reach WiCAN. Pick a protected network."):null);
-    const askData=onAp()&&!passed()&&!keep;
-    dataBox.replaceChildren(askData?h("label",{class:"qs-agree"},h("input",{type:"checkbox",id:"qs-mdata",checked:W.mdata,onchange:e=>{W.mdata=e.target.checked;update();}}),
-      h("div",{},h("b",{},"Mobile data is off on this phone"),h("span",{},"The test moves WiCAN's radio to "+(W.ssid||"the network")+"'s channel: your phone drops off "+apName()+" for a few seconds and rejoins by itself, unless mobile data (or another saved network) pulls it away. Nothing to do on a computer: tick and go on."))):null);
-    next.disabled=!W.ssid||open||!(W.wifiPw.length>=8||keep)||(askData&&!W.mdata);
+    next.disabled=!W.ssid||open||!(W.wifiPw.length>=8||keep);
     next.replaceChildren(ic(passed()||keep?"check":"wifi"),passed()||keep?"Continue":"Test and continue");
     list.querySelectorAll(".qs-net").forEach(el=>el.classList.toggle("sel",el.dataset.ssid===W.ssid));
     paintMode();};
@@ -510,7 +518,6 @@ SCREENS.wifi=async()=>{
     if(!resume){W.tested=null;W.testNote=null;W.testing={ssid,pw,t0:Date.now()};}
     pwInp.classList.remove("qs-bad");
     next.disabled=true;next.replaceChildren(h("span",{class:"qs-spin",style:"width:14px;height:14px;border-width:2px"}),"Testing");
-    dataBox.replaceChildren();
     const cw=conn.wifi||{};
     const overSta=!!(cw.sta_connected&&location.hostname!==(cw.ap_ip||"192.168.0.10"));
     testBox.replaceChildren(check("run",null,"Trying "+ssid,["Up to 20 seconds. WiCAN joins ",h("b",{},ssid)," with this password and lets go again; nothing is saved. ",
@@ -590,7 +597,7 @@ SCREENS.wifi=async()=>{
     [h("div",{class:"rowflex",style:"flex-wrap:wrap"},count,grow(),rescan),list,openWarn,
      h("details",{class:"qs-details",open:W.manual||null},h("summary",{},"Network not listed? Enter it by hand"),
        row("Network name (SSID)",manual,"Hidden networks and 5 GHz-only names do not appear in the scan. WiCAN connects on 2.4 GHz.")),
-     h("div",{class:"qs-row"},pwLabel,h("div",{class:"ctl"},pwInp),pwHelp),modeBox,dataBox,testBox],
+     h("div",{class:"qs-row"},pwLabel,h("div",{class:"ctl"},pwInp),pwHelp),modeBox,testBox],
     [back("ap"),grow(),next]);
   if(W.nets)render();else{W.nets=null;render();scan();}
   /* a test that was running when this screen was rebuilt (the AP's blink

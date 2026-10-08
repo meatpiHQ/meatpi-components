@@ -10,5 +10,6 @@
     # httpd_uri_t / httpd_handle_t.
     REQUIRES esp_http_server
     # file serving goes through the filesystem component (only the .c uses it)
-    PRIV_REQUIRES filesystem log_manager settings_manager
+    # esp_app_format: the firmware build's ELF hash in the embedded assets' ETag
+    PRIV_REQUIRES filesystem log_manager settings_manager esp_app_format
 )

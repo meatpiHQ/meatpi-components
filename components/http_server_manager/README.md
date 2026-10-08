@@ -48,9 +48,15 @@ GET /nope            → catch-all → no table entry → 404
 ```
 
 Serving details: query strings/fragments are stripped before matching; `/` maps
-to `/index.html`; responses carry `Cache-Control: public, max-age=3600` and a
-weak `ETag` (size+mtime; size-only for embedded), with `If-None-Match` answered
-by `304`. Filesystem files stream in 4 KB chunks.
+to `/index.html`; embedded assets (the UI itself) carry `Cache-Control:
+no-cache` (cached, asked about on every load) and a weak `ETag` of size plus
+the firmware build's ELF hash prefix (`W/"97be-3f0a1c22"`), so a new firmware
+shows its page at once and an unchanged one answers `304` (2026-10-08, after
+"flashed a new device but the changes did not take effect": the old
+`max-age=3600` with a size-only ETag kept a browser on the previous build's
+page for an hour at the same address); files on the filesystem keep
+`public, max-age=3600` with a size+mtime `ETag`; `If-None-Match` is answered
+by `304` either way. Filesystem files stream in 4 KB chunks.
 
 ## Dependencies
 
@@ -87,9 +93,10 @@ component, not to this server, see ARCHITECTURE.md §9.)
   serve-path-only change.
 - **GET only** on the catch-all. Other methods on asset URIs 404 through httpd's
   method matching; API routes declare their own methods.
-- **ETag is identity-weak** (size+mtime). Two different files with identical
-  size and mtime would collide: acceptable for firmware assets, not
-  cryptographic.
+- **ETag is identity-weak** (size+mtime for filesystem files, size+build hash
+  prefix for embedded ones). Two filesystem files with identical size and
+  mtime would collide: acceptable for fetched library assets, not
+  cryptographic. Embedded assets no longer collide across builds.
 - **`HSM_PATH_MAX` is 192**: URI + resolved FS path must fit; over-long
   requests are rejected with 400, over-long resolved paths don't match.
 - **Traversal is rejected** by substring (`..` anywhere in the URI). Encoded

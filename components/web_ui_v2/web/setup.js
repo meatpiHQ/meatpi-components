@@ -1223,7 +1223,14 @@ SCREENS.vehicle=async()=>{
         {const sup=(r.supported||[]).map(x=>norm(x.cmd));
          const cfgNow=await tryGet("/api/autopid/config");
          const inCfg=new Set(((cfgNow&&cfgNow.pids)||[]).filter(x=>x&&x.type==="std").map(x=>norm(x.cmd)));
-         W.stdDefault=W.veh.dialect==="j1939"?sup:list0.some(x=>x.key===W.veh.key)?sup.filter(c=>inCfg.has(c)):[];}
+         /* the default choice (2026-10-09, after "none chosen" came back as "16 of
+            16 chosen"): a car set up before comes with its current rows ticked; a
+            car whose setup never finished (pending_profile: the device stored its
+            rows at the detection, nobody chose them) starts with none, like a new
+            car, so a page reload between the detection and Finish cannot turn none
+            into all. A J1939 vehicle's groups are heard, not asked: all of them. */
+         const setUp=list0.some(x=>x.key===W.veh.key)&&W.veh.pending_profile!==true;
+         W.stdDefault=W.veh.dialect==="j1939"?sup:setUp?sup.filter(c=>inCfg.has(c)):[];}
         await loadProfiles();
         W.vehPhase="result";render();
       });
@@ -1546,6 +1553,9 @@ SCREENS.polling=async()=>{
     out.push(sub("3. What to read"));
     const nSup=(W.veh&&W.veh.std_supported)||0,nStd=(W.stdPick||W.stdDefault||[]).length;
     if(!nStd)p.std=false;
+    /* a choice made on the vehicle step this session reads (once per pick; the
+       device's switch may well be off after an earlier "none chosen", 2026-10-09) */
+    else if(W.stdPick&&W.stdPick.length&&p.stdPickedFor!==W.stdPick){p.std=true;p.stdPickedFor=W.stdPick;}
     out.push(sw("qs-std","Standard PIDs",nStd?"The "+nStd+" of the "+nSup+" the scan found that you chose on the vehicle step.":"None chosen on the vehicle step (the scan found "+nSup+"). Go back to choose some, or add them later under Automate > Parameters.",p.std,!nStd,v=>{p.std=v;render();}));
     out.push(sw("qs-specific","Vehicle-specific values",hasProfile?"Battery state of charge, charging power and the other values your profile knows how to ask for.":"No profile chosen for this car yet. Pick one on the previous step, or later under Automate > Parameters.",hasProfile&&p.specific,!hasProfile,v=>{p.specific=v;render();}));
     out.push(sub("4. Trouble codes"));
@@ -1593,13 +1603,25 @@ async function finishVehicle(finishBtn,errEl,maxName){
        (a new car starts with none: Ali, 2026-10-07). The firmware stored
        every row the scan found, a firmware without the store none: drop
        what was not chosen, add what is missing */
+    const norm=c=>String(c||"").replace(/\s+/g,"").toUpperCase();const want=new Set(W.stdPick||W.stdDefault||[]);
     if(W.scanResult&&W.scanResult.supported){
-      const norm=c=>String(c||"").replace(/\s+/g,"").toUpperCase();const want=new Set(W.stdPick||W.stdDefault||[]);
       cfg.pids=cfg.pids.filter(pd=>pd.type!=="std"||want.has(norm(pd.cmd)));
       const have=new Set(cfg.pids.map(x=>norm(x.cmd)));
       for(const rw of W.scanResult.supported){const c=norm(rw.cmd);if(!want.has(c)||have.has(c))continue;have.add(c);
         cfg.pids.push({name:rw.name,cmd:rw.cmd,group:"default",period_ms:0,type:"std",parameters:(rw.parameters||[]).map(x=>({...x}))});}
+    }else if(!want.size){
+      /* no detection this session and nothing chosen (2026-10-09): on a car
+         whose setup never finished the standard rows were stored by the
+         device at its detection, nobody chose them: they leave too. A car
+         set up before keeps its rows (an earlier choice). The store is read
+         here when the wizard resumed past the vehicle step. */
+      const vs=D.vehicles||(D.vehicles=await tryGet("/api/autopid/vehicles"));
+      const cur=(vs&&Array.isArray(vs.vehicles))?vs.vehicles.find(x=>x&&x.current):null;
+      if(cur&&cur.pending_profile===true)cfg.pids=cfg.pids.filter(pd=>pd.type!=="std");
     }
+    /* a chosen row reads: the device stores a new car's rows off while the
+       standard PIDs are off (2026-10-09), the tick turns them on */
+    for(const pd of cfg.pids){if(pd.type==="std"&&want.has(norm(pd.cmd)))delete pd.enabled;}
     cfg.groups[0].period_ms=Math.max(1,rateS)*1000;
     for(const pd of cfg.pids){if(pd.period_ms===oldPeriod||pd.period_ms===1000)pd.period_ms=0;}
     /* no parameter name twice in what is sent: the firmware refuses a repeat

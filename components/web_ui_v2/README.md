@@ -705,10 +705,14 @@ beside the values, no pills, 2026-10-07), a "Welcome back" card for a known car;
 chooses what WiCAN reads): Choose PIDs opens the page's standard-PID picker
 (`pickStdRows()` in index.html, the one Automate > Parameters opens on a scan: a scrollable
 list, tick | request | name | unit, Select all, Clear, a count, Add selected), nothing
-ticked for a new car, a car the store already had comes with its current rows ticked
+ticked for a new car, a car SET UP before comes with its current rows ticked
 (`W.stdDefault` = the config's std rows after the scan, since a re-scan keeps a known car's
 own tables; `W.stdPick` once the picker was used), none is allowed and Continue does not
-wait for it; the card's Standard PIDs row says "N chosen" / "none chosen yet"; a J1939-only
+wait for it. A car the store has but whose setup never finished (`pending_profile`: the
+device stored its rows at the detection, nobody chose them) starts with none like a new car
+(2026-10-09, after Ali's "none chosen, later all enabled": a page reload between the
+detection and Finish, then Detect again, had pre-ticked every stored row); the card's
+Standard PIDs row says "N chosen" / "none chosen yet"; a J1939-only
 vehicle has no requests and no section 2; then the profile as section 3: suggestions
 filtered by the VIN's manufacturer code (the `WMI`
 table in setup.js), the shared `vehicleProfilePicker()` for the rest, "keep it without a
@@ -723,7 +727,10 @@ profile, specific_init} (empty profile = the chosen standard PIDs only), `PUT
 every row the scan found under a new car; a chosen row the config lacks is added from the
 scan, one row per request, so a request the profile already carries is not added twice; a
 car switch snapshots the result into the car's file, so the choice comes back with the car;
-no firmware change), the profile's rows via `profileToPids()`, custom rows kept, staged
+since 2026-10-09 a chosen row loses a stored `enabled: false` (the firmware stores a new
+car's rows off, every one: nothing reads until ticked), and a Finish without a detection this
+session with nothing chosen cuts the standard rows of a car whose setup never finished,
+while a car set up before keeps its rows), the profile's rows via `profileToPids()`, custom rows kept, staged
 autopid {enabled, std_protocol "0", vehicle, specific_init} through `store.commit()`),
 Battery and sleep (2026-10-01 night, Ali:
 the Power Saving pair measured on the car. `GET /api/battery` once a second into a 90 s SVG
@@ -749,12 +756,13 @@ off = pause with Power Saving (`pause_follow_sleep`, the sleep voltage quoted fr
 `/api/settings/sleep_manager`) / below a chosen voltage (`pause_below_mv`, 12 to 14.5 V) /
 never (battery warning), `pause_mode` as "while paused, also stop listening", the Standard
 PIDs switch reading the vehicle step's choice ("The N of the M the scan found that you
-chose"; off and greyed with none chosen) and the vehicle-specific one (greyed without a
+chose"; off and greyed with none chosen; on once a pick was made this session even when the
+device has the standard set off, 2026-10-09) and the vehicle-specific one (greyed without a
 profile); the Custom PIDs switch left the wizard on 2026-10-07 (Ali) and `custom_enabled`
 stays as the device has it; trouble codes (`dtc_enabled` + `dtc_scan_period_min`); Finish
 lives here now and stages it all),
 Done (addresses, states, the reading rules, the sleep-off note, where to go next). Wizard state lives in the
-chunk; the second half rebuilds from device state. Probe: `probe_setup.mjs`.
+chunk; the second half rebuilds from device state. Probes: `probe_setup.mjs`, `probe_std_choice.mjs` (2026-10-09: the standard PIDs stay the user's choice through a reload, a re-detection, a skipped detection and a Finish from the URL).
 · Status (stat cards + network/system tables; a Quick Setup pointer while AutoPID is off) · Settings (WiFi/AP
 · Station & Bluetooth w/ scan · CAN · MQTT) · Automate (autopid
 polling switch + pause rules · PID groups with their own

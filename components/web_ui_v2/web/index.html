@@ -2812,7 +2812,7 @@ PAGES.automate=async(view,sub)=>{
       return h("div",{},groupHead("std"),jl,tbl,
         h("div",{class:"rowflex",style:"gap:8px;margin-top:12px;flex-wrap:wrap"},
           scanBtn,lastBtn,h("span",{class:"grow"}),applyBtn),
-        note("","SAE-standard PIDs the vehicle reports as supported, and on a J1939 vehicle the standard groups its controllers broadcast. Scan discovers them and fills in the decode automatically; hand-written requests belong on the Custom PIDs tab."));
+        note("","SAE-standard PIDs the vehicle reports as supported, and on a J1939 vehicle the standard groups its controllers broadcast. Scan discovers them and fills in the decode automatically; hand-written requests belong on the Custom PIDs tab. Rows WiCAN stored by itself when it first met the vehicle start switched off: tick the ones to read, then Apply Configuration."));
     }
     function custPane(){
       const tbl=pidTable("custom","No custom PIDs. Add PID to poll any request with your own decode expression");

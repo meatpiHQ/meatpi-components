@@ -121,6 +121,10 @@ bench weeks later.
   code per boot (recurrences count in RAM). This feature must never
   become the wear bug it guards against.
 - Raise: `dev_status_manager_fault_raise(code, detail)` from any task.
+- Clear one: `dev_status_manager_fault_clear(code)` (2026-10-10): the boot
+  that follows a partition table migration drops `boot_errors`, latched
+  by the boots that could not persist (main.c); `ESP_ERR_NOT_FOUND` and
+  no NVS write when the code is not latched.
   The composition root raises `boot_errors` (any ESP_LOGE during boot:
   the generic net over every silent degradation), `registry_headroom`
   (a bounded table within 2 of full), `boot_flash_budget` (>64 erases

@@ -240,6 +240,11 @@ int dev_status_manager_faults(dev_status_fault_t *out, int cap);
 /** The manual clear (the "mode 04"). */
 esp_err_t dev_status_manager_faults_clear(void);
 
+/** Drop ONE latched code (2026-10-10: the boot after a partition table
+ *  migration drops `boot_errors`, latched while the settings partition
+ *  was missing). ESP_ERR_NOT_FOUND when it is not latched: no NVS write. */
+esp_err_t dev_status_manager_fault_clear(const char *code);
+
 /* ---- task monitoring (2026-07-08) ------------------------------------------ */
 
 /** One task's live stats. `stack_hw` is stack that was NEVER used (bytes;

@@ -227,3 +227,51 @@ esp_err_t dev_status_manager_faults_clear(void)
     ESP_LOGI(TAG, "fault codes cleared");
     return ESP_OK;
 }
+
+esp_err_t dev_status_manager_fault_clear(const char *code)
+{
+    int at = -1;
+
+    if (code == NULL || code[0] == '\0')
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (s_fault_lock == NULL)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    xSemaphoreTake(s_fault_lock, portMAX_DELAY);
+
+    for (int i = 0; i < s_fault_count; i++)
+    {
+        if (strcmp(s_faults[i].code, code) == 0)
+        {
+            at = i;
+            break;
+        }
+    }
+
+    if (at < 0)
+    {
+        xSemaphoreGive(s_fault_lock);
+        return ESP_ERR_NOT_FOUND;       /* nothing latched: no NVS write */
+    }
+
+    /* close the gap; the persisted-this-boot bits above it move down too */
+    for (int i = at; i + 1 < s_fault_count; i++)
+    {
+        s_faults[i] = s_faults[i + 1];
+    }
+
+    s_fault_count--;
+    memset(&s_faults[s_fault_count], 0, sizeof(s_faults[0]));
+    s_persisted_this_boot = (s_persisted_this_boot & ((1U << at) - 1U)) |
+                            ((s_persisted_this_boot >> (at + 1)) << at);
+    faults_save();
+    xSemaphoreGive(s_fault_lock);
+
+    ESP_LOGI(TAG, "fault code '%s' cleared", code);
+    return ESP_OK;
+}

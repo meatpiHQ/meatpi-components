@@ -383,5 +383,10 @@ void test_brake_record_fields_and_names(void)
         "park_retry", restart_tracker_planned_reason_to_str(
                           RESTART_TRACKER_PLANNED_REASON_PARK_RETRY));
     TEST_ASSERT_EQUAL_STRING(
+        "partition_migrate", restart_tracker_planned_reason_to_str(
+                                 RESTART_TRACKER_PLANNED_REASON_PARTITION_MIGRATE));
+    TEST_ASSERT_EQUAL_STRING(
+        "boot", restart_tracker_source_to_str(RESTART_TRACKER_SOURCE_BOOT));
+    TEST_ASSERT_EQUAL_STRING(
         "park", restart_tracker_source_to_str(RESTART_TRACKER_SOURCE_PARK));
 }

@@ -45,9 +45,12 @@ device instead of starting it again (the crash-loop brake).
 Reasons: none / user_request / config_apply / config_recovery / ota_apply /
 factory_reset / safe_mode / power_wake / internal_recovery / periodic_wake
 (sleep_manager's check-in, 2026-09-07: before that it was filed as
-power_wake) / park_retry (a parked device starts again, 2026-10-05).
+power_wake) / park_retry (a parked device starts again, 2026-10-05) /
+partition_migrate (the partition table in flash was rewritten with this
+build's, 2026-10-10: `partition_migrate`, by `main_boot_layout()`).
 Sources: web_ui / cmdline / console / mqtt / ota / safe_mode / config_server
-/ sleep_mode / button / pairing / park (the crash park's own timer).
+/ sleep_mode / button / pairing / park (the crash park's own timer) / boot
+(the boot path itself: the partition migration restart).
 
 ## The crash note
 

@@ -74,6 +74,9 @@ typedef enum
     /* a device the crash-loop brake had parked starts again: the park's
        timer or the button (2026-10-05). Appended, as above. */
     RESTART_TRACKER_PLANNED_REASON_PARK_RETRY,
+    RESTART_TRACKER_PLANNED_REASON_PARTITION_MIGRATE, /* the partition table
+                                                         was rewritten with this
+                                                         build's (2026-10-10)  */
 } restart_tracker_planned_reason_t;
 
 typedef enum
@@ -90,6 +93,7 @@ typedef enum
     RESTART_TRACKER_SOURCE_BUTTON,   /* config-mode timeout (2026-07-19) */
     RESTART_TRACKER_SOURCE_PAIRING,  /* espnetlink_link zero-touch pairing */
     RESTART_TRACKER_SOURCE_PARK,     /* the crash park's own timer         */
+    RESTART_TRACKER_SOURCE_BOOT,     /* the boot path itself (partition_migrate) */
 } restart_tracker_source_t;
 
 /** How a boot ran: the whole firmware, or one of the minimal modes. */

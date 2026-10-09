@@ -237,6 +237,7 @@ const char *restart_tracker_planned_reason_to_str(restart_tracker_planned_reason
         case RESTART_TRACKER_PLANNED_REASON_INTERNAL_RECOVERY: return "internal_recovery";
         case RESTART_TRACKER_PLANNED_REASON_PERIODIC_WAKE:     return "periodic_wake";
         case RESTART_TRACKER_PLANNED_REASON_PARK_RETRY:        return "park_retry";
+        case RESTART_TRACKER_PLANNED_REASON_PARTITION_MIGRATE: return "partition_migrate";
         default:                                               return "invalid";
     }
 }
@@ -257,6 +258,7 @@ const char *restart_tracker_source_to_str(restart_tracker_source_t source)
         case RESTART_TRACKER_SOURCE_BUTTON:        return "button";
         case RESTART_TRACKER_SOURCE_PAIRING:       return "pairing";
         case RESTART_TRACKER_SOURCE_PARK:          return "park";
+        case RESTART_TRACKER_SOURCE_BOOT:          return "boot";
         default:                                   return "invalid";
     }
 }

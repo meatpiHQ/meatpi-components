@@ -140,6 +140,9 @@ delivered as their `*_to_str` names, never raw numbers.
   the wall clock wasn't set yet (pre-NTP boot).
 - `reason` values: `poweron, external, software, panic, deepsleep, brownout,
   interrupt_wdt, task_wdt, wdt, sdio, unknown`.
+- `planned_reason` values include `partition_migrate` (2026-10-10): the boot
+  before it rewrote the partition table in flash with this build's (a unit
+  updated by OTA from the factory firmware), `source` `boot`.
 - `planned_reason` values include `park_retry` (2026-10-05): a parked device
   started again, by `source` `park` (its timer) or `button`.
 - After a power cycle the ring restarts (PSRAM `.noinit` is only warm-reset

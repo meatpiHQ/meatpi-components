@@ -34,6 +34,9 @@
  *   uds    `22F400` .. `22F4E0` with headers ON: every ECU's bitmaps are
  *          kept apart, and each row is given to the LOWEST responder that
  *          has the PID (ap_dialect_pid_owner), addressed physically.
+ *
+ * The rows as a new car's tables document live in autopid_scan_rows.c
+ * (pure, host-tested) since 2026-10-09.
  */
 #include <stdlib.h>
 #include <string.h>
@@ -132,57 +135,4 @@ bool ap_scan_walk(ap_dialect_t dialect, cJSON *supported, uint16_t *found,
     }
 
     return any_response;
-}
-
-char *ap_scan_rows_config(const cJSON *supported)
-{
-    cJSON *root = cJSON_CreateObject();
-    char *body = NULL;
-
-    if (root == NULL)
-    {
-        return NULL;
-    }
-
-    cJSON_AddArrayToObject(root, "groups");
-
-    cJSON *pids = cJSON_AddArrayToObject(root, "pids");
-    const cJSON *e = NULL;
-
-    cJSON_ArrayForEach(e, supported)
-    {
-        const cJSON *name = cJSON_GetObjectItemCaseSensitive(e, "name");
-        const cJSON *cmd = cJSON_GetObjectItemCaseSensitive(e, "cmd");
-        const cJSON *init = cJSON_GetObjectItemCaseSensitive(e, "init");
-        const cJSON *prm = cJSON_GetObjectItemCaseSensitive(e, "parameters");
-        cJSON *pid = cJSON_CreateObject();
-
-        if (pids == NULL || pid == NULL || !cJSON_IsString(name) ||
-            !cJSON_IsString(cmd))
-        {
-            cJSON_Delete(pid);
-            continue;
-        }
-
-        cJSON_AddStringToObject(pid, "name", name->valuestring);
-        cJSON_AddStringToObject(pid, "type", "std");
-        cJSON_AddStringToObject(pid, "cmd", cmd->valuestring);
-
-        if (cJSON_IsString(init) && init->valuestring[0] != '\0')
-        {
-            /* the row's ECU (a UDS-dialect car) */
-            cJSON_AddStringToObject(pid, "init", init->valuestring);
-        }
-
-        cJSON_AddStringToObject(pid, "group", "default");
-        cJSON_AddItemToObject(pid, "parameters",
-                              cJSON_IsArray(prm) ? cJSON_Duplicate(prm, true)
-                                                 : cJSON_CreateArray());
-        cJSON_AddItemToArray(pids, pid);
-    }
-
-    cJSON_AddArrayToObject(root, "filters");
-    body = cJSON_PrintUnformatted(root);
-    cJSON_Delete(root);
-    return body;
 }

@@ -30,6 +30,8 @@ void run_resp_lines_tests(void);
 void run_j1939_rows_tests(void);
 /* test_names.c: parameter names made unique, and the SAE table clean of repeats */
 void run_names_tests(void);
+/* test_scan_rows.c: the detection's rows as a new car's tables, on or off */
+void run_scan_rows_tests(void);
 
 /* ---- helpers ----------------------------------------------------------------- */
 
@@ -2064,6 +2066,7 @@ void app_main(void)
     run_names_tests();
     run_resp_lines_tests();
     run_j1939_rows_tests();
+    run_scan_rows_tests();
 
     UNITY_END();
 }

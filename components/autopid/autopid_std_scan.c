@@ -295,6 +295,8 @@ static void scan_store(cJSON *root, const cJSON *supported,
     /* whatever the table says, no parameter name twice in what is stored
        (the result document and the car's rows alike) */
     int renamed = ap_names_dedupe((cJSON *)supported);
+    /* a new car's rows are stored OFF: nothing is read until the user
+       ticks the ones they want (Ali, 2026-10-09) */
     char *tables = ap_scan_rows_config(supported);
     esp_err_t err = ESP_ERR_NO_MEM;
 
@@ -318,6 +320,14 @@ static void scan_store(cJSON *root, const cJSON *supported,
         cJSON_AddStringToObject(root, "key", entry.key);
         cJSON_AddBoolToObject(root, "known", known);
         cJSON_AddStringToObject(root, "name", entry.name);
+
+        if (!known && found > 0)
+        {
+            ESP_LOGI(TAG, "detection: the %u rows of %s are stored off: "
+                          "tick the ones to read under Automate > Parameters "
+                          "or in the Quick Setup", (unsigned)found,
+                     entry.key);
+        }
     }
     else
     {

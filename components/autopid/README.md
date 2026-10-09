@@ -96,6 +96,7 @@ Decisions log there is authoritative; the big ones:
 | `autopid_names.c` | PURE (2026-10-06): parameter names made unique, `ap_names_dedupe()` over a `pids` array (config rows or the scan's `supported` entries, the later repeat gets `_2`, `_3`, ...) and `ap_config_repair_names()` for a stored file; see "No parameter name twice" below |
 | `autopid_std_scan.c` | the vehicle DETECTION job (the async support scan, split out 2026-10-01): phases `protocol` (which protocol and which dialect answer: a walk over the pinned CAN protocols the bus guard allows, `0100` then `22F400` on each), `vin` (`autopid_identify.c`), `pids` (`autopid_scan_walk.c`); hands the result to the vehicle store (`autopid_vehicle_detected`), then writes `/data/autopid/std_scan.json`; started by the poller itself on an unknown car; owns `ap_std_prelude()` |
 | `autopid_scan_walk.c` | the job's `pids` phase: the support bitmap walk of the car's dialect (per ECU with headers on for `uds`) and one config row per supported PID that decodes something |
+| `autopid_scan_rows.c` | PURE (2026-10-09): the detection's rows as a new car's tables document (`ap_scan_rows_config()`: type `std`, group `default`, a uds row with its ECU), every row stored `"enabled": false`: nothing is read until the user ticks the ones they want; see "A new car" below |
 | `autopid_vehicle_core.c` | PURE vehicle identity (TASK_quick_setup.md): ATDPN parse, VIN from 0902 / 22F190 replies, responder fingerprint (FNV-1a over sorted ECU id + 0100 bitmap pairs), effective-protocol + prelude selection, the first-pass vehicle.json reader (import); `autopid_vehicle.h` holds every vehicle contract |
 | `autopid_vehicle_index.c` | PURE store index (second pass): key derivation (`VIN` or `fp:<hash>`), find by key / VIN / fingerprint, the fingerprint SUBSET rule, `ap_vidx_match`, the LRU eviction pick, add/remove, the once-a-day `last_seen` touch |
 | `autopid_vehicle_codec.c` | PURE store codec: the responder set as text, one entry as JSON (API + file shape), `vehicles.json` round trip with bounds and sanitizing |
@@ -609,7 +610,16 @@ UI copies entries (or the full catalog at `/api/autopid/std_table`)
 straight into the config PUT. The poller starts the job by itself once
 per boot when first contact meets an unknown car; otherwise never without
 the button. Polling pauses during the scan and resumes with its init
-state replayed.
+state replayed. **A new car's stored rows never poll by themselves
+(2026-10-09, Ali: "it should not start polling unless the user enables the
+standard PIDs and enables the PIDs they want"):** every row is stored
+`"enabled": false`, one `I` line says so (`stored off: tick the ones to
+read`), and nothing standard is read until the `std_enabled` switch is on
+AND the user ticked rows, in the Quick Setup's picker (its Finish turns the
+chosen rows on) or under Automate > Parameters (tick, Apply Configuration).
+A device that never saw the wizard therefore stores what the car answers
+and reads nothing until someone chooses. A known car's own tables are never
+touched by a scan.
 
 ### No parameter name twice (2026-10-06)
 
@@ -729,7 +739,9 @@ the RAM `current` flips at once and steps 1 to 6 run on the worker.
 detected protocol, VIN or fingerprint, a default name (`"<WMI> <last 4 of
 the VIN>"` or `"Car <4 hex>"`), `pending_profile:true`; the previous car's
 tables are snapshotted and the new car's tables are ONLY the standard rows
-the scan found (type `std`, group `default`), written to `config.json` and
+the scan found (type `std`, group `default`; `"enabled": false` on every
+row, `autopid_scan_rows.c`, 2026-10-09: the user ticks the ones to read),
+written to `config.json` and
 its file, reloaded live; event `{known:false}`. When the store is full the
 least recently seen car that is not current goes first: one `W` line, its
 file deleted, event `autopid.vehicle_evicted {vin, name}` (case J).
@@ -866,7 +878,7 @@ and polls a 24-parameter PID on the simulator: the regression for the
 
 ## Tests
 
-`host_test/` (run: `.\test.ps1 host autopid`, 122 tests): the J1939 rows
+`host_test/` (run: `.\test.ps1 host autopid`, 129 tests): the detection's rows as a new car's tables, on or off (`test_scan_rows.c`, 3 cases, 2026-10-09); the J1939 rows
 (`test_j1939_rows.c`, 10 cases: the `PGN:` grammar and its refusals, the
 config parser's typed fields and the `init` / `rxheader` refusal, the
 scheduler's class-masked pick and the 20 ms passive floor, the built-in

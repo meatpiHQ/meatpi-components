@@ -198,10 +198,6 @@ bool ap_identify(ap_dialect_t dialect, char proto, bool vin_fallback,
 bool ap_scan_walk(ap_dialect_t dialect, cJSON *supported, uint16_t *found,
                   char *resp, size_t resp_len);
 
-/** The walk's rows as a config.json document (a new car's tables:
- *  standard PIDs only, the `default` group). Caller frees. */
-char *ap_scan_rows_config(const cJSON *supported);
-
 /** First contact found the car on @p proto in @p dialect: the next
  *  detection job tries that before its own search. Any task. */
 void ap_std_scan_hint(char proto, ap_dialect_t dialect);
@@ -214,3 +210,9 @@ void ap_guard_bus(ap_bus_t *out);
  *  at the bus again unless its bitrate is already known. */
 bool ap_guard_candidate_ok(char proto);
 #endif /* !AUTOPID_HOST_TEST */
+
+/** The walk's rows as a config.json document (a new car's tables:
+ *  standard PIDs only, the `default` group, every row `"enabled": false`
+ *  so nothing is read until the user ticks it, 2026-10-09;
+ *  autopid_scan_rows.c, PURE, host-tested). Caller frees. */
+char *ap_scan_rows_config(const cJSON *supported);

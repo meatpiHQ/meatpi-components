@@ -47,6 +47,7 @@
 #include "esp_attr.h"
 #include "esp_littlefs.h"
 #include "esp_log.h"
+#include "esp_partition.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "sdkconfig.h"
@@ -250,6 +251,52 @@ esp_err_t filesystem_stop(void)
 
     FS_UNLOCK();
     return err;
+}
+
+/* the factory reset's erase (filesystem_wipe): the whole partition, raw,
+ * after the unmount; an internal-stack job (the cache is off per block) */
+static esp_err_t wipe_job(void *arg)
+{
+    (void)arg;
+
+    const esp_partition_t *part = esp_partition_find_first(
+        ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY,
+        CONFIG_FILESYSTEM_PARTITION_LABEL);
+
+    if (part == NULL)
+    {
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    return esp_partition_erase_range(part, 0, part->size);
+}
+
+esp_err_t filesystem_wipe(void)
+{
+    esp_err_t err = filesystem_stop(); /* nothing writes /data after this */
+
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "wipe: unmount of '%s' failed: %s",
+                 CONFIG_FILESYSTEM_PARTITION_LABEL, esp_err_to_name(err));
+        return err;
+    }
+
+    /* safe mode never started the writer service: its httpd task's stack
+       is internal, so the job runs inline there */
+    err = fs_on_internal_stack() ? wipe_job(NULL)
+                                 : fs_run_internal(wipe_job, NULL);
+
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "wipe: erase of '%s' failed: %s",
+                 CONFIG_FILESYSTEM_PARTITION_LABEL, esp_err_to_name(err));
+        return err;
+    }
+
+    ESP_LOGW(TAG, "factory reset: '%s' erased, the next boot formats it",
+             CONFIG_FILESYSTEM_PARTITION_LABEL);
+    return ESP_OK;
 }
 
 esp_err_t filesystem_sd_set_mounted(bool mounted)

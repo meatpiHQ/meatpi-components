@@ -80,6 +80,18 @@ void config_backup_touch(void);
 esp_err_t config_backup_refresh_copies(uint32_t wait_ms, bool *internal,
                                        bool *sd);
 
+/**
+ * The factory reset (main, 2026-10-26) erases NVS and keeps the key, so
+ * the copy on the SD card and every backup the device made still open
+ * afterwards: config_backup_key_load() reads the key into RAM when this
+ * boot has not (safe mode; ESP_OK at once when it has, ESP_ERR_NOT_FOUND
+ * when the device has none yet), the caller erases and initialises NVS,
+ * config_backup_key_rewrite() writes the key and its record back
+ * (ESP_ERR_INVALID_STATE without a key in RAM). Flash: internal stacks.
+ */
+esp_err_t config_backup_key_load(void);
+esp_err_t config_backup_key_rewrite(void);
+
 #ifdef __cplusplus
 }
 #endif

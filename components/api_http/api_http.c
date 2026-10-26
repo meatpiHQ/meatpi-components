@@ -40,6 +40,7 @@
 #include "restart_tracker.h"
 #include "settings_manager.h"
 
+#include "api_http.h"
 #include "api_http_private.h"
 
 static const char *TAG = "api_http";
@@ -495,11 +496,22 @@ static esp_err_t settings_backup_post_handler(httpd_req_t *req)
     return err;
 }
 
-/* POST /api/settings/factory_reset: wipe the settings partition back to
-   factory defaults (scope: settings ONLY, /data certs/files, SD and NVS
-   are untouched; same as the CLI `factoryreset`). Requires the explicit
-   confirm token so a stray POST can never wipe a device; the UI's dialog
-   supplies it. Responds, then reboots into defaults. */
+/* ---- the factory reset main supplies (2026-10-26) ------------------------------ */
+
+static api_http_factory_reset_fn s_factory_reset;
+
+esp_err_t api_http_set_factory_reset(api_http_factory_reset_fn fn)
+{
+    s_factory_reset = fn;
+    return ESP_OK;
+}
+
+/* POST /api/settings/factory_reset: the device's factory reset (the wipe
+   main supplied: the settings partition, the data partition and NVS, the
+   SD card kept; the settings partition alone when nothing was supplied,
+   the component on its own). Same as the CLI `factoryreset`. Requires the
+   explicit confirm token so a stray POST can never wipe a device; the
+   UI's dialog supplies it. Responds, then reboots into defaults. */
 static esp_err_t settings_factory_reset_handler(httpd_req_t *req)
 {
     char *body = api_read_body(req, 256);
@@ -521,7 +533,11 @@ static esp_err_t settings_factory_reset_handler(httpd_req_t *req)
                               "{\"confirm\":\"factory-reset\"}");
     }
 
-    if (settings_manager_factory_reset() != ESP_OK)
+    esp_err_t wipe_err = (s_factory_reset != NULL)
+                             ? s_factory_reset()
+                             : settings_manager_factory_reset();
+
+    if (wipe_err != ESP_OK)
     {
         return api_send_error(req, "500 Internal Server Error",
                               "wipe failed");

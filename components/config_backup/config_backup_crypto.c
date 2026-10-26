@@ -99,7 +99,9 @@ static esp_err_t key_load(void)
     return err;
 }
 
-static esp_err_t key_store_new(void)
+/* the key and its record from RAM into NVS: a new key (cb_crypto_init) and
+   the write-back after the factory reset's NVS erase (key_rewrite) */
+static esp_err_t key_store(void)
 {
     nvs_handle_t h;
     esp_err_t    err = nvs_open(NVS_NS, NVS_READWRITE, &h);
@@ -118,7 +120,12 @@ static esp_err_t key_store_new(void)
 
     if (err == ESP_OK)
     {
-        err = nvs_set_u8(h, NVS_DL, 0);
+        err = nvs_set_u8(h, NVS_DL, s_info.downloaded ? 1 : 0);
+    }
+
+    if (err == ESP_OK && s_info.downloaded)
+    {
+        err = nvs_set_i64(h, NVS_DL_AT, s_info.downloaded_at);
     }
 
     if (err == ESP_OK)
@@ -127,6 +134,47 @@ static esp_err_t key_store_new(void)
     }
 
     nvs_close(h);
+    return err;
+}
+
+esp_err_t config_backup_key_load(void)
+{
+    if (s_have_key)
+    {
+        return ESP_OK;
+    }
+
+    memset(&s_info, 0, sizeof(s_info));
+
+    esp_err_t err = key_load();
+
+    if (err == ESP_OK)
+    {
+        s_have_key = true;
+    }
+    else if (err == ESP_ERR_NVS_NOT_FOUND ||
+             err == ESP_ERR_NVS_NOT_INITIALIZED)
+    {
+        err = ESP_ERR_NOT_FOUND;
+    }
+
+    return err;
+}
+
+esp_err_t config_backup_key_rewrite(void)
+{
+    if (!s_have_key)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    esp_err_t err = key_store();
+
+    if (err == ESP_OK)
+    {
+        ESP_LOGI(TAG, "backup key kept across the factory reset");
+    }
+
     return err;
 }
 
@@ -161,7 +209,7 @@ esp_err_t cb_crypto_init(void)
     s_info.created = cb_now_epoch();
     s_info.downloaded = false;
     s_info.downloaded_at = 0;
-    err = key_store_new();
+    err = key_store();
 
     if (err != ESP_OK)
     {

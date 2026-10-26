@@ -95,6 +95,19 @@ esp_err_t filesystem_start(void);
 esp_err_t filesystem_stop(void);
 
 /**
+ * FACTORY RESET (2026-10-26): unmount the internal data filesystem and
+ * erase its partition raw, so nothing of /data stays on the flash (the
+ * vehicles, databases, scripts, dashboard, certificate sets, the backup
+ * copy, the web UI cache). The SD card is never touched. Every /data and
+ * /sd call answers ESP_ERR_INVALID_STATE afterwards: the caller MUST
+ * restart (restart_tracker, reason FACTORY_RESET); the next boot finds the
+ * partition blank and formats it quietly (the first-boot path). Works
+ * before init too (safe mode: nothing mounted, the erase alone). Flash:
+ * the erase runs on an internal stack whatever the caller's.
+ */
+esp_err_t filesystem_wipe(void);
+
+/**
  * Atomically replace @p path with @p data (temp file + fsync + rename;
  * a power cut leaves either the old file or the new one, never a torn one).
  * Missing parent directories are created. @p len == 0 writes an empty file.

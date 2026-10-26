@@ -71,9 +71,9 @@ static void print_copy(const char *label, const cJSON *c)
 
     if (cJSON_IsTrue(held))
     {
-        /* issue #987: the settings part as it was before the factory reset */
-        cmdline_printf("    holds the settings from before the factory reset"
-                       "%s%s (restore them to undo it; -r lets the copy "
+        /* issue #987: the copy as it was before the factory reset */
+        cmdline_printf("    holds everything from before the factory reset"
+                       "%s%s (restore it to undo the reset; -r lets the copy "
                        "follow the device again)\n",
                        (cJSON_IsString(since) && since->valuestring[0])
                            ? " of " : "",

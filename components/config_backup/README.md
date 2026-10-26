@@ -113,8 +113,12 @@ the first sweep used to overwrite the copy's settings part with the defaults
 undo. Now the worker asks `restart_tracker` whether this boot follows a
 planned `FACTORY_RESET`; if so, and the copy has a settings part, it marks
 the part `held` (`held` + `held_since` in the manifest, both copies when a
-card is in) before the first sweep, and a held settings part is never
-rewritten by a sweep, on this boot or the next ones. The hold ends when a
+card is in) before the first sweep, and a held copy is never rewritten by a
+sweep, on this boot or the next ones (every part since 2026-10-26: the full
+wipe leaves the device with nothing, so each part of the copy predates the
+reset; until then the settings part alone, the only part a reset changed,
+and the first run of the full wipe emptied the SD copy's file parts one
+second after the hold). The hold ends when a
 settings part is restored from any source (`cb_copies_release()`, written
 before the restart so the next boot's sweep sees it) or when the copies are
 refreshed by hand (the refresh route, `backup -r`: the forced sweep clears
@@ -123,11 +127,24 @@ device's own backup, so the undo brings the access point name back. A
 second reset on a held copy keeps the older hold. The status route and the
 `backup` command report `held`.
 
+**Since 2026-10-26 the factory reset wipes `/data` too** (main's
+`main_factory_reset()`: the settings partition, the data partition and NVS;
+the SD card is kept), so the copy on the flash does not survive it any
+more: the first sweep after the reset makes a fresh one from the defaults
+(nothing to hold), and the hold applies to the copy on the SD card, which
+is the undo of a reset now (the Internal flash row says so). The key is
+carried across the reset by main (`config_backup_key_load()` before the
+NVS erase, for safe mode where this boot never read it, and
+`config_backup_key_rewrite()` after `nvs_flash_init()`), so that copy
+still opens.
+
 ## The key
 
 32 bytes from `esp_fill_random()` the first time the component starts, kept
 in NVS (`cfg_backup`: `key`, `created`, `dl`, `dl_at`) outside the settings
-partition so a factory reset keeps it. Never logged, never in `/api/settings`;
+partition; the factory reset erases NVS since 2026-10-26 and writes the key
+and its record back (`config_backup_key_rewrite()`), so a reset keeps it,
+from the web UI, the console and safe mode alike. Never logged, never in `/api/settings`;
 `GET /api/backup/key` hands out `wican-<id>-backup-key.txt` (two comment
 lines and 64 hex characters) and marks it downloaded. An encrypted download
 waits until the key was downloaded once (409). There is no replace-key
@@ -162,6 +179,8 @@ reloaded live: the restart loads the new files like any boot.
 | `config_backup_register_http()` | the `/api/backup` routes (main wires it before the server starts) |
 | `config_backup_touch()` | a sweep soon (api_http after an fs upload or delete); never blocks |
 | `config_backup_refresh_copies(wait_ms, &internal, &sd)` | 2026-10-18: refresh the copies now and wait for the sweep (fw_update's pre-wipe step: a release whose partition layout formats the data partitions refreshes the copies before the download); reports whether each copy exists afterwards; `ESP_ERR_INVALID_STATE` without the worker, `ESP_ERR_TIMEOUT` when the sweep is still going |
+| `config_backup_key_load()` | 2026-10-26, the factory reset (main): the key from NVS into RAM when this boot never read it (safe mode); `ESP_OK` at once when it has, `ESP_ERR_NOT_FOUND` when the device has none yet |
+| `config_backup_key_rewrite()` | 2026-10-26: the key and its record (`created`, `dl`, `dl_at`) from RAM back into NVS after main's `nvs_flash_erase()` + `nvs_flash_init()`; `ESP_ERR_INVALID_STATE` without a key in RAM |
 
 ## Dependencies
 

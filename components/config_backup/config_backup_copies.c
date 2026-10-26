@@ -35,13 +35,19 @@
  *        config_backup_copies_read.c since 2026-10-13.
  *
  *        The copy after a factory reset (issue #987, 2026-10-16): the reset
- *        wipes the settings partition only, the copy under /data survives
+ *        wiped the settings partition only, the copy under /data survived
  *        it, and the first sweep used to overwrite the copy's settings part
  *        with the defaults 20 s after the boot, before the user could see
  *        the page that promised an undo. The boot after a planned factory
- *        reset marks the settings part HELD in both manifests; a held part
- *        is never rewritten by a sweep. A restore of a settings part (the
- *        user chose) or a manual refresh (the user let go) releases it.
+ *        reset marks the copy HELD in both manifests; a held copy is never
+ *        rewritten by a sweep. A restore of a settings part (the user
+ *        chose) or a manual refresh (the user let go) releases it. Since
+ *        2026-10-26 the reset wipes /data and NVS too (main's
+ *        main_factory_reset), so the copy on the flash is gone and the one
+ *        on the SD card is the undo; the hold covers EVERY part of it (the
+ *        device has nothing, so each part of the copy predates the reset:
+ *        the first run of the full wipe emptied the file parts one second
+ *        after the hold, when it covered the settings part alone).
  */
 #include <stdio.h>
 #include <string.h>
@@ -260,8 +266,8 @@ static bool boot_follows_factory_reset(void)
 }
 
 /* before the first sweep of the boot after a factory reset: a copy with a
- * settings part keeps it (both manifests say so, so the hold survives the
- * next boots); a second reset on a held copy keeps the older hold */
+ * settings part is kept whole (both manifests say so, so the hold survives
+ * the next boots); a second reset on a held copy keeps the older hold */
 static void hold_after_factory_reset(void)
 {
     char    sd_dir[80];
@@ -293,8 +299,8 @@ static void hold_after_factory_reset(void)
 
     if (held)
     {
-        ESP_LOGI(TAG, "copies: the settings from before the factory reset are "
-                 "held (restore them to undo it; a refresh lets them go)");
+        ESP_LOGI(TAG, "copies: the copy from before the factory reset is held "
+                 "whole (restore it to undo the reset; a refresh lets it go)");
     }
 }
 
@@ -333,7 +339,7 @@ void cb_copies_release(void)
 
     if (released)
     {
-        ESP_LOGI(TAG, "copies: the held settings part follows the device again");
+        ESP_LOGI(TAG, "copies: the held copy follows the device again");
     }
 }
 
@@ -351,8 +357,8 @@ static void sweep(bool force)
 
     if (force)
     {
-        /* a manual refresh lets a held settings part go (issue #987); the
-           manifests are written below in any case */
+        /* a manual refresh lets a held copy go (issue #987); the manifests
+           are written below in any case */
         s_mf_int.held = false;
         s_mf_int.held_since = 0;
         s_mf_sd.held = false;
@@ -392,12 +398,10 @@ static void sweep(bool force)
                               memcmp(mac, s_mf_sd.parts[p].hmac,
                                      CB_HMAC_LEN) != 0);
 
-        if (p == CB_PART_SETTINGS)
-        {
-            /* a held settings part stays as it was (issue #987) */
-            need_int = need_int && !s_mf_int.held;
-            need_sd = need_sd && !s_mf_sd.held;
-        }
+        /* a held copy stays as it was, every part of it (issue #987; the
+           settings part alone until 2026-10-26, see the file header) */
+        need_int = need_int && !s_mf_int.held;
+        need_sd = need_sd && !s_mf_sd.held;
 
         if (!need_int && !need_sd)
         {

@@ -124,7 +124,7 @@ function copiesCard(st,repaintAll,autoRows){
     const c=cur();
     /* a copy held since a factory reset (issue #987) is the undo: a refresh
        lets it go, so it asks first */
-    if(((c.internal||{}).held||(c.sd||{}).held)&&!await confirmModal("A copy holds the settings from before the factory reset. Refreshing replaces them with the settings this WiCAN has now, and the undo is gone. To undo the reset instead, use Restore on that copy.","Let the copies follow the device again?"))return;
+    if(((c.internal||{}).held||(c.sd||{}).held)&&!await confirmModal("A copy holds everything from before the factory reset. Refreshing replaces it with what this WiCAN has now, and the undo is gone. To undo the reset instead, use Restore on that copy.","Let the copies follow the device again?"))return;
     refreshBtn.disabled=true;
     try{const r=await api("/api/backup/copies/refresh",{method:"POST"});toast("Copies refreshed: "+(r.written||[]).join(", "),"ok");await repaintAll(true);}
     catch(e){toast(e.message,"err");}
@@ -137,7 +137,7 @@ function copiesCard(st,repaintAll,autoRows){
     /* held (issue #987): the settings part is the one from before the factory
        reset until the user restores it or lets the copy go */
     const held=!!(data&&data.present&&data.held);
-    const words=h("div",{},h("b",{style:"font-size:13.5px"},title),h("div",{class:"help"},held?"Holding the settings from before the factory reset"+(data.held_since?" of "+day(data.held_since):"")+". Restore to undo the reset, or refresh the copies to let them follow the device again.":sub));
+    const words=h("div",{},h("b",{style:"font-size:13.5px"},title),h("div",{class:"help"},held?"Holding everything from before the factory reset"+(data.held_since?" of "+day(data.held_since):"")+". Restore to undo the reset, or refresh the copies to let them follow the device again.":sub));
     let right;
     if(!data||!data.present){
       /* a card in the slot WiCAN cannot read (2026-10-25): the chip and the page's format dialog */
@@ -166,7 +166,7 @@ function copiesCard(st,repaintAll,autoRows){
     const sdx=!sd.card&&typeof sdSummary==="function"?sdSummary():null;
     sd.unreadable=sdx&&(sdx.state==="unreadable"||sdx.state==="failed")?sdx:null;
     rows.replaceChildren(
-      placeRow("Internal flash","Survives a factory reset: restore from it to undo one.",c.internal,"internal"),
+      placeRow("Internal flash","Restore from it to undo a change. A factory reset wipes it; the copy on the SD card is the undo then.",c.internal,"internal"),
       placeRow("SD card",sd.card?(other?"This card came from another WiCAN ("+sd.device_id+"): restore from it to take its configuration over.":"Move the card to a replacement WiCAN and restore from it there."+(sd.free_bytes?" "+kb(sd.free_bytes)+" free.":""))
         :sd.unreadable?(sd.unreadable.state==="failed"?"The card in the slot does not answer. Take it out and put it back in.":"The card in the slot is not readable yet. Format it to keep a copy here that can move to another WiCAN.")
         :"Insert a card to keep a copy you can move to another WiCAN.",sd,"sd"));

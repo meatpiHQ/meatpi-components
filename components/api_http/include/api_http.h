@@ -65,6 +65,18 @@ esp_err_t api_http_stop(void);
  */
 void api_http_note_settings_changed(void);
 
+/**
+ * The wipe POST /api/settings/factory_reset performs (2026-10-26). The
+ * composition root supplies the device's full factory reset (main's
+ * main_factory_reset(): the settings partition, the data partition and
+ * NVS; the SD card kept); without one the route wipes the settings
+ * partition alone (settings_manager_factory_reset(), the component on its
+ * own). The route responds, then restarts, whichever ran. Called on the
+ * HTTP task (an internal stack).
+ */
+typedef esp_err_t (*api_http_factory_reset_fn)(void);
+esp_err_t api_http_set_factory_reset(api_http_factory_reset_fn fn);
+
 #ifdef __cplusplus
 }
 #endif

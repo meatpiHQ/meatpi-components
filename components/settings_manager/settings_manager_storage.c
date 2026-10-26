@@ -28,7 +28,6 @@
  * Writes use temp-file-plus-rename so a power loss mid-write leaves the previous
  * good file intact (rollback-on-corruption, Coding Standard §7).
  */
-#include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -319,42 +318,44 @@ esp_err_t sm_storage_wipe(void)
         return ESP_ERR_INVALID_STATE;
     }
 
-    DIR *dir = opendir(SM_DIR);
+    /* 2026-10-26: the whole partition, raw, after the unmount (the file
+       deletes it did until then left every old setting on the flash until
+       LittleFS reused the blocks): the next boot finds it blank, formats
+       it (format_if_not_ours, one I line) and applies pure factory
+       defaults. The registry stays as loaded: the running configuration
+       is untouched until the caller's restart, a save in between answers
+       ESP_ERR_INVALID_STATE. Flash: the caller's stack is internal (the
+       HTTP task, the console task, main's factory reset task). */
+    esp_err_t err = sm_storage_unmount();
 
-    if (dir == NULL)
+    if (err != ESP_OK)
     {
-        return ESP_FAIL;
+        ESP_LOGE(TAG, "factory reset: unmount failed: %s",
+                 esp_err_to_name(err));
+        return err;
     }
 
-    /* unlink everything in the cfg dir (json + any stray .tmp):
-       the next boot's load pass finds nothing and applies pure
-       factory defaults */
-    int removed = 0;
-    struct dirent *entry;
+    const esp_partition_t *part = esp_partition_find_first(
+        ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY,
+        SM_PARTITION_LABEL);
 
-    while ((entry = readdir(dir)) != NULL)
+    if (part == NULL)
     {
-        if (entry->d_type == DT_DIR)
-        {
-            continue;
-        }
-
-        char path[SM_PATH_MAX + 256]; /* dir + d_name can't truncate */
-
-        snprintf(path, sizeof(path), "%s/%s", SM_DIR, entry->d_name);
-
-        if (remove(path) == 0)
-        {
-            removed++;
-        }
-        else
-        {
-            ESP_LOGE(TAG, "factory reset: remove %s failed", path);
-        }
+        ESP_LOGE(TAG, "factory reset: no '%s' partition", SM_PARTITION_LABEL);
+        return ESP_ERR_NOT_FOUND;
     }
 
-    closedir(dir);
-    ESP_LOGW(TAG, "factory reset: %d settings file(s) deleted", removed);
+    err = esp_partition_erase_range(part, 0, part->size);
+
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "factory reset: erase of '%s' failed: %s",
+                 SM_PARTITION_LABEL, esp_err_to_name(err));
+        return err;
+    }
+
+    ESP_LOGI(TAG, "factory reset: '%s' erased, the next boot formats it",
+             SM_PARTITION_LABEL);
     return ESP_OK;
 }
 

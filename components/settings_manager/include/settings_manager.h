@@ -224,13 +224,18 @@ esp_err_t settings_manager_start(void);
 esp_err_t settings_manager_stop(void);
 
 /**
- * @brief FACTORY RESET: delete every stored settings file. The running
- *        configuration is untouched: the caller MUST reboot (via
- *        restart_tracker, reason FACTORY_RESET) so the next boot's load
- *        pass finds nothing and applies pure factory defaults.
+ * @brief FACTORY RESET: unmount the settings partition and erase it raw
+ *        (2026-10-26; until then the files were deleted one by one, which
+ *        left the old settings on the flash). The running configuration
+ *        is untouched: the caller MUST reboot (via restart_tracker, reason
+ *        FACTORY_RESET) so the next boot formats the blank partition and
+ *        applies pure factory defaults. A save between the two answers
+ *        ESP_ERR_INVALID_STATE.
  *
- * Scope: the settings partition only. User data on /data (certificate
- * sets, uploaded files) and NVS (WiFi PHY cal) are NOT touched.
+ * Scope: the settings partition only. The device's factory reset is the
+ * composition's (main, `main_factory_reset()`): this, the data partition
+ * (`filesystem_wipe()`) and NVS; the SD card is never touched. Flash: a
+ * caller on an internal stack.
  */
 esp_err_t settings_manager_factory_reset(void);
 

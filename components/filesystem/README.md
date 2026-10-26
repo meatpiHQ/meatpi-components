@@ -32,6 +32,7 @@ Pinned design decisions (closes REVIEW.md §6.1):
 |---|---|
 | `filesystem_init()` | Mount the internal data FS (formats on first use). |
 | `filesystem_start()` / `filesystem_stop()` | Uniform lifecycle; `stop` unmounts (re-`init` allowed, test flows). |
+| `filesystem_wipe()` | FACTORY RESET (2026-10-26): unmount and erase the `storage` partition raw (nothing of `/data` stays on the flash); the SD card untouched; every call answers `ESP_ERR_INVALID_STATE` afterwards, the caller restarts and the next boot formats the blank partition. Works before init (safe mode). |
 | `filesystem_write(path, data, len)` | Atomic replace; creates parent dirs. |
 | `filesystem_read(path, buf, buf_len, *out_len)` | Whole-file read; `ESP_ERR_INVALID_SIZE` + required size if `buf` too small. |
 | `filesystem_size(path, *out)` | File size in bytes. |
@@ -91,8 +92,8 @@ exists.
   its stream is the caller's, so a `/data` stream must be used from an
   internal-stack task. This is what let `config_backup`'s copies worker move
   its 8 KB stack to PSRAM.
-- Files: `filesystem.c` (lifecycle, write, delete, mkdirs, the shared
-  internals), `filesystem_read.c` (read, size, exists, list, open, info),
+- Files: `filesystem.c` (lifecycle, the factory wipe, write, delete, mkdirs,
+  the shared internals), `filesystem_read.c` (read, size, exists, list, open, info),
   `filesystem_stream.c` (the atomic streams, the async pipe, the writer task
   and the internal-stack job service), `filesystem_path.c` (PURE), 
   `filesystem_mount.c`, `filesystem_settings.c`, `filesystem_cli.c`.
@@ -132,6 +133,19 @@ below this component). Verified: erase-flash + first boot = 0 E lines,
 `WICAN FAULTS active=0`; a factory-style filesystem under a first boot
 (`tools/testbench/system/factory_flash_bench.py`, `FACTORY FLASH PASS`
 2026-10-06) = 0 E lines, the two W lines, no fault, the defaults persisted.
+
+## The factory reset (2026-10-26)
+
+`filesystem_wipe()` is the data partition's part of the device's factory
+reset (main's `main_factory_reset()`: the settings partition, this, NVS;
+the SD card is never touched). It unmounts (`filesystem_stop()`, so nothing
+writes `/data` afterwards) and erases the whole partition raw on an
+internal stack (the writer task's job service, or inline when the caller's
+stack is internal: safe mode, where the service never started). A LittleFS
+format alone would rewrite the superblock pair and leave every data block
+in place; the raw erase leaves nothing. The caller restarts; the next boot
+takes the first-boot path above (one I line) and the components make their
+directories again. Proof: `config_backup_bench.py --factory` leg `b9`.
 
 ## Tests
 

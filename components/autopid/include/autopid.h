@@ -141,6 +141,23 @@ esp_err_t autopid_stats(autopid_stats_t *out);
  *  the device-contract `ecu_status` source (ha_webhooks). */
 bool autopid_ecu_online(void);
 
+/** The current car of the vehicle store in one line (2026-10-26): for the
+ *  composition root's `vehicle` summary on GET /api/status (the web UI's
+ *  notice bar and the dashboard say when the live tables belong to a car
+ *  whose setup never finished). `pending` is the store's `pending_profile`;
+ *  `cars` counts every car the store holds. */
+typedef struct
+{
+    char    name[32];
+    char    key[24];
+    char    vin[18];
+    bool    pending;
+    uint8_t cars;
+} autopid_vehicle_summary_t;
+
+/** False when the store has no current car (@p out zeroed). */
+bool autopid_vehicle_summary(autopid_vehicle_summary_t *out);
+
 /** Reload /data/autopid/config.json into the pools and restart the
  *  scheduler over the new tables (the PUT /api/autopid/config path:
  *  the config FILE applies live; the settings KNOBS stay reboot-to-apply). */

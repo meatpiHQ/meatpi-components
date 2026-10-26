@@ -168,6 +168,25 @@ static esp_err_t status_handler(httpd_req_t *req)
         }
     }
 
+    /* the current vehicle summary (2026-10-26): which car the live tables
+       belong to and whether its setup finished, for the notice bar and the
+       dashboard; absent while the store has no current car */
+    dev_status_vehicle_t veh;
+
+    if (dev_status_manager_vehicle(&veh))
+    {
+        cJSON *v = cJSON_AddObjectToObject(resp, "vehicle");
+
+        if (v != NULL)
+        {
+            cJSON_AddStringToObject(v, "name", veh.name);
+            cJSON_AddStringToObject(v, "key", veh.key);
+            cJSON_AddStringToObject(v, "vin", veh.vin);
+            cJSON_AddBoolToObject(v, "pending", veh.pending);
+            cJSON_AddNumberToObject(v, "cars", veh.cars);
+        }
+    }
+
     /* memory health (Architecture §12b): internal is the scarce heap;
        largest_block vs free is THE fragmentation signal. This route is
        polled (the web UI: every 3 s), so the PSRAM heap is not walked for

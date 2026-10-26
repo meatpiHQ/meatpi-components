@@ -44,6 +44,7 @@
 #include "freertos/FreeRTOS.h"
 #include "dev_status_usb.h"
 #include "dev_status_sd.h"
+#include "dev_status_vehicle.h"
 #include "freertos/event_groups.h"
 
 #ifdef __cplusplus
@@ -324,6 +325,23 @@ void dev_status_manager_set_sd_provider(dev_status_sd_provider_t fn);
 /** The summary now: false when there is no provider or no card in the
  *  slot (@p out zeroed). */
 bool dev_status_manager_sd(dev_status_sd_t *out);
+
+/* ---- the current vehicle summary (2026-10-26) ------------------------------- */
+
+/* The types: dev_status_vehicle.h. Which car the live tables belong to and
+ * whether its Quick Setup ever finished (`vehicle` on GET /api/status,
+ * absent while the store has no current car), for the web UI's notice bar
+ * and the dashboard: a device set up on one car and plugged into another
+ * meets a new car, which becomes current with its rows stored off, and the
+ * dashboard went empty without a word (Ali, 2026-10-26). The composition
+ * root provides it from autopid. */
+
+/** The one provider (main's), asked per status request; NULL = no `vehicle`. */
+void dev_status_manager_set_vehicle_provider(dev_status_vehicle_provider_t fn);
+
+/** The summary now: false when there is no provider or no current car
+ *  (@p out zeroed). */
+bool dev_status_manager_vehicle(dev_status_vehicle_t *out);
 
 #ifdef __cplusplus
 }

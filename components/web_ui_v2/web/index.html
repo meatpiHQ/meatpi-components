@@ -164,6 +164,16 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--primary);outline-of
 /* the SD card bar (2026-10-25): a card that does not answer at all reads as a fault */
 #sdbar.dead{background:var(--danger-tint);border-bottom-color:color-mix(in srgb,var(--danger) 35%,transparent)}
 #sdbar.dead svg{color:var(--danger)}
+/* the new-car bar (2026-10-26): the live tables belong to a car whose setup never finished */
+#vehbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:10px;padding:9px 32px;font-size:13px;font-weight:550;
+  color:var(--text-2);background:var(--warning-tint);border-bottom:1px solid color-mix(in srgb,var(--warning) 35%,transparent)}
+#vehbar[hidden]{display:none}
+#vehbar svg{width:16px;height:16px;flex:none;color:var(--warning)}
+#vehbar b{color:var(--text)}
+#vehbar .sb-hold{margin-left:auto;white-space:nowrap}
+#vehbar a{white-space:nowrap;font-weight:700}
+#dash-vehnote:empty{display:none}
+#dash-vehnote{margin-bottom:12px}
 .sd-facts{display:grid;grid-template-columns:max-content 1fr;gap:5px 16px;align-items:start;padding:10px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;font-size:13px}
 .sd-facts .k{font-weight:600;color:var(--text-3);font-size:12px;padding-top:1px}
 .sd-phrase{font-family:var(--mono);font-weight:700;background:var(--surface-2);border:1px solid var(--border);border-radius:5px;padding:1px 7px}
@@ -636,7 +646,7 @@ input[type="range"]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 4px var
     </button>
   </header>
   <nav class="app-nav" id="menu"></nav>
-  <main class="content"><div id="sleepbar" role="status" hidden></div><div id="nlbar" role="status" hidden></div><div id="sdbar" role="status" hidden></div><div class="page" id="view"><div class="loading"><div class="spinner"></div></div></div></main>
+  <main class="content"><div id="sleepbar" role="status" hidden></div><div id="nlbar" role="status" hidden></div><div id="sdbar" role="status" hidden></div><div id="vehbar" role="status" hidden></div><div class="page" id="view"><div class="loading"><div class="spinner"></div></div></div></main>
 </div>
 <div id="offline"><span class="d"></span><span id="offtx"></span></div>
 <div id="toasts"></div>
@@ -999,6 +1009,35 @@ const SD_FOUND={exfat:"exFAT, the factory format of cards over 32 GB. WiCAN read
   unknown:"A filesystem WiCAN does not know, or a damaged one.",fat_corrupt:"A FAT32 filesystem too damaged to mount."};
 function sdSummary(){const s=conn.status&&conn.status.sd;return s&&s.state?s:null;}
 const sdAttention=s=>!!s&&(s.state==="unreadable"||s.state==="failed");
+/* the new-car bar (2026-10-26, Ali: a device set up on the simulator and taken to
+   the car met a new car; it became current with its rows stored off and the
+   dashboard went empty without a word): the status poll's `vehicle` summary.
+   Shown while the current car's setup never finished and the store holds
+   another car; per car key, Not now keeps it away in this browser. */
+const VEH_SEEN="wican-veh-seen";
+function vehSummary(){const v=conn.status&&conn.status.vehicle;return v&&v.key?v:null;}
+const vehAttention=v=>!!v&&v.pending===true&&(v.cars|0)>1;
+const vehWho=v=>(v.name||v.key)+(v.vin?"":" (no VIN)");
+function paintVehBar(){
+  const el=$("#vehbar"),v=vehSummary(),att=vehAttention(v);
+  const noteEl=$("#dash-vehnote");
+  if(noteEl){
+    if(!att){noteEl.replaceChildren();delete noteEl.dataset.key;}
+    else if(noteEl.dataset.key!==v.key){noteEl.dataset.key=v.key;
+      noteEl.replaceChildren(banner("warn","car",h("b",{},"Showing "+vehWho(v)+": not set up yet, nothing chosen for it."),
+        " The parameters you chose belong to another car. ",h("a",{href:"#/setup/vehicle"},"Set up this car, or fold it into yours")));}
+  }
+  if(!el)return;
+  let seen="";try{seen=localStorage.getItem(VEH_SEEN)||"";}catch(_){}
+  const on=conn.state==="online"&&att&&seen!==v.key&&!location.hash.startsWith("#/setup");
+  el.hidden=!on;if(!on){el.dataset.key="";return;}
+  if(el.dataset.key===v.key)return;
+  el.dataset.key=v.key;
+  const dismiss=()=>{try{localStorage.setItem(VEH_SEEN,v.key);}catch(_){}el.dataset.key="";el.hidden=true;};
+  el.replaceChildren(ic("car"),h("span",{},h("b",{},"WiCAN is reading a car it was not set up for."),
+      h("span",{class:"sb-why"}," "+vehWho(v)+" answered on the last contact and nothing is chosen for it yet, so the dashboard is empty: the parameters you chose belong to another car. If it is the same car, fold it in under Vehicles; if it is a new car, set it up.")),
+    h("a",{href:"#/setup/vehicle",class:"btn sm pri sb-hold"},"Set up this car"),h("a",{href:"#",onclick:e=>{e.preventDefault();dismiss();}},"Not now"));
+}
 const sdCardLine=c=>c?[c.name,c.capacity_bytes?fmt.bytes(c.capacity_bytes):"",c.type].filter(Boolean).join(" · "):"SD card";
 function sdShort(s){return s.state==="failed"?"Inserted, not answering":s.reason==="exfat"?"Inserted, exFAT: not readable":s.reason==="blank"?"Inserted, blank":"Inserted, not readable";}
 function sdBarWords(s){const sz=s.capacity_bytes?fmt.bytes(s.capacity_bytes)+" ":"";
@@ -1196,7 +1235,7 @@ function expectReboot(reason="Rebooting"){conn.rebootUntil=Date.now()+95000;setC
 async function ping(){
   try{const st=await api("/api/status");conn.status=st;
     conn.wifi=await tryGet("/api/wifi/status");
-    paintApWarn();paintNlBar();paintSdBar();
+    paintApWarn();paintNlBar();paintSdBar();paintVehBar();
     setConn("online");
     /* under the sleep voltage, or a countdown on the bar: keep it honest */
     if((st&&st.bits&&st.bits.wake_voltage_ok===false)||sleepSoon.cause!=="none")refreshSleep();
@@ -1818,7 +1857,7 @@ async function route(){
       actions:[{label:"Stay",fn:()=>res(true)},{label:"Discard",kind:"danger",fn:()=>{store.pending.clear();store.dirty.clear();renderSubmit();res(false);}},{label:"Submit",kind:"pri",fn:()=>{store.apply();res(true);}}]}));
     if(stay){location.hash="#/"+curSection;return;}
   }
-  curSection=section;paintNlBar();paintSdBar();
+  curSection=section;paintNlBar();paintSdBar();paintVehBar();
   buildMenu(section,sub);
   if(cleanup){try{cleanup();}catch{}cleanup=null;}
   subNav=null;
@@ -3751,11 +3790,13 @@ PAGES.dashboard=async(view)=>{
     h("button",{class:"btn sm pri",type:"button",onclick:()=>setEdit(false)},"Done"));
   const cardsEl=h("div",{class:"tiles"});
   const emptyEl=h("div",{class:"section",style:"display:none"},h("div",{class:"empty"}));
-  p.append(busEl,stripEl,editBar,cardsEl,emptyEl,
+  const vehEl=h("div",{id:"dash-vehnote"});   /* the new-car word, where the empty tiles are (paintVehBar) */
+  p.append(vehEl,busEl,stripEl,editBar,cardsEl,emptyEl,
     note("","Each gauge spans the parameter's min / max from Automate → Parameters unless you set a custom range; without either the bar follows the values seen this session. Group switches are temporary: the configured state returns after a restart. Customise keeps the layout on the WiCAN, so every phone and PC sees the same dashboard."));
   const hist=DASH_HIST,range=new Map(),tiles=new Map();
   let meta=new Map(),metaNames="",groups=[],groupsSig="",prev=null,rateTxt=null,editing=false,dragName=null,saveT=null;
   let layout=await dashLoadLayout();
+  paintVehBar();   /* the new-car word at once when the status poll already knows */
   const num=x=>{if(x===""||x==null)return null;const n=Number(x);return Number.isFinite(n)?n:null;};
   /* units as people read them: the SAE table says degC; imported profiles may carry U+FFFD for the degree sign */
   const unitTxt=u=>{u=String(u||"").replace(/\uFFFD/g,"°").replace(/^deg([CF])$/i,"°$1");return/^none$/i.test(u)?"":u;};
@@ -4599,7 +4640,7 @@ PAGES.system=async(view,sub)=>{
       histBtn,
       h("button",{class:"btn sm",title:"Start over with the first-run wizard: nothing is deleted by itself",onclick:()=>{location.hash="#/setup";}},ic("sparkles"),"Run Quick Setup again"),
       h("button",{class:"btn sm danger",onclick:async()=>{
-        const c=await promptModal('Type "factory-reset" to confirm: wipes ALL settings to defaults (files and SD kept)');
+        const c=await promptModal('Type "factory-reset" to confirm: erases all settings and everything stored on WiCAN (vehicles, databases, scripts, the dashboard, certificates, the backup copy on the flash). The SD card is kept.');
         if(c!=="factory-reset")return;
         try{await api("/api/settings/factory_reset",{method:"POST",body:{confirm:"factory-reset"}});expectReboot("Factory reset");}
         catch(e2){toast(e2.message,"err");}}},"Factory Reset")),histEl));

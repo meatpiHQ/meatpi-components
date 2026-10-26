@@ -688,6 +688,30 @@ no long dash. Mock: `__mockPreset.sd` = `mounted` (default) | `exfat` |
 Design record: `test-reports/logs/sdformat_20261025/` (the override over a
 copy of the preview, the shots, the review page).
 
+## The new-car bar (2026-10-26)
+
+Ali set a device up on the simulator (two standard PIDs chosen), took it to
+his car, and the Dashboard was empty with no word: the car answered as a new
+one, became current with its rows stored off, and his two rows stayed with
+the simulator's entry. The identity rule stays (two cars of one make can
+share an ECU set); the page says so now. The status poll's `vehicle` summary
+(`dev_status_manager/HTTP_API.md`) drives it:
+
+- **The bar** (`#vehbar`, under the header on every page but Quick Setup;
+  `paintVehBar()` from the status poll and the router): up while the current
+  car's setup never finished (`pending`) and the store holds another car.
+  The lead "WiCAN is reading a car it was not set up for.", the sentence
+  naming the car ("(no VIN)" when it has none) and what to do, then **Set
+  up this car** (`#/setup/vehicle`, where Forget and "Same car as..." live)
+  and **Not now** (per car key in this browser: `localStorage
+  wican-veh-seen`).
+- **The Dashboard** carries the same word as a banner above the tiles
+  (`#dash-vehnote`, painted by the same function), since that is where the
+  empty tiles are; Not now on the bar leaves it.
+- Probe: `probe_newcar.mjs` (the fork from the Dashboard, the wizard without
+  the bar, one pending car alone, a set-up car current). Bench:
+  `tools/testbench/obd/autopid_newcar_bench.py`.
+
 ## On-demand page chunks (2026-09-07)
 
 The main page must not grow (meatpi: "we cannot increase the size of the

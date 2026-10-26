@@ -48,6 +48,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 
+#include "autopid.h"   /* autopid_vehicle_summary_t */
 #include "filesystem.h"
 
 static const char *TAG = "autopid";
@@ -401,6 +402,33 @@ cJSON *autopid_vehicles_json(void)
 
     ap_veh_unlock();
     return o;
+}
+
+bool autopid_vehicle_summary(autopid_vehicle_summary_t *out)
+{
+    if (out == NULL)
+    {
+        return false;
+    }
+
+    memset(out, 0, sizeof(*out));
+    ap_veh_lock();
+
+    bool have = (s_idx.current >= 0 && s_idx.current < s_idx.n);
+
+    if (have)
+    {
+        const ap_veh_entry_t *c = &s_idx.v[s_idx.current];
+
+        snprintf(out->name, sizeof(out->name), "%s", c->name);
+        snprintf(out->key, sizeof(out->key), "%s", c->key);
+        snprintf(out->vin, sizeof(out->vin), "%s", c->vin);
+        out->pending = c->pending_profile;
+        out->cars = (uint8_t)s_idx.n;
+    }
+
+    ap_veh_unlock();
+    return have;
 }
 
 cJSON *autopid_vehicle_entry_json(const char *key)

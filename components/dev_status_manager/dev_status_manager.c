@@ -673,3 +673,26 @@ bool dev_status_manager_sd(dev_status_sd_t *out)
     }
     return s_sd_provider(out);
 }
+
+/* ---- the current vehicle summary (2026-10-26) ------------------------------ */
+
+static dev_status_vehicle_provider_t s_vehicle_provider;
+
+void dev_status_manager_set_vehicle_provider(dev_status_vehicle_provider_t fn)
+{
+    s_vehicle_provider = fn;
+}
+
+bool dev_status_manager_vehicle(dev_status_vehicle_t *out)
+{
+    if (out == NULL)
+    {
+        return false;
+    }
+    memset(out, 0, sizeof(*out));
+    if (s_vehicle_provider == NULL)
+    {
+        return false;
+    }
+    return s_vehicle_provider(out);
+}

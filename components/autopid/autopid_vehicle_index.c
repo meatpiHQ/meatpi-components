@@ -105,6 +105,76 @@ bool ap_vidx_key_valid(const char *key)
     return ap_veh_vin_valid(key);
 }
 
+static int hex_nibble(char c)
+{
+    if (c >= '0' && c <= '9')
+    {
+        return c - '0';
+    }
+
+    if (c >= 'a' && c <= 'f')
+    {
+        return c - 'a' + 10;
+    }
+
+    if (c >= 'A' && c <= 'F')
+    {
+        return c - 'A' + 10;
+    }
+
+    return -1;
+}
+
+bool ap_vidx_key_decode(const char *seg, size_t n, char *out, size_t cap)
+{
+    size_t o = 0;
+
+    if (out == NULL || cap == 0)
+    {
+        return false;
+    }
+
+    out[0] = '\0';
+
+    if (seg == NULL || n == 0)
+    {
+        return false;
+    }
+
+    for (size_t i = 0; i < n; i++)
+    {
+        char c = seg[i];
+
+        if (c == '%')
+        {
+            /* a browser sends "fp:" as "fp%3A" (encodeURIComponent):
+               both hex digits must be there and be digits */
+            int hi = (i + 2 < n) ? hex_nibble(seg[i + 1]) : -1;
+            int lo = (i + 2 < n) ? hex_nibble(seg[i + 2]) : -1;
+
+            if (hi < 0 || lo < 0)
+            {
+                out[0] = '\0';
+                return false;
+            }
+
+            c = (char)((hi << 4) | lo);
+            i += 2;
+        }
+
+        if (o + 1 >= cap)
+        {
+            out[0] = '\0';
+            return false;
+        }
+
+        out[o++] = c;
+    }
+
+    out[o] = '\0';
+    return true;
+}
+
 void ap_vidx_default_name(const char *vin, const char *fp,
                           char out[AP_VEH_NAME_LEN])
 {
@@ -184,22 +254,61 @@ int ap_vidx_find_fp(const ap_veh_index_t *idx, const char *fp)
     return -1;
 }
 
-/* ---- the subset rule -------------------------------------------------------------- */
-
-static const ap_veh_ecu_t *main_ecu(const ap_veh_ecu_t *set, size_t n)
+static bool face_has(const ap_veh_entry_t *e, const char *fp)
 {
-    const ap_veh_ecu_t *m = &set[0];
-
-    for (size_t i = 1; i < n; i++)
+    for (int k = 0; k < e->n_faces && k < AP_VEH_FACES_MAX; k++)
     {
-        if (set[i].id < m->id)
+        if (strcmp(e->faces[k], fp) == 0)
         {
-            m = &set[i];
+            return true;
         }
     }
 
-    return m;
+    return false;
 }
+
+int ap_vidx_find_face(const ap_veh_index_t *idx, const char *fp)
+{
+    int i = ap_vidx_find_fp(idx, fp);
+
+    if (i >= 0 || idx == NULL || !has(fp))
+    {
+        return i;
+    }
+
+    for (i = 0; i < idx->n; i++)
+    {
+        if (face_has(&idx->v[i], fp))
+        {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+bool ap_vidx_face_add(ap_veh_entry_t *e, const char *fp)
+{
+    if (e == NULL || !fp_valid(fp) || strcmp(e->fingerprint, fp) == 0 ||
+        face_has(e, fp))
+    {
+        return false;
+    }
+
+    if (e->n_faces >= AP_VEH_FACES_MAX)
+    {
+        /* the oldest face goes */
+        memmove(e->faces[0], e->faces[1],
+                (AP_VEH_FACES_MAX - 1) * sizeof(e->faces[0]));
+        e->n_faces = AP_VEH_FACES_MAX - 1;
+    }
+
+    snprintf(e->faces[e->n_faces], sizeof(e->faces[0]), "%s", fp);
+    e->n_faces++;
+    return true;
+}
+
+/* ---- the subset rule -------------------------------------------------------------- */
 
 static bool ecu_in(const ap_veh_ecu_t *e, const ap_veh_ecu_t *set, size_t n)
 {
@@ -222,17 +331,11 @@ bool ap_veh_ecus_subset(const ap_veh_ecu_t *a, size_t na,
         return false;
     }
 
-    /* the main ECU (the lowest id: 7E8 / 18DAF110, the engine or the
-       gateway) must be present on both sides with the same bitmap */
-    const ap_veh_ecu_t *ma = main_ecu(a, na);
-    const ap_veh_ecu_t *mb = main_ecu(b, nb);
-
-    if (ma->id != mb->id || ma->bitmap != mb->bitmap)
-    {
-        return false;
-    }
-
-    /* every responder of the smaller set appears in the larger one */
+    /* every responder of the smaller set appears in the larger one with
+       the same bitmap. Until 2026-10-26 the lowest id (7E8 / 18DAF110)
+       had to be on both sides as well: a reply the main ECU dropped out
+       of (the private logs: one in a thousand on a Mercedes, a third on a
+       Nissan Ariya) then made the same car a new entry */
     const ap_veh_ecu_t *small = (na <= nb) ? a : b;
     const ap_veh_ecu_t *large = (na <= nb) ? b : a;
     size_t ns = (na <= nb) ? na : nb;
@@ -271,7 +374,8 @@ int ap_vidx_match(const ap_veh_index_t *idx, const char *vin,
                 continue;
             }
 
-            if (has(fp) && strcmp(e->fingerprint, fp) == 0)
+            if (has(fp) && (strcmp(e->fingerprint, fp) == 0 ||
+                            face_has(e, fp)))
             {
                 found = i;
             }
@@ -284,7 +388,8 @@ int ap_vidx_match(const ap_veh_index_t *idx, const char *vin,
     }
     else if (idx != NULL)
     {
-        found = ap_vidx_find_fp(idx, fp);
+        /* the fingerprint, or a face the car was folded in with */
+        found = ap_vidx_find_face(idx, fp);
 
         for (int i = 0; found < 0 && i < idx->n; i++)
         {

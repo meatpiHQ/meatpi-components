@@ -419,6 +419,8 @@ cJSON *ap_std_scan_status_json(void);       /* {status,found,error,ts}   */
 const char *ap_std_prelude(void);           /* ATS1;ATH0;ATST96;ATTP<p>.. */
 cJSON *ap_std_table_json(void);             /* the full SAE table for UI */
 const char *autopid_std_scan_path(void);    /* /data/autopid/std_scan.json */
+/* the job's profile probe: ap_scan_probe_t and its API sit after the
+   autopid_vehicle.h include at the end of this header (they use its sizes) */
 /* one table row -> a config row: ap_std_entry_to_json(), autopid_dialect.h */
 
 /* runner-side identity hooks: see autopid_vehicle.h (included below) */
@@ -758,6 +760,39 @@ void ap_core_job_release(void);
 #endif
 
 #include "autopid_vehicle.h" /* vehicle identity: pure core + file owner */
+
+#ifndef AUTOPID_HOST_TEST
+/* the job's profile probe (autopid_scan_probe.c, 2026-10-26): what the
+   Quick Setup's "Which car is this?" sends with POST .../vehicles/detect.
+   Armed by the httpd task before the start, consumed once by the job.
+   Target only: ap_veh_seen_t is the store's target half. */
+#define AP_PROBE_CMDS_MAX 3
+#define AP_PROBE_CMD_LEN  16
+typedef struct
+{
+    bool    armed;
+    char    profile[AP_VEH_PROFILE_LEN];     /* the published name        */
+    char    name[AP_VEH_NAME_LEN];           /* the entry's name, "" = the
+                                                default                   */
+    char    protocol;                        /* the init's ATSP, '\0' none */
+    char    init[AP_VEH_INIT_LEN];           /* the profile's init chain  */
+    char    cmds[AP_PROBE_CMDS_MAX][AP_PROBE_CMD_LEN]; /* its requests   */
+    char    cmd_inits[AP_PROBE_CMDS_MAX][AP_VEH_INIT_LEN]; /* a request's
+                                                own init (a profile that
+                                                addresses one ECU per
+                                                request), "" = none      */
+    uint8_t n_cmds;
+} ap_scan_probe_t;
+void ap_scan_probe_set(const ap_scan_probe_t *p);   /* NULL = clear      */
+void ap_scan_probe_clear(void);
+const ap_scan_probe_t *ap_scan_probe(void);
+/** Scan task: the prelude for the probe's protocol, the init chain, then
+ *  the requests until one answers positively. True = confirmed: @p seen
+ *  carries the responders (bitmap 0), the protocol, the dialect obd2 and
+ *  confirmed_by profile; @p answered the request that did. */
+bool ap_scan_probe_run(char *resp, size_t resp_len, ap_veh_seen_t *seen,
+                       char *answered, size_t answered_cap);
+#endif /* AUTOPID_HOST_TEST */
 #include "autopid_dialect.h" /* OBD dialects: requests, parsers, addressing */
 #include "autopid_j1939.h"   /* J1939 rows: grammar, classes, the std table */
 

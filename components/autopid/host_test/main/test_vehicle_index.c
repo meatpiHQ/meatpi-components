@@ -100,6 +100,51 @@ void test_vidx_key_and_name(void)
 
 /* ---- find + the subset rule ------------------------------------------------------ */
 
+/* the <key> route segment as a browser sends it (discussion #1018,
+   2026-10-26): encodeURIComponent turns "fp:" into "fp%3A", and the
+   routes answered 404 "no such route" for every car without a readable
+   VIN, so such a car could be neither forgotten nor given a profile */
+void test_vidx_key_decode(void)
+{
+    char key[AP_VEH_KEY_LEN];
+
+    TEST_ASSERT_TRUE(ap_vidx_key_decode("fp%3Adeadbeef", 13, key, sizeof(key)));
+    TEST_ASSERT_EQUAL_STRING("fp:deadbeef", key);
+    TEST_ASSERT_TRUE(ap_vidx_key_valid(key));
+    /* lower-case hex in the escape */
+    TEST_ASSERT_TRUE(ap_vidx_key_decode("fp%3adeadbeef", 13, key, sizeof(key)));
+    TEST_ASSERT_EQUAL_STRING("fp:deadbeef", key);
+    /* a raw colon (curl, python) still works */
+    TEST_ASSERT_TRUE(ap_vidx_key_decode("fp:deadbeef", 11, key, sizeof(key)));
+    TEST_ASSERT_EQUAL_STRING("fp:deadbeef", key);
+    /* only the first n bytes: the segment before "/activate" */
+    TEST_ASSERT_TRUE(ap_vidx_key_decode("fp%3Adeadbeef/activate", 13, key,
+                                        sizeof(key)));
+    TEST_ASSERT_EQUAL_STRING("fp:deadbeef", key);
+    /* a VIN has nothing to decode */
+    TEST_ASSERT_TRUE(ap_vidx_key_decode(VIN_A, 17, key, sizeof(key)));
+    TEST_ASSERT_EQUAL_STRING(VIN_A, key);
+    TEST_ASSERT_TRUE(ap_vidx_key_valid(key));
+
+    /* refused: a torn escape, a non-hex escape, too long for the slot,
+       nothing at all; `out` is "" after a refusal */
+    TEST_ASSERT_FALSE(ap_vidx_key_decode("fp%3", 4, key, sizeof(key)));
+    TEST_ASSERT_EQUAL_STRING("", key);
+    TEST_ASSERT_FALSE(ap_vidx_key_decode("fp%3Adeadbee%4", 14, key,
+                                         sizeof(key)));
+    TEST_ASSERT_FALSE(ap_vidx_key_decode("fp%ZZdeadbeef", 13, key, sizeof(key)));
+    TEST_ASSERT_FALSE(ap_vidx_key_decode("fp%3Adeadbeefdeadbeef", 21, key,
+                                         sizeof(key)));
+    TEST_ASSERT_EQUAL_STRING("", key);
+    TEST_ASSERT_FALSE(ap_vidx_key_decode("", 0, key, sizeof(key)));
+    TEST_ASSERT_FALSE(ap_vidx_key_decode(NULL, 3, key, sizeof(key)));
+    TEST_ASSERT_FALSE(ap_vidx_key_decode("fp:deadbeef", 11, NULL, 0));
+    /* decoded but not a key: the validator still has the last word */
+    TEST_ASSERT_TRUE(ap_vidx_key_decode("..%2Fconfig", 11, key, sizeof(key)));
+    TEST_ASSERT_EQUAL_STRING("../config", key);
+    TEST_ASSERT_FALSE(ap_vidx_key_valid(key));
+}
+
 void test_vidx_find_by_key_vin_fp(void)
 {
     ap_veh_index_t idx;
@@ -148,6 +193,15 @@ void test_vidx_subset_rule(void)
 
     TEST_ASSERT_TRUE(ap_veh_ecus_subset(off1, 1, off1, 1));
     TEST_ASSERT_FALSE(ap_veh_ecus_subset(off1, 1, off2, 1));
+
+    /* 2026-10-26: a reply the main ECU dropped out of is still the same
+       car (the lowest id no longer has to be on both sides); a differing
+       bitmap on a shared ECU still is not */
+    ap_veh_ecu_t no_main[] = { { 0x7E9, 0x80000001 }, { 0x7EA, 0x00000000 } };
+
+    TEST_ASSERT_TRUE(ap_veh_ecus_subset(no_main, 2, ECUS_READY, 3));
+    TEST_ASSERT_TRUE(ap_veh_ecus_subset(ECUS_READY, 3, no_main, 2));
+    TEST_ASSERT_FALSE(ap_veh_ecus_subset(no_main, 2, ECUS_OTHER_AUX, 2));
 
     /* empty sets never match */
     TEST_ASSERT_FALSE(ap_veh_ecus_subset(ECUS_READY, 3, ECUS_READY, 0));
@@ -204,6 +258,99 @@ void test_vidx_match_policy(void)
                                         fp_ready, &exact));
 
     TEST_ASSERT_EQUAL(-1, ap_vidx_match(NULL, VIN_A, NULL, 0, NULL, NULL));
+
+    /* 2026-10-26: a face folded in by "Same car as..." matches like the
+       fingerprint, with a VIN on the contact or without */
+    TEST_ASSERT_TRUE(ap_vidx_face_add(&idx.v[0], "0a70ff20"));
+    TEST_ASSERT_FALSE(ap_vidx_face_add(&idx.v[0], "0a70ff20"));  /* twice   */
+    TEST_ASSERT_FALSE(ap_vidx_face_add(&idx.v[0], fp_ready));    /* its own */
+    TEST_ASSERT_FALSE(ap_vidx_face_add(&idx.v[0], "0A70FF20"));  /* not hex */
+    TEST_ASSERT_FALSE(ap_vidx_face_add(NULL, "0a70ff20"));
+    TEST_ASSERT_EQUAL(1, idx.v[0].n_faces);
+    TEST_ASSERT_EQUAL(0, ap_vidx_find_face(&idx, "0a70ff20"));
+    TEST_ASSERT_EQUAL(1, ap_vidx_find_face(&idx, fp_other));     /* own fp  */
+    TEST_ASSERT_EQUAL(-1, ap_vidx_find_face(&idx, "00000000"));
+    TEST_ASSERT_EQUAL(0, ap_vidx_match(&idx, "", ECUS_OTHER_AUX, 2, "0a70ff20",
+                                       &exact));
+    TEST_ASSERT_TRUE(exact);
+    /* ... and the adoption by a VIN contact goes through faces too */
+    ap_veh_entry_t c = entry("", ECUS_OTHER_AUX, 2, 300, 300);
+    TEST_ASSERT_EQUAL(2, ap_vidx_add(&idx, &c, NULL));
+    TEST_ASSERT_TRUE(ap_vidx_face_add(&idx.v[2], "1b2c3d4e"));
+    TEST_ASSERT_EQUAL(2, ap_vidx_match(&idx, VIN_B, ECUS_READY, 3, "1b2c3d4e",
+                                       &exact));
+    TEST_ASSERT_TRUE(exact);
+
+    /* four faces at most: the oldest goes */
+    TEST_ASSERT_TRUE(ap_vidx_face_add(&idx.v[0], "00000001"));
+    TEST_ASSERT_TRUE(ap_vidx_face_add(&idx.v[0], "00000002"));
+    TEST_ASSERT_TRUE(ap_vidx_face_add(&idx.v[0], "00000003"));
+    TEST_ASSERT_EQUAL(4, idx.v[0].n_faces);
+    TEST_ASSERT_TRUE(ap_vidx_face_add(&idx.v[0], "00000004"));
+    TEST_ASSERT_EQUAL(4, idx.v[0].n_faces);
+    TEST_ASSERT_EQUAL(-1, ap_vidx_find_face(&idx, "0a70ff20"));
+    TEST_ASSERT_EQUAL(0, ap_vidx_find_face(&idx, "00000004"));
+    TEST_ASSERT_EQUAL_STRING("00000001", idx.v[0].faces[0]);
+}
+
+/* ---- the responder union (the identification's three 0100 replies) ----------- */
+
+void test_vidx_ecus_union(void)
+{
+    ap_veh_ecu_t set[AP_VEH_ECUS_MAX];
+    uint8_t n = 0;
+    ap_veh_ecu_t a = { 0x7E8, 0x80000000 };
+    ap_veh_ecu_t a2 = { 0x7E8, 0x00000001 };
+    ap_veh_ecu_t b = { 0x7E9, 0x80000001 };
+
+    TEST_ASSERT_TRUE(ap_veh_ecus_union(set, &n, AP_VEH_ECUS_MAX, &a));
+    TEST_ASSERT_EQUAL(1, n);
+    TEST_ASSERT_TRUE(ap_veh_ecus_union(set, &n, AP_VEH_ECUS_MAX, &b));
+    TEST_ASSERT_EQUAL(2, n);
+
+    /* the same id again: the bitmaps OR, nothing appended */
+    TEST_ASSERT_TRUE(ap_veh_ecus_union(set, &n, AP_VEH_ECUS_MAX, &a2));
+    TEST_ASSERT_EQUAL(2, n);
+    TEST_ASSERT_EQUAL_HEX32(0x80000001, set[0].bitmap);
+    TEST_ASSERT_FALSE(ap_veh_ecus_union(set, &n, AP_VEH_ECUS_MAX, &a2));
+
+    /* a full set keeps what it has */
+    for (uint32_t id = 0x7EA; n < AP_VEH_ECUS_MAX; id++)
+    {
+        ap_veh_ecu_t c = { id, 1 };
+
+        TEST_ASSERT_TRUE(ap_veh_ecus_union(set, &n, AP_VEH_ECUS_MAX, &c));
+    }
+
+    ap_veh_ecu_t extra = { 0x7F0, 1 };
+
+    TEST_ASSERT_FALSE(ap_veh_ecus_union(set, &n, AP_VEH_ECUS_MAX, &extra));
+    TEST_ASSERT_EQUAL(AP_VEH_ECUS_MAX, n);
+    TEST_ASSERT_FALSE(ap_veh_ecus_union(NULL, &n, AP_VEH_ECUS_MAX, &a));
+    TEST_ASSERT_FALSE(ap_veh_ecus_union(set, NULL, AP_VEH_ECUS_MAX, &a));
+
+    /* three replies of a car that drops a responder now and then give the
+       full set, so the fingerprint is the ready car's (2026-10-26) */
+    ap_veh_ecu_t u[AP_VEH_ECUS_MAX];
+    uint8_t m = 0;
+    char fp_union[AP_FP_LEN], fp_ready[AP_FP_LEN];
+
+    for (int i = 1; i < 3; i++)                 /* reply 1: no main ECU  */
+    {
+        (void)ap_veh_ecus_union(u, &m, AP_VEH_ECUS_MAX, &ECUS_READY[i]);
+    }
+
+    for (int i = 0; i < 2; i++)                 /* reply 2: no third ECU */
+    {
+        (void)ap_veh_ecus_union(u, &m, AP_VEH_ECUS_MAX, &ECUS_READY[i]);
+    }
+
+    (void)ap_veh_ecus_union(u, &m, AP_VEH_ECUS_MAX, &ECUS_READY[0]);
+
+    TEST_ASSERT_EQUAL(3, m);
+    ap_veh_fingerprint(u, m, fp_union);
+    ap_veh_fingerprint(ECUS_READY, 3, fp_ready);
+    TEST_ASSERT_EQUAL_STRING(fp_ready, fp_union);
 }
 
 /* ---- LRU eviction + remove ---------------------------------------------------- */
@@ -369,6 +516,10 @@ void test_vidx_json_roundtrip(void)
     b.pending_profile = true;
     snprintf(b.protocol, sizeof(b.protocol), "7");
     b.dialect = AP_DIALECT_UDS;                       /* a WWH-OBD van */
+    /* 2026-10-26: faces and what confirmed the car travel with the file */
+    TEST_ASSERT_TRUE(ap_vidx_face_add(&a, "0a70ff20"));
+    TEST_ASSERT_TRUE(ap_vidx_face_add(&a, "1b2c3d4e"));
+    b.confirmed_by = AP_VEH_BY_PROFILE;
 
     ap_vidx_init(&idx);
     ap_vidx_add(&idx, &a, NULL);
@@ -386,6 +537,10 @@ void test_vidx_json_roundtrip(void)
     TEST_ASSERT_NULL(strstr(body, "\"current\":true"));  /* file: no flag */
     TEST_ASSERT_NOT_NULL(strstr(body, "\"dialect\":\"obd2\""));
     TEST_ASSERT_NOT_NULL(strstr(body, "\"dialect\":\"uds\""));
+    TEST_ASSERT_NOT_NULL(strstr(body, "\"faces\":[\"0a70ff20\",\"1b2c3d4e\"]"));
+    TEST_ASSERT_NOT_NULL(strstr(body, "\"faces\":[]"));
+    TEST_ASSERT_NOT_NULL(strstr(body, "\"confirmed_by\":\"obd\""));
+    TEST_ASSERT_NOT_NULL(strstr(body, "\"confirmed_by\":\"profile\""));
 
     TEST_ASSERT_TRUE(ap_vidx_from_json(body, &back));
     TEST_ASSERT_EQUAL(2, back.n);
@@ -412,6 +567,12 @@ void test_vidx_json_roundtrip(void)
     TEST_ASSERT_TRUE(back.v[1].pending_profile);
     TEST_ASSERT_EQUAL(AP_DIALECT_OBD2, back.v[0].dialect);
     TEST_ASSERT_EQUAL(AP_DIALECT_UDS, back.v[1].dialect);
+    TEST_ASSERT_EQUAL(2, back.v[0].n_faces);
+    TEST_ASSERT_EQUAL_STRING("0a70ff20", back.v[0].faces[0]);
+    TEST_ASSERT_EQUAL_STRING("1b2c3d4e", back.v[0].faces[1]);
+    TEST_ASSERT_EQUAL(AP_VEH_BY_OBD, back.v[0].confirmed_by);
+    TEST_ASSERT_EQUAL(0, back.v[1].n_faces);
+    TEST_ASSERT_EQUAL(AP_VEH_BY_PROFILE, back.v[1].confirmed_by);
 
     /* a store written before dialects existed has no such field: every
        car in it is an OBD-II car; an unknown word is one too */
@@ -423,6 +584,8 @@ void test_vidx_json_roundtrip(void)
         &back));
     TEST_ASSERT_EQUAL(2, back.n);
     TEST_ASSERT_EQUAL(AP_DIALECT_OBD2, back.v[0].dialect);
+    TEST_ASSERT_EQUAL(0, back.v[0].n_faces);             /* no faces field */
+    TEST_ASSERT_EQUAL(AP_VEH_BY_OBD, back.v[0].confirmed_by);
     TEST_ASSERT_EQUAL(AP_DIALECT_OBD2, back.v[1].dialect);
 
     /* an empty index round-trips empty */
@@ -466,6 +629,16 @@ void test_vidx_json_full_index_fits(void)
         ap_veh_fingerprint(e.ecus, e.n_ecus, e.fingerprint);
         e.std_supported = 65535;
         e.scan_ts = 1759300000;
+        e.confirmed_by = AP_VEH_BY_PROFILE;
+
+        for (int k = 0; k < AP_VEH_FACES_MAX; k++)
+        {
+            char face[AP_FP_LEN];
+
+            snprintf(face, sizeof(face), "%08x",
+                     (unsigned)(0x0a70ff00u + (unsigned)(i * 16 + k)));
+            TEST_ASSERT_TRUE(ap_vidx_face_add(&e, face));
+        }
         TEST_ASSERT_EQUAL(i, ap_vidx_add(&idx, &e, NULL));
     }
 
@@ -554,9 +727,11 @@ void test_vidx_json_rejects_and_bounds(void)
 void run_vehicle_index_tests(void)
 {
     RUN_TEST(test_vidx_key_and_name);
+    RUN_TEST(test_vidx_key_decode);
     RUN_TEST(test_vidx_find_by_key_vin_fp);
     RUN_TEST(test_vidx_subset_rule);
     RUN_TEST(test_vidx_match_policy);
+    RUN_TEST(test_vidx_ecus_union);
     RUN_TEST(test_vidx_lru_and_eviction);
     RUN_TEST(test_vidx_touch_once_a_day);
     RUN_TEST(test_vidx_ecus_string);

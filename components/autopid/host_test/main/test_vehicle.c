@@ -309,7 +309,9 @@ void test_veh_effective_protocol_and_prelude(void)
 
     /* the legacy map for 6..9 with headers ON (2026-10-24, issue #1014:
        the replies are read as the chip prints them with the id),
-       protocol-only for the rest; K-line and the search keep headers off */
+       protocol-only for the rest; K-line keeps headers off, the search
+       (no current car, the setting on "0": a Leaf running its profile)
+       has them on since 2026-10-26 (discussion #1018) */
     TEST_ASSERT_EQUAL_STRING("ATS1;ATH1;ATST96;ATTP6;ATSH7DF;ATCRA",
                              ap_veh_prelude_for('6'));
     TEST_ASSERT_EQUAL_STRING("ATS1;ATH1;ATST96;ATTP7;ATSH18DB33F1;ATCRA",
@@ -318,9 +320,9 @@ void test_veh_effective_protocol_and_prelude(void)
                              ap_veh_prelude_for('8'));
     TEST_ASSERT_EQUAL_STRING("ATS1;ATH1;ATST96;ATTP9;ATSH18DB33F1;ATCRA",
                              ap_veh_prelude_for('9'));
-    TEST_ASSERT_EQUAL_STRING("ATS1;ATH0;ATST96;ATTP0",
+    TEST_ASSERT_EQUAL_STRING("ATS1;ATH1;ATST96;ATTP0",
                              ap_veh_prelude_for('0'));
-    TEST_ASSERT_EQUAL_STRING("ATS1;ATH0;ATST96;ATTP0",
+    TEST_ASSERT_EQUAL_STRING("ATS1;ATH1;ATST96;ATTP0",
                              ap_veh_prelude_for('\0'));
     TEST_ASSERT_EQUAL_STRING("ATS1;ATH0;ATST96;ATTP3",
                              ap_veh_prelude_for('3'));

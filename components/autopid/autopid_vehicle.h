@@ -157,8 +157,13 @@ bool ap_veh_doc_empty(const ap_vehicle_doc_t *doc);
 #define AP_VEH_INIT_LEN       96    /* = AP_INIT_LEN                       */
 #define AP_VEH_ECUS_MAX       8     /* responders kept per car             */
 #define AP_VEH_ECUS_STR_LEN   (AP_VEH_ECUS_MAX * 18 + 1) /* "id:bitmap,"  */
+#define AP_VEH_FACES_MAX      4     /* ECU-set hashes besides the own one  */
+#define AP_VEH_BY_OBD         0     /* confirmed_by: a standard request    */
+#define AP_VEH_BY_PROFILE     1     /* confirmed_by: the profile's request */
 #define AP_VEH_TOUCH_PERIOD_S 86400 /* last_seen written once a day        */
-#define AP_VEH_INDEX_JSON_MAX 6144  /* vehicles.json upper bound           */
+#define AP_VEH_INDEX_JSON_MAX 8192  /* vehicles.json upper bound (eight
+                                       cars at every cap, faces included:
+                                       test_vidx_json_full_index_fits)    */
 
 typedef struct
 {
@@ -182,6 +187,19 @@ typedef struct
     int64_t      first_seen;                 /* epoch s, 0 = clock unset  */
     int64_t      last_seen;
     int64_t      scan_ts;                    /* last detection            */
+    char         faces[AP_VEH_FACES_MAX][AP_FP_LEN]; /* other ECU-set
+                                                hashes known to be this car
+                                                (2026-10-26: a contact
+                                                without the VIN with fewer
+                                                ECUs awake, folded in by
+                                                "Same car as..."); the own
+                                                fingerprint is not repeated */
+    uint8_t      n_faces;
+    uint8_t      confirmed_by;               /* AP_VEH_BY_OBD: a standard
+                                                request answered;
+                                                AP_VEH_BY_PROFILE: none did,
+                                                the profile's own request
+                                                confirmed the car (a Leaf) */
 } ap_veh_entry_t;
 
 typedef struct
@@ -198,6 +216,11 @@ void ap_vidx_key_for(const char *vin, const char *fp,
                      char out[AP_VEH_KEY_LEN]);
 /** A VIN (17 chars) or "fp:" + 8 lowercase hex: safe as a file name. */
 bool ap_vidx_key_valid(const char *key);
+/** The first `n` bytes of a route segment percent-decoded into `out`
+ *  (a browser sends "fp:..." as "fp%3A..."; a VIN passes unchanged): false,
+ *  `out` = "", on a torn or non-hex escape or when it does not fit `cap`.
+ *  Validate the result with ap_vidx_key_valid(). */
+bool ap_vidx_key_decode(const char *seg, size_t n, char *out, size_t cap);
 /** "<WMI> <last 4 of the VIN>" or "Car <first 4 hex of the fingerprint>". */
 void ap_vidx_default_name(const char *vin, const char *fp,
                           char out[AP_VEH_NAME_LEN]);
@@ -205,10 +228,24 @@ void ap_vidx_default_name(const char *vin, const char *fp,
 int ap_vidx_find_key(const ap_veh_index_t *idx, const char *key);
 int ap_vidx_find_vin(const ap_veh_index_t *idx, const char *vin);
 int ap_vidx_find_fp(const ap_veh_index_t *idx, const char *fp);
+/** The entry whose own fingerprint OR one of whose faces is @p fp. */
+int ap_vidx_find_face(const ap_veh_index_t *idx, const char *fp);
+/** Remember @p fp as another face of @p e (not its own fingerprint, not
+ *  one it has already; the oldest face goes when the four are taken).
+ *  @return true when the entry changed. */
+bool ap_vidx_face_add(ap_veh_entry_t *e, const char *fp);
+/** Fold @p add into @p set: the same id OR-s the bitmaps, a new id is
+ *  appended while there is room (the union of several 0100 replies,
+ *  2026-10-26: a responder drops out of one reply now and then).
+ *  @return true when the set changed. */
+bool ap_veh_ecus_union(ap_veh_ecu_t *set, uint8_t *n, size_t max,
+                       const ap_veh_ecu_t *add);
 
-/** The SUBSET rule: the same car when the main ECU (lowest id) answers
- *  with the same bitmap in both sets and one set is a subset of the
- *  other (an EV in accessory mode shows fewer ECUs than when ready). */
+/** The SUBSET rule: the same car when every ECU of the smaller set is
+ *  in the larger one with the same bitmap (an EV in accessory mode shows
+ *  fewer ECUs than when ready). Until 2026-10-26 the lowest id had to be
+ *  present on both sides as well, which made a reply missing the main
+ *  ECU (a third of them on a Nissan Ariya, the private logs) a new car. */
 bool ap_veh_ecus_subset(const ap_veh_ecu_t *a, size_t na,
                         const ap_veh_ecu_t *b, size_t nb);
 
@@ -281,6 +318,11 @@ typedef struct
     bool         j1939;                      /* the listener (or the bus
                                                 probe) saw a J1939 network */
     uint16_t     std_supported;              /* detection job only        */
+    uint8_t      confirmed_by;               /* AP_VEH_BY_OBD, or
+                                                AP_VEH_BY_PROFILE when the
+                                                profile's own request was
+                                                what answered (the job's
+                                                probe, 2026-10-26)        */
 } ap_veh_seen_t;
 
 typedef enum
@@ -324,6 +366,12 @@ esp_err_t autopid_vehicle_activate(const char *key);
 /** DELETE .../<key> (internal-stack caller): entry + its tables file;
  *  deleting the current car keeps config.json and clears `current`. */
 esp_err_t autopid_vehicle_delete(const char *key);
+/** POST .../<key>/merge {"into"} (internal-stack caller): @p dst_key
+ *  gains @p src_key's fingerprint and faces, @p src_key is forgotten
+ *  (entry + tables file), and a current source makes the target current
+ *  (the switch). NOT_FOUND for an unknown key, INVALID_ARG when the two
+ *  are one key. */
+esp_err_t autopid_vehicle_merge(const char *src_key, const char *dst_key);
 /** autopid_config_save() mirror (internal-stack caller): the saved
  *  tables also go into the current car's file when they differ. */
 void ap_vehicle_config_saved(const char *json, size_t len);

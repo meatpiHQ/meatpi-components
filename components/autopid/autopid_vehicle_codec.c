@@ -191,6 +191,20 @@ struct cJSON *ap_vidx_entry_json(const ap_veh_entry_t *e, bool with_current,
     cJSON_AddStringToObject(o, "ecus", ecus);
     cJSON_AddNumberToObject(o, "std_supported", e->std_supported);
     cJSON_AddBoolToObject(o, "pending_profile", e->pending_profile);
+
+    /* 2026-10-26: the other ECU-set hashes known to be this car, and what
+       confirmed it (a standard request, or the profile's own) */
+    cJSON *faces = cJSON_AddArrayToObject(o, "faces");
+
+    for (int k = 0; faces != NULL && k < e->n_faces && k < AP_VEH_FACES_MAX;
+         k++)
+    {
+        cJSON_AddItemToArray(faces, cJSON_CreateString(e->faces[k]));
+    }
+
+    cJSON_AddStringToObject(o, "confirmed_by",
+                            e->confirmed_by == AP_VEH_BY_PROFILE ? "profile"
+                                                                 : "obd");
     cJSON_AddNumberToObject(o, "first_seen", (double)e->first_seen);
     cJSON_AddNumberToObject(o, "last_seen", (double)e->last_seen);
     cJSON_AddNumberToObject(o, "scan_ts", (double)e->scan_ts);
@@ -353,6 +367,26 @@ static bool entry_from_json(const cJSON *item, ap_veh_entry_t *e)
                            ? (uint16_t)v->valuedouble : 0;
     e->pending_profile = cJSON_IsTrue(
         cJSON_GetObjectItemCaseSensitive(item, "pending_profile"));
+
+    /* 2026-10-26: faces (valid, distinct, not the own fingerprint, at
+       most four) and what confirmed the car; a store written before has
+       neither = no faces, confirmed by a standard request */
+    const cJSON *faces = cJSON_GetObjectItemCaseSensitive(item, "faces");
+    const cJSON *f = NULL;
+
+    cJSON_ArrayForEach(f, faces)
+    {
+        if (cJSON_IsString(f) && f->valuestring != NULL)
+        {
+            (void)ap_vidx_face_add(e, f->valuestring);
+        }
+    }
+
+    const cJSON *by = cJSON_GetObjectItemCaseSensitive(item, "confirmed_by");
+
+    e->confirmed_by = (cJSON_IsString(by) && by->valuestring != NULL &&
+                       strcmp(by->valuestring, "profile") == 0)
+                          ? AP_VEH_BY_PROFILE : AP_VEH_BY_OBD;
     e->first_seen = get_ts(item, "first_seen");
     e->last_seen = get_ts(item, "last_seen");
     e->scan_ts = get_ts(item, "scan_ts");

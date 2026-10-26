@@ -54,6 +54,8 @@
 
 #include "esp_log.h"
 
+#include "obd_chip_guard.h"
+
 #include "autopid_transport.h"
 
 static const char *TAG = "autopid";
@@ -124,7 +126,46 @@ static bool after_reset(ap_tr_t *tr)
     return true;
 }
 
-void ap_base_send_chain(const char *chain, ap_tr_t *tr)
+/**
+ * One element of a chain to the chip. `init` = a chain OF THE TABLES (a
+ * type's or a row's init, a tested init): the EEPROM guard and the
+ * print-format strip (ATH0 / ATS0 / ATE1 dropped, issue #1014). A chain of
+ * the firmware's own (the prelude, the restore) gets the guard alone: the
+ * K-line and J1850 preludes carry ATH0 on purpose (headers off), and the
+ * strip blanked it into an empty command the chip answered with `?`
+ * (2026-10-26, found behind discussion #1018 on the no-car prelude, then
+ * `ATS1;ATH0;ATST96;ATTP0`, sent after the current car was forgotten: the
+ * chip got `ATS1`, ``, `ATST96`, `ATTP0`; that prelude is headers-on now,
+ * ap_veh_prelude_for()). An element the sanitizing emptied is not sent.
+ * @return false = a reset inside the chain met no bus guard verdict: the
+ * chain is cut.
+ */
+static bool send_element(char *cmd, size_t n, ap_tr_t *tr, bool init)
+{
+    if (init)
+    {
+        ap_init_sanitize(cmd); /* spare the chip's EEPROM, drop ATH0 ... */
+    }
+    else
+    {
+        (void)obd_chip_guard_cmd(cmd, n); /* spare the chip's EEPROM */
+    }
+
+    size_t len = strlen(cmd);
+
+    if (len == 0)
+    {
+        return true;
+    }
+
+    char resp[64];
+
+    (void)ap_base_request_tr(cmd, resp, sizeof(resp), AP_INIT_TIMEOUT, tr);
+
+    return !(ap_guard_cmd_resets(cmd, len) && !after_reset(tr));
+}
+
+static void send_elements(const char *chain, ap_tr_t *tr, bool init)
 {
     char cmd[AP_INIT_LEN];
     size_t n = 0;
@@ -136,14 +177,8 @@ void ap_base_send_chain(const char *chain, ap_tr_t *tr)
             if (n > 0)
             {
                 cmd[n] = '\0';
-                ap_init_sanitize(cmd); /* spare the chip's EEPROM */
 
-                char resp[64];
-
-                (void)ap_base_request_tr(cmd, resp, sizeof(resp),
-                                         AP_INIT_TIMEOUT, tr);
-
-                if (ap_guard_cmd_resets(cmd, n) && !after_reset(tr))
+                if (!send_element(cmd, n, tr, init))
                 {
                     return;
                 }
@@ -163,9 +198,14 @@ void ap_base_send_chain(const char *chain, ap_tr_t *tr)
     }
 }
 
+void ap_base_send_chain(const char *chain, ap_tr_t *tr)
+{
+    send_elements(chain, tr, false);
+}
+
 void ap_base_send_init(const char *chain, ap_tr_t *tr)
 {
-    ap_base_send_chain(chain, tr);
+    send_elements(chain, tr, true);
     s_mem.moved |= ap_chain_sets(chain);
 }
 

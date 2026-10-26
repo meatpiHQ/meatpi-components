@@ -55,6 +55,7 @@
                                                  chip's search          */
 #define AP_ID_AT_TIMEOUT  pdMS_TO_TICKS(2000)
 #define AP_ID_VIN_ECUS    3     /* responders asked for the VIN          */
+#define AP_ID_BITMAP_TRIES 3    /* 0100 replies united into the set      */
 
 typedef struct
 {
@@ -68,13 +69,19 @@ static esp_err_t ask(const id_io_t *io, const char *cmd, TickType_t timeout)
     return ap_be()->request(cmd, io->resp, io->len, timeout);
 }
 
-/** The responder set: ONE bitmap request; the prelude's headers (on for
- *  every CAN protocol since 2026-10-24, issue #1014) carry each ECU's id.
- *  A K-line prelude keeps them off and the bitmaps merge into one row. */
+/** The responder set: the bitmap request asked AP_ID_BITMAP_TRIES times
+ *  and the replies united (2026-10-26: on a multi-ECU car a responder
+ *  drops out of one reply now and then, one in a thousand on a Mercedes,
+ *  a third of them on a Nissan Ariya in the private logs, and a missing
+ *  one changes the fingerprint); the prelude's headers (on for every CAN
+ *  protocol since 2026-10-24, issue #1014) carry each ECU's id. A K-line
+ *  prelude keeps them off and the bitmaps merge into one row. Nothing
+ *  answering the first time is not asked again. */
 static void read_responders(const id_io_t *io, ap_dialect_t dialect,
                             ap_veh_seen_t *seen)
 {
     char cmd[12];
+    ap_veh_ecu_t got[AP_VEH_ECUS_MAX];
 
     seen->n_ecus = 0;
 
@@ -83,11 +90,26 @@ static void read_responders(const id_io_t *io, ap_dialect_t dialect,
         return;
     }
 
-    if (ask(io, cmd, AP_ID_REQ_TIMEOUT) == ESP_OK)
+    for (int t = 0; t < AP_ID_BITMAP_TRIES; t++)
     {
-        seen->n_ecus = (uint8_t)ap_dialect_bitmaps(dialect, io->resp, 0x00,
-                                                  seen->ecus,
-                                                  AP_VEH_ECUS_MAX);
+        int n = 0;
+
+        if (ask(io, cmd, AP_ID_REQ_TIMEOUT) == ESP_OK)
+        {
+            n = ap_dialect_bitmaps(dialect, io->resp, 0x00, got,
+                                   AP_VEH_ECUS_MAX);
+        }
+
+        for (int i = 0; i < n; i++)
+        {
+            (void)ap_veh_ecus_union(seen->ecus, &seen->n_ecus,
+                                    AP_VEH_ECUS_MAX, &got[i]);
+        }
+
+        if (t == 0 && n == 0)
+        {
+            break;
+        }
     }
 }
 

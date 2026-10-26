@@ -93,6 +93,7 @@ typedef enum
     PHASE_VIN,
     PHASE_PIDS,
     PHASE_NETWORK,
+    PHASE_PROBE,    /* the profile's own requests (autopid_scan_probe.c) */
 } scan_phase_t;
 
 static volatile scan_state_t s_scan_state;
@@ -328,6 +329,30 @@ static void scan_store(cJSON *root, const cJSON *supported,
                           "or in the Quick Setup", (unsigned)found,
                      entry.key);
         }
+
+        /* the wizard named the car before the probe (2026-10-26): a new
+           entry is stored under that name with the profile attached (its
+           init applies live when the car is current); a known car keeps
+           what it has until Finish */
+        const ap_scan_probe_t *probe = ap_scan_probe();
+
+        if (!known && probe->armed && probe->profile[0] != '\0')
+        {
+            esp_err_t u = autopid_vehicle_update(
+                entry.key, probe->name[0] != '\0' ? probe->name : NULL,
+                probe->profile, probe->init[0] != '\0' ? probe->init : NULL);
+
+            if (u == ESP_OK)
+            {
+                cJSON_ReplaceItemInObject(root, "name", cJSON_CreateString(
+                    probe->name[0] != '\0' ? probe->name : entry.name));
+            }
+            else
+            {
+                ESP_LOGW(TAG, "detection: profile %s not attached to %s (%s)",
+                         probe->profile, entry.key, esp_err_to_name(u));
+            }
+        }
     }
     else
     {
@@ -373,6 +398,26 @@ static void scan_task(void *arg)
         ap_veh_fingerprint(seen.ecus, seen.n_ecus, fp);
     }
 
+    /* nothing standard answered and the wizard named the car's profile:
+       the profile's own requests confirm the car instead (a Nissan Leaf
+       answers no 0100 and no VIN); its responders are the ECU set */
+    const ap_scan_probe_t *probe = ap_scan_probe();
+    char answered[AP_PROBE_CMD_LEN] = "";
+    bool by_profile = false;
+
+    if (!contact && probe->armed && probe->n_cmds > 0)
+    {
+        s_scan_phase = PHASE_PROBE;
+        by_profile = ap_scan_probe_run(s_resp, sizeof(s_resp), &seen,
+                                       answered, sizeof(answered));
+
+        if (by_profile)
+        {
+            proto = seen.protocol[0];
+            ap_veh_fingerprint(seen.ecus, seen.n_ecus, fp);
+        }
+    }
+
     seen.dialect = (uint8_t)dialect;
 
     cJSON *root = cJSON_CreateObject();
@@ -388,6 +433,18 @@ static void scan_task(void *arg)
         cJSON_AddStringToObject(root, "dialect", ap_dialect_name(dialect));
         cJSON_AddStringToObject(root, "vin", seen.vin);
         cJSON_AddStringToObject(root, "fingerprint", fp);
+        cJSON_AddStringToObject(root, "confirmed_by",
+                                by_profile ? "profile" : "obd");
+
+        if (by_profile)
+        {
+            cJSON_AddStringToObject(root, "probe_answered", answered);
+        }
+        else
+        {
+            cJSON_AddNullToObject(root, "probe_answered");
+        }
+
         supported = cJSON_AddArrayToObject(root, "supported");
     }
 
@@ -443,7 +500,7 @@ static void scan_task(void *arg)
         cJSON_AddBoolToObject(root, "j1939_listening", listening);
         cJSON_AddNumberToObject(root, "bus_kbps",
                                 (bus.kind == AP_BUS_LIVE) ? bus.kbps : 0);
-        any_response = any_response || j1939;
+        any_response = any_response || j1939 || by_profile;
     }
 
     esp_err_t err = ESP_FAIL;
@@ -486,6 +543,7 @@ static void scan_task(void *arg)
         }
     }
 
+    ap_scan_probe_clear();              /* armed for one job only         */
     cJSON_Delete(root);
     ap_core_scan_pause(false);
 
@@ -556,7 +614,7 @@ cJSON *ap_std_scan_status_json(void)
     };
     static const char *const PHASES[] =
     {
-        "idle", "protocol", "vin", "pids", "network",
+        "idle", "protocol", "vin", "pids", "network", "probe",
     };
 
     cJSON *o = cJSON_CreateObject();

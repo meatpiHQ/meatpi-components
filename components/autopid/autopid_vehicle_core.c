@@ -299,6 +299,35 @@ void ap_veh_fingerprint(const ap_veh_ecu_t *ecus, size_t n,
     snprintf(out, AP_FP_LEN, "%08x", (unsigned)h);
 }
 
+bool ap_veh_ecus_union(ap_veh_ecu_t *set, uint8_t *n, size_t max,
+                       const ap_veh_ecu_t *add)
+{
+    if (set == NULL || n == NULL || add == NULL)
+    {
+        return false;
+    }
+
+    for (size_t i = 0; i < *n && i < max; i++)
+    {
+        if (set[i].id == add->id)
+        {
+            uint32_t was = set[i].bitmap;
+
+            set[i].bitmap |= add->bitmap;
+            return set[i].bitmap != was;
+        }
+    }
+
+    if (*n >= max)
+    {
+        return false;
+    }
+
+    set[*n] = *add;
+    (*n)++;
+    return true;
+}
+
 /* ---- protocol selection + prelude ----------------------------------------------- */
 
 static bool has(const char *s)
@@ -355,7 +384,15 @@ const char *ap_veh_prelude_for(char proto)
         case '3': return "ATS1;ATH0;ATST96;ATTP3";
         case '4': return "ATS1;ATH0;ATST96;ATTP4";
         case '5': return "ATS1;ATH0;ATST96;ATTP5";
-        default:  return "ATS1;ATH0;ATST96;ATTP0";
+        /* no protocol known (no current car, the setting on "0"): the
+           chip's own search, headers ON like every CAN prelude: the frame
+           of reference of the profiles. A car that answers no standard
+           request (a Nissan Leaf) never gets an entry and runs its profile
+           on this prelude; with the init's ATSP6 pinning the protocol it
+           ran with headers on in practice, and this says so (2026-10-26:
+           until then the string read ATH0, which the sender's print strip
+           blanked into an empty command, see autopid_baseline.c). */
+        default:  return "ATS1;ATH1;ATST96;ATTP0";
     }
 }
 

@@ -445,6 +445,13 @@ esp_err_t autopid_vehicle_detected(const ap_veh_seen_t *seen,
         e->std_supported = seen->std_supported;
         e->scan_ts = now;
 
+        if (seen->confirmed_by == AP_VEH_BY_OBD &&
+            e->confirmed_by == AP_VEH_BY_PROFILE)
+        {
+            /* a standard request answered this time: the better word */
+            e->confirmed_by = AP_VEH_BY_OBD;
+        }
+
         if (now > 0)
         {
             e->last_seen = now;
@@ -469,6 +476,7 @@ esp_err_t autopid_vehicle_detected(const ap_veh_seen_t *seen,
         ne.j1939 = seen->j1939 || seen->dialect == AP_DIALECT_J1939;
         ne.std_supported = seen->std_supported;
         ne.pending_profile = true;
+        ne.confirmed_by = seen->confirmed_by;
         ne.first_seen = now;
         ne.last_seen = now;
         ne.scan_ts = now;
@@ -536,4 +544,83 @@ esp_err_t autopid_vehicle_detected(const ap_veh_seen_t *seen,
     *out_entry = result;
     *out_known = known;
     return ESP_OK;
+}
+
+esp_err_t autopid_vehicle_merge(const char *src_key, const char *dst_key)
+{
+    /* httpd task (internal stack): the file work runs right here */
+    static ap_veh_entry_t src EXT_RAM_BSS_ATTR;      /* httpd task only */
+    char path[64];
+    int faces = 0;
+
+    if (src_key == NULL || dst_key == NULL || strcmp(src_key, dst_key) == 0)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    ap_veh_lock();
+
+    ap_veh_index_t *idx = ap_veh_index();
+    int s = ap_vidx_find_key(idx, src_key);
+    int d = ap_vidx_find_key(idx, dst_key);
+
+    if (s < 0 || d < 0)
+    {
+        ap_veh_unlock();
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    src = idx->v[s];
+
+    bool was_current = (s == idx->current);
+    ap_veh_entry_t *e = &idx->v[d];
+
+    /* the source's fingerprint and faces become faces of the target: the
+       next contact that answers as the source did lands on the target */
+    faces += ap_vidx_face_add(e, src.fingerprint) ? 1 : 0;
+
+    for (int k = 0; k < src.n_faces && k < AP_VEH_FACES_MAX; k++)
+    {
+        faces += ap_vidx_face_add(e, src.faces[k]) ? 1 : 0;
+    }
+
+    /* a VIN the source learned and the target lacks comes along (the
+       target keeps its key, as an adopted entry does) */
+    if (e->vin[0] == '\0' && src.vin[0] != '\0')
+    {
+        snprintf(e->vin, sizeof(e->vin), "%s", src.vin);
+    }
+
+    ap_vidx_remove(idx, s);             /* a current source: current = -1 */
+    ap_veh_refresh_protocol_cache();
+    ap_veh_unlock();
+
+    ap_veh_car_path(src.key, path, sizeof(path));
+
+    esp_err_t err = filesystem_delete(path);
+
+    if (err != ESP_OK && err != ESP_ERR_NOT_FOUND)
+    {
+        ESP_LOGW(TAG, "%s delete failed (%s)", path, esp_err_to_name(err));
+    }
+
+    ESP_LOGI(TAG, "vehicle %s folded into %s (%d new face%s)%s", src.key,
+             dst_key, faces, faces == 1 ? "" : "s",
+             was_current ? ", the target takes over" : "");
+    err = ap_veh_persist();
+
+    if (was_current)
+    {
+        /* the source's tables were the live ones: the target's own file
+           replaces them, the same path as the switch by hand (init,
+           prelude, event); with no current car there is no snapshot */
+        esp_err_t a = autopid_vehicle_activate(dst_key);
+
+        if (a != ESP_OK)
+        {
+            err = a;
+        }
+    }
+
+    return err;
 }

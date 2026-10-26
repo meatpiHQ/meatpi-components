@@ -29,6 +29,7 @@ idf_component_register(
          "autopid_std_scan.c"
          "autopid_scan_walk.c"
          "autopid_scan_rows.c"
+         "autopid_scan_probe.c"
          "autopid_vehicle_core.c"
          "autopid_vehicle_index.c"
          "autopid_vehicle_codec.c"

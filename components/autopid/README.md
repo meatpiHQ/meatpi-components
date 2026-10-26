@@ -82,7 +82,7 @@ Decisions log there is authoritative; the big ones:
 | `autopid_bus_guard.c` | PURE bus guard: the bitrate a chip protocol transmits at, and the verdict (`allow` / `search` / `park`) for what the native controller heard on the bus, with its one-sentence reason (see "Bus guard" below) |
 | `autopid_guard.c` | the guard's glue: asks `can_manager` what is on the bus before the chip talks (a held listen-only watch until the bitrate is proven), parks the poller, refuses the one-shot jobs, `bus_guard{}` in `GET /api/autopid` |
 | `autopid_runner.c` | the chip-facing poll and the test-a-PID one-shot: type/per-PID init transitions, ATCRA rxheader, request, parse, cross-talk guard; the bus guard's word on the protocols the tables set (`row_pins_ok()`) |
-| `autopid_baseline.c` / `autopid_runner_private.h` | the chip baseline (out of `autopid_runner.c` 2026-10-20, 700-line rule): the prelude, the chain sender with the prelude behind a reset inside a chain (`after_reset()`), the memory the poll and the test share (`ap_base_mem()`), the borrowed-header rule (a standard row that set its own `ATSH` gives the functional header back before a row that sets none) and **the baseline back before the next row type** when a chain of the tables moved the chip (`ap_base_restore()`, issue #964, see "The baseline back" below) |
+| `autopid_baseline.c` / `autopid_runner_private.h` | the chip baseline (out of `autopid_runner.c` 2026-10-20, 700-line rule): the prelude, the chain sender with the prelude behind a reset inside a chain (`after_reset()`), the memory the poll and the test share (`ap_base_mem()`), the borrowed-header rule (a standard row that set its own `ATSH` gives the functional header back before a row that sets none) and **the baseline back before the next row type** when a chain of the tables moved the chip (`ap_base_restore()`, issue #964, see "The baseline back" below). Since 2026-10-26 the sender tells the firmware's own chains (the prelude, the restore: the EEPROM guard alone, never an empty element) from the tables' chains (`ap_base_send_init`: the guard and the print strip of issue #1014): the strip had blanked the `ATH0` of the K-line / J1850 preludes and of the no-car prelude into an empty command; the no-car prelude is headers-on since the same day (`ap_veh_prelude_for`, the default case) |
 | `autopid_chain.c` | PURE (2026-10-20, issue #964): what a `;`-separated chain of the tables sets on the chip beyond the baseline (`ap_chain_sets()`: header, receive filter, extended addressing, flow control, protocol, print format, adaptive timing, ...; read as the chip reads it) and the chain that puts the baseline back (`ap_chain_restore()`: the prelude plus one undo command per thing the prelude does not cover, `ATCEA`, `ATFCSM0`, `ATAT1`, ...) |
 | `autopid_publish.c` | `ap_runner_publish()` = the publish half of a poll (mux, expression, the bounds, cache, events), shared by the chip runner and the J1939 runner (out of `autopid_runner.c` 2026-10-05, 700-line rule) |
 | `autopid_bounds.c` | PURE (2026-10-20, issue #1004): a parameter's `min` / `max` applied to one decoded value (`ap_bounds_apply()`): float noise never drops a reading (a value beyond a bound by at most 1e-6 of it is clamped to the bound), beyond that a standard OBD row clamps to the table's range (its display range, legacy parity) and a custom, specific or J1939 row drops the reading (its bounds are a filter), see "The bounds" below |
@@ -102,7 +102,7 @@ Decisions log there is authoritative; the big ones:
 | `autopid_scan_walk.c` | the job's `pids` phase: the support bitmap walk of the car's dialect (per ECU with headers on for `uds`) and one config row per supported PID that decodes something |
 | `autopid_scan_rows.c` | PURE (2026-10-09): the detection's rows as a new car's tables document (`ap_scan_rows_config()`: type `std`, group `default`, a uds row with its ECU), every row stored `"enabled": false`: nothing is read until the user ticks the ones they want; see "A new car" below |
 | `autopid_vehicle_core.c` | PURE vehicle identity (TASK_quick_setup.md): ATDPN parse, VIN from 0902 / 22F190 replies, responder fingerprint (FNV-1a over sorted ECU id + 0100 bitmap pairs), effective-protocol + prelude selection, the first-pass vehicle.json reader (import); `autopid_vehicle.h` holds every vehicle contract |
-| `autopid_vehicle_index.c` | PURE store index (second pass): key derivation (`VIN` or `fp:<hash>`), find by key / VIN / fingerprint, the fingerprint SUBSET rule, `ap_vidx_match`, the LRU eviction pick, add/remove, the once-a-day `last_seen` touch |
+| `autopid_vehicle_index.c` | PURE store index (second pass): key derivation (`VIN` or `fp:<hash>`), the route key's percent-decode (`ap_vidx_key_decode`, 2026-10-26), find by key / VIN / fingerprint, the fingerprint SUBSET rule, `ap_vidx_match`, the LRU eviction pick, add/remove, the once-a-day `last_seen` touch |
 | `autopid_vehicle_codec.c` | PURE store codec: the responder set as text, one entry as JSON (API + file shape), `vehicles.json` round trip with bounds and sanitizing |
 | `autopid_vehicle.c` | the store: RAM index under one lock, load + the first-pass import, queries, edits (`update` / `activate` / `delete`), the `config.json` mirror, the current car's protocol and dialect getters, the one-shot internal-stack worker `apid_veh` that does the poller's file work |
 | `autopid_vehicle_switch.c` | the store's files: per-car tables copy/snapshot, the switch (snapshot, copy, live reload, SPECIFIC init, event), the new-car path with LRU eviction, first contact (`autopid_vehicle_seen`), the detection result (`autopid_vehicle_detected`) and the one-time `obd_chip_protocol_save()` |
@@ -840,8 +840,58 @@ the car without a profile and also clears its `specific_init`; the init
 applies live when the car is current) returning the entry, `POST
 /api/autopid/vehicles/<key>/activate` (`{"ok":true}`), `DELETE
 /api/autopid/vehicles/<key>` (204; deleting the current car keeps
-`config.json` and clears `current`). The first-pass `/api/autopid/vehicle*`
-routes are gone.
+`config.json` and clears `current`). The `<key>` segment is percent-decoded
+before the lookup (`ap_vidx_key_decode`, 2026-10-26, discussion #1018): the
+web UI sends it through `encodeURIComponent`, so a `fp:` car arrived as
+`fp%3A...`, matched nothing (404 `no such route`) and could be neither
+forgotten nor given a profile; a VIN key was never affected. Found with
+it: deleting the CURRENT car leaves the chip on the no-car prelude (the
+chip's protocol search, `ATTP0`) until the next first contact or
+detection; that prelude read `ATS1;ATH0;ATST96;ATTP0` and the chain
+sender's print strip (issue #1014, for the user's inits) blanked its
+`ATH0` into an empty command the chip answered with `?`, as it did the
+K-line / J1850 preludes' deliberate `ATH0`: `ap_base_send_chain` (the
+firmware's own chains: prelude, restore) now applies the EEPROM guard
+alone and sends no empty element, `ap_base_send_init` (the tables' chains)
+keeps the strip, and the no-car prelude is `ATS1;ATH1;ATST96;ATTP0`
+(headers on, the frame of reference of the profiles: a car that answers no
+standard request, a Nissan Leaf, never gets an entry and runs its profile
+on this prelude with its init pinning the protocol; headers on is what it
+had in practice). **Profile first (2026-10-26, Ali, after the same
+discussion):** the detect route takes an optional body naming the car's
+published profile (`profile`, `name`, `protocol`, `init`, up to three
+`cmds`, each with its own init when the profile addresses one ECU per
+request; `autopid_scan_probe.c` holds it, armed by the httpd task and
+consumed once by the job): a new entry is stored under that name with the
+profile attached, and a car that answers nothing standard (no 0100, no
+22F400, no VIN: a Nissan Leaf) is confirmed by the profile's own first
+request that answers positively, its responders being the ECU set the car
+is keyed by (`confirmed_by: "profile"`, no standard rows, phase `probe`).
+Every entry carries `faces` (other ECU-set hashes known to be this car, up
+to four; the match tries the fingerprint, then any face, then the subset
+rule) and `confirmed_by`; `POST .../<key>/merge {"into"}`
+(`autopid_vehicle_merge`, "Same car as..." in the wizard's list) folds a
+car seen without its VIN into the entry it belongs to. The identification
+asks 0100 three times and unites the replies (`ap_veh_ecus_union`), and
+the subset rule no longer needs the lowest id on both sides: a reply the
+main ECU dropped out of is still the same car. `AP_VEH_INDEX_JSON_MAX` is
+8192 (eight cars at every cap with four faces each fit, host-tested). The
+first-pass `/api/autopid/vehicle*` routes are gone.
+
+**The status summary (2026-10-26).** `autopid_vehicle_summary()`
+(`include/autopid.h`) hands the composition root the current car in one
+line (`name`, `key`, `vin`, `pending` = `pending_profile`, `cars` = how many
+the store holds), which main serves as `vehicle` on `GET /api/status`: the
+web UI's notice bar and the Dashboard say when the live tables belong to a
+car whose setup never finished beside a set-up one. Born from Ali's report
+of the day: a device set up on the simulator (two standard PIDs chosen) and
+plugged into his car met a new car, which became current with its rows
+stored off, and the dashboard went empty without a word while his two rows
+stayed with the simulator's entry. The identity rule is unchanged: a
+VIN-less contact with another bitmap is another car until the user folds
+it in ("Same car as...") or sets it up. Proof: `autopid_newcar_bench.py`
+(the fork on the bench, the bar in Chrome, the fold-in that brings the two
+rows back) and `tools/webui_preview/probe_newcar.mjs`.
 
 ## Memory footprint (vehicle store, estimated)
 

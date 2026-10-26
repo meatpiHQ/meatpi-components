@@ -61,7 +61,7 @@ const W={cur:null,use:"ha",agree:[false,false,false],haInstalled:false,mdataOk:f
   applied:false,noVeh:false,
   car:null,noProfile:false,proto:"0",plugged:false,ignition:false,
   scan:"idle",scanStatus:null,scanResult:null,stdPick:null,stdDefault:[],
-  vehPhase:null,veh:null,vehName:"",profChoice:null,profCar:null,profList:undefined,
+  vehPhase:null,veh:null,vehName:"",profChoice:null,profCar:null,profList:undefined,carChoice:"detect",vehNameAuto:false,
   poll:{rate:5,rateCustom:3,minEvent:1,pause:"sleep",pauseV:12.5,pauseAll:false,std:true,specific:true,dtc:false,dtcMin:60},pollSeeded:false,
   /* step 10, battery and sleep: the live trace, the two readings, the chosen pair */
   pwr:{phase:"idle",trace:[],base:null,charging:null,resting:null,tC:0,tD:0,tR:0,sleep:13.1,wake:13.2,touched:false,narrow:false,measured:false,skipped:false,misses:0}};
@@ -1156,7 +1156,17 @@ SCREENS.vehicle=async()=>{
   const err=h("div",{});
   const body=h("div",{class:"qs-body"});
   const finish=btn("Continue",()=>go("power"),"pri");
-  const picker=vehicleProfilePicker({current:()=>W.profCar?W.profCar.car_model:(W.veh&&W.veh.profile)||"",onPick:car=>{W.profCar=car;W.profChoice="car";render();}});
+  /* the profile's make and model as the entry's name ("Toyota: Sienna 2021-"
+     -> "Toyota Sienna 2021"), the maker's trailing dash dropped */
+  const profileName=car=>{const sp=picker.splitName(car&&car.car_model);return(sp.make+" "+sp.model).replace(/\s*-\s*$/,"").replace(/\s+/g," ").trim().slice(0,maxName);};
+  const profileSays=car=>{const pm=profileProtocol(car);const n=(car.pids||[]).length;
+    const names=(car.pids||[]).flatMap(p=>(p.parameters||[]).map(x=>x.name)).filter(Boolean).slice(0,5).join(", ");
+    return(pm?protoName(pm)+" (the profile's init), ":"")+n+" request"+(n===1?"":"s")+(names?": "+names:"")+".";};
+  /* picked before the probe (section 1, 2026-10-26): the choice is the
+     profile, the name follows it until the user types one */
+  const picker=vehicleProfilePicker({current:()=>W.profCar?W.profCar.car_model:(W.veh&&W.veh.profile)||"",onPick:car=>{W.profCar=car;W.profChoice="car";
+    if(W.vehPhase==="idle"||W.vehPhase==="noanswer"){W.carChoice="profile";if(!W.vehName||W.vehNameAuto){W.vehName=profileName(car);W.vehNameAuto=true;}}
+    render();}});
   const entries=()=>(D.vehicles&&Array.isArray(D.vehicles.vehicles))?D.vehicles.vehicles:[];
   const protoName=p=>PROTO[String(p)]||(String(p)==="0"||!p?"Automatic":"protocol "+p);
   const norm=c=>String(c||"").replace(/\s+/g,"").toUpperCase();
@@ -1171,12 +1181,44 @@ SCREENS.vehicle=async()=>{
       lead:sup.length+" supported PIDs reported by the vehicle. Tick the ones WiCAN should read:"});
     if(picked){W.stdPick=picked.map(r=>norm(r.cmd));render();}
   }
+  /* "Same car as..." (2026-10-26): a car seen without its VIN folded into
+     the entry it belongs to; its ECU set stays with that entry as a face,
+     so the next contact that answers the same way lands on the right car */
+  async function sameCar(e){
+    const others=entries().filter(x=>x.key!==e.key);
+    if(!others.length)return;
+    let into=others[0].key;
+    const choices=h("div",{class:"qs-radios"},...others.map((x,i)=>h("label",{},h("input",{type:"radio",name:"qs-same",checked:i===0,onchange:()=>{into=x.key;}})," "+(x.name||defaultName(x)||x.key)+(x.vin?" · "+x.vin:" · no VIN")+(x.profile?" · "+x.profile:""))));
+    const ok=await new Promise(res=>modal({title:"Same car as...",
+      body:h("div",{},h("p",{class:"help",style:"margin:0 0 8px;font-size:12.5px"},"\""+(e.name||defaultName(e)||e.key)+"\" is folded into the car you pick: its ECU set is remembered as a face of that car, its own rows are dropped."),choices),
+      actions:[{label:"Cancel",fn:()=>res(false)},{label:"Fold it in",kind:"pri",fn:()=>res(true)}]}));
+    if(!ok)return;
+    try{await api("/api/autopid/vehicles/"+encodeURIComponent(e.key)+"/merge",{method:"POST",body:{into}});toast("Folded in","ok");D.vehicles=await tryGet("/api/autopid/vehicles");render();}
+    catch(ex){toast(ex.message,"err");}
+  }
   const render=()=>{
     const out=[];
     const v=W.veh;
     const phase=W.vehPhase;
     if(phase==="idle"||phase==="noanswer"){
-      out.push(sub("1. Detect the vehicle"));
+      /* 1. which car (2026-10-26, discussion #1018, Ali: the profile before
+         the probe): a published profile, or no profile and detection as
+         before; the action of the first choice at the right edge of its row */
+      out.push(sub("1. Which car is this?"));
+      out.push(h("p",{class:"qs-lead",style:"font-size:13px"},"WiCAN knows the published profiles (what each car answers beyond the standard PIDs). Say which car this is first: the detection then uses the profile's protocol and requests, and the car is stored under this name even when it answers no standard request."));
+      const car1=W.carChoice==="profile"?W.profCar:null;
+      const pickProfile=()=>{W.carChoice="profile";picker.open();};
+      out.push(h("div",{class:"qs-radios"},
+        h("div",{style:"display:flex;align-items:center;gap:10px;flex-wrap:wrap"},
+          h("label",{},h("input",{type:"radio",name:"qs-car",id:"qs-car-profile",checked:W.carChoice==="profile",onchange:()=>{if(W.profCar){W.carChoice="profile";render();}else pickProfile();}})," A published profile"),
+          h("div",{class:"qs-pick",style:"margin:0 0 0 auto;padding:0"},...(car1?[h("span",{class:"sel"},ic("car"),car1.car_model),btn("Change profile",pickProfile,"sm",{icon:"search"})]:[btn("Choose profile",pickProfile,"sm",{icon:"search"})]))),
+        h("div",{class:"help",style:"font-size:12.5px;margin:-4px 0 8px 26px"},car1?profileSays(car1):"The make and model from the published list: what the car answers beyond the standard PIDs."),
+        h("div",{},h("label",{},h("input",{type:"radio",name:"qs-car",id:"qs-car-detect",checked:W.carChoice!=="profile",onchange:()=>{W.carChoice="detect";render();}})," No profile for this car: detect it")),
+        h("div",{class:"help",style:"font-size:12.5px;margin:-4px 0 8px 26px"},"WiCAN learns the protocol, reads the VIN and finds the standard PIDs it answers. A profile can still be picked after the scan.")));
+      out.push(h("dl",{class:"qs-kv"},h("dt",{},"Name"),h("dd",{},
+        h("input",{id:"qs-veh-name",value:W.vehName,placeholder:"e.g. Family car",style:"max-width:260px",oninput:e=>{W.vehName=e.target.value;W.vehNameAuto=false;}}),
+        h("span",{class:"help",style:"font-size:12px"},car1&&W.vehNameAuto?"from the profile; change it if you like":"shown on the Status page and in Home Assistant"))));
+      out.push(sub("2. Detect the vehicle"));
       if(phase==="noanswer")out.push(banner("warn","alert",h("b",{},"The car did not answer. "),
         (W.scanStatus&&W.scanStatus.error?W.scanStatus.error+". ":"")+"Usually the ignition is off or the plug is not seated. Turn the ignition on (an EV in ready mode) and try again. You can also skip: WiCAN detects the car by itself the first time it answers, and the Status page tells you when it has."));
       const detBtn=btn(phase==="noanswer"?"Try again":"Detect my vehicle",startDetect,"pri",{icon:"refresh",disabled:!(W.plugged&&W.ignition)});
@@ -1184,36 +1226,40 @@ SCREENS.vehicle=async()=>{
       out.push(ack("plugged","qs-plugged","WiCAN is plugged into the OBD port","Under the dashboard, driver side on most cars."));
       out.push(ack("ignition","qs-ignition","Ignition is on","The engine can stay off. On an EV, \"ready\" mode."));
       out.push(h("div",{},detBtn));
-      out.push(note("","About 15 to 30 s. WiCAN learns the protocol, reads the VIN and finds the standard PIDs, then remembers all of it under this vehicle. Plug it into another car later and it tells the cars apart."));
+      out.push(note("",W.carChoice==="profile"&&W.profCar
+        ?"About 10 to 20 s. WiCAN pins the protocol the profile expects, reads the VIN and the standard PIDs, and sends the profile's first requests. A car that answers no standard request is still confirmed by those and stored under the name above."
+        :"About 15 to 30 s. WiCAN learns the protocol, reads the VIN and finds the standard PIDs, then remembers all of it under this vehicle. Plug it into another car later and it tells the cars apart."));
       if(!D.vehicles)out.push(note("","This firmware keeps one vehicle only (no vehicle store): the result is stored, but moving WiCAN between cars needs a new scan each time."));
     }else if(phase==="detecting"){
-      out.push(sub("1. Detecting the vehicle"));
+      out.push(sub("2. Detecting the vehicle"));
       const phases=[["protocol","Detecting the OBD protocol","WiCAN asks on each CAN protocol in turn, first the OBD-II way (0100), then the way of newer vans and trucks (ISO 27145: 22 F400). A few seconds."],["vin","Reading the VIN","Mode 09 PID 02, then UDS 22 F190 (22 F802 on an ISO 27145 vehicle). Without either, the car is identified by the set of ECUs that answered."],["pids","Finding the standard PIDs","The support bitmaps of every ECU that answers (0100, 0120 and up, or 22 F400 and up). Stored under this vehicle."],["network","Listening to the vehicle network","Is this a J1939 network (trucks, buses, agricultural machines)? WiCAN only listens here: the controllers that broadcast, the groups they send, the VIN when one is broadcast."]];
+      phases.push(["probe","Asking the profile's own requests","Nothing standard answered: the profile's first requests confirm the car and give the ECUs it is identified by."]);
       const ph=W.scanStatus&&W.scanStatus.phase;const idx=Math.max(0,phases.findIndex(p=>p[0]===ph));
       phases.forEach((p,i)=>out.push(check(i<idx?"ok":i===idx?"run":"","info",p[1],p[2],i<idx?chip("Done","ok"):i===idx?chip("Working",""):null)));
     }else{
       /* result */
-      out.push(sub("1. Vehicle detected"));
+      out.push(sub("2. Vehicle detected"));
       const known=!!(v.known&&v.profile);
       const j1939Only=v.dialect==="j1939";
       if(known)out.push(banner("ok","check",h("b",{},"Welcome back: "+(v.name||defaultName(v))+". "),"WiCAN set this car up before and already switched to its profile, PIDs and protocol. Nothing to do here unless you want to change something."));
       else if(j1939Only)out.push(banner("ok","check",h("b",{},"J1939 vehicle. "),"This vehicle speaks SAE J1939, the network of trucks, buses and agricultural machines. Its controllers broadcast their values; WiCAN listens and never asks. "+(v.std_supported||0)+" standard parameters were heard and stored under this vehicle."+(v.vin?"":" No VIN was broadcast: it is remembered by the set of controllers on its network.")));
-      else if(!v.vin)out.push(banner("info","info",h("b",{},"New vehicle. "),"This car gave no VIN, so WiCAN remembers it by the set of ECUs that answered (that works for one car; two identical models would look the same). Give it a name below."));
+      else if(v.confirmed_by==="profile")out.push(banner("ok","check",h("b",{},"New vehicle: "+(W.vehName||v.name||"the profile's car")+". "),"This car answers no standard request (no 0100, no VIN): WiCAN confirmed it with the profile's own request"+(v.probeAnswered?" ("+v.probeAnswered+")":"")+" and stored it under this name, identified by the ECUs that answered. There is no standard set to choose from."));
+      else if(!v.vin)out.push(banner("info","info",h("b",{},"New vehicle. "),"This car gave no VIN, so WiCAN remembers it by the set of ECUs that answered (that works for one car; two identical models would look the same). If it answers its VIN another day, a second entry appears: \"Same car as...\" in the list below folds the two into one. Give it a name below."));
       else out.push(banner("ok","check",h("b",{},v.known?"Vehicle recognised. ":"New vehicle. "),"WiCAN stored the protocol and VIN under this car and found "+(v.std_supported||0)+" standard PIDs it answers. Choose the ones to read below, and a profile for the vehicle-specific values."));
       if(v.j1939&&!v.j1939Listening)out.push(banner("warn","alert",h("b",{},"One more restart for the J1939 listener. "),"The J1939 network is read by WiCAN's own CAN controller, which is off on a new device. Finish turns it on in listen-only mode (it never transmits) together with the J1939 listener; the values arrive after that restart."));
       else if(v.j1939&&!j1939Only)out.push(banner("info","info",h("b",{},"A J1939 network as well. "),"This vehicle answers OBD requests and broadcasts J1939 groups. Both sets of parameters are stored under it."));
       const nameInp=h("input",{id:"qs-veh-name",value:W.vehName,placeholder:"e.g. Family car",style:"max-width:260px",oninput:e=>{W.vehName=e.target.value;}});
       const d2=t=>h("span",{class:"d2"},t);
       out.push(h("dl",{class:"qs-kv"},
-        h("dt",{},"VIN"),h("dd",{},v.vin?[h("code",{},v.vin),d2(j1939Only?"broadcast by the vehicle":"read from the car")]:[h("span",{},"not available"),d2((j1939Only?"identified by its controllers":"identified by its ECUs")+(v.fingerprint?" ("+v.fingerprint+")":""))]),
+        h("dt",{},"VIN"),h("dd",{},v.vin?[h("code",{},v.vin),d2(j1939Only?"broadcast by the vehicle":"read from the car")]:[h("span",{},v.confirmed_by==="profile"?"not available":"not answered"),j1939Only||v.confirmed_by==="profile"?null:chip("No VIN","warn"),d2((j1939Only?"identified by its controllers":v.confirmed_by==="profile"?"identified by the ECUs the profile's request answered from":"identified by its ECUs")+(v.fingerprint?" ("+v.fingerprint+")":""))]),
         h("dt",{},j1939Only?"Network":"OBD protocol"),h("dd",{},j1939Only?[h("span",{id:"qs-veh-dialect"},"SAE J1939"+(v.busKbps?", "+v.busKbps+" kbit/s":"")),d2("heard")]:[protoName(v.protocol),DIALECT[v.dialect]?h("span",{id:"qs-veh-dialect"},DIALECT[v.dialect]):null,d2(PROTO[String(v.protocol)]?"detected":"automatic"),v.j1939?d2("and a J1939 network"):null]),
         h("dt",{},j1939Only?"Standard parameters":"Standard PIDs"),h("dd",{},(v.std_supported||0)+(j1939Only?" heard":" answered"),d2(j1939Only?"stored under this vehicle":stdPick().length?stdPick().length+" chosen":"none chosen yet")),
         h("dt",{},"Name"),h("dd",{},nameInp,h("span",{class:"help",style:"font-size:12px"},"shown on the Status page and in Home Assistant"))));
       /* 2. the standard PIDs: the scan found what the car answers, the user
          chooses what WiCAN reads (nothing ticked for a new car, none is
          allowed: Ali, 2026-10-07); a J1939-only vehicle has no requests */
-      if(!j1939Only){
-        out.push(sub("2. Standard PIDs"));
+      if(!j1939Only&&v.confirmed_by!=="profile"){
+        out.push(sub("3. Standard PIDs"));
         const sup=stdRows(),pick=stdPick();
         const names=pick.map(c=>(sup.find(r=>norm(r.cmd)===c)||{}).name||c);
         out.push(h("p",{class:"qs-lead",style:"font-size:13px"},"The scan found "+sup.length+" standard PIDs this car answers: speed, RPM, coolant, fuel level and the like. Choose the ones WiCAN should read. Each one is a request every polling round, so fewer means faster updates for the ones you keep; the rest can be added any time under Automate > Parameters."));
@@ -1224,14 +1270,19 @@ SCREENS.vehicle=async()=>{
       /* 2. profile (a J1939-only vehicle has no OBD requests for a profile to add) */
       if(j1939Only&&!known){
         if(W.profChoice===null){W.profChoice="none";W.profCar=null;}
-        out.push(sub("2. Vehicle profile"));
+        out.push(sub("3. Vehicle profile"));
         out.push(note("","Profiles carry OBD requests, which a J1939 vehicle does not answer. The standard J1939 parameters are stored already; more groups can be added as PGN rows under Automate > Parameters."));
       }
       const chosen=W.profChoice==="car"?W.profCar:null;
       if(!(j1939Only&&!known)){
-      out.push(sub((j1939Only?"2":"3")+". Vehicle profile"));
+      out.push(sub(((j1939Only||v.confirmed_by==="profile")?"3":"4")+". Vehicle profile"));
       const testBtn=btn("Test profile",()=>testProfile(chosen||(known?{car_model:v.profile,fromStore:true}:null)),"sm",{icon:"refresh",disabled:!(chosen||known)});
-      if(known&&W.profChoice===null){
+      if(W.carChoice==="profile"&&chosen){
+        /* named before the probe (section 1): the profile is attached to the
+           entry already; change it, test it, or scan again */
+        out.push(h("div",{class:"qs-pick"},h("span",{class:"sel"},ic("car"),chosen.car_model),btn("Change profile",()=>picker.open(),"sm",{icon:"search"}),testBtn,btn("Scan again",startDetect,"sm",{icon:"refresh"})));
+        out.push(note("","The profile is saved under this car: WiCAN applies it again whenever this car answers, and never to another car. Test profile sends each of its requests once and shows the values before anything is saved."));
+      }else if(known&&W.profChoice===null){
         out.push(h("div",{class:"qs-pick"},h("span",{class:"sel"},ic("car"),v.profile),btn("Change profile",()=>picker.open(),"sm",{icon:"search"}),testBtn,btn("Scan again",startDetect,"sm",{icon:"refresh"})));
         out.push(note("","The profile and the PIDs you had for this car are back in place. Scan again only if the car behaves differently than before."));
       }else{
@@ -1261,9 +1312,11 @@ SCREENS.vehicle=async()=>{
       if(list.length){
         out.push(h("div",{class:"qs-nets"},...list.map(e=>h("div",{class:"qs-net",style:"grid-template-columns:1fr auto auto;cursor:default"},
           h("span",{},h("b",{},e.name||defaultName(e)||"Unnamed vehicle"),h("br"),h("span",{class:"help"},(e.vin||("no VIN, "+(e.dialect==="j1939"?"controller set ":"ECU set ")+(e.fingerprint||"")))+" · "+(e.dialect==="j1939"?"SAE J1939":protoName(e.protocol)+(DIALECT[e.dialect]?", "+DIALECT[e.dialect]:"")+(e.j1939?", J1939 network":""))+" · "+(e.profile||"no profile")+" · "+(e.std_supported||0)+(e.dialect==="j1939"?" std parameters":" std PIDs")+(e.last_seen?" · seen "+fmtAge(e.last_seen):""))),
-          e.current?chip("Current","pri"):e.pending_profile?chip("Profile pending","warn"):h("span",{}),
-          btn("Forget",async()=>{if(!await confirmModal("Forget "+(e.name||e.vin||"this vehicle")+" and its PIDs?","Forget vehicle"))return;
-            try{await api("/api/autopid/vehicles/"+encodeURIComponent(e.key),{method:"DELETE"});toast("Forgotten","ok");D.vehicles=await tryGet("/api/autopid/vehicles");render();}catch(ex){toast(ex.message,"err");}},"sm gh")))));
+          e.current?chip("Current","pri"):(!e.vin&&e.dialect!=="j1939")?chip("No VIN","warn"):e.pending_profile?chip("Profile pending","warn"):h("span",{}),
+          h("span",{style:"display:flex;gap:6px;align-items:center;justify-content:flex-end"},
+            (!e.vin&&e.dialect!=="j1939"&&list.length>1)?btn("Same car as...",()=>sameCar(e),"sm",{icon:"car"}):null,
+            btn("Forget",async()=>{if(!await confirmModal("Forget "+(e.name||e.vin||"this vehicle")+" and its PIDs?","Forget vehicle"))return;
+              try{await api("/api/autopid/vehicles/"+encodeURIComponent(e.key),{method:"DELETE"});toast("Forgotten","ok");D.vehicles=await tryGet("/api/autopid/vehicles");render();}catch(ex){toast(ex.message,"err");}},"sm gh"))))));
       }else out.push(h("div",{class:"empty"},"No vehicle stored yet. Detect one above."));
       out.push(note("","Up to "+(D.vehicles.max||8)+" vehicles. The current one is whichever answered last; its PIDs, protocol and profile are what WiCAN polls. Forget removes a car and its PIDs."));
     }
@@ -1278,11 +1331,19 @@ SCREENS.vehicle=async()=>{
       const st0=await tryGet("/api/autopid/std_scan");
       if(st0&&st0.status==="running")toast("A scan is already running","");
       else{
-        try{await api("/api/autopid/vehicles/detect",{method:"POST",body:{}});}
+        /* the car named before the probe (2026-10-26): the profile, the
+           name, the protocol its init pins and its first three requests
+           (each with its own init when it has one) go with the job, which
+           confirms a car that answers nothing standard with those */
+        const pc=W.carChoice==="profile"?W.profCar:null;
+        const detectBody=pc?{profile:String(pc.car_model||"").slice(0,maxName),name:String(W.vehName||"").slice(0,31),protocol:profileProtocol(pc)||"",init:String(pc.init||"").slice(0,95),
+          cmds:(pc.pids||[]).map(p=>({cmd:String(p.pid||"").replace(/\s+/g,""),init:String(p.pid_init||"").slice(0,95)})).filter(x=>/^[0-9A-Fa-f]{2,15}$/.test(x.cmd)).slice(0,3).map(x=>x.init?x:x.cmd)}:{};
+        try{await api("/api/autopid/vehicles/detect",{method:"POST",body:detectBody});}
         catch(e){if(/404|not found/i.test(e.message))await api("/api/autopid/std_scan",{method:"POST",body:{}});else throw e;}
       }
       const list0=entries();   /* the store before this scan: a new car is one it did not have */
-      W.vehPhase="detecting";W.veh=null;W.profChoice=null;W.profCar=null;W.stdPick=null;W.stdDefault=[];
+      W.vehPhase="detecting";W.veh=null;W.stdPick=null;W.stdDefault=[];
+      if(W.carChoice==="profile"&&W.profCar)W.profChoice="car";else{W.profChoice=null;W.profCar=null;}
       W.scanStatus=(await tryGet("/api/autopid/std_scan"))||{status:"running"};render();
       loadProfiles();
       let ticks=0;
@@ -1297,8 +1358,9 @@ SCREENS.vehicle=async()=>{
         const key=r.key||r.vin||(r.fingerprint?"fp:"+r.fingerprint:"");
         const e=list.find(x=>x.key===key)||list.find(x=>x.current)||{};
         W.veh={key:e.key||key,vin:r.vin||e.vin||"",fingerprint:r.fingerprint||e.fingerprint||"",protocol:r.protocol_detected||e.protocol||r.protocol||"",dialect:r.dialect||e.dialect||"obd2",
-          std_supported:(r.supported||[]).length||e.std_supported||0,known:!!(r.known||e.profile),name:r.name||e.name||"",profile:e.profile||"",specific_init:e.specific_init||"",pending_profile:e.pending_profile,
-          j1939:!!(r.j1939||e.j1939),j1939Listening:r.j1939_listening!==false,busKbps:r.bus_kbps||0};
+          std_supported:(r.supported||[]).length||e.std_supported||0,known:!!r.known||(!!e.profile&&W.carChoice!=="profile"),name:r.name||e.name||"",profile:e.profile||"",specific_init:e.specific_init||"",pending_profile:e.pending_profile,
+          j1939:!!(r.j1939||e.j1939),j1939Listening:r.j1939_listening!==false,busKbps:r.bus_kbps||0,
+          confirmed_by:r.confirmed_by||e.confirmed_by||"obd",probeAnswered:r.probe_answered||""};
         W.scanResult=r;W.vehName=W.veh.name||defaultName(W.veh);
         {const sup=(r.supported||[]).map(x=>norm(x.cmd));
          const cfgNow=await tryGet("/api/autopid/config");
@@ -1361,7 +1423,7 @@ SCREENS.vehicle=async()=>{
   if(W.vehPhase===undefined||W.vehPhase===null)W.vehPhase="idle";
   if(W.vehPhase==="result")await loadProfiles();
   render();
-  return screen("Your vehicle","WiCAN detects the car first: the OBD protocol, the VIN and the standard PIDs it supports. Then you pick a profile for the vehicle-specific values. Everything is stored under the car, so moving WiCAN between cars just works.",
+  return screen("Your vehicle","Say which car it is, then WiCAN detects it: the OBD protocol, the VIN and the standard PIDs it supports, with the profile's own requests for a car that answers nothing standard. Everything is stored under the car, so moving WiCAN between cars just works.",
     [body],
     [back("checks"),grow(),btn("Skip for now",()=>{W.noVeh=true;go("done");},"gh sm"),finish]);
 };

@@ -31,14 +31,25 @@
  *        store's file work runs right here.
  *
  * GET    /api/autopid/vehicles                 the index (+ "current")
- * POST   /api/autopid/vehicles/detect          the detection job (202/409)
+ * POST   /api/autopid/vehicles/detect          the detection job (202/409);
+ *                                              an optional body names the
+ *                                              car's profile and arms the
+ *                                              job's probe (2026-10-26)
  * PUT    /api/autopid/vehicles/<key>           {name?, profile?, specific_init?}
  * POST   /api/autopid/vehicles/<key>/activate  switch by hand
+ * POST   /api/autopid/vehicles/<key>/merge     {"into"}: fold <key> into
+ *                                              another entry (2026-10-26)
  * DELETE /api/autopid/vehicles/<key>           forget the car (204)
+ *
+ * The `<key>` segment is percent-decoded before the lookup (2026-10-26,
+ * discussion #1018): the web UI sends it through encodeURIComponent, so a
+ * car without a readable VIN, keyed `fp:<8 hex>`, arrived as `fp%3A...`,
+ * matched nothing, and could be neither forgotten nor given a profile.
  */
 #include <stdlib.h>
 #include <string.h>
 
+#include "esp_attr.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
 
@@ -49,6 +60,9 @@
 
 #define VEH_URI_PREFIX "/api/autopid/vehicles/"
 #define VEH_BODY_MAX   512
+
+static bool body_str(const cJSON *root, const char *name, size_t cap,
+                     const char **out);
 
 /** The `<key>` segment after the prefix and what follows it (`"/..."` or
  *  `""`, the query string stripped). False when the key is malformed. */
@@ -72,13 +86,12 @@ static bool uri_key(httpd_req_t *req, char *key, size_t cap,
         n++;
     }
 
-    if (n == 0 || n >= cap)
+    /* the browser percent-encodes the key (fp:... arrives as fp%3A...):
+       decode it, then validate the result like any key */
+    if (n == 0 || !ap_vidx_key_decode(p, n, key, cap))
     {
         return false;
     }
-
-    memcpy(key, p, n);
-    key[n] = '\0';
 
     static char s_rest[32];         /* httpd task only                  */
     size_t r = 0;
@@ -106,6 +119,262 @@ static esp_err_t send_entry(httpd_req_t *req, const char *key)
     return ap_http_send_json(req, o);
 }
 
+/** The request body into @p buf (NUL-terminated): false when it does not
+ *  fit or the read failed; no body = true with @p len 0. */
+static bool read_body(httpd_req_t *req, char *buf, size_t cap, size_t *len)
+{
+    size_t want = req->content_len;
+    size_t got = 0;
+
+    *len = 0;
+    buf[0] = '\0';
+
+    if (want == 0)
+    {
+        return true;
+    }
+
+    if (want >= cap)
+    {
+        return false;
+    }
+
+    while (got < want)
+    {
+        int r = httpd_req_recv(req, buf + got, want - got);
+
+        if (r <= 0)
+        {
+            return false;
+        }
+
+        got += (size_t)r;
+    }
+
+    buf[want] = '\0';
+    *len = want;
+    return true;
+}
+
+/** A string field of a body object into @p dst: absent = "" (fine);
+ *  false when it is not a string or too long for @p cap. */
+static bool take_str(const cJSON *root, const char *name, char *dst,
+                     size_t cap)
+{
+    const char *v = NULL;
+
+    dst[0] = '\0';
+
+    if (!body_str(root, name, cap, &v))
+    {
+        return false;
+    }
+
+    if (v != NULL)
+    {
+        snprintf(dst, cap, "%s", v);
+    }
+
+    return true;
+}
+
+static bool hex_cmd(const char *s)
+{
+    size_t n = strlen(s);
+
+    if (n < 2 || n >= AP_PROBE_CMD_LEN)
+    {
+        return false;
+    }
+
+    for (size_t i = 0; i < n; i++)
+    {
+        if (!((s[i] >= '0' && s[i] <= '9') || (s[i] >= 'A' && s[i] <= 'F') ||
+              (s[i] >= 'a' && s[i] <= 'f')))
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/** The detect body (2026-10-26, the Quick Setup's "Which car is this?"):
+ *  `{"profile","name","protocol","init","cmds":[...]}`, every field
+ *  optional; arms the job's probe (autopid_scan_probe.c). False with
+ *  @p bad set on a malformed body. An empty object clears the probe. */
+static bool arm_probe(const char *json, const char **bad)
+{
+    static ap_scan_probe_t probe EXT_RAM_BSS_ATTR; /* httpd task only   */
+    cJSON *root = cJSON_Parse(json);
+
+    *bad = NULL;
+
+    if (!cJSON_IsObject(root))
+    {
+        cJSON_Delete(root);
+        *bad = "invalid json";
+        return false;
+    }
+
+    memset(&probe, 0, sizeof(probe));
+
+    char proto[4];
+
+    if (!take_str(root, "profile", probe.profile, sizeof(probe.profile)) ||
+        !take_str(root, "name", probe.name, sizeof(probe.name)) ||
+        !take_str(root, "init", probe.init, sizeof(probe.init)) ||
+        !take_str(root, "protocol", proto, sizeof(proto)))
+    {
+        cJSON_Delete(root);
+        *bad = "profile/name/init/protocol: strings (63/31/95/1 chars max)";
+        return false;
+    }
+
+    if (proto[0] != '\0' &&
+        (proto[1] != '\0' ||
+         !((proto[0] >= '1' && proto[0] <= '9') ||
+           (proto[0] >= 'A' && proto[0] <= 'C'))))
+    {
+        cJSON_Delete(root);
+        *bad = "protocol: one of 1..9, A..C";
+        return false;
+    }
+
+    probe.protocol = proto[0];
+
+    if (probe.init[0] != '\0' &&
+        obd_chip_guard_check(probe.init, strlen(probe.init)) ==
+            OBD_GUARD_BLOCKED)
+    {
+        cJSON_Delete(root);
+        *bad = "init would write the chip's EEPROM (ATPP/ATSD/ATCV/STWBR)";
+        return false;
+    }
+
+    const cJSON *cmds = cJSON_GetObjectItemCaseSensitive(root, "cmds");
+    const cJSON *c = NULL;
+
+    if (cmds != NULL && !cJSON_IsArray(cmds))
+    {
+        cJSON_Delete(root);
+        *bad = "cmds: an array of up to 3 hex requests";
+        return false;
+    }
+
+    cJSON_ArrayForEach(c, cmds)
+    {
+        /* "2101", or {"cmd":"2101","init":"ATSH7E4"} for a profile that
+           addresses one ECU per request */
+        const cJSON *cmd = cJSON_IsObject(c)
+                               ? cJSON_GetObjectItemCaseSensitive(c, "cmd")
+                               : c;
+        const cJSON *init = cJSON_IsObject(c)
+                                ? cJSON_GetObjectItemCaseSensitive(c, "init")
+                                : NULL;
+
+        if (!cJSON_IsString(cmd) || cmd->valuestring == NULL ||
+            !hex_cmd(cmd->valuestring))
+        {
+            cJSON_Delete(root);
+            *bad = "cmds: hex requests of 2 to 15 characters";
+            return false;
+        }
+
+        if (init != NULL && !cJSON_IsNull(init) &&
+            (!cJSON_IsString(init) || init->valuestring == NULL ||
+             strlen(init->valuestring) >= AP_VEH_INIT_LEN ||
+             obd_chip_guard_check(init->valuestring,
+                                  strlen(init->valuestring)) ==
+                 OBD_GUARD_BLOCKED))
+        {
+            cJSON_Delete(root);
+            *bad = "cmds: a request's init is a string of 95 chars max "
+                   "that does not write the chip's EEPROM";
+            return false;
+        }
+
+        if (probe.n_cmds < AP_PROBE_CMDS_MAX)
+        {
+            snprintf(probe.cmds[probe.n_cmds], AP_PROBE_CMD_LEN, "%s",
+                     cmd->valuestring);
+
+            if (cJSON_IsString(init))
+            {
+                snprintf(probe.cmd_inits[probe.n_cmds], AP_VEH_INIT_LEN, "%s",
+                         init->valuestring);
+            }
+
+            probe.n_cmds++;
+        }
+    }
+
+    cJSON_Delete(root);
+
+    if (probe.profile[0] == '\0' && probe.name[0] == '\0' &&
+        probe.n_cmds == 0)
+    {
+        ap_scan_probe_clear();          /* `{}`: as before 2026-10-26     */
+    }
+    else
+    {
+        ap_scan_probe_set(&probe);
+    }
+
+    return true;
+}
+
+/** POST .../<key>/merge {"into":"<key>"}: "Same car as..." in the list. */
+static esp_err_t merge_handler(httpd_req_t *req, const char *key)
+{
+    char body[VEH_BODY_MAX + 1];
+    size_t len = 0;
+    char into[AP_VEH_KEY_LEN];
+
+    if (!read_body(req, body, sizeof(body), &len) || len == 0)
+    {
+        return ap_http_send_error(req, "400 Bad Request",
+                                  "missing/oversized body");
+    }
+
+    cJSON *root = cJSON_Parse(body);
+
+    if (!cJSON_IsObject(root) ||
+        !take_str(root, "into", into, sizeof(into)) || into[0] == '\0' ||
+        !ap_vidx_key_valid(into))
+    {
+        cJSON_Delete(root);
+        return ap_http_send_error(req, "400 Bad Request",
+                                  "into: the key of the car to keep");
+    }
+
+    cJSON_Delete(root);
+
+    esp_err_t err = autopid_vehicle_merge(key, into);
+
+    if (err == ESP_ERR_NOT_FOUND)
+    {
+        return ap_http_send_error(req, "404 Not Found", "no such vehicle");
+    }
+
+    if (err == ESP_ERR_INVALID_ARG)
+    {
+        return ap_http_send_error(req, "400 Bad Request",
+                                  "into: another car than this one");
+    }
+
+    if (err != ESP_OK)
+    {
+        return ap_http_send_error(req, "500 Internal Server Error",
+                                  "merge failed");
+    }
+
+    cJSON *o = cJSON_CreateObject();
+
+    cJSON_AddBoolToObject(o, "ok", true);
+    return ap_http_send_json(req, o);
+}
+
 esp_err_t vehicles_get_handler(httpd_req_t *req)
 {
     cJSON *o = autopid_vehicles_json();
@@ -130,7 +399,39 @@ esp_err_t vehicles_post_handler(httpd_req_t *req)
         (req->uri[strlen(VEH_URI_PREFIX) + 6] == '\0' ||
          req->uri[strlen(VEH_URI_PREFIX) + 6] == '?'))
     {
+        /* an optional body (2026-10-26, the Quick Setup's "Which car is
+           this?"): the profile the user named, the entry's name, the
+           protocol its init pins and up to three of its own requests, the
+           job's probe when nothing standard answers; `{}` or no body =
+           the plain job, as before */
+        char body[VEH_BODY_MAX + 1];
+        size_t blen = 0;
+        const char *bad = NULL;
+
+        if (!read_body(req, body, sizeof(body), &blen))
+        {
+            return ap_http_send_error(req, "400 Bad Request",
+                                      "oversized body / body read failed");
+        }
+
+        if (blen > 0)
+        {
+            if (!arm_probe(body, &bad))
+            {
+                return ap_http_send_error(req, "400 Bad Request", bad);
+            }
+        }
+        else
+        {
+            ap_scan_probe_clear();
+        }
+
         esp_err_t err = autopid_std_scan_start();
+
+        if (err != ESP_OK)
+        {
+            ap_scan_probe_clear();
+        }
 
         if (err == ESP_ERR_INVALID_STATE)
         {
@@ -157,8 +458,17 @@ esp_err_t vehicles_post_handler(httpd_req_t *req)
         return ap_http_send_json(req, o);
     }
 
-    if (!uri_key(req, key, sizeof(key), &rest) ||
-        strcmp(rest, "/activate") != 0)
+    if (!uri_key(req, key, sizeof(key), &rest))
+    {
+        return ap_http_send_error(req, "404 Not Found", "no such route");
+    }
+
+    if (strcmp(rest, "/merge") == 0)
+    {
+        return merge_handler(req, key);
+    }
+
+    if (strcmp(rest, "/activate") != 0)
     {
         return ap_http_send_error(req, "404 Not Found", "no such route");
     }

@@ -57,10 +57,15 @@ simply stopped/destroyed on an unplug or the ESPNetLink's data-line cut),
 ## Settings (`"usb_host_manager"`, version 1)
 
 `enabled` (**true** since 2026-08-31: zero-touch ESPNetLink; the mux only leaves the CH342 on an attached device), `role` (`host`|`device`, host), `device_class`
-(`ncm`|`rndis`|`cdc`, ncm), `ip_mode` (`dhcp`|`static`), `static_ip`,
-`static_netmask` (255.255.255.0), `static_gw`, `prefer_usb_route` (false),
-`cli` (true). Kconfig: `WICAN_USB_ID_GPIO` (39), `WICAN_USB_MODE_GPIO` (11),
-device VID/PIDs.
+(`ncm`|`rndis`|`cdc`, ncm), `device_ip` (192.168.82.1: the WiCAN's own
+address on the USB link in the device role with `ncm`/`rndis`, the DHCP pool
+the PC leases from follows it as a /24; its own field since 2026-10-27, until
+then only `ip_mode=static` + `static_ip` reached the link, undocumented;
+empty or unparsable = that default; change it when the PC's own LAN already
+uses the subnet, since a clash blackholes the link), `ip_mode` (`dhcp`|`static`),
+`static_ip`, `static_netmask` (255.255.255.0), `static_gw` (the host role's
+uplink), `prefer_usb_route` (false), `cli` (true). Kconfig: `WICAN_USB_ID_GPIO`
+(39), `WICAN_USB_MODE_GPIO` (11), device VID/PIDs.
 
 ## Memory footprint (estimated)
 

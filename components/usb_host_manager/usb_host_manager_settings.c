@@ -63,6 +63,15 @@ static const settings_field_t FIELDS[] =
      *  modern/cross-platform default; RNDIS is the legacy Windows-native
      *  fallback; cdc is for tools that want a serial J2534 device. */
     SETTINGS_STR_ENUM("device_class", "ncm,rndis,cdc", "ncm"),
+    /* device role, ncm/rndis: WiCAN's own address on the USB link; the
+     * DHCP pool the PC leases from follows it (/24). Its own field since
+     * 2026-10-27 (until then only the host role's static_ip reached it,
+     * undocumented). 192.168.82.1 stays the default: an uncommon subnet
+     * (home routers sit on 192.168.0/1/8/178.x; a clash with the PC's own
+     * LAN blackholes the link, bench-hit 2026-10-27 against a box on
+     * 192.168.8.1) and the one the bench tooling and the DLL notes name.
+     * Empty or unparsable = that default. */
+    SETTINGS_STR("device_ip", 15, "192.168.82.1"),
     SETTINGS_STR_ENUM("ip_mode", "dhcp,static", "dhcp"),
     SETTINGS_STR("static_ip", 15, ""),
     SETTINGS_STR("static_netmask", 15, "255.255.255.0"),
@@ -78,6 +87,7 @@ static char s_device_class[8];   /* "ncm" | "rndis" | "cdc" */
 static bool s_prefer_usb_route;
 static bool s_ip_static;
 static esp_netif_ip_info_t s_static_ip;
+static esp_ip4_addr_t s_device_ip;   /* 0 = usb_net_device's default */
 static bool s_configured;
 
 bool uhm_settings_enabled(void)
@@ -108,6 +118,11 @@ bool uhm_settings_ip_static(void)
 const esp_netif_ip_info_t *uhm_settings_static_ip(void)
 {
     return &s_static_ip;
+}
+
+esp_ip4_addr_t uhm_settings_device_ip(void)
+{
+    return s_device_ip;
 }
 
 bool uhm_settings_is_configured(void)
@@ -150,6 +165,7 @@ static esp_err_t on_apply(const cJSON *settings)
     parse_ip(settings, "static_ip", &s_static_ip.ip);
     parse_ip(settings, "static_netmask", &s_static_ip.netmask);
     parse_ip(settings, "static_gw", &s_static_ip.gw);
+    parse_ip(settings, "device_ip", &s_device_ip);
     s_prefer_usb_route = cJSON_IsTrue(
         cJSON_GetObjectItemCaseSensitive(settings, "prefer_usb_route"));
 

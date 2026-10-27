@@ -311,11 +311,10 @@ esp_err_t usb_host_manager_start(void)
                 ? USB_NET_DEVICE_CLASS_RNDIS
                 : USB_NET_DEVICE_CLASS_NCM;
 
-        if (uhm_settings_ip_static())
-        {
-            dev_cfg.ip = uhm_settings_static_ip()->ip;
-            dev_cfg.netmask = uhm_settings_static_ip()->netmask;
-        }
+        /* the link's address is its own setting (device_ip, 2026-10-27);
+         * ip_mode / static_ip belong to the host role's uplink. 0 (empty
+         * or unparsable) = usb_net_device's default, 192.168.82.1/24. */
+        dev_cfg.ip = uhm_settings_device_ip();
 
         gpio_reset_pin(UHM_MODE_GPIO);
         gpio_set_direction(UHM_MODE_GPIO, GPIO_MODE_OUTPUT);

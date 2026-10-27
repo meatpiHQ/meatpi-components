@@ -79,6 +79,9 @@ bool uhm_settings_prefer_usb_route(void);
 bool uhm_settings_ip_static(void);
 #ifndef CONFIG_IDF_TARGET_LINUX
 const esp_netif_ip_info_t *uhm_settings_static_ip(void);
+/** The device role's address on the USB link (`device_ip`); 0 = the
+ *  usb_net_device default 192.168.82.1. */
+esp_ip4_addr_t uhm_settings_device_ip(void);
 #endif
 bool uhm_settings_is_configured(void);    /* boot apply ran (standard §4.3)  */
 

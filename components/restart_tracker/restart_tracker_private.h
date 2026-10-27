@@ -71,6 +71,20 @@ bool rt_reset_reason_is_unexpected(uint32_t reason);
 void rt_record_set_mode(restart_tracker_state_t *state, uint8_t mode);
 void rt_record_set_settled(restart_tracker_state_t *state);
 
+/* ---- the pre-restart hook table (pure; restart_tracker_core.c) ------------- */
+typedef struct
+{
+    restart_tracker_pre_restart_fn fn[RESTART_TRACKER_PRE_RESTART_HOOKS];
+    size_t                         count;
+} rt_hooks_t;
+
+/** Add a hook: NULL -> ESP_ERR_INVALID_ARG, one already in the table ->
+ *  ESP_OK (kept once), a full table -> ESP_ERR_NO_MEM. */
+esp_err_t rt_hooks_add(rt_hooks_t *h, restart_tracker_pre_restart_fn fn);
+/** Run every hook in registration order. */
+void rt_hooks_run(const rt_hooks_t *h, restart_tracker_planned_reason_t reason,
+                  restart_tracker_source_t source, uint32_t flags);
+
 /** CRC-32 (IEEE 802.3) over a byte range: the envelope's and the crash
  *  note's checksum. */
 uint32_t rt_crc32_bytes(const uint8_t *data, size_t len);

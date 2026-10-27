@@ -272,3 +272,46 @@ const char *restart_tracker_source_to_str(restart_tracker_source_t source)
         default:                                   return "invalid";
     }
 }
+
+/* ---- the pre-restart hook table ---------------------------------------------- */
+
+esp_err_t rt_hooks_add(rt_hooks_t *h, restart_tracker_pre_restart_fn fn)
+{
+    if (h == NULL || fn == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    for (size_t i = 0; i < h->count; i++)
+    {
+        if (h->fn[i] == fn)
+        {
+            return ESP_OK; /* registered once, whoever asks twice */
+        }
+    }
+
+    if (h->count >= RESTART_TRACKER_PRE_RESTART_HOOKS)
+    {
+        return ESP_ERR_NO_MEM;
+    }
+
+    h->fn[h->count++] = fn;
+    return ESP_OK;
+}
+
+void rt_hooks_run(const rt_hooks_t *h, restart_tracker_planned_reason_t reason,
+                  restart_tracker_source_t source, uint32_t flags)
+{
+    if (h == NULL)
+    {
+        return;
+    }
+
+    for (size_t i = 0; i < h->count && i < RESTART_TRACKER_PRE_RESTART_HOOKS; i++)
+    {
+        if (h->fn[i] != NULL)
+        {
+            h->fn[i](reason, source, flags);
+        }
+    }
+}

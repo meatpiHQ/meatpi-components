@@ -245,22 +245,33 @@ esp_err_t restart_tracker_stop(void)
     return ESP_OK; /* passive: nothing to stop */
 }
 
-static restart_tracker_pre_restart_fn s_pre_restart;
+/* filled at boot from the main task (fw_update, mqtt_manager), read at a
+   planned restart in the caller's context: no lock */
+static rt_hooks_t s_hooks;
 
-esp_err_t restart_tracker_set_pre_restart_hook(restart_tracker_pre_restart_fn fn)
+esp_err_t restart_tracker_add_pre_restart_hook(restart_tracker_pre_restart_fn fn)
 {
-    s_pre_restart = fn;
-    return ESP_OK;
+    return rt_hooks_add(&s_hooks, fn);
+}
+
+void restart_tracker_hooks_capacity(size_t *used, size_t *cap)
+{
+    if (used != NULL)
+    {
+        *used = s_hooks.count;
+    }
+
+    if (cap != NULL)
+    {
+        *cap = RESTART_TRACKER_PRE_RESTART_HOOKS;
+    }
 }
 
 esp_err_t restart_tracker_mark_planned_restart(restart_tracker_planned_reason_t reason,
                                                restart_tracker_source_t source,
                                                uint32_t flags)
 {
-    if (s_pre_restart != NULL)
-    {
-        s_pre_restart(reason, source, flags); /* outside the spinlock */
-    }
+    rt_hooks_run(&s_hooks, reason, source, flags); /* outside the spinlock */
 
     rt_inputs_t in = gather_inputs();
     rt_brake_state_t *count = rt_crash_brake_state();

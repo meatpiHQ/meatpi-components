@@ -12,6 +12,9 @@ void test_history_ring_wraps(void);
 void test_crc_detects_tamper(void);
 void test_tuning_guard_clobber_is_harmless(void);
 void test_invalid_time_stored_as_zero(void);
+void test_hooks_run_in_registration_order_once_each(void);
+void test_hooks_full_table_refuses_the_fifth(void);
+void test_hooks_null_and_empty(void);
 
 /* test_crash_core.c: the crash note's pure half */
 void test_crash_layout(void);
@@ -68,6 +71,9 @@ void app_main(void)
     RUN_TEST(test_crc_detects_tamper);
     RUN_TEST(test_tuning_guard_clobber_is_harmless);
     RUN_TEST(test_invalid_time_stored_as_zero);
+    RUN_TEST(test_hooks_run_in_registration_order_once_each);
+    RUN_TEST(test_hooks_full_table_refuses_the_fifth);
+    RUN_TEST(test_hooks_null_and_empty);
     RUN_TEST(test_crash_layout);
     RUN_TEST(test_crash_random_memory_is_no_note);
     RUN_TEST(test_crash_head_crc_catches_a_flipped_bit);

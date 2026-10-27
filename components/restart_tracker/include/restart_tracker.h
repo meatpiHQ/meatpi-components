@@ -184,17 +184,29 @@ esp_err_t restart_tracker_mark_planned_restart(restart_tracker_planned_reason_t 
                                                uint32_t flags);
 
 /**
- * A hook that runs at the start of every planned restart, in the caller's
- * context, before the intent is recorded (2026-10-18; one consumer:
+ * Pre-restart hooks (2026-10-18; a table since 2026-10-27): functions that
+ * restart_tracker_mark_planned_restart() calls first, in registration order,
+ * in the caller's context and before the intent is recorded. Two consumers:
  * fw_update confirms a pending image to the bootloader before a restart
- * that is not a rollback or a park retry). Must return within a second or
- * two; a flash write inside it goes through an internal-stack helper (the
- * caller may be on a PSRAM stack). NULL removes it.
+ * that is not a rollback or a park retry; mqtt_manager disconnects its
+ * client while a broker session is up, so the socket is closed before
+ * esp_restart() stops the WiFi stack (the library logged two E lines per
+ * planned restart otherwise). A hook must return within a second or two;
+ * a flash write inside it goes through an internal-stack helper (the
+ * caller may be on a PSRAM stack). RESTART_TRACKER_PRE_RESTART_HOOKS
+ * slots, registered at boot from one task: a function already in the table
+ * is accepted again (ESP_OK, kept once), a full table answers
+ * ESP_ERR_NO_MEM, NULL ESP_ERR_INVALID_ARG.
  */
+#define RESTART_TRACKER_PRE_RESTART_HOOKS 4
 typedef void (*restart_tracker_pre_restart_fn)(
     restart_tracker_planned_reason_t reason, restart_tracker_source_t source,
     uint32_t flags);
-esp_err_t restart_tracker_set_pre_restart_hook(restart_tracker_pre_restart_fn fn);
+esp_err_t restart_tracker_add_pre_restart_hook(restart_tracker_pre_restart_fn fn);
+
+/** Occupancy of the hook table (standard section 12): main prints it on the
+ *  WICAN CAPS boot line and /api/status.health.caps carries it. */
+void restart_tracker_hooks_capacity(size_t *used, size_t *cap);
 
 /** The one sanctioned reboot: mark planned, then esp_restart(). No return. */
 void restart_tracker_restart(restart_tracker_planned_reason_t reason,

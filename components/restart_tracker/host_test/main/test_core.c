@@ -221,3 +221,103 @@ void test_invalid_time_stored_as_zero(void)
     TEST_ASSERT_EQUAL(0, rec->boot_timestamp);
     TEST_ASSERT_EQUAL_UINT8(0, rec->time_valid);
 }
+
+/* ---- the pre-restart hook table (2026-10-27) -------------------------------------- */
+
+static int s_hook_calls[3];
+static int s_hook_order;
+static uint32_t s_hook_flags;
+
+static void hook_a(restart_tracker_planned_reason_t reason,
+                   restart_tracker_source_t source, uint32_t flags)
+{
+    (void)reason;
+    (void)source;
+    s_hook_calls[0] = ++s_hook_order;
+    s_hook_flags = flags;
+}
+
+static void hook_b(restart_tracker_planned_reason_t reason,
+                   restart_tracker_source_t source, uint32_t flags)
+{
+    (void)reason;
+    (void)source;
+    (void)flags;
+    s_hook_calls[1] = ++s_hook_order;
+}
+
+static void hook_c(restart_tracker_planned_reason_t reason,
+                   restart_tracker_source_t source, uint32_t flags)
+{
+    (void)reason;
+    (void)source;
+    (void)flags;
+    s_hook_calls[2] = ++s_hook_order;
+}
+
+static void hook_d(restart_tracker_planned_reason_t reason,
+                   restart_tracker_source_t source, uint32_t flags)
+{
+    (void)reason;
+    (void)source;
+    (void)flags;
+}
+
+static void hook_e(restart_tracker_planned_reason_t reason,
+                   restart_tracker_source_t source, uint32_t flags)
+{
+    (void)reason;
+    (void)source;
+    (void)flags;
+}
+
+void test_hooks_run_in_registration_order_once_each(void)
+{
+    rt_hooks_t h;
+
+    memset(&h, 0, sizeof(h));
+    memset(s_hook_calls, 0, sizeof(s_hook_calls));
+    s_hook_order = 0;
+    TEST_ASSERT_EQUAL(ESP_OK, rt_hooks_add(&h, hook_b));
+    TEST_ASSERT_EQUAL(ESP_OK, rt_hooks_add(&h, hook_a));
+    TEST_ASSERT_EQUAL(ESP_OK, rt_hooks_add(&h, hook_b)); /* twice: kept once */
+    TEST_ASSERT_EQUAL(2, h.count);
+    rt_hooks_run(&h, RESTART_TRACKER_PLANNED_REASON_CONFIG_APPLY,
+                 RESTART_TRACKER_SOURCE_CONFIG_SERVER, 0x55);
+    TEST_ASSERT_EQUAL(1, s_hook_calls[1]); /* b first: registered first */
+    TEST_ASSERT_EQUAL(2, s_hook_calls[0]);
+    TEST_ASSERT_EQUAL(0, s_hook_calls[2]);
+    TEST_ASSERT_EQUAL(0x55, s_hook_flags);
+}
+
+void test_hooks_full_table_refuses_the_fifth(void)
+{
+    rt_hooks_t h;
+
+    memset(&h, 0, sizeof(h));
+    TEST_ASSERT_EQUAL(ESP_OK, rt_hooks_add(&h, hook_a));
+    TEST_ASSERT_EQUAL(ESP_OK, rt_hooks_add(&h, hook_b));
+    TEST_ASSERT_EQUAL(ESP_OK, rt_hooks_add(&h, hook_c));
+    TEST_ASSERT_EQUAL(ESP_OK, rt_hooks_add(&h, hook_d));
+    TEST_ASSERT_EQUAL(ESP_ERR_NO_MEM, rt_hooks_add(&h, hook_e));
+    TEST_ASSERT_EQUAL(RESTART_TRACKER_PRE_RESTART_HOOKS, h.count);
+    TEST_ASSERT_EQUAL(ESP_OK, rt_hooks_add(&h, hook_c)); /* already in: fine */
+    TEST_ASSERT_EQUAL(RESTART_TRACKER_PRE_RESTART_HOOKS, h.count);
+}
+
+void test_hooks_null_and_empty(void)
+{
+    rt_hooks_t h;
+
+    memset(&h, 0, sizeof(h));
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, rt_hooks_add(&h, NULL));
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, rt_hooks_add(NULL, hook_a));
+    TEST_ASSERT_EQUAL(0, h.count);
+    memset(s_hook_calls, 0, sizeof(s_hook_calls));
+    s_hook_order = 0;
+    rt_hooks_run(&h, RESTART_TRACKER_PLANNED_REASON_USER_REQUEST,
+                 RESTART_TRACKER_SOURCE_WEB_UI, 0); /* nothing to run */
+    rt_hooks_run(NULL, RESTART_TRACKER_PLANNED_REASON_USER_REQUEST,
+                 RESTART_TRACKER_SOURCE_WEB_UI, 0); /* and no table at all */
+    TEST_ASSERT_EQUAL(0, s_hook_order);
+}

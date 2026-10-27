@@ -52,14 +52,25 @@ ota_rollback (the boot path rolled a firmware update back to the previous
 slot after three quick crashes of the new image, 2026-10-18:
 `fw_update_boot_check()`, source `boot`, flags = the job id).
 
-**The pre-restart hook (2026-10-18).** `restart_tracker_set_pre_restart_hook()`
-installs one function that `restart_tracker_mark_planned_restart()` calls
-first, in the caller's context and outside the spinlock: fw_update confirms
-a pending image to the bootloader there (a settings submit two minutes
-after an update would otherwise make a rollback-enabled bootloader fall
-back). The hook must return within a second or two and may be called from a
-PSRAM-stack task, so a flash write inside it runs on an internal-stack
-helper.
+**The pre-restart hooks (2026-10-18; a table since 2026-10-27).**
+`restart_tracker_add_pre_restart_hook()` registers a function that
+`restart_tracker_mark_planned_restart()` calls first, in registration order,
+in the caller's context and outside the spinlock. Two consumers: fw_update
+confirms a pending image to the bootloader there (a settings submit two
+minutes after an update would otherwise make a rollback-enabled bootloader
+fall back), and mqtt_manager disconnects its client while a broker session
+is up, so the socket is closed before `esp_restart()` stops the WiFi stack
+(esp-mqtt printed two E lines, errno 113, at every planned restart with the
+broker connected; IDF's own shutdown-handler table holds five entries and is
+full on this firmware, hence a table of our own). A hook must return within
+a second or two and may be called from a PSRAM-stack task, so a flash write
+inside it runs on an internal-stack helper. The table is bounded
+(`RESTART_TRACKER_PRE_RESTART_HOOKS`, 4), filled at boot from the main
+task; `restart_tracker_hooks_capacity()` exposes its occupancy on the
+`WICAN CAPS` boot line and in `/api/status.health.caps` (`rt_hooks`). The
+pure half (`rt_hooks_add` / `rt_hooks_run`, restart_tracker_core.c) is
+host-tested: registration order, a function kept once, the full table,
+NULL.
 Sources: web_ui / cmdline / console / mqtt / ota / safe_mode / config_server
 / sleep_mode / button / pairing / park (the crash park's own timer) / boot
 (the boot path itself: the partition migration restart).

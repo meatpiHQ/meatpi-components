@@ -449,7 +449,7 @@ esp_err_t fw_update_start(void)
     }
 
     fwu_reselect();
-    (void)restart_tracker_set_pre_restart_hook(pre_restart_hook);
+    (void)restart_tracker_add_pre_restart_hook(pre_restart_hook);
     s_task = xTaskCreateStatic(fwu_task, "fw_update", FWU_TASK_STACK, NULL,
                                FWU_TASK_PRIO, s_stack, &s_tcb);
 

@@ -312,8 +312,9 @@ RX_MSG. Present only while `j2534_server.enabled` is true. One tester
 across all transports: a PC tool attached over TCP makes a BLE tester's
 first frame answer `ERR_DEVICE_IN_USE`, and the other way round.
 `/api/j2534` reports `transport:"ble"` during a BLE session; the
-Exclusive-bus rule (AutoPID off the bus) and the reflash gate apply
-unchanged. Full specification: `j2534_server/J2534_WIRE_PROTOCOL.md`
+Exclusive-bus rule (AutoPID off the bus) applies unchanged (the reflash
+gate went on 2026-10-27: every write is forwarded, `reflash_seen` counts
+the memory-transfer services). Full specification: `j2534_server/J2534_WIRE_PROTOCOL.md`
 (section 8.3 = the BLE binding). Reference client:
 `tools/testbench/ble/ble_j2534_pi.py`.
 
@@ -447,7 +448,8 @@ the 4.2 behaviour, so a stored v3 config migrates by filling the
 defaults. `GET /api/ble` mirrors both settings and the live link's
 `phy_tx`/`phy_rx`. `/api/settings/ble_http`: `enabled` (true), `cli`.
 `/api/settings/j2534_server`: `enabled` (false) gates the J2534 channel,
-`exclusive`, `allow_reflash`. `/api/settings/interface_manager`
+`exclusive`, `allow_lan` (the TCP listener only; `allow_reflash` was removed
+2026-10-27). `/api/settings/interface_manager`
 (`sta_ble_handover`, `ap_ble_exclusive`) for the WiFi behaviour in 6.
 
 ## 8. Reference clients

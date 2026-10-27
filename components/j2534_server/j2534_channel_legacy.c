@@ -312,13 +312,6 @@ uint32_t j2534_legacy_write(j2534_channel_t *c, int slot,
         return J2534_ERR_INVALID_MSG;
     }
 
-    if (j2534_ch_reflash_sid_blocked(payload[0]))
-    {
-        ESP_LOGW(TAG, "ECU flashing disabled: rejected a UDS reprogramming "
-                      "service (enable j2534_server.allow_reflash to permit)");
-        return J2534_ERR_NOT_SUPPORTED;
-    }
-
     if (!obd_chip_ready())
     {
         return J2534_ERR_FAILED;
@@ -359,6 +352,8 @@ uint32_t j2534_legacy_write(j2534_channel_t *c, int slot,
         ESP_LOGD(TAG, "J1850 VPW send: %s", esp_err_to_name(err));
         return (err == ESP_ERR_TIMEOUT) ? J2534_ERR_TIMEOUT : J2534_ERR_FAILED;
     }
+
+    j2534_ch_note_reflash(payload[0]); /* forwarded: counted on the status, never refused */
 
     /* a TxDone echo first (SAE J2534-1 loopback: the header only, never the
        whole payload: a big echo overread the DLL's buffer in the fork) */

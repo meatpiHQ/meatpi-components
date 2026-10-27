@@ -7,14 +7,16 @@
  *        (SAE J2534-1: [4-byte id][payload] both ways, the indications,
  *        the functional single frame) and the J1850 VPW chip-command
  *        helpers (header/payload split, ATSH, the VTFullyRequestCk builder
- *        with its checksum, reply-line decode / status / responsePending).
- *        Expected output: 26 Tests 0 Failures 0 Ignored.
+ *        with its checksum, reply-line decode / status / responsePending),
+ *        and the settings migration (v1 -> v2 drops allow_reflash,
+ *        2026-10-27). Expected output: 28 Tests 0 Failures 0 Ignored.
  */
 #include <string.h>
 
 #include "unity.h"
 
 #include "j2534_proto.h"
+#include "j2534_server_migrate.h"
 
 void setUp(void) {}
 void tearDown(void) {}
@@ -623,6 +625,47 @@ static void test_legacy_pending(void)
     TEST_ASSERT_FALSE(j2534_legacy_is_pending(shortmsg, sizeof(shortmsg)));
 }
 
+/* settings v1 -> v2 (2026-10-27): allow_reflash goes, nothing else moves */
+static void test_migrate_v1_drops_allow_reflash(void)
+{
+    cJSON *doc = cJSON_Parse("{\"enabled\":true,\"port\":6810,"
+                             "\"allow_reflash\":true,\"allow_lan\":true,"
+                             "\"exclusive\":false,\"cli\":false}");
+
+    TEST_ASSERT_NOT_NULL(doc);
+    TEST_ASSERT_EQUAL(ESP_OK, j2534_settings_migrate(1, doc));
+    TEST_ASSERT_NULL(cJSON_GetObjectItemCaseSensitive(doc, "allow_reflash"));
+    TEST_ASSERT_TRUE(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(doc, "enabled")));
+    TEST_ASSERT_EQUAL(6810, cJSON_GetObjectItemCaseSensitive(doc, "port")->valueint);
+    TEST_ASSERT_TRUE(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(doc, "allow_lan")));
+    TEST_ASSERT_TRUE(cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(doc, "exclusive")));
+    TEST_ASSERT_TRUE(cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(doc, "cli")));
+    TEST_ASSERT_EQUAL(5, cJSON_GetArraySize(doc));
+    cJSON_Delete(doc);
+}
+
+/* a v1 object that never had the key, a current object, and bad input */
+static void test_migrate_v1_without_key_and_v2_untouched(void)
+{
+    cJSON *v1 = cJSON_Parse("{\"enabled\":false,\"port\":6809,\"cli\":true}");
+    cJSON *v2 = cJSON_Parse("{\"enabled\":false,\"port\":6809,"
+                            "\"allow_lan\":false,\"exclusive\":true,"
+                            "\"cli\":true}");
+    cJSON *arr = cJSON_Parse("[1,2]");
+
+    TEST_ASSERT_NOT_NULL(v1);
+    TEST_ASSERT_NOT_NULL(v2);
+    TEST_ASSERT_EQUAL(ESP_OK, j2534_settings_migrate(1, v1));
+    TEST_ASSERT_EQUAL(3, cJSON_GetArraySize(v1));
+    TEST_ASSERT_EQUAL(ESP_OK, j2534_settings_migrate(2, v2));
+    TEST_ASSERT_EQUAL(5, cJSON_GetArraySize(v2));
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, j2534_settings_migrate(1, NULL));
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, j2534_settings_migrate(1, arr));
+    cJSON_Delete(v1);
+    cJSON_Delete(v2);
+    cJSON_Delete(arr);
+}
+
 void app_main(void)
 {
     UNITY_BEGIN();
@@ -652,5 +695,7 @@ void app_main(void)
     RUN_TEST(test_legacy_build_request);
     RUN_TEST(test_legacy_decode_and_status);
     RUN_TEST(test_legacy_pending);
+    RUN_TEST(test_migrate_v1_drops_allow_reflash);
+    RUN_TEST(test_migrate_v1_without_key_and_v2_untouched);
     UNITY_END();
 }

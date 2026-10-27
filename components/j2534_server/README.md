@@ -58,7 +58,7 @@ Layout (each file under the 700-line cap):
 | `include/j2534_proto.h`, `j2534_proto.c` | PURE codec + constants: header/message encode/decode, filter match, status names, the transport-agnostic framer (`j2534_frame_read`), `j2534_ack_encode`, the TCP gate predicate. Host-tested |
 | `j2534_server.c` | core: lifecycle, request dispatch (`j2534_srv_handle_frame`), periodic messages, the RX pump, status, the Exclusive-bus hold |
 | `j2534_server_transport.c` | the `j2534_transport_t` seam: session lock, send lock, coalesced frame writes, `j2534_server_serve_transport()`, the TCP listener + `allow_lan` gate, the legacy serial vtable adapter |
-| `j2534_channel.c/.h`, `j2534_channel_private.h` | channels: lifecycle, CAN via `can_manager`, the filter table, the reflash gate, the bus-bitrate rule |
+| `j2534_channel.c/.h`, `j2534_channel_private.h` | channels: lifecycle, CAN via `can_manager`, the filter table, the bus-bitrate rule, the `reflash_seen` count (the content gate went 2026-10-27) |
 | `j2534_channel_iso.c` | the ISO15765 side (2026-10-19): one ISO-TP session per FLOW_CONTROL filter on the registered provider (`can_isotp.h`; `can_isotp_esp` in public builds), the SAE J2534-1 message layout `[4-byte id][payload]` both ways, padding per message, single frames without a session (functional addressing), the TxDone and START_OF_MESSAGE indications |
 | `j2534_channel_legacy.c` | the J1850 VPW side (2026-10-19): the VPW init, header-cached WRITE through `obd_chip` (short payload as one frame, longer through `VTFullyRequestCk`), reply-line parsing with `7F xx 78` ridden out, a small PSRAM RX ring the pump drains; pure chip-command helpers live in `j2534_proto.c` |
 | `j2534_server_settings.c` / `_http.c` / `_cli.c` | descriptor, `/api/j2534`, the `j2534` command |
@@ -87,16 +87,27 @@ early (`usb_cdc_device.c`, `ble_j2534.c` are the two templates).
 (`can_isotp.h`), `settings_manager`, `log_manager`, `http_server_manager`,
 `cmdline_manager`, lwIP, `esp_netif`, `esp_timer`, cJSON.
 
-## Settings (`j2534_server`, version 1, reboot-to-apply)
+## Settings (`j2534_server`, version 2, reboot-to-apply)
 
 | Key | Default | Meaning |
 |---|---|---|
 | `enabled` | `false` | the whole feature (TCP listener, serial and BLE sessions, the BLE characteristics) |
 | `port` | `6809` | TCP listener port |
-| `allow_reflash` | `false` | let UDS 0x34..0x37 through (ECU programming) |
 | `allow_lan` | `false` | TCP only: also accept connections arriving over WiFi STA / USB-Ethernet uplinks |
 | `exclusive` | `true` | boot default of the runtime switch: AutoPID off the bus while a tester is attached |
 | `cli` | `true` | register the `j2534` command |
+
+`allow_reflash` (the ECU-flashing content gate) was removed on 2026-10-27:
+version 2, `on_migrate` drops the stored key (host-tested; the schema would
+also tolerate it, unknown keys are permitted, but a stored shape that
+changed gets a migration per the standard §8). A backup from version 1
+restores through the same migration.
+The device forwards whatever a tool writes, on raw CAN, ISO15765 and
+J1850; the memory-transfer services it sees are counted on `/api/j2534`
+(`reflash_seen`). Why: on raw CAN the gate read every frame as ISO-TP and
+refused ordinary frames of a VW TP 2.0 flasher (field report 2026-10-27),
+and on ISO15765 it blocked memory reads (0x35/0x36 upload) while missing
+every other write service. The owner's consent is `enabled` + `allow_lan`.
 
 ## Memory footprint (estimated; PSRAM unless noted)
 
@@ -137,6 +148,8 @@ this component.
   `J2534 STD TOOL PASS`), `j2534_bench.py` (TCP handshake +
   `--reflash`), `j2534_transport_probe.py` (raw CAN + ISO15765 on the
   bus), `j2534_auto_baud_bench.py` (`.\test.ps1 j2534auto`),
-  `j2534_gate_test.py` (reflash gate), `j2534_serial_test.py`
+  `j2534_gate_test.py` (no content gate: 0x34..0x37 forwarded, `reflash_seen`
+  counts), `j2534_tp20_gate_bench.py` (raw CAN forwards every TP 2.0 frame
+  shape, `TP20 RAW CAN PASS`), `j2534_serial_test.py`
   (CDC-ACM); (`tools/testbench/ble/`): `ble_j2534_bench.py` +
   `ble_j2534_pi.py` -> `BLE J2534 PASS`. `TESTING.md` rows.

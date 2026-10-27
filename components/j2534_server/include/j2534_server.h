@@ -29,8 +29,11 @@
  *        ISO15765), filters, periodics, ioctl, and the USB-CDC transport
  *        are later phases; data ops answer ERR_NOT_SUPPORTED for now.
  *
- * Settings ("j2534_server", reboot-to-apply): enabled (default false),
- * port (TCP, default 6809), cli.
+ * Settings ("j2534_server", version 2, reboot-to-apply): enabled (default
+ * false), port (TCP, default 6809), allow_lan, exclusive, cli. Version 2
+ * (2026-10-27) dropped `allow_reflash`: the ECU-flashing content gate is
+ * gone, the device forwards whatever a tool writes and counts the UDS
+ * memory-transfer services it saw (`reflash_seen` on the status).
  */
 #pragma once
 
@@ -61,7 +64,8 @@ typedef struct {
     uint32_t frames_tx;          /* wire frames sent                     */
     uint32_t tx_refused;         /* writes the CAN node refused: it may  */
                                  /* not talk yet (listening, mismatch)   */
-    bool     allow_reflash;      /* ECU-flashing gate open (unsafe)      */
+    uint32_t reflash_seen;       /* UDS 0x34..0x37 requests forwarded    */
+                                 /* (ISO15765, J1850): a count, no gate  */
     bool     allow_lan;          /* reachable on STA/USB-eth uplinks     */
     bool     exclusive;          /* runtime: autopid off the bus while a  */
                                  /* tester is attached (obd_gate hold)   */

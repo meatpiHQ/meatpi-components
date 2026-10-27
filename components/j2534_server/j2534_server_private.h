@@ -61,13 +61,16 @@ void      j2534_srv_handle_frame(const j2534_transport_t *t,
                                  const j2534_hdr_t *h,
                                  const uint8_t *payload);
 
+/** A UDS memory-transfer service (0x34..0x37) in a tester's request:
+ *  counted on the status, never gated (2026-10-27). */
+void j2534_srv_count_reflash_seen(void);
+
 /* ---- settings (j2534_server_settings.c) -------------------------------- */
 
 /** Boot-applied config (filled by on_apply). */
 typedef struct
 {
     bool     enabled;
-    bool     allow_reflash;    /* ECU-flashing gate (mirrors the setting) */
     bool     allow_lan;        /* accept on STA / USB-eth uplinks too */
     bool     exclusive;        /* boot default: pause autopid while attached */
     uint16_t port;

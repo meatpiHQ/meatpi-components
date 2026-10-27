@@ -158,6 +158,11 @@ void j2534_srv_count_tx_refused(void)
     s_status.tx_refused++;
 }
 
+void j2534_srv_count_reflash_seen(void)
+{
+    s_status.reflash_seen++;
+}
+
 static uint32_t rd_u32(const uint8_t *p)
 {
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
@@ -658,7 +663,6 @@ esp_err_t j2534_server_status(j2534_server_status_t *out)
 
     s_status.enabled = cfg->enabled;
     s_status.port = cfg->port;
-    s_status.allow_reflash = cfg->allow_reflash;
     s_status.allow_lan = cfg->allow_lan;
     s_status.listening = j2534_srv_listening();
     *out = s_status;

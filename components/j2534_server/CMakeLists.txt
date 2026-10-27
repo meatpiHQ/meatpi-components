@@ -6,6 +6,7 @@ idf_component_register(
          "j2534_server.c"
          "j2534_server_transport.c"
          "j2534_server_settings.c"
+         "j2534_server_migrate.c"
          "j2534_server_http.c"
          "j2534_server_cli.c"
     INCLUDE_DIRS "include"

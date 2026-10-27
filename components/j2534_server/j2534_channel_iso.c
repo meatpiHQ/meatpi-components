@@ -306,13 +306,6 @@ uint32_t j2534_iso_write(j2534_channel_t *c, const j2534_msg_t *msg,
 
     id &= ext ? 0x1FFFFFFFu : 0x7FFu;
 
-    if (j2534_ch_reflash_sid_blocked(pl[0]))
-    {
-        ESP_LOGW(TAG, "ECU flashing disabled: rejected a UDS reprogramming "
-                      "service (enable j2534_server.allow_reflash to permit)");
-        return J2534_ERR_NOT_SUPPORTED;
-    }
-
     bool pad = (msg->tx_flags & J2534_TX_ISO15765_FRAME_PAD) != 0;
     int s = find_by_tx(c, id, ext);
 
@@ -368,6 +361,8 @@ uint32_t j2534_iso_write(j2534_channel_t *c, const j2534_msg_t *msg,
                  esp_err_to_name(err));
         return (err == ESP_ERR_TIMEOUT) ? J2534_ERR_TIMEOUT : J2534_ERR_FAILED;
     }
+
+    j2534_ch_note_reflash(pl[0]); /* forwarded: counted on the status, never refused */
 
     if (indicate_done)
     {

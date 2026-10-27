@@ -1,0 +1,6 @@
+## IDF v6 dropped the bundled `json` component; cJSON comes from the registry
+## (the bench Pi is offline from it: another suite's managed_components and
+## dependencies.lock are copied next to this file's host_test/, usb_acm_cli's).
+## Needed since 2026-10-27 for the settings migration case (j2534_server_migrate.c).
+dependencies:
+  espressif/cjson: "^1.7.18"

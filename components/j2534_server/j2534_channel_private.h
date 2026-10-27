@@ -100,9 +100,10 @@ typedef struct
 /** The once-per-CONNECT "write refused" line + the tx_refused counter. */
 void j2534_ch_say_refused(const char *what);
 
-/** True when the reflash gate is closed and @p sid is a memory-transfer
- *  service (0x34..0x37). */
-bool j2534_ch_reflash_sid_blocked(uint8_t sid);
+/** A tester's request service byte: a UDS memory-transfer service
+ *  (0x34..0x37) is counted on the status (`reflash_seen`), never refused
+ *  (the content gate went on 2026-10-27). */
+void j2534_ch_note_reflash(uint8_t sid);
 
 /** PASS/BLOCK verdict over a [4-byte id][frame] view. No PASS filter at
  *  all passes everything (the CAN channel's rule). */

@@ -24,13 +24,14 @@
  * @file j2534_server_settings.c
  * @brief settings_manager descriptor for j2534_server: field-table schema
  *        (source of truth for shape/ranges/defaults, including the
- *        allow_reflash / allow_lan safety gates) and on_apply (fills the
- *        boot-applied config and pushes the reflash gate into
- *        j2534_channel).
+ *        allow_lan exposure gate) and on_apply (fills the boot-applied
+ *        config). Version 2 (2026-10-27): the `allow_reflash` content gate
+ *        is gone; j2534_server_migrate.c (pure, host-tested) drops the key
+ *        from a stored v1 object.
  */
 #include "settings_manager.h"
 
-#include "j2534_channel.h"
+#include "j2534_server_migrate.h"
 #include "j2534_server_private.h"
 
 static const settings_field_t FIELDS[] =
@@ -39,12 +40,10 @@ static const settings_field_t FIELDS[] =
      * deliberately enables it. */
     SETTINGS_BOOL("enabled", false),
     SETTINGS_INT("port", 1, 65535, 6809),
-    /* ECU-flashing gate. Default false = the device rejects UDS
-     * reprogramming services (RequestDownload/Upload, TransferData,
-     * TransferExit), so a connected tool can read/diagnose but cannot
-     * write ECU firmware. The safe default; flip on only for a real
-     * reflash job. */
-    SETTINGS_BOOL("allow_reflash", false),
+    /* No content gate (2026-10-27): the device forwards whatever the tool
+     * writes. The owner's consent is `enabled` (off by default) and
+     * `allow_lan` below. The memory-transfer services a tool uses are
+     * counted on /api/j2534 (reflash_seen). */
     /* Interface exposure. Default false = accept tester connections only
      * on WiCAN's own SoftAP and the USB-device (NCM) link, i.e. someone
      * physically on WiCAN's AP or plugged into the USB cable. When false a
@@ -87,10 +86,6 @@ static esp_err_t on_apply(const cJSON *settings)
         s_cfg.port = (uint16_t)p->valueint;
     }
 
-    s_cfg.allow_reflash = cJSON_IsTrue(
-        cJSON_GetObjectItemCaseSensitive(settings, "allow_reflash"));
-    j2534_channel_set_allow_reflash(s_cfg.allow_reflash);
-
     s_cfg.allow_lan = cJSON_IsTrue(
         cJSON_GetObjectItemCaseSensitive(settings, "allow_lan"));
     s_cfg.exclusive = !cJSON_IsFalse(
@@ -114,10 +109,11 @@ esp_err_t j2534_settings_register(void)
     static const settings_descriptor_t DESC =
     {
         .name        = "j2534_server",
-        .version     = 1,
+        .version     = 2, /* v2 (2026-10-27): allow_reflash dropped */
         .fields      = FIELDS,
         .field_count = sizeof(FIELDS) / sizeof(FIELDS[0]),
         .on_apply    = on_apply,
+        .on_migrate  = j2534_settings_migrate,
     };
 
     return settings_manager_register(&DESC);

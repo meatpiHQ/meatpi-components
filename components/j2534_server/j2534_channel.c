@@ -23,8 +23,8 @@
 /**
  * @file j2534_channel.c
  * @brief J2534 channel transports (see j2534_channel.h): lifecycle, the
- *        CAN channel on can_manager (raw frames), the filter table, the
- *        reflash gate and the bus-bitrate rule at CONNECT. The ISO15765
+ *        CAN channel on can_manager (raw frames), the filter table and
+ *        the bus-bitrate rule at CONNECT. The ISO15765
  *        side (sessions, the SAE J2534-1 message layout, indications)
  *        lives in j2534_channel_iso.c; both share j2534_channel_private.h.
  */
@@ -49,67 +49,29 @@
 
 static const char *TAG = "j2534_server";
 
-/* ECU-flashing gate (see j2534_channel_set_allow_reflash). Default closed:
- * reprogramming is blocked until the operator explicitly enables it. */
-static bool s_allow_reflash;
-
 /* the channel records: PSRAM (no ISR and no flash path touches them) */
 EXT_RAM_BSS_ATTR static j2534_channel_t s_ch[J2534_MAX_CHANNELS];
 static SemaphoreHandle_t s_lock;
 static StaticSemaphore_t s_lock_buf;   /* internal: FreeRTOS object */
 static bool s_refused_said;            /* the refusal line went out this connect */
 
-void j2534_channel_set_allow_reflash(bool allow)
+/* The UDS memory-transfer services (0x34 RequestDownload, 0x35
+ * RequestUpload, 0x36 TransferData, 0x37 RequestTransferExit) in a
+ * tester's request are COUNTED (/api/j2534 reflash_seen), never refused.
+ * Until 2026-10-27 a closed "allow_reflash" gate answered them with
+ * ERR_NOT_SUPPORTED: on ISO15765 by the service byte, which blocked memory
+ * READS (0x35/0x36 upload) and missed every other write service; on raw
+ * CAN by reading every frame as an ISO-TP single/first frame, which refused
+ * ordinary frames of tools with their own framing (a VW TP 2.0 flasher: any
+ * payload byte 0x34..0x37 behind a 0x0N/0x1N sequence byte, "randomly",
+ * field report 2026-10-27). A pass-through device forwards what the tool
+ * sends; the owner's consent is `enabled` and `allow_lan`. */
+void j2534_ch_note_reflash(uint8_t sid)
 {
-    s_allow_reflash = allow;
-}
-
-/* UDS memory-transfer services: the ones that actually read/write ECU
- * flash. Blocking any of these makes a reprogramming sequence impossible
- * (you cannot write memory without RequestDownload + TransferData). */
-static bool uds_is_reflash_sid(uint8_t sid)
-{
-    switch (sid)
+    if (sid >= 0x34 && sid <= 0x37)
     {
-        case 0x34: /* RequestDownload      */
-        case 0x35: /* RequestUpload        */
-        case 0x36: /* TransferData         */
-        case 0x37: /* RequestTransferExit  */
-            return true;
-        default:
-            return false;
+        j2534_srv_count_reflash_seen();
     }
-}
-
-bool j2534_ch_reflash_sid_blocked(uint8_t sid)
-{
-    return !s_allow_reflash && uds_is_reflash_sid(sid);
-}
-
-/* Raw CAN: data = [4-byte id][frame]; a hand-rolled ISO-TP single or first
- * frame carries the SID after the PCI (SF: frame[1], FF: frame[2]), checked
- * so the CAN channel cannot smuggle a reflash past the ISO15765 gate. */
-static bool can_reflash_blocked(const j2534_msg_t *msg)
-{
-    if (s_allow_reflash || msg->data_size < 6)
-    {
-        return false;
-    }
-
-    const uint8_t *f = msg->data + 4;
-    uint8_t pci = (uint8_t)(f[0] >> 4);
-
-    if (pci == 0x0)
-    {
-        return uds_is_reflash_sid(f[1]);
-    }
-
-    if (pci == 0x1 && msg->data_size >= 7)
-    {
-        return uds_is_reflash_sid(f[2]);
-    }
-
-    return false;
 }
 
 /* A write the CAN node refused: it may not talk yet (listening for the
@@ -366,13 +328,9 @@ static uint32_t write_common(int slot, const j2534_msg_t *msg, bool indicate)
 
     if (c->protocol == J2534_PROT_CAN)
     {
-        if (can_reflash_blocked(msg))
-        {
-            ESP_LOGW(TAG, "ECU flashing disabled: rejected a UDS reprogramming "
-                     "service (enable j2534_server.allow_reflash to permit)");
-            st = J2534_ERR_NOT_SUPPORTED;
-        }
-        else if (msg->data_size < 4 || msg->data_size > 12)
+        /* raw CAN: whatever the tool sends goes out; no content gate
+           (2026-10-27, see j2534_ch_note_reflash) */
+        if (msg->data_size < 4 || msg->data_size > 12)
         {
             st = J2534_ERR_INVALID_MSG;
         }

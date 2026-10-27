@@ -56,16 +56,6 @@ void j2534_channel_init(void);          /* one-time: mutex etc. */
 void j2534_channel_reset_all(void);     /* tester disconnected: tear down */
 
 /**
- * ECU-flashing safety gate. When @p allow is false (the default), a write
- * carrying a UDS memory-transfer service (RequestDownload/Upload,
- * TransferData, RequestTransferExit) is rejected, reprogramming is
- * impossible without them. Set from the j2534_server `allow_reflash`
- * setting. Applies to ISO15765 and to raw-CAN frames that carry an
- * ISO-TP single/first frame with one of those SIDs.
- */
-void j2534_channel_set_allow_reflash(bool allow);
-
-/**
  * The bus bitrate at CONNECT. The bus runs at the device's setting, at
  * what the listen-before-talk policy read off the wire, or at a bitrate a
  * tester stated; a CAN/ISO15765 CONNECT at another @p baud_bps is answered

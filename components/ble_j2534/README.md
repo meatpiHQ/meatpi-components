@@ -55,7 +55,8 @@ statics). No flash writes.
 `ble_pi_run.py` = `test.ps1 blej2534`) -> `BLE J2534 PASS`: HELLO/OPEN,
 CONNECT CAN + `7DF 02 01 00` answered by the ECU simulator from 7E8 (with
 the `/api/can` tx counter as witness), PASS/BLOCK filters, ISO15765
-`22 F1 87` (ECU name) and `10 02`, the reflash gate, a second tester over
+`22 F1 87` (ECU name) and `10 02`, a `34 ..` request forwarded and counted
+(`reflash_seen`; until 2026-10-27 the reflash gate refused it), a second tester over
 TCP refused with `ERR_DEVICE_IN_USE`, BLE drop mid-session releasing the
 server (`transport:"none"` within 5 s, a TCP session then succeeds),
 second BLE session clean. **2026-09-21: PASS** (HELLO RTT p50 188 ms /

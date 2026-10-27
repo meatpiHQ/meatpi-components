@@ -57,7 +57,7 @@ static esp_err_t status_handler(httpd_req_t *req)
     cJSON_AddNumberToObject(o, "frames_rx", st.frames_rx);
     cJSON_AddNumberToObject(o, "frames_tx", st.frames_tx);
     cJSON_AddNumberToObject(o, "tx_refused", st.tx_refused);
-    cJSON_AddBoolToObject(o, "allow_reflash", st.allow_reflash);
+    cJSON_AddNumberToObject(o, "reflash_seen", st.reflash_seen);
     cJSON_AddBoolToObject(o, "allow_lan", st.allow_lan);
     cJSON_AddBoolToObject(o, "exclusive", st.exclusive);
     cJSON_AddBoolToObject(o, "autopid_paused", st.autopid_paused);

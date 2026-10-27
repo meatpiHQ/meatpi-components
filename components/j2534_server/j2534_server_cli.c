@@ -59,6 +59,8 @@ static int cmd_j2534(int argc, char **argv)
                    (unsigned long)st.frames_tx);
     cmdline_printf("  tx refused  : %lu (the CAN node may not talk yet)\n",
                    (unsigned long)st.tx_refused);
+    cmdline_printf("  reflash seen: %lu (UDS 0x34..0x37 requests forwarded)\n",
+                   (unsigned long)st.reflash_seen);
     cmdline_printf("OK\n");
     return 0;
 }

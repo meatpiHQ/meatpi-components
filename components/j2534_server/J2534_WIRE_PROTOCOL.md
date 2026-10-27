@@ -198,7 +198,7 @@ Data conventions:
 | Value | Name | WiCAN meaning |
 |---|---|---|
 | `0x00` | `NOERROR` | |
-| `0x01` | `ERR_NOT_SUPPORTED` | protocol other than CAN/ISO15765; ALSO the reflash gate (section 6) |
+| `0x01` | `ERR_NOT_SUPPORTED` | a protocol this firmware does not run (J1850 PWM, ISO9141, ISO14230); until 2026-10-27 also the reflash gate (section 6, gone) |
 | `0x02` | `ERR_INVALID_CHANNEL_ID` | `DISCONNECT`/data op on an unused channel |
 | `0x03` | `ERR_INVALID_PROTOCOL_ID` | |
 | `0x04` | `ERR_NULL_PARAMETER` | |
@@ -224,12 +224,17 @@ Data conventions:
   AutoPID (PID polling + DTC scans) off the bus and waits up to 700 ms
   for the acknowledgement before processing the first frame;
   `/api/j2534` shows `autopid_paused`. Released on detach.
-- **Reflash gate** (setting `allow_reflash`, default off): UDS services
-  `0x34 RequestDownload`, `0x35 RequestUpload`, `0x36 TransferData`,
-  `0x37 RequestTransferExit` are refused with `ERR_NOT_SUPPORTED` on
-  ISO15765 AND on raw CAN (the device peeks past the id at the ISO-TP
-  PCI nibble of single/first frames). Read/diagnose freely, no ECU
-  programming unless the owner opened the gate.
+- **No content gate** (2026-10-27): the device forwards whatever the tool
+  writes, on every channel type. Until then a closed `allow_reflash`
+  setting refused UDS `0x34..0x37` with `ERR_NOT_SUPPORTED` on ISO15765
+  and, by reading every raw CAN frame as an ISO-TP single/first frame, on
+  raw CAN as well; that guess refused ordinary frames of tools with their
+  own framing (a VW TP 2.0 flasher, "randomly"), and the ISO15765 check
+  blocked memory reads (`0x35`/`0x36` upload) while missing every other
+  write service. The owner's consent is `enabled` (the server is off by
+  default) and `allow_lan`. For observability the memory-transfer services
+  seen in ISO15765 and J1850 requests are counted on `/api/j2534`
+  (`reflash_seen`, since boot). A stored `allow_reflash` key is ignored.
 - **ISO-TP sessions**: one per FLOW_CONTROL filter (ECU), 4 per channel,
   8 across the device, one per rx id; the device's own UDS terminal keeps
   its session 5 s after its last request, so a filter for that ECU
@@ -289,8 +294,9 @@ WRITE_MSGS ch 2: one ISO15765 message, tx_flags 0x40, data 00 00 07 E0 22 F1 90 
   <- RX_MSG ch 2, data 00 00 07 E8 62 F1 90 31 57 43 41 4E 30 46 57 30 50 30 30 30 30 30 30 31   (VIN 1WCAN0FW0P0000001)
   on the bus: 7E0 [03 22 F1 90 AA AA AA AA], then the ECU's first frame, the device's flow control, the consecutive frames
 
-Reflash gate: WRITE_MSGS ch 2, data 00 00 07 E0 34 00 44 00 00 00 04 00
-  <- 35 4A 01 80 07 00 02 00 04 00 00 00 | 01 00 00 00                   (ERR_NOT_SUPPORTED)
+A memory-transfer service: WRITE_MSGS ch 2, data 00 00 07 E0 34 00 44 00 00 00 04 00
+  <- 35 4A 01 80 07 00 02 00 04 00 00 00 | 00 00 00 00                   (NOERROR: forwarded, /api/j2534 reflash_seen +1;
+                                                                          until 2026-10-27 the closed gate answered 01 00 00 00)
 
 Second tester's HELLO (seq 4) while one is attached
   <- 35 4A 01 80 04 00 00 00 04 00 00 00 | 1A 00 00 00                   (ERR_DEVICE_IN_USE)
@@ -342,7 +348,7 @@ Reference: `tools/testbench/ble/ble_j2534_pi.py` (bleak).
 ## 9. Observability
 
 `GET /api/j2534`: `enabled, port, listening, client_connected,
-device_open, channels, frames_rx, frames_tx, allow_reflash, allow_lan,
+device_open, channels, frames_rx, frames_tx, tx_refused, reflash_seen, allow_lan,
 exclusive, autopid_paused, transport, phase`. `POST /api/j2534
 {"exclusive":bool}`. Console: `j2534`. Logs (tag `j2534_server`):
 `tester connected (ble)` / `tester disconnected (ble)` at I, refusals

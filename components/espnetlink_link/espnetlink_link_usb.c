@@ -173,7 +173,7 @@ static espnl_sm_event_t act_get_info(void)
     return ESPNL_EV_OK;
 }
 
-/* ---- the dongle's basics and carrier settings, over the cable ------------ */
+/* ---- the dongle's basics over the cable --------------------------------- */
 
 /* GET /api/wifi_modem over USB: the SIM, the signal and the stage before
  * any link is up, so a fresh WiCAN parked on hold shows them (2026-10-07,
@@ -220,143 +220,6 @@ static bool dongle_submit(void)
     return true;
 }
 
-/* The carrier settings this WiCAN carries (espnetlink.apn / apn_user /
- * apn_password; "" = leave the dongle's own) onto the dongle's
- * lte_upstream_pppos: one GET, and when apn or apn_user differ one PUT of
- * the whole object (the password cannot be read back: it rides along
- * whenever the others change) and one submit. The dongle restarts once to
- * apply, the link drops within a second and the machine starts over from
- * the re-enumeration with nothing left to write. Runs in both modes, before
- * any cut. Returns true when a submit was sent.
- * The SIM PIN (2026-10-13) rides the same PUT as the dongle's `apn_pin`,
- * once per boot and only while the dongle's SIM reports "pin"; the dongle
- * reports "pin_wrong" when the SIM refuses it and neither side retries
- * (three wrong tries lock the SIM). */
-static bool ensure_dongle_carrier(void)
-{
-    const espnl_config_t *cfg = espnl_config();
-    http_client_response_t resp;
-    bool want_apn = cfg->apn[0] != '\0' || cfg->apn_user[0] != '\0';
-    bool pin_due = espnl_core_pin_relay_due(cfg->sim_pin, s_last_sim,
-                                            s_pin_sent);
-
-    if (!want_apn && !pin_due)
-    {
-        espnl_engine_note_carrier(true, "");
-        return false;
-    }
-    if (!usb_request("/api/settings/lte_upstream_pppos", HTTP_CLIENT_GET,
-                     NULL, &resp))
-    {
-        return false;
-    }
-    if (resp.status_code == 404)
-    {
-        http_client_manager_free(&resp);
-        ESP_LOGW(TAG, "carrier settings: the dongle firmware has no LTE "
-                 "settings API (404): update the dongle firmware");
-        espnl_engine_note_carrier(false, "the dongle firmware has no LTE "
-                                         "settings API: update it");
-        return false;
-    }
-
-    cJSON *obj = (resp.status_code == 200 && resp.data != NULL)
-                     ? cJSON_Parse(resp.data) : NULL;
-
-    http_client_manager_free(&resp);
-    if (!cJSON_IsObject(obj))
-    {
-        cJSON_Delete(obj);
-        return false;
-    }
-
-    const cJSON *a = cJSON_GetObjectItemCaseSensitive(obj, "apn");
-    const cJSON *u = cJSON_GetObjectItemCaseSensitive(obj, "apn_user");
-    /* no APN of our own = the dongle's is right by definition */
-    bool same = !want_apn ||
-                (cJSON_IsString(a) && strcmp(a->valuestring, cfg->apn) == 0 &&
-                 cJSON_IsString(u) &&
-                 strcmp(u->valuestring, cfg->apn_user) == 0);
-    /* staged by an interrupted earlier pass, never applied (the same trap
-     * ensure_dongle_setting met on 2026-08-25): submit anyway */
-    bool pending = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(
-        obj, "pending_reboot"));
-
-    if (same && !pending && !pin_due)
-    {
-        cJSON_Delete(obj);
-        espnl_engine_note_carrier(true, "");
-        return false;
-    }
-
-    if (!same || pin_due)
-    {
-        /* §6 full-object replace; a "" password (or PIN) keeps the dongle's */
-        if (!same)
-        {
-            cJSON_DeleteItemFromObjectCaseSensitive(obj, "apn");
-            cJSON_AddStringToObject(obj, "apn", cfg->apn);
-            cJSON_DeleteItemFromObjectCaseSensitive(obj, "apn_user");
-            cJSON_AddStringToObject(obj, "apn_user", cfg->apn_user);
-            cJSON_DeleteItemFromObjectCaseSensitive(obj, "apn_password");
-            cJSON_AddStringToObject(obj, "apn_password", cfg->apn_password);
-        }
-        if (pin_due)
-        {
-            cJSON_DeleteItemFromObjectCaseSensitive(obj, "apn_pin");
-            cJSON_AddStringToObject(obj, "apn_pin", cfg->sim_pin);
-        }
-
-        char *body = cJSON_PrintUnformatted(obj);
-
-        cJSON_Delete(obj);
-        if (body == NULL)
-        {
-            return false;
-        }
-
-        bool ok = usb_request("/api/settings/lte_upstream_pppos",
-                              HTTP_CLIENT_PUT, body, &resp);
-        int status = ok ? resp.status_code : -1;
-
-        free(body);
-        if (ok)
-        {
-            http_client_manager_free(&resp);
-        }
-        if (status != 200)
-        {
-            ESP_LOGW(TAG, "carrier settings: PUT status %d", status);
-            espnl_engine_note_carrier(false, "the dongle refused the "
-                                             "carrier settings");
-            return false;
-        }
-    }
-    else
-    {
-        cJSON_Delete(obj);
-    }
-
-    if (!dongle_submit())
-    {
-        espnl_engine_note_carrier(false, "the dongle did not take the "
-                                         "settings submit");
-        return false;
-    }
-
-    if (pin_due)
-    {
-        s_pin_sent = true;   /* once per boot, whatever the SIM says of it */
-    }
-    ESP_LOGI(TAG, "carrier settings sent to the dongle (APN '%s'%s%s%s): it "
-             "restarts once to apply them", cfg->apn,
-             cfg->apn_user[0] ? ", user " : "", cfg->apn_user,
-             pin_due ? ", the SIM PIN" : "");
-    espnl_engine_note_carrier(true, "");
-    espnl_engine_dongle_rebooting();
-    return true;
-}
-
 static espnl_sm_event_t act_get_key(void)
 {
     http_client_response_t resp;
@@ -365,10 +228,11 @@ static espnl_sm_event_t act_get_key(void)
     /* the basics and the carrier settings first: both want the cable,
      * which a wifi_modem pass cuts a moment later (2026-10-07) */
     usb_read_health();
-    if (ensure_dongle_carrier())
+    if (espnl_ensure_carrier(s_last_sim, &s_pin_sent, true) == 1)
     {
         /* the dongle restarts to apply them: the link drops in a second
          * and the machine starts over from the re-enumeration */
+        espnl_engine_dongle_rebooting();
         return ESPNL_EV_FAIL;
     }
 
@@ -582,14 +446,19 @@ static int ensure_dongle_setting(const char *path, const char *key,
 /* usb_ncm / usb_rndis mode: make the dongle's USB link an internet path.
  * Two settings on the dongle side: `lte_upstream_pppos.ncm_share` (its USB
  * DHCP offers router/DNS + NAPT) and `usb_dev_ethernet.class` (which USB
- * Ethernet class it presents: must match our mode). Read both; when
- * either differs, PUT + submit ONCE (the dongle reboots once to apply). */
+ * Ethernet class it presents: must match our mode), then the preferences
+ * and the carrier settings. Read them all; when anything differs, PUT +
+ * submit ONCE (the dongle reboots once to apply). */
 static espnl_sm_event_t act_ensure_share(void)
 {
     const char *cls = espnl_core_mode_usb_class(
         (espnl_core_mode_t)espnl_config()->mode);
     bool changed = false;
     bool unsupported = false;
+
+    /* the basics first: the SIM state the PIN relay below reads, and the
+     * health cache for the status before the first poll over the wire */
+    usb_read_health();
 
     int r = ensure_dongle_setting("/api/settings/lte_upstream_pppos",
                                   "ncm_share", cJSON_CreateBool(true));
@@ -649,6 +518,19 @@ static espnl_sm_event_t act_ensure_share(void)
     }
     changed = changed || (p == 1);
 
+    /* and so do the carrier settings and the SIM PIN (2026-10-28): until
+     * then only the wifi_modem key read relayed them, so a WiCAN in a USB
+     * mode kept an APN the dongle never saw (bench: a Simbase SIM left on
+     * the dongle's default APN, the LTE never attached). -2 (no LTE
+     * settings API) cannot happen past the ncm_share step above. */
+    int carrier = espnl_ensure_carrier(s_last_sim, &s_pin_sent, false);
+
+    if (carrier == -1)
+    {
+        return ESPNL_EV_FAIL;
+    }
+    changed = changed || (carrier == 1);
+
     if (!changed)
     {
         ESP_LOGI(TAG, "dongle USB uplink already configured (class %s, "
@@ -675,8 +557,9 @@ static espnl_sm_event_t act_ensure_share(void)
         return ESPNL_EV_FAIL;
     }
 
-    ESP_LOGI(TAG, "dongle USB uplink reconfigured (class %s, ncm_share on), "
-             "it reboots to apply", cls != NULL ? cls : "ncm");
+    ESP_LOGI(TAG, "dongle USB uplink reconfigured (class %s, ncm_share on%s), "
+             "it reboots to apply", cls != NULL ? cls : "ncm",
+             carrier == 1 ? ", the carrier settings" : "");
     if (!unsupported)
     {
         espnl_status_set_last_error("");

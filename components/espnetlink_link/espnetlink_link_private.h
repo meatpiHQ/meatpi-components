@@ -164,6 +164,18 @@ int espnl_usb_ensure_setting(const char *path, const char *key,
  *  @p submit: the dongle restarts), 0 = nothing to do, -1 = failure. */
 int espnl_ensure_prefs(bool want_ap, bool submit);
 
+/** The carrier settings this WiCAN carries (espnetlink.apn / apn_user /
+ *  apn_password; "" = the dongle keeps its own) onto the dongle's
+ *  lte_upstream_pppos, and the SIM PIN as its `apn_pin` while the dongle's
+ *  SIM (@p sim_state, as last read over the cable) reports "pin" and this
+ *  boot has not sent it (@p pin_sent, set once it went). 1 = staged (and
+ *  submitted when @p submit: the dongle restarts), 0 = nothing to do,
+ *  -1 = failure, -2 = the dongle firmware has no LTE settings API (404).
+ *  Since 2026-10-28 both passes call it: the wifi_modem key read with the
+ *  submit, the USB share pass without (its own submit applies everything
+ *  with one dongle restart). */
+int espnl_ensure_carrier(const char *sim_state, bool *pin_sent, bool submit);
+
 /* ---- the update hold (espnetlink_link_update.c, 2026-10-19) ------------- */
 
 /** While on, the link task stops its polls, the AP-path restore and the

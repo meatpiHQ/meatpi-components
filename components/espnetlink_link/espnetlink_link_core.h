@@ -111,6 +111,31 @@ uint32_t espnl_core_nofix_update(espnl_nofix_t *acc, bool away, bool lte_up,
  *  wrong tries lock the SIM. NULLs read as empty. */
 bool espnl_core_pin_relay_due(const char *pin, const char *sim, bool sent);
 
+/* ---- the carrier settings relay (2026-10-07; both passes since 2026-10-28) */
+
+typedef enum
+{
+    ESPNL_CARRIER_NOTHING,  /* this WiCAN carries no APN and no user: the
+                               dongle keeps its own */
+    ESPNL_CARRIER_SAME,     /* the dongle holds them, applied */
+    ESPNL_CARRIER_STAGED,   /* the dongle holds them staged (pending_reboot):
+                               the submit alone is owed */
+    ESPNL_CARRIER_DIFFERS,  /* a PUT is owed (a document without the keys
+                               too) */
+} espnl_carrier_verdict_t;
+
+/** The dongle's `lte_upstream_pppos` settings as its GET returns them (the
+ *  persisted, possibly staged values: @p dongle_apn / @p dongle_user NULL
+ *  when the key is missing or not a string, @p dongle_pending its
+ *  `pending_reboot`) against the APN and user this WiCAN carries (NULL
+ *  reads as empty). The password cannot be read back and is never
+ *  compared: it rides along whenever the others are written. */
+espnl_carrier_verdict_t espnl_core_carrier_verdict(const char *dongle_apn,
+                                                   const char *dongle_user,
+                                                   bool dongle_pending,
+                                                   const char *apn,
+                                                   const char *apn_user);
+
 /* ---- link mode --------------------------------------------------------- */
 
 /* Mirrors the public espnetlink_mode_t (espnetlink_link.h) value-for-value:

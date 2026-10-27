@@ -35,9 +35,16 @@
  *
  * A dongle firmware without the key or the component (an older build)
  * answers 404 or lacks the key: it is left alone, with a D line.
+ *
+ * The carrier settings relay lives here too (2026-10-07, Quick Setup's USB
+ * step; moved from the USB driver on 2026-10-28 when the USB share pass
+ * started calling it as well): the WiCAN's APN, user, password and SIM PIN
+ * onto the dongle's `lte_upstream_pppos`, the same stage-then-submit
+ * contract.
  */
 #include "espnetlink_link_private.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #include "cJSON.h"
@@ -185,5 +192,135 @@ int espnl_ensure_prefs(bool want_ap, bool submit)
                       "them");
     }
 
+    return 1;
+}
+
+/* ---- the carrier settings (2026-10-07; both passes since 2026-10-28) ----- */
+
+int espnl_ensure_carrier(const char *sim_state, bool *pin_sent, bool submit)
+{
+    const espnl_config_t *cfg = espnl_config();
+    http_client_response_t resp;
+    bool want_apn = cfg->apn[0] != '\0' || cfg->apn_user[0] != '\0';
+    bool pin_due = espnl_core_pin_relay_due(cfg->sim_pin, sim_state,
+                                            pin_sent != NULL && *pin_sent);
+
+    if (!want_apn && !pin_due)
+    {
+        espnl_engine_note_carrier(true, "");
+        return 0;
+    }
+    if (!espnl_usb_request("/api/settings/lte_upstream_pppos",
+                           HTTP_CLIENT_GET, NULL, &resp))
+    {
+        return -1;
+    }
+    if (resp.status_code == 404)
+    {
+        http_client_manager_free(&resp);
+        ESP_LOGW(TAG, "carrier settings: the dongle firmware has no LTE "
+                 "settings API (404): update the dongle firmware");
+        espnl_engine_note_carrier(false, "the dongle firmware has no LTE "
+                                         "settings API: update it");
+        return -2;
+    }
+
+    cJSON *obj = (resp.status_code == 200 && resp.data != NULL)
+                     ? cJSON_Parse(resp.data) : NULL;
+
+    http_client_manager_free(&resp);
+    if (!cJSON_IsObject(obj))
+    {
+        cJSON_Delete(obj);
+        return -1;
+    }
+
+    /* the GET returns the PERSISTED (staged) document, see the pure rule */
+    const cJSON *a = cJSON_GetObjectItemCaseSensitive(obj, "apn");
+    const cJSON *u = cJSON_GetObjectItemCaseSensitive(obj, "apn_user");
+    espnl_carrier_verdict_t v = espnl_core_carrier_verdict(
+        cJSON_IsString(a) ? a->valuestring : NULL,
+        cJSON_IsString(u) ? u->valuestring : NULL,
+        cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(obj, "pending_reboot")),
+        cfg->apn, cfg->apn_user);
+
+    if (v != ESPNL_CARRIER_DIFFERS && v != ESPNL_CARRIER_STAGED && !pin_due)
+    {
+        /* the dongle holds them, or there is nothing of ours to hold */
+        cJSON_Delete(obj);
+        espnl_engine_note_carrier(true, "");
+        return 0;
+    }
+
+    if (v == ESPNL_CARRIER_DIFFERS || pin_due)
+    {
+        /* §6 full-object replace; a "" password (or PIN) keeps the dongle's */
+        if (v == ESPNL_CARRIER_DIFFERS)
+        {
+            cJSON_DeleteItemFromObjectCaseSensitive(obj, "apn");
+            cJSON_AddStringToObject(obj, "apn", cfg->apn);
+            cJSON_DeleteItemFromObjectCaseSensitive(obj, "apn_user");
+            cJSON_AddStringToObject(obj, "apn_user", cfg->apn_user);
+            cJSON_DeleteItemFromObjectCaseSensitive(obj, "apn_password");
+            cJSON_AddStringToObject(obj, "apn_password", cfg->apn_password);
+        }
+        if (pin_due)
+        {
+            cJSON_DeleteItemFromObjectCaseSensitive(obj, "apn_pin");
+            cJSON_AddStringToObject(obj, "apn_pin", cfg->sim_pin);
+        }
+
+        char *body = cJSON_PrintUnformatted(obj);
+
+        cJSON_Delete(obj);
+        if (body == NULL)
+        {
+            return -1;
+        }
+
+        bool ok = espnl_usb_request("/api/settings/lte_upstream_pppos",
+                                    HTTP_CLIENT_PUT, body, &resp);
+        int status = ok ? resp.status_code : -1;
+
+        free(body);
+        if (ok)
+        {
+            http_client_manager_free(&resp);
+        }
+        if (status != 200)
+        {
+            ESP_LOGW(TAG, "carrier settings: PUT status %d", status);
+            espnl_engine_note_carrier(false, "the dongle refused the "
+                                             "carrier settings");
+            return -1;
+        }
+    }
+    else
+    {
+        /* staged by an earlier pass whose submit never landed (the trap
+         * espnl_usb_ensure_setting met on 2026-08-25): the submit alone
+         * is owed */
+        cJSON_Delete(obj);
+        ESP_LOGW(TAG, "carrier settings staged on the dongle but not "
+                 "applied (pending_reboot): submitting");
+    }
+
+    if (pin_due && pin_sent != NULL)
+    {
+        *pin_sent = true;   /* once per boot, whatever the SIM says of it */
+    }
+
+    if (submit && !espnl_usb_submit())
+    {
+        espnl_engine_note_carrier(false, "the dongle did not take the "
+                                         "settings submit");
+        return -1;
+    }
+    ESP_LOGI(TAG, "carrier settings %s the dongle (APN '%s'%s%s%s): it "
+             "restarts once to apply them", submit ? "sent to" : "staged on",
+             cfg->apn, cfg->apn_user[0] ? ", user " : "", cfg->apn_user,
+             pin_due ? ", the SIM PIN" : "");
+    espnl_engine_note_carrier(false, "sent to the dongle, which restarts to "
+                                     "apply them");
     return 1;
 }

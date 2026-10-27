@@ -207,6 +207,53 @@ void test_pin_relay_rule(void)
     TEST_ASSERT_FALSE(espnl_core_pin_relay_due("1234", NULL, false));
 }
 
+/* the carrier settings relay (2026-10-28, run by both passes since the
+ * bench found a USB-mode WiCAN keeping an APN the dongle never saw): what
+ * the pass owes the dongle, from its lte settings document against the
+ * APN and user this WiCAN carries */
+void test_carrier_verdict(void)
+{
+    /* nothing of ours: the dongle keeps its own APN, whatever it is */
+    TEST_ASSERT_EQUAL(ESPNL_CARRIER_NOTHING,
+                      espnl_core_carrier_verdict("internet", "", false,
+                                                 "", ""));
+    TEST_ASSERT_EQUAL(ESPNL_CARRIER_NOTHING,
+                      espnl_core_carrier_verdict(NULL, NULL, true,
+                                                 NULL, NULL));
+    /* the dongle holds them */
+    TEST_ASSERT_EQUAL(ESPNL_CARRIER_SAME,
+                      espnl_core_carrier_verdict("simbase", "", false,
+                                                 "simbase", ""));
+    TEST_ASSERT_EQUAL(ESPNL_CARRIER_SAME,
+                      espnl_core_carrier_verdict("simbase", "u", false,
+                                                 "simbase", "u"));
+    /* staged by an interrupted pass: the submit alone is owed */
+    TEST_ASSERT_EQUAL(ESPNL_CARRIER_STAGED,
+                      espnl_core_carrier_verdict("simbase", "", true,
+                                                 "simbase", ""));
+    /* a PUT is owed: another APN, another user, a document without the
+     * keys (an older dongle build), a staged value that is not ours */
+    TEST_ASSERT_EQUAL(ESPNL_CARRIER_DIFFERS,
+                      espnl_core_carrier_verdict("internet", "", false,
+                                                 "simbase", ""));
+    TEST_ASSERT_EQUAL(ESPNL_CARRIER_DIFFERS,
+                      espnl_core_carrier_verdict("simbase", "", false,
+                                                 "simbase", "u"));
+    TEST_ASSERT_EQUAL(ESPNL_CARRIER_DIFFERS,
+                      espnl_core_carrier_verdict("simbase", NULL, false,
+                                                 "simbase", ""));
+    TEST_ASSERT_EQUAL(ESPNL_CARRIER_DIFFERS,
+                      espnl_core_carrier_verdict(NULL, NULL, false,
+                                                 "simbase", ""));
+    TEST_ASSERT_EQUAL(ESPNL_CARRIER_DIFFERS,
+                      espnl_core_carrier_verdict("internet", "", true,
+                                                 "simbase", ""));
+    /* a user alone is ours too (the network's APN with a named user) */
+    TEST_ASSERT_EQUAL(ESPNL_CARRIER_DIFFERS,
+                      espnl_core_carrier_verdict("internet", "", false,
+                                                 "", "u"));
+}
+
 void test_health_parse_lte_down(void)
 {
     espnl_health_t h;
@@ -491,6 +538,7 @@ void app_main(void)
     RUN_TEST(test_health_parse_pin_wrong);
     RUN_TEST(test_nofix_rule);
     RUN_TEST(test_pin_relay_rule);
+    RUN_TEST(test_carrier_verdict);
     RUN_TEST(test_health_parse_garbage);
     RUN_TEST(test_info_parse);
     RUN_TEST(test_credentials_parse);

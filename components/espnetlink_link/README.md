@@ -133,20 +133,30 @@ a level below the minimum is flagged in the UI even when the routes
 happen to exist.
 
 **The basics over the cable, and the carrier settings (2026-10-07, for
-Quick Setup's USB step):** the pairing pass reads `GET /api/wifi_modem`
-over USB before the key (`usb_read_health`), so a fresh WiCAN parked on
-hold already shows the dongle's SIM (`sim`: ready / missing / pin, dongle
-api 8), signal, carrier, stage and address; the reading is kept with its
-age (`age_s`) when the WiCAN is on its home WiFi instead of being
-dropped (the fix is still never served stale). The same pass relays the
-WiCAN's `apn` / `apn_user` / `apn_password` settings onto the dongle's
-`lte_upstream_pppos` (`ensure_dongle_carrier`: one GET, one full-object
-PUT when `apn` or `apn_user` differ or the dongle holds them staged but
-unapplied, one submit; the dongle restarts once, the link drops within a
-second and the machine starts over from the re-enumeration with nothing
-left to write; the key read reports FAIL for that pass so no cut is
-attempted on a rebooting dongle). `carrier_synced` / `carrier_note` in
-the status say whether the dongle holds them. A dongle without the LTE
+Quick Setup's USB step; in every mode since 2026-10-28):** the pairing
+pass reads `GET /api/wifi_modem` over USB first (`usb_read_health`), so a
+fresh WiCAN parked on hold already shows the dongle's SIM (`sim`: ready /
+missing / pin, dongle api 8), signal, carrier, stage and address; the
+reading is kept with its age (`age_s`) when the WiCAN is on its home WiFi
+instead of being dropped (the fix is still never served stale). The same
+pass relays the WiCAN's `apn` / `apn_user` / `apn_password` settings onto
+the dongle's `lte_upstream_pppos` (`espnl_ensure_carrier()` in
+`espnetlink_link_ensure.c`: one GET, one full-object PUT when `apn` or
+`apn_user` differ or the dongle holds them staged but unapplied, the pure
+rule `espnl_core_carrier_verdict()`, host-tested). In `wifi_modem` the
+relay submits on its own: the dongle restarts once, the link drops within
+a second and the machine starts over from the re-enumeration with nothing
+left to write (the key read reports FAIL for that pass so no cut is
+attempted on a rebooting dongle). In the USB modes the PUT rides the share
+pass's single submit with the class, the sharing and the preferences: one
+dongle restart for all of them. Until 2026-10-28 only the `wifi_modem` key
+read relayed them, so a WiCAN in the default `usb_rndis` kept the APN and
+reported `carrier_synced` while the dongle ran its own (bench: a Simbase
+SIM left on the dongle's default APN `internet` never attached;
+`espnetlink_apn_bench.py`, `.\test.ps1 espnlapn`). `carrier_synced` /
+`carrier_note` in the status say whether the dongle holds them (`false`
+with the note `sent to the dongle, which restarts to apply them` for the
+seconds between the submit and the re-pair). A dongle without the LTE
 settings API (404) is tolerated with the note.
 
 
@@ -171,10 +181,12 @@ also up; the host attaches whichever class enumerates: `cdc_ncm` or
 `lte_upstream_pppos.ncm_share` (**shares its LTE link over USB**, DHCP
 router + DNS + NAPT) and `usb_dev_ethernet.class` (`ncm`/`rndis` per our
 mode; 404 = pre-2026-08-25 dongle firmware, logged and left on its
-built-in class), PUTs whichever differs and `POST /api/settings/submit`s
-ONCE (the dongle reboots once to apply). A fresh dongle ships `rndis` +
-`ncm_share=true` (2026-10-12), so the default pair changes nothing and
-restarts nothing. GPS and health are polled over the USB link at
+built-in class), the preferences (AGNSS) and, since 2026-10-28, the
+carrier settings (`apn` / `apn_user` / `apn_password` and the SIM PIN),
+PUTs whichever differs and `POST /api/settings/submit`s ONCE (the dongle
+reboots once to apply). A fresh dongle ships `rndis` + `ncm_share=true`
+(2026-10-12), so the default pair with no APN of the WiCAN's own changes
+nothing and restarts nothing. GPS and health are polled over the USB link at
 `192.168.7.1`. Switching here from `wifi_modem` within one dongle boot
 finds the dongle's data lines cut (a runtime cut lasts until the dongle
 restarts): the link task restores them over the AP: dongle health
@@ -276,7 +288,7 @@ gained the GPS fallback provider; `wifi_manager_sta_reconnect()`.
 | `gps_poll_s` | 1..60 `2` | |
 | `health_poll_s` | 5..300 `10` | |
 | `cut_retries` | 1..5 `2` | POST `usb_data` attempts before a VBUS recovery |
-| `apn` | str ≤63 `""` | carrier settings relayed to the dongle's `lte_upstream_pppos` by the pairing pass (2026-10-07, Quick Setup's USB step); "" = the dongle keeps its own |
+| `apn` | str ≤63 `""` | carrier settings relayed to the dongle's `lte_upstream_pppos` by the pairing pass in every mode (2026-10-07, Quick Setup's USB step; the USB modes since 2026-10-28); "" = the dongle keeps its own |
 | `apn_user` | str ≤32 `""` | |
 | `apn_password` | str ≤32 `""` | redacted on GET, "" on PUT keeps it (the api_http `_password` rule); rides along whenever `apn` or `apn_user` change (it cannot be read back from the dongle) |
 | `sim_pin` | str ≤8 `""` | the SIM's PIN (2026-10-13): sent to the dongle as its `apn_pin` in the same PUT, once per boot and only while the dongle's health reports `sim: "pin"`; the dongle answers `pin_wrong` when the SIM refuses it and neither side retries by itself (three wrong tries lock the SIM) |

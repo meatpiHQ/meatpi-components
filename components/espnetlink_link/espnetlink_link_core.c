@@ -158,6 +158,30 @@ bool espnl_core_pin_relay_due(const char *pin, const char *sim, bool sent)
     return strcmp(sim, "pin") == 0;
 }
 
+/* ---- the carrier settings relay ---------------------------------------- */
+
+espnl_carrier_verdict_t espnl_core_carrier_verdict(const char *dongle_apn,
+                                                   const char *dongle_user,
+                                                   bool dongle_pending,
+                                                   const char *apn,
+                                                   const char *apn_user)
+{
+    const char *want_apn = apn != NULL ? apn : "";
+    const char *want_user = apn_user != NULL ? apn_user : "";
+
+    if (want_apn[0] == '\0' && want_user[0] == '\0')
+    {
+        return ESPNL_CARRIER_NOTHING;
+    }
+    if (dongle_apn == NULL || dongle_user == NULL ||
+        strcmp(dongle_apn, want_apn) != 0 ||
+        strcmp(dongle_user, want_user) != 0)
+    {
+        return ESPNL_CARRIER_DIFFERS;
+    }
+    return dongle_pending ? ESPNL_CARRIER_STAGED : ESPNL_CARRIER_SAME;
+}
+
 bool espnl_core_ssid_match(const char *configured, const char *connected)
 {
     if (configured == NULL || connected == NULL || configured[0] == '\0')

@@ -25,7 +25,7 @@ registry as the `espressif/mqtt` managed component (`idf_component.yml`).
 |---|---|
 | `mqtt_manager_init()` | Settings + log descriptors. No network. |
 | `mqtt_manager_start()` | Builds the client; the link task (`mqtt_link`, the former starter's PSRAM stack) starts it when the uplink named by `connect_on` is up and stops it when that uplink goes, driven by `dev_status_manager_subscribe_changes()` (esp-mqtt owns the reconnects in between). No-op when disabled. |
-| `mqtt_manager_stop()` | Disconnect + clear the bit. |
+| `mqtt_manager_stop()` | Disconnect + clear the bit. Also what the pre-restart hook runs while a session is up (2026-10-27, below). |
 | `mqtt_manager_connected()` | Broker session up (mirrors `DEV_STATUS_BIT_MQTT_CONNECTED`). |
 | `mqtt_manager_topic_prefix()` | The resolved prefix: consumers build topics on it. |
 | `mqtt_manager_publish(topic, data, len, qos, retain)` | DIRECT path: thread-safe, but the socket write runs in YOUR context. Occasional messages only. |
@@ -92,11 +92,34 @@ The library still prints its own `mqtt_client` E line per failed attempt
 (an ERROR cannot be demoted by tag level); benches whitelist those the
 way they whitelist esp-tls / HTTP_CLIENT connect failures.
 
+### Quiet planned restarts (2026-10-27)
+
+A planned restart (`restart_tracker_restart()`: a settings submit, the
+Quick Setup's Finish, `/api/restart`, an OTA apply) ends in `esp_restart()`,
+whose shutdown handlers stop the WiFi stack while the broker socket is
+still open: esp-mqtt's task then reads an aborted socket and prints two E
+lines (`transport_read() error: errno=113`, `mqtt_message_receive()
+returned -2`) that every bench had to whitelist, and the broker saw a
+session drop instead of an end. The manager now registers a pre-restart
+hook (`restart_tracker_add_pre_restart_hook()`, one of the table's four
+slots) that runs `mqtt_manager_stop()` while a session is up: the
+DISCONNECT packet goes out, the socket closes, the task ends (under half a
+second: it sits in a 500 ms poll read), then the restart proceeds, with one
+I line `stopped before the restart`. The hook skips an outage (a stop
+there would wait on the library's reconnect timer) and a restart asked
+from the client's own task (the library refuses that with an E line of its
+own). Proof: `tools/testbench/system/restart_mqtt_quiet_bench.py`.
+
 ## Files
 
 - `mqtt_manager.c`: lifecycle, settings, client glue, handler registry,
   the async ring + publisher task, the link-following task (starts and
-  stops the client with the uplink named by `connect_on`).
+  stops the client with the uplink named by `connect_on`), the
+  pre-restart hook (stops a connected client before a planned restart).
+- `mqtt_manager_tls.c`: the mqtts:// verification material (a
+  cert_manager set, a raw `ca_file` into one 8 KB PSRAM buffer, or the
+  built-in bundle); split out 2026-10-27 when mqtt_manager.c passed 700
+  lines with the hook.
 - `mqtt_manager_match.c`: PURE topic-filter matcher + URL validation
   (host-tested).
 - `mqtt_manager_item.c`: PURE ring-item codec (host-tested).

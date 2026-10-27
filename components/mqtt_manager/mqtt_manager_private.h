@@ -131,3 +131,10 @@ bool mm_settings_is_configured(void);
 
 /** on_apply -> the runtime identity buffers (mqtt_manager.c). */
 void mm_core_set_identity(const char *client_id, const char *prefix);
+
+/* ---- mqtt_manager_tls.c: the mqtts:// material (device only) ---------------- */
+struct esp_mqtt_client_config_t;
+/** Fill the client configuration's verification (and, with a cert set that
+ *  carries a client cert + key, authentication) fields: a cert_manager set,
+ *  else a raw ca_file into a PSRAM buffer, else the built-in bundle. */
+void mm_configure_tls(struct esp_mqtt_client_config_t *cfg);

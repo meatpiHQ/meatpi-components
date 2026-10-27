@@ -5,6 +5,7 @@ idf_component_register(
          "mqtt_manager_item.c"
          "mqtt_manager_policy.c"
          "mqtt_manager_events.c"
+         "mqtt_manager_tls.c"
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "."
     # Feature: owns THE one MQTT client (esp-mqtt is a MANAGED component,
@@ -13,5 +14,5 @@ idf_component_register(
     # topic-filter handlers into it.
     PRIV_REQUIRES espressif__mqtt mbedtls filesystem esp_ringbuf
                   cert_manager dev_status_manager settings_manager
-                  log_manager event_manager
+                  log_manager event_manager restart_tracker
 )

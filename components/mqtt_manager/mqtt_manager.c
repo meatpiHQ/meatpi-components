@@ -34,7 +34,6 @@
 #include <string.h>
 
 #include "esp_attr.h"
-#include "esp_crt_bundle.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -43,12 +42,12 @@
 #include "freertos/task.h"
 #include "mqtt_client.h"
 
-#include "cert_manager.h"
+#include "cert_manager.h" /* CERT_MANAGER_NAME_MAX: the cert_set static assert */
 #include "dev_status_manager.h"
-#include "filesystem.h"
 #include "log_manager.h"
 
 #include "mqtt_manager_private.h"
+#include "restart_tracker.h"
 
 static const char *TAG = "mqtt_manager";
 
@@ -64,7 +63,6 @@ _Static_assert(sizeof(((mm_config_t *)0)->cert_set) ==
 #define MM_OUT_BUF     4096
 #define MM_RECONNECT_MS 5000       /* esp-mqtt retry while the uplink is up */
 #define MM_LINK_POLL_MS 5000       /* link task safety-net wake             */
-#define MM_CA_PEM_MAX  8192
 #define MM_RING_BYTES  (32 * 1024) /* async publish elasticity (PSRAM)  */
 
 typedef struct
@@ -83,6 +81,7 @@ static uint32_t s_frag_drops;
 static volatile bool s_started;
 static bool s_outage_logged; /* one W per broker outage, not per retry  */
 static bool s_subscribed;    /* dev_status change hook, registered once */
+static bool s_restart_hooked; /* the pre-restart hook, registered once */
 
 /* link task (PSRAM stack: network only, no flash writes): starts the
    client when the chosen uplink is up, stops it when the uplink goes */
@@ -104,7 +103,6 @@ static mqtt_manager_stats_t s_stats;
 static char s_client_id[64];
 static char s_prefix[64];
 static char s_status_topic[80];
-static char *s_ca_pem; /* PSRAM, loaded once at start when ca_file set */
 
 /* ---- settings glue (descriptor in mqtt_manager_settings.c) ----------------- */
 
@@ -358,80 +356,33 @@ esp_err_t mqtt_manager_init(void)
     return mm_settings_register();
 }
 
-/** mqtts:// verification, priority order: a cert_manager SET (CA +
- *  optional client cert/key = mutual TLS) > a raw ca_file > the built-in
- *  certificate bundle. */
-static void configure_tls(esp_mqtt_client_config_t *cfg)
+/* A planned restart stops the WiFi stack under esp_restart() while the
+   broker socket is open: esp-mqtt's task then reads an aborted socket and
+   prints two E lines (errno 113) the health net had to whitelist (the Quick
+   Setup's Finish, 2026-10-27). Disconnecting first sends the DISCONNECT
+   packet, closes the socket and stops the task, so the broker sees a clean
+   end and the ring stays quiet. Only while a session is up: a stop during
+   an outage waits on the library's reconnect timer, and a client cannot be
+   stopped from its own task (the library refuses that, loudly). */
+static void mm_on_pre_restart(restart_tracker_planned_reason_t reason,
+                              restart_tracker_source_t source, uint32_t flags)
 {
-    const mm_config_t *mc = mm_settings_config();
+    (void)reason;
+    (void)source;
+    (void)flags;
 
-    if (mc->cert_set[0] != '\0')
+    if (!s_started || s_client == NULL || !s_connected)
     {
-        const char *pem;
-        size_t len;
-
-        if (cert_manager_get(mc->cert_set, CERT_MANAGER_CA, &pem, &len) ==
-            ESP_OK)
-        {
-            cfg->broker.verification.certificate = pem;
-            cfg->broker.verification.certificate_len = len;
-
-            const char *ccert;
-            const char *ckey;
-            size_t ccert_len;
-            size_t ckey_len;
-
-            if (cert_manager_get(mc->cert_set, CERT_MANAGER_CLIENT_CERT,
-                                 &ccert, &ccert_len) == ESP_OK &&
-                cert_manager_get(mc->cert_set, CERT_MANAGER_CLIENT_KEY,
-                                 &ckey, &ckey_len) == ESP_OK)
-            {
-                cfg->credentials.authentication.certificate = ccert;
-                cfg->credentials.authentication.certificate_len =
-                    ccert_len;
-                cfg->credentials.authentication.key = ckey;
-                cfg->credentials.authentication.key_len = ckey_len;
-                ESP_LOGI(TAG, "mutual TLS via cert set '%s'",
-                         mc->cert_set);
-            }
-            else
-            {
-                ESP_LOGI(TAG, "server-auth TLS via cert set '%s'",
-                         mc->cert_set);
-            }
-
-            return;
-        }
-
-        ESP_LOGW(TAG, "cert_set '%s' unusable; falling back",
-                 mc->cert_set);
+        return;
     }
 
-    if (mc->ca_file[0] != '\0')
+    if (strcmp(pcTaskGetName(NULL), "mqtt_task") == 0)
     {
-        size_t len = 0;
-
-        if (s_ca_pem == NULL)
-        {
-            s_ca_pem = heap_caps_malloc(MM_CA_PEM_MAX, MALLOC_CAP_SPIRAM |
-                                                       MALLOC_CAP_8BIT);
-        }
-
-        if (s_ca_pem != NULL &&
-            filesystem_read(mc->ca_file, s_ca_pem, MM_CA_PEM_MAX - 1,
-                            &len) == ESP_OK)
-        {
-            s_ca_pem[len] = '\0';
-            cfg->broker.verification.certificate = s_ca_pem;
-            cfg->broker.verification.certificate_len = len + 1;
-            return;
-        }
-
-        ESP_LOGW(TAG, "ca_file '%s' unreadable; using the certificate "
-                 "bundle", mc->ca_file);
+        return;
     }
 
-    cfg->broker.verification.crt_bundle_attach = esp_crt_bundle_attach;
+    (void)mqtt_manager_stop();
+    ESP_LOGI(TAG, "stopped before the restart");
 }
 
 esp_err_t mqtt_manager_start(void)
@@ -495,7 +446,7 @@ esp_err_t mqtt_manager_start(void)
 
     if (strncmp(mc->url, "mqtts://", 8) == 0)
     {
-        configure_tls(&cfg);
+        mm_configure_tls(&cfg);
     }
 
     s_client = esp_mqtt_client_init(&cfg);
@@ -555,6 +506,22 @@ esp_err_t mqtt_manager_start(void)
         return ESP_FAIL;
     }
     mm_events_start(); /* subscribe the rules' mqtt.rx topics */
+
+    if (!s_restart_hooked)
+    {
+        esp_err_t herr = restart_tracker_add_pre_restart_hook(mm_on_pre_restart);
+
+        if (herr == ESP_OK)
+        {
+            s_restart_hooked = true;
+        }
+        else
+        {
+            ESP_LOGW(TAG, "no pre-restart hook (%s): a planned restart cuts "
+                          "the broker socket and the library logs it",
+                     esp_err_to_name(herr));
+        }
+    }
     ESP_LOGI(TAG, "started (%s, id %s, prefix %s, keepalive %lus)",
              mc->url, s_client_id, s_prefix,
              (unsigned long)mc->keepalive_s);

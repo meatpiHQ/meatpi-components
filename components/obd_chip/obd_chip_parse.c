@@ -292,6 +292,39 @@ bool obd_fw_line_is_end_marker(const char *line)
     return strncmp(line, "FFF1", 4) == 0;
 }
 
+/* ---- packaged firmware policy (issue #1023, 2026-10-28) ----------------------
+ * The chip firmware versions the packaged image leaves alone. Legacy v4.52p
+ * (main fab54ad, 2026-10-12) bundles V2.3.24 and treats a chip at V2.3.22
+ * or V2.3.24 as up to date; v6 bundled V2.3.22 alone and DOWNGRADED a chip
+ * that v4.52p had taken to V2.3.24, a 3557-record write on the first v6
+ * boot. Keep in step with OBD_FW_BUILTIN_VERSION in obd_chip_fw.c: the
+ * packaged version must be in this list (host-tested). */
+static const char *const OBD_FW_CURRENT[] = { "V2.3.22", "V2.3.24" };
+
+bool obd_fw_version_is_current(const char *vtvers)
+{
+    if (vtvers == NULL)
+    {
+        return false;
+    }
+
+    for (size_t i = 0; i < sizeof(OBD_FW_CURRENT) / sizeof(OBD_FW_CURRENT[0]);
+         i++)
+    {
+        if (strstr(vtvers, OBD_FW_CURRENT[i]) != NULL)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+const char *obd_fw_current_versions(void)
+{
+    return "V2.3.22, V2.3.24";
+}
+
 /* ---- EEPROM guard (obd_chip_guard.h, 2026-09-16) --------------------------
  * One scan serves three callers: autopid's config parser (init strings,
  * ';'-separated), the request engine (one command) and the raw bridge path

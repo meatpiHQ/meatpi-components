@@ -81,6 +81,10 @@ static QueueHandle_t s_evt_q; /* driver-owned (uart_driver_install) */
 static uint32_t s_tx_bytes;
 static uint32_t s_rx_overflows;
 
+/* the baud the UART runs at now (the one set last): the firmware update
+ * gate probes the chip here first, then at the other one (issue #1023) */
+static int s_baud;
+
 static SemaphoreHandle_t s_tx_lock;
 static StaticSemaphore_t s_tx_lock_buf; /* internal: FreeRTOS object */
 
@@ -216,13 +220,26 @@ esp_err_t obd_uart_init(int baud)
         return err;
     }
 
+    s_baud = baud;
     return uart_set_pin(OBD_UART, OBD_TX_PIN, OBD_RX_PIN,
                         UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
 }
 
 esp_err_t obd_uart_set_baud(int baud)
 {
-    return uart_set_baudrate(OBD_UART, baud);
+    esp_err_t err = uart_set_baudrate(OBD_UART, baud);
+
+    if (err == ESP_OK)
+    {
+        s_baud = baud;
+    }
+
+    return err;
+}
+
+int obd_uart_get_baud(void)
+{
+    return s_baud;
 }
 
 esp_err_t obd_uart_write(const uint8_t *data, size_t len)
@@ -268,6 +285,92 @@ void obd_uart_get_stats(uint32_t *tx_bytes, uint32_t *rx_overflows,
     *tx_bytes = s_tx_bytes;
     *rx_overflows = s_rx_overflows;
     *rx_buffered = (uint32_t)buffered;
+}
+
+/* ---- baud detection (issue #1023, Ali's question 2026-10-28) --------------------
+ * The S3 UART measures the pulses on RX by itself (the ROM uses it to sync
+ * with esptool at any speed): the shortest low and high pulse over a
+ * window are one bit time. IDF 6.1 wraps it (uart_detect_bitrate_start /
+ * _stop); the driver's formula is clk * 2 / (low + high). A chip that
+ * talks on its own (a banner, a reboot loop) is measured without a word
+ * from us; a quiet chip needs a stimulus it answers at the current baud. */
+
+esp_err_t obd_chip_autobaud(const char *stimulus, uint32_t window_ms,
+                            obd_chip_autobaud_t *out)
+{
+    if (out == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (!obd_core_bringup_wait(OBD_BRINGUP_WAIT_MS) ||
+        obd_chip_update_in_progress())
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    esp_err_t err = obd_core_claim(3 /* CLAIM_EXCLUSIVE */, 5000);
+
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(100));
+    memset(out, 0, sizeof(*out));
+    uart_flush_input(OBD_UART);
+
+    /* the port is acquired by the driver: no config, the detector is just
+       switched on; reception keeps running meanwhile (flushed after) */
+    err = uart_detect_bitrate_start(OBD_UART, NULL);
+
+    if (err == ESP_OK)
+    {
+        if (stimulus != NULL && stimulus[0] != '\0')
+        {
+            (void)obd_uart_write((const uint8_t *)stimulus, strlen(stimulus));
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(window_ms));
+
+        uart_bitrate_res_t res;
+
+        err = uart_detect_bitrate_stop(OBD_UART, false, &res);
+
+        if (err == ESP_OK)
+        {
+            out->edges = res.edge_cnt;
+            out->clk_hz = res.clk_freq_hz;
+            out->low = res.low_period;
+            out->high = res.high_period;
+            out->pos = res.pos_period;
+            out->neg = res.neg_period;
+
+            if (res.edge_cnt > 0)
+            {
+                uint64_t clk2 = (uint64_t)res.clk_freq_hz * 2u;
+
+                if (res.low_period + res.high_period > 0)
+                {
+                    out->baud_lh = (int)(clk2 / (res.low_period + res.high_period));
+                }
+
+                if (res.pos_period > 0)
+                {
+                    out->baud_pos = (int)(clk2 / res.pos_period);
+                }
+
+                if (res.neg_period > 0)
+                {
+                    out->baud_neg = (int)(clk2 / res.neg_period);
+                }
+            }
+        }
+    }
+
+    uart_flush_input(OBD_UART); /* whatever the window collected */
+    obd_core_release();
+    return err;
 }
 
 /* ---- RX fan-out task ------------------------------------------------------------- */

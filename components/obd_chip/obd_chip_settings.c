@@ -39,6 +39,7 @@
 
 #include "settings_manager.h"
 
+#include "obd_chip.h"
 #include "obd_chip_private.h"
 
 /* clang-format off */
@@ -49,6 +50,10 @@ static const settings_field_t OBD_FIELDS[] =
     /* legacy parity (Ali 2026-07-26): a chip not at the packaged fw
        version is auto-flashed to it after bring-up */
     SETTINGS_BOOL    ("auto_update",    true),
+    /* the `obd_chip` console command (standard §6b; issue #1023,
+       2026-10-28: a stuck chip could neither be probed nor reflashed
+       from the device). Optional key with a default: no version bump. */
+    SETTINGS_BOOL    ("cli",            true),
     SETTINGS_STR_ENUM("monitor_policy", "manual,auto_interrupt", "manual"),
     /* chip sleep-config provisioning (defaults = the legacy fallbacks;
        the chip's autonomous controls stay OFF: the future sleep_manager
@@ -97,6 +102,18 @@ static esp_err_t obd_on_apply(const cJSON *settings)
             60 + 30;
 
     s_configured = true;
+
+    /* CLI ownership: settings-gated self-registration (standard §6b) */
+    if (!cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(settings, "cli")))
+    {
+        static bool s_cli_registered;
+
+        if (!s_cli_registered && obd_chip_register_cli() == ESP_OK)
+        {
+            s_cli_registered = true;
+        }
+    }
+
     return ESP_OK;
 }
 

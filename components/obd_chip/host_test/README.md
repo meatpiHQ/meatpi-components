@@ -3,7 +3,7 @@
 Pure framing/classification only (`obd_chip_parse.c`: no UART/GPIO). Run via
 `.\test.ps1 host`.
 
-## What is covered (10 tests)
+## What is covered (17 tests)
 
 | Case | What it proves |
 |---|---|
@@ -17,10 +17,12 @@ Pure framing/classification only (`obd_chip_parse.c`: no UART/GPIO). Run via
 | chip error classification | `?`, UNABLE TO CONNECT, CAN ERROR vs valid data |
 | monitor command classification | ATMA/ATMR/ATMT/STM(A) incl. case/space/args; ATI/0100/ATMAX are not |
 | fw iterator + end marker | CR/LF stripping, empty-line skip, `FFF1` detection |
+| fw version policy | (issue #1023) a chip at V2.3.22 or V2.3.24 is current (the v4.52p list), V2.3.18/V2.3.10, `?`, empty and NULL are not; the log string names both |
+| eeprom guard, STSLCS (5 cases) | see `test_parse.c` / `test_stslcs.c` |
 
 ## Expected result
 
 ```
-10 Tests 0 Failures 0 Ignored
+17 Tests 0 Failures 0 Ignored
 OK
 ```

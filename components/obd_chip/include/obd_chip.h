@@ -251,17 +251,80 @@ esp_err_t obd_chip_get_version(char *buf, size_t buf_len, TickType_t timeout);
 esp_err_t obd_chip_firmware_update(const char *fs_path, bool force);
 
 /**
- * Same procedure from the PACKAGED image (EMBED_TXTFILES, currently
- * V2.3.22: the auto-update source). The `auto_update` setting (default
+ * Same procedure from the PACKAGED image (EMBED_TXTFILES, V2.3.24 since
+ * 2026-10-28: the auto-update source). The `auto_update` setting (default
  * true, legacy parity) runs this with force=false after every bring-up:
- * a chip already at the packaged version answers one VTVERS and skips;
- * a different version, or a chip stuck in download mode ('?'): is
- * flashed. A VTVERS TIMEOUT (dead wire) aborts unless forced.
+ * a chip at a CURRENT version (V2.3.22 or V2.3.24, the v4.52p policy:
+ * v6 used to downgrade a .24 chip to .22) answers one VTVERS and skips;
+ * an older version, or a chip stuck in download mode ('?', or bytes
+ * without a prompt at either baud): is flashed. Only a wire silent at
+ * both bauds aborts, unless forced (issue #1023).
  */
 esp_err_t obd_chip_firmware_update_builtin(bool force);
 
-/** The packaged image's version string ("V2.3.22"). */
+/** The packaged image's version string ("V2.3.24"). */
 const char *obd_chip_builtin_fw_version(void);
+
+/** True while a chip firmware update owns the wire (EXCLUSIVE, ~90 s).
+ *  The sleep entry waits for it: the chip's sleep pin pulled under a
+ *  half-written image strands it in its bootloader (issue #1023). */
+bool obd_chip_update_in_progress(void);
+
+typedef struct
+{
+    bool        running;
+    uint32_t    lines;     /* records sent so far                         */
+    uint32_t    total;     /* records in the image                        */
+    const char *source;    /* "builtin V2.3.24" or the file path          */
+    bool        done_once; /* a run finished since boot (last_err valid)  */
+    esp_err_t   last_err;
+} obd_chip_fw_status_t;
+
+void obd_chip_fw_status(obd_chip_fw_status_t *out);
+
+/** Run the update on its own task (the console / HTTP entry, 2026-10-28):
+ *  @p fs_path NULL = the packaged image. ESP_ERR_INVALID_STATE while one
+ *  runs. A reflashed chip comes back through a fresh bring-up afterwards. */
+esp_err_t obd_chip_firmware_update_start(const char *fs_path, bool force);
+
+/** Bare-wire diagnostic (the `obd_chip probe` command, issue #1023): send
+ *  @p cmd (with its CR) at @p baud (0 = as is) and collect what comes back
+ *  within @p timeout_ms, prompt or not. @p rx_got counts every byte, the
+ *  first @p rx_len are stored. EXCLUSIVE for the duration (the RX fan-out
+ *  pauses); the UART returns to the baud it had. */
+esp_err_t obd_chip_probe(const char *cmd, int baud, uint32_t timeout_ms,
+                         uint8_t *rx, size_t rx_len, size_t *rx_got,
+                         bool *prompt);
+
+/** The baud the chip answered at during bring-up (0 before, or never). */
+int obd_chip_active_baud(void);
+
+/** Baud detection by the UART hardware (issue #1023, 2026-10-28): the
+ *  shortest low / high pulse and edge intervals seen on RX over a window,
+ *  in ticks of @p clk_hz, and the bauds they imply (IDF's formula
+ *  clk * 2 / period). 0 edges = the chip sent nothing. */
+typedef struct
+{
+    uint32_t edges;    /* RX edges seen (a 10-bit counter)            */
+    uint32_t clk_hz;   /* the tick the periods count in               */
+    uint32_t low;      /* shortest low pulse, ticks                   */
+    uint32_t high;     /* shortest high pulse, ticks                  */
+    uint32_t pos;      /* shortest positive-edge interval, ticks      */
+    uint32_t neg;      /* shortest negative-edge interval, ticks      */
+    int      baud_lh;  /* from low + high (the ideal-signal formula)  */
+    int      baud_pos; /* from the positive edges                     */
+    int      baud_neg; /* from the negative edges                     */
+} obd_chip_autobaud_t;
+
+/** Measure what the chip talks at: @p stimulus (may be NULL) is sent at the
+ *  current UART baud when the window opens (a quiet chip answers it; a chip
+ *  talking on its own needs none), the detector runs for @p window_ms.
+ *  EXCLUSIVE meanwhile; the UART's baud is not changed. */
+esp_err_t obd_chip_autobaud(const char *stimulus, uint32_t window_ms,
+                            obd_chip_autobaud_t *out);
+
+/** `obd_chip` CLI; registered internally on the settings apply (§6b). */
+esp_err_t obd_chip_register_cli(void);
 
 /* ---- observability ---------------------------------------------------------------- */
 

@@ -44,6 +44,14 @@ static const char *TAG = "obd_chip"; /* one TAG per component (§10) */
 
 #define OBD_INIT_RETRIES 3
 
+/* What the last bare probe saw, prompt or not (issue #1023, 2026-10-28: a
+ * chip that is alive but not in ELM mode was reported as silent; a few
+ * bytes tell a bootloader or a reboot loop from a dead wire, and a 2 Mbaud
+ * burst read at 115200 shows up as one or two bytes of garbage). */
+static size_t  s_probe_rx;
+static uint8_t s_probe_head[12];
+static size_t  s_probe_head_len;
+
 /** One request->response on the bare UART (RX task not running yet). */
 static bool bare_probe(const char *cmd, char *resp, size_t resp_len,
                        uint32_t timeout_ms)
@@ -58,6 +66,8 @@ static bool bare_probe(const char *cmd, char *resp, size_t resp_len,
     obd_uart_flush_input();
     obd_uart_write((const uint8_t *)cmd, strlen(cmd));
     obd_parse_reset(&acc);
+    s_probe_rx = 0;
+    s_probe_head_len = 0;
 
     TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(timeout_ms);
 
@@ -67,6 +77,13 @@ static bool bare_probe(const char *cmd, char *resp, size_t resp_len,
 
         if (got > 0)
         {
+            for (int i = 0; i < got && s_probe_head_len < sizeof(s_probe_head);
+                 i++)
+            {
+                s_probe_head[s_probe_head_len++] = buf[i];
+            }
+
+            s_probe_rx += (size_t)got;
             obd_parse_feed(&acc, (const char *)buf, (size_t)got);
         }
     }
@@ -78,6 +95,31 @@ static bool bare_probe(const char *cmd, char *resp, size_t resp_len,
     }
 
     return false;
+}
+
+/** One W line about a probe that got no prompt: silent, or N bytes with
+ *  the first of them in hex. The field log then tells a dead wire from a
+ *  chip that answers at another baud or in another mode (issue #1023). */
+static void wire_note(const char *what, int baud)
+{
+    if (s_probe_rx == 0)
+    {
+        ESP_LOGW(TAG, "%s at %d baud: nothing received", what, baud);
+        return;
+    }
+
+    char hex[3 * sizeof(s_probe_head) + 1];
+    size_t n = 0;
+
+    for (size_t i = 0; i < s_probe_head_len && n < sizeof(hex) - 3; i++)
+    {
+        n += (size_t)snprintf(hex + n, sizeof(hex) - n, "%s%02X",
+                              (i > 0) ? " " : "", s_probe_head[i]);
+    }
+
+    ESP_LOGW(TAG, "%s at %d baud: %u byte(s) but no prompt (%s%s)", what,
+             baud, (unsigned)s_probe_rx, hex,
+             (s_probe_rx > s_probe_head_len) ? " ..." : "");
 }
 
 /**
@@ -239,8 +281,7 @@ esp_err_t obd_bringup_run(int *active_baud)
     }
 
     /* baud negotiation: the fixed baud first, then the chip's power-on default */
-    static const int FALLBACK_BAUD = 115200;
-    const int try_bauds[2] = { OBD_CHIP_BAUD, FALLBACK_BAUD };
+    const int try_bauds[2] = { OBD_CHIP_BAUD, OBD_CHIP_FALLBACK_BAUD };
     bool alive = false;
 
     for (size_t b = 0; b < 2 && !alive; b++)
@@ -261,12 +302,16 @@ esp_err_t obd_bringup_run(int *active_baud)
         {
             *active_baud = try_bauds[b];
         }
+        else
+        {
+            wire_note("ATI", try_bauds[b]); /* the last try at this baud */
+        }
     }
 
     if (!alive)
     {
         ESP_LOGE(TAG, "chip not responding at %d or %d baud", OBD_CHIP_BAUD,
-                 FALLBACK_BAUD);
+                 OBD_CHIP_FALLBACK_BAUD);
         return ESP_ERR_NOT_FOUND;
     }
 
@@ -289,10 +334,10 @@ esp_err_t obd_bringup_run(int *active_baud)
         }
         else
         {
-            obd_uart_set_baud(FALLBACK_BAUD); /* stay where the chip is */
-            *active_baud = FALLBACK_BAUD;
+            obd_uart_set_baud(OBD_CHIP_FALLBACK_BAUD); /* stay where the chip is */
+            *active_baud = OBD_CHIP_FALLBACK_BAUD;
             ESP_LOGW(TAG, "STSBR to %d failed; staying at %d", OBD_CHIP_BAUD,
-                     FALLBACK_BAUD);
+                     OBD_CHIP_FALLBACK_BAUD);
         }
     }
 

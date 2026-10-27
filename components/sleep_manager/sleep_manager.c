@@ -123,8 +123,27 @@ void sleep_manager_board_down(void)
     gpio_hold_en(SM_USB_PWR_GPIO);
 }
 
+/* A chip firmware update owns the chip's wire for about 90 s (3557 records);
+ * the sleep entry pulls the chip's sleep pin, and a half-written image
+ * strands the chip in its bootloader (issue #1023, 2026-10-28). Bounded:
+ * a wedged update must never hold a flat battery awake for good. */
+#define SM_FW_UPDATE_WAIT_MS (180 * 1000)
+
 static void enter_sleep_sequence(float volts)
 {
+    if (obd_chip_update_in_progress())
+    {
+        ESP_LOGW(TAG, "OBD chip firmware update in progress: sleep waits "
+                 "for it (up to %u s)", SM_FW_UPDATE_WAIT_MS / 1000u);
+
+        for (uint32_t waited = 0;
+             obd_chip_update_in_progress() && waited < SM_FW_UPDATE_WAIT_MS;
+             waited += 1000)
+        {
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+    }
+
     ESP_LOGW(TAG, "entering sleep (%.2f V)", volts);
     sm_events_entering(volts); /* rules get one shot BEFORE teardown */
     vTaskDelay(pdMS_TO_TICKS(500)); /* let the dispatcher drain */

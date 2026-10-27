@@ -118,10 +118,22 @@ void   obd_fw_iter_init(obd_fw_iter_t *it, const char *data, size_t len);
 size_t obd_fw_iter_next(obd_fw_iter_t *it, char *line, size_t line_len);
 bool   obd_fw_line_is_end_marker(const char *line); /* "FFF1..." */
 
+/** True when @p vtvers (the chip's VTVERS answer) names a chip firmware
+ *  the packaged image leaves alone: the packaged version and the ones it
+ *  is known to coexist with (legacy v4.52p, main fab54ad: V2.3.22 and
+ *  V2.3.24). Pure, host-tested (issue #1023, 2026-10-28). */
+bool        obd_fw_version_is_current(const char *vtvers);
+const char *obd_fw_current_versions(void); /* "V2.3.22, V2.3.24", for logs */
+
+/** True when the last update run streamed an image and finalized it (the
+ *  chip was hardware-reset: the caller brings it up again). */
+bool obd_fw_last_flashed(void);
+
 /* ---- UART layer (obd_chip_uart.c, target only) ------------------------------ */
 
 esp_err_t obd_uart_init(int baud);
 esp_err_t obd_uart_set_baud(int baud);
+int       obd_uart_get_baud(void); /* the baud set last: what the UART runs at */
 esp_err_t obd_uart_write(const uint8_t *data, size_t len);
 int       obd_uart_read(uint8_t *buf, size_t len, uint32_t timeout_ms);
 void      obd_uart_flush_input(void);
@@ -179,6 +191,10 @@ extern const char obd_chip_gate_owner[1];
  *  warranty). The chip powers on at 115200 until `STWBR`/`ATPP 0F` persist
  *  this as its default; bring-up walks 2 M -> 115200 and switches (`STSBR`). */
 #define OBD_CHIP_BAUD 2000000
+
+/** The chip's factory power-on baud: the bring-up's fallback, and the
+ *  other baud the firmware update gate probes (issue #1023). */
+#define OBD_CHIP_FALLBACK_BAUD 115200
 
 /* config applied at boot by the settings descriptor */
 typedef struct

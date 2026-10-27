@@ -165,6 +165,25 @@ void test_fw_iterator_and_end_marker(void)
     TEST_ASSERT_TRUE(obd_fw_line_is_end_marker(line));
 }
 
+void test_fw_version_policy(void)
+{
+    /* the v4.52p policy (main fab54ad, issue #1023): a chip at V2.3.22 or
+       V2.3.24 is current; older chips, a chip stuck in its bootloader
+       ('?') and silence are not */
+    TEST_ASSERT_TRUE(obd_fw_version_is_current("MIC3624 V2.3.22"));
+    TEST_ASSERT_TRUE(obd_fw_version_is_current("MIC3624 V2.3.24>"));
+    TEST_ASSERT_TRUE(obd_fw_version_is_current("MIC3624 V2.3.22\r\r>"));
+    TEST_ASSERT_FALSE(obd_fw_version_is_current("MIC3624 V2.3.18"));
+    TEST_ASSERT_FALSE(obd_fw_version_is_current("MIC3624 V2.3.10"));
+    TEST_ASSERT_FALSE(obd_fw_version_is_current("MIC3624 V2.3.2"));
+    TEST_ASSERT_FALSE(obd_fw_version_is_current("?"));
+    TEST_ASSERT_FALSE(obd_fw_version_is_current(""));
+    TEST_ASSERT_FALSE(obd_fw_version_is_current(NULL));
+    /* the log string names both; the packaged V2.3.24 is among them */
+    TEST_ASSERT_NOT_NULL(strstr(obd_fw_current_versions(), "V2.3.22"));
+    TEST_ASSERT_NOT_NULL(strstr(obd_fw_current_versions(), "V2.3.24"));
+}
+
 /* ---- EEPROM guard (obd_chip_guard.h) ------------------------------------------ */
 
 static void expect_rewrite(const char *in, const char *want)

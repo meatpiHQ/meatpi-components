@@ -96,8 +96,13 @@ zero-copy only with numbers.
 | `obd_chip_monitor_stop()` | The stop byte: **SPACE, never CR** (CR = repeat-last-command → can re-enter ATMA). |
 | `obd_chip_sleep(on)` / `obd_chip_status_ok()` | Sleep pin (hold survives resets; wake = release sequence) / READY pin. |
 | `obd_chip_park()` | (2026-10-05) Leave the chip asleep from a boot that never initialised this component (the firmware's crash park). Pins only. The chip meets a boot in one of two states: **awake** (a power-on, or the run before had it up), then it is hardware-reset first (a session or a monitor left open is closed, and a chip mid-monitor ignores the sleep pin) and put to sleep with the hold, about 0.6 s; or **asleep** (the boot follows a sleep and the sleep pin's hold is still on: READY reads high), then it is left asleep and its sleep pin is never driven high. Either way the next normal boot finds it asleep and wakes it as after any sleep. |
-| `obd_chip_get_version(...)` | `VTVERS` → e.g. `MIC3624 V2.3.22`. |
-| `obd_chip_firmware_update(fs_path, force)` | EXCLUSIVE; the verified legacy flow (below). |
+| `obd_chip_get_version(...)` | `VTVERS` → e.g. `MIC3624 V2.3.24`. |
+| `obd_chip_firmware_update(fs_path, force)` / `obd_chip_firmware_update_builtin(force)` | EXCLUSIVE; the verified legacy flow (below). |
+| `obd_chip_firmware_update_start(fs_path, force)` | (2026-10-28) the same on its own task, NULL = the packaged image; `ESP_ERR_INVALID_STATE` while one runs; a reflashed chip comes back through a fresh bring-up. The console / HTTP entry. |
+| `obd_chip_update_in_progress()` / `obd_chip_fw_status()` | (2026-10-28) the update's state: `running`, `lines`/`total` records, `source`, `done_once` + `last_err`. The sleep entry waits on the first. |
+| `obd_chip_probe(cmd, baud, timeout, rx, len, &got, &prompt)` | (2026-10-28, issue #1023) bare-wire diagnostic: send one command at a baud and return every byte that came back, prompt or not; EXCLUSIVE meanwhile, the UART goes back to its baud. The `obd_chip probe` command. |
+| `obd_chip_active_baud()` | The baud the chip answered at during bring-up (0 = never). |
+| `obd_chip_register_cli()` | The `obd_chip` command (standard §6b, self-registered on settings apply behind `cli`). |
 
 ## Async bring-up (2026-07-26: Ali's boot-time ruling)
 
@@ -208,23 +213,65 @@ bridge_manager; production replaces it with a configured bridge.
 rewake. Vendor images are `.txt` hex-record files (~3.5 k lines / ~490 KB).
 Two sources: a `filesystem` path (`obd_chip_firmware_update`, read whole
 into PSRAM) or the **packaged image** (`obd_chip_firmware_update_builtin`,
-`EMBED_TXTFILES` of `obd_chip_manager/obd_fw/V2.3.22.txt`, byte-identical
-to legacy `main/obd_fw`; +483 KB app size). Update responses DO end with
-the `>` prompt (bench-verified): byte-level echo-skip, collect until `>`,
-then classify `OK`/`?` (`obd_chip_fw.c`). Returning early on `OK\r` without
-waiting for the prompt makes the next record race the chip and get dropped.
+`EMBED_TXTFILES` of `obd_chip_manager/obd_fw/V2.3.24.txt` since 2026-10-28,
+byte-identical to legacy `main/obd_fw`; +480 KB app size). Update responses
+DO end with the `>` prompt (bench-verified): byte-level echo-skip, collect
+until `>`, then classify `OK`/`?` (`obd_chip_fw.c`). Returning early on
+`OK\r` without waiting for the prompt makes the next record race the chip
+and get dropped. Measured 2026-10-28 on the bench: 3557 records in 13 s at
+2 Mbaud, 19 s for the whole job with the finalize, the reset and the fresh
+bring-up.
 
-**Auto-update (legacy parity, Ali ruled 2026-07-26):** with the
-`auto_update` setting on (default), the bring-up task runs the builtin
-update with `force=false` after every bring-up, a chip already at the
-packaged version costs one `VTVERS` and skips; a different version is
-flashed (~30 s, EXCLUSIVE: consumers see timeouts meanwhile, log lines
-mark start/progress/done); a chip stuck in download mode (`?`, which
-also fails bring-up) is recovered by completing the download. Stricter
-than legacy in ONE case: a `VTVERS` **timeout** (dead wire) aborts
-instead of streaming records into 5 s timeouts. Bumping the packaged
-version = new `EMBED_TXTFILES` path + `OBD_FW_BUILTIN_VERSION` in
-`obd_chip_fw.c`.
+**Auto-update (legacy parity, Ali ruled 2026-07-26; the v4.52p policy since
+2026-10-28, issue #1023):** with the `auto_update` setting on (default),
+the bring-up task runs the builtin update with `force=false` after every
+bring-up. A chip at a **current** version costs one `VTVERS` and skips:
+current = V2.3.22 or V2.3.24 (`obd_fw_version_is_current`, the list legacy
+v4.52p keeps in main fab54ad; v6 bundled V2.3.22 alone and DOWNGRADED a
+chip that v4.52p had taken to V2.3.24 on its first boot). An older chip is
+flashed (EXCLUSIVE: consumers see timeouts meanwhile, log lines mark
+start/progress/done, then a fresh bring-up restores echo-off, the
+provisioning and the RX task); a chip stuck in download mode (`?`, which
+also fails bring-up) is recovered by completing the download. The gate
+(`fw_gate`) probes `VTVERS` at the baud the UART runs at and at the other
+one (a chip in download mode sits at 2 Mbaud while a failed bring-up leaves
+the UART at 115200), logs what came back (`VTVERS at 115200 baud: 2 byte(s)
+but no prompt (FC 00)`), and, like legacy, still tries `VTDLMIC3422` (at
+both bauds) when bytes arrived without a prompt; only a wire silent at both
+bauds aborts (`no answer on the wire ... use force to override`), and
+`force` overrides even that. The bring-up logs the same wire note when
+`ATI` gets no prompt. Bumping the packaged version = new `EMBED_TXTFILES`
+path + `OBD_FW_BUILTIN_VERSION` in `obd_chip_fw.c` + the current list in
+`obd_chip_parse.c`.
+
+**From the console and the API (2026-10-28):** `obd_chip` (state, the
+chip's `VTVERS`, the packaged image, the job), `obd_chip update [--force]
+[--file <path>]` and `POST /api/obd_chip/update {"force","path"}` run the
+update as a job (`obd_chip_firmware_update_start`); `--force` reflashes a
+chip that is already current: the recovery for a chip stuck in its
+bootloader. `obd_chip probe [baud]` sends `ATI` and `VTVERS` on the bare
+wire at 2000000 and 115200 and prints every byte that came back, prompt or
+not; `obd_chip probe scan` tries `ATI` at every standard baud (9600 to
+3000000); `obd_chip probe auto [seconds]` lets the S3's UART hardware
+measure the bit time of whatever the chip sends (`obd_chip_autobaud()`
+over IDF's `uart_detect_bitrate_start/stop`: the shortest low and high
+pulse on RX, `clk * 2 / (low + high)`; a CR and `ATI` go out at the current
+baud first so a quiet chip has something to answer, a chip talking on its
+own is measured as it comes) and then listens at the nearest standard
+baud; `obd_chip listen <seconds> [baud]` sends nothing and prints what the
+chip sends by itself, text and hex. Together they are the field
+diagnostics for a chip that will not come up: a chip in download mode
+reads `?` at 115200 and nothing at 2 Mbaud; a chip that fills the RX ring
+on its own (the issue's unit: about two bytes every 5 s with the ESP
+silent, READY high on one boot and low on the next) is one that talks at a
+baud nobody listens at, a reboot loop's banner being the likely text, and
+`probe auto` names the baud. The web UI shows none of this (meatpi
+2026-09-07: chip knobs stay API/CLI only).
+
+**The sleep entry waits for a running update** (sleep_manager, up to
+180 s): the chip's sleep pin pulled under a half-written image is the
+one interruption the download mode does not survive (issue #1023: a unit
+flashed with the engine off, under the sleep threshold).
 
 ## Settings (`"obd_chip"`, version 3)
 
@@ -239,7 +286,8 @@ settings API / CLI / backup for the future sleep_manager work.
 | Key | Type | Default | Notes |
 |---|---|---|---|
 | `auto_sleep` | bool | `false` | reserved (the future sleep_manager arms the chip's controls) |
-| `auto_update` | bool | `true` | flash the packaged chip fw (V2.3.22) on version mismatch after bring-up: legacy parity |
+| `auto_update` | bool | `true` | flash the packaged chip fw (V2.3.24) after bring-up on a chip that is not current (current = V2.3.22 or V2.3.24, the v4.52p list; 2026-10-28): legacy parity |
+| `cli` | bool | `true` | the `obd_chip` console command (standard §6b; 2026-10-28, optional key, no version bump) |
 | `monitor_policy` | enum manual/auto_interrupt | `manual` | `auto_interrupt` reserved (§5 open question) |
 | `wake_voltage_mv` | int 12000–15000 (must exceed `sleep_voltage_mv`) | `13500` | chip VL wake threshold, provisioned at boot (`STSLVLW`) |
 | `sleep_voltage_mv` | int 12000–14000 | `13200` | chip VL sleep threshold, provisioned at boot (`STSLVLS`) |

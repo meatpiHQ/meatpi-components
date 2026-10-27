@@ -712,6 +712,16 @@ static void bringup_task(void *arg)
             ESP_LOGW(TAG, "auto fw update did not complete (%s): will "
                      "re-check next boot", esp_err_to_name(up));
         }
+        else if (up == ESP_OK && obd_fw_last_flashed())
+        {
+            /* the chip was reflashed and hardware-reset: echo back on,
+               provisioning gone, and after a recovery (issue #1023) no
+               RX task at all. A fresh bring-up on a new task restores
+               all of it; this task is done. */
+            ESP_LOGI(TAG, "chip reflashed: bringing it up again");
+            (void)obd_chip_stop();
+            (void)obd_chip_start();
+        }
     }
 
     /* ephemeral task escapes System Monitor: surface the watermark for
@@ -763,6 +773,11 @@ esp_err_t obd_chip_start(void)
 bool obd_chip_ready(void)
 {
     return s_started;
+}
+
+int obd_chip_active_baud(void)
+{
+    return s_active_baud;
 }
 
 esp_err_t obd_chip_stop(void)

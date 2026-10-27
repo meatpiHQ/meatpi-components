@@ -161,7 +161,13 @@ green afterwards). What changed, and what to keep doing:
   whose "Use this profile" only STAGES the pick on the page: the
   vehicle-specific PIDs are replaced in the table (`Unsaved edits` chip
   + an info banner with **Discard**), name + init + enable are staged
-  for Submit. Apply Configuration sends the PIDs AND saves the card's
+  for Submit. A profile's passive CAN `filters` (the Leaf ZE1 profile,
+  2026-10-21) join the table's filters tagged `profile: true`: the next
+  import replaces them, hand-made filters stay, Discard puts the previous
+  ones back, the banner and the toast count them (ported into this file
+  2026-10-27: the edit had sat in a stale clone, so builds up to
+  6.0.0-beta.4 imported a profile's PIDs alone). Apply Configuration
+  sends the PIDs AND saves the card's
   staged autopid settings (`PUT /api/settings/autopid`), then offers the
   restart they need (settings are reboot-to-apply, standard 4.2) in one
   modal: *Save, restart later* / *Save and restart now* (the sleep-off
@@ -930,7 +936,7 @@ car switch snapshots the result into the car's file, so the choice comes back wi
 since 2026-10-09 a chosen row loses a stored `enabled: false` (the firmware stores a new
 car's rows off, every one: nothing reads until ticked), and a Finish without a detection this
 session with nothing chosen cuts the standard rows of a car whose setup never finished,
-while a car set up before keeps its rows), the profile's rows via `profileToPids()`, custom rows kept, staged
+while a car set up before keeps its rows), the profile's rows via `profileToPids()` and, since 2026-10-27, its passive CAN `filters` (tagged `profile`, in place of the last profile's; hand-made filters stay; Test profile names them, nothing to request for them), custom rows kept, staged
 autopid {enabled, std_protocol "0", vehicle, specific_init} through `store.commit()`),
 Battery and sleep (2026-10-01 night, Ali:
 the Power Saving pair measured on the car. `GET /api/battery` once a second into a 90 s SVG

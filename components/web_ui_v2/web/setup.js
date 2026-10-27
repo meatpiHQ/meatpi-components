@@ -1418,6 +1418,10 @@ SCREENS.vehicle=async()=>{
     }
     summary.className="chip "+(total&&ok===total?"ok":ok?"warn":"crit");
     summary.replaceChildren(h("span",{class:"d"}),ok+" of "+total+" parameters answered"+(stop?" (stopped)":""));
+    /* a profile's passive CAN filters read frames the car broadcasts: nothing to
+       request here; they come along at Finish like the PIDs (2026-10-27) */
+    const nf=(car.filters||[]).length;
+    if(nf&&tb.isConnected)tb.parentNode.parentNode.append(h("p",{class:"help",style:"margin:8px 0 0;font-size:12.5px"},"The profile also reads "+nf+" frame"+(nf===1?"":"s")+" the car broadcasts (passive CAN filter"+(nf===1?"":"s")+": "+(car.filters||[]).flatMap(f=>(f.parameters||[]).map(x=>x.name)).join(", ")+"). Nothing to request for those: they are set up with the profile."));
     void close;
   }
   if(W.vehPhase===undefined||W.vehPhase===null)W.vehPhase="idle";
@@ -1727,9 +1731,10 @@ async function finishVehicle(finishBtn,errEl,maxName){
       else if(none){bodyPut.profile="";bodyPut.specific_init="";}
       await api("/api/autopid/vehicles/"+encodeURIComponent(v.key),{method:"PUT",body:bodyPut});
     }
-    /* 2. the PID tables: the profile's rows replace the vehicle-specific ones; std + custom
-       stay; the default group takes the chosen rate and the rows that sat on the old
-       default inherit it */
+    /* 2. the PID tables: the profile's rows replace the vehicle-specific ones and its
+       passive CAN filters the last profile's (2026-10-27; hand-made filters stay); std +
+       custom stay; the default group takes the chosen rate and the rows that sat on the
+       old default inherit it */
     const cfg0=await tryGet("/api/autopid/config");
     const cfg=cfg0&&typeof cfg0==="object"?JSON.parse(JSON.stringify(cfg0)):{};
     cfg.pids=Array.isArray(cfg.pids)?cfg.pids:[];
@@ -1737,9 +1742,9 @@ async function finishVehicle(finishBtn,errEl,maxName){
     cfg.filters=Array.isArray(cfg.filters)?cfg.filters:[];
     const oldPeriod=cfg.groups[0].period_ms||1000;
     if(car||none){
-      const keep=cfg.pids.filter(pd=>pd.type!=="specific");
-      if(car){const r=profileToPids(car,keep);cfg.pids=keep.concat(r.pids);if(r.renamed.length)toast(r.renamed.length+" duplicate parameter name"+(r.renamed.length>1?"s":"")+" renamed","");}
-      else cfg.pids=keep;
+      const keep=cfg.pids.filter(pd=>pd.type!=="specific"),keepF=cfg.filters.filter(f=>!f.profile);
+      if(car){const r=profileToPids(car,keep,keepF);cfg.pids=keep.concat(r.pids);cfg.filters=keepF.concat(r.filters);if(r.renamed.length)toast(r.renamed.length+" duplicate parameter name"+(r.renamed.length>1?"s":"")+" renamed","");}
+      else{cfg.pids=keep;cfg.filters=keepF;}
     }
     /* the standard rows: the ones chosen on the vehicle step and no other
        (a new car starts with none: Ali, 2026-10-07). The firmware stored

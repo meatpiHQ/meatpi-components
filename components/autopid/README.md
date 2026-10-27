@@ -1012,7 +1012,13 @@ firmware never fetches profiles. **The rules the importer applies**
    filter indexes the frame data, B0 = first data byte, in both frames of
    reference). Bench-proven on the Leaf ZE1 profile: SPEED, the signed
    DM_F_RPM and ODOMETER decoded exactly from frames broadcast on 0x284,
-   0x1DA and 0x5C5.
+   0x1DA and 0x5C5. Two importers do it: the web UI's `profileToPids()`
+   (web_ui_v2 index.html: the Vehicle Specific pane, and the Quick
+   Setup's Finish in setup.js) and the benches'
+   `convert()` (`tools/testbench/obd/autopid_profile_bench.py`). The web
+   UI's half reached the live tree only on 2026-10-27 (the 10-21 edit had
+   sat in a stale clone): firmware up to 6.0.0-beta.4 imported a profile's
+   PIDs and dropped its filters when picked from the web UI.
 
 **Replies over 16 rows were assembled in the wrong order (found
 2026-10-21, gone 2026-10-24):** with headers off the chip prints ISO-TP

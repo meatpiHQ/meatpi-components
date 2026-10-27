@@ -1468,7 +1468,7 @@ const HELP={
   "espnetlink.mode":"USB Ethernet (RNDIS, the default) keeps the data lines on and uses the cable as the uplink; the dongle ships ready for it. WiFi modem cuts the dongle's USB data after each pairing (best GPS reception): WiCAN re-pairs at every dongle boot, nothing persists on the dongle.",
   auto_pair:"Read the dongle's AP key over USB automatically the first time it is plugged in.",
   cut_retries:"How many times to retry cutting the dongle's USB data lines before giving up.",
-  "espnetlink.apn":"Only if your carrier gave you one: most SIMs work without it. WiCAN sends it to the dongle the next time the dongle is on the cable; the dongle restarts once to apply it. Blank keeps the dongle's own.",
+  "espnetlink.apn":"Your SIM provider gives it (the SIM's packaging, your account or their APN settings page); the dongle needs it to get online, and its own default suits only some SIMs. WiCAN sends it to the dongle the next time the dongle is on the cable; the dongle restarts once to apply it. Blank keeps the dongle's own.",
   "espnetlink.sim_pin":"Only when the dongle reports the SIM as PIN locked. Sent to the dongle once per start while the SIM asks; a PIN the SIM refuses is never retried by itself (three wrong tries lock the SIM). Blank = none.",
   role:"Host: an adapter or dongle plugs into the WiCAN. Device: the WiCAN appears as a network adapter on a PC.",
   prefer_usb_route:"Use the USB-Ethernet uplink even when WiFi is connected.",

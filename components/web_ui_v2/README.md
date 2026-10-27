@@ -845,9 +845,15 @@ three information tiles with the found one lit "Found", one card (`usbSummary()`
 Checks and Done) and the one question the device has, default = the device's setting:
 ESPNetLink **USB Ethernet (recommended, `usb_rndis`)** with the note that a GPS that never
 gets a fix this way wants WiFi modem, or WiFi modem (a dongle already paired keeps the mode
-it was paired with), plus "Carrier settings (optional)" (APN, username, password: the
-`espnetlink.apn` / `apn_user` / `apn_password` settings the pairing pass writes to the
-dongle); under the dongle card the basics as rows in the same box (`nlRows()`, `.qs-nlcard`):
+it was paired with), plus the SIM's APN asked on its own (2026-10-28, `apnSection()`: "Your
+SIM's APN" with where the provider publishes it, a live verdict under the field from the
+dongle's health, refreshed with the connector poll: Online with the APN or on the dongle's
+default, Not online yet with the APN named as the usual reason, Waiting for the PIN; the
+username and password folded as rarely needed; the SIM PIN row above it when the SIM asks;
+until then "Carrier settings (optional)" folded the APN away and a Simbase SIM stayed on the
+dongle's default APN; the `espnetlink.apn` / `apn_user` / `apn_password` / `sim_pin` settings
+the pairing pass writes to the dongle in every mode); under the dongle card the basics as rows
+in the same box (`nlRows()`, `.qs-nlcard`):
 SIM (found / not found with what to do / PIN locked, dongle api 8; a dongle without the key
 counts as found when attached), network and type, signal in dBm with a word (good above -65,
 fair to -80, weak below with the antenna hint), internet with the carrier address, GPS (fix

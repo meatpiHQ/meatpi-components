@@ -47,8 +47,9 @@ static const char *TAG = "obd_chip"; /* one TAG per component (§10) */
 /* What the last bare probe saw, prompt or not (issue #1023, 2026-10-28: a
  * chip that is alive but not in ELM mode was reported as silent; a few
  * bytes tell a bootloader or a reboot loop from a dead wire; a chip at
- * 2 Mbaud answers the garbled 115200 bytes with garbage of its own, read
- * at the wrong speed: hundreds of bytes and no prompt). */
+ * 2 Mbaud with its echo ON answers the garbled 115200 bytes with hundreds
+ * of bytes of echo read at the wrong speed and no prompt; with the echo
+ * off, as the bring-up leaves it, it answers nothing). */
 static size_t  s_probe_rx;
 static uint8_t s_probe_head[12];
 static size_t  s_probe_head_len;

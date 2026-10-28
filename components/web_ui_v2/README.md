@@ -606,9 +606,10 @@ as allowed_ip + mask). The debug block carries a `Routes` row from
 
 ### Configuration backup (2026-10-11, issue #979)
 
-System > Maintenance opens with three cards from the on-demand chunk
+System > Maintenance carries three cards from the on-demand chunk
 `web/backup.js` (`PAGES.__backup.cards()`, loaded by `PAGES.system` into
-the Maintenance pane ahead of the Maintenance card; the old Download Config
+the Maintenance pane after the Maintenance card and the diagnostics (the
+Maintenance card leads the page since 2026-10-28, Ali); the old Download Config
 and Upload Config buttons and their note are gone). Over
 `config_backup/HTTP_API.md`:
 
@@ -696,9 +697,12 @@ copy of the preview, the shots, the review page).
 
 ### OBD chip and CAN self-test cards (2026-10-28, issue #1023)
 
-System > Maintenance ends with two cards from the on-demand chunk
-`web/diag.js` (`PAGES.__diag.cards()`, loaded by `PAGES.system` into
-`#diag-cards` after the Maintenance card; `internal/TASK_issue_1023_phase2.md`).
+System > Maintenance opens with the Maintenance card (Reboot, Restart
+History, Run Quick Setup again, Factory Reset: it leads the page since
+2026-10-28, Ali; the backup cards used to sit above it), then two cards from
+the on-demand chunk `web/diag.js` (`PAGES.__diag.cards()`, loaded by
+`PAGES.system` into `#diag-cards` right after the Maintenance card, the
+backup cards after them; `internal/TASK_issue_1023_phase2.md`).
 Over `GET /api/obd_chip`, `POST /api/obd_chip/update`, `POST/GET
 /api/obd_chip/probe`, `GET /api/obd_chip/report`, `POST/GET
 /api/can/selftest` (`components/HTTP_API.md`):
@@ -722,14 +726,17 @@ Over `GET /api/obd_chip`, `POST /api/obd_chip/update`, `POST/GET
   chip firmware**, behind `confirmModal` (Cancel / Continue) and then
   `force:true`: it rewrites the chip whatever version it reports, the
   recovery for a chip stuck in its download mode or answering nothing.
-- **CAN self-test**: tiles (bus state and bitrate, the chip), one Run
-  button that POSTs and polls, then the three steps with their timings,
-  the verdict line, the exchange lines, and a table of what failed when
-  it did. The exchange: the chip asks `010C` to 7DF, the WiCAN's own CAN
-  controller answers as ECU 7EF with 1726 rpm, so one run proves both
-  transceivers, both directions and the wiring, with or without a
-  vehicle (`live:true` says a vehicle was answering too). A refusal
-  (the chip down, the bus off) is shown as not run with its reason.
+- **CAN self-test**: one help line, the verdict chip, one Run button
+  that POSTs and polls, and the result as the same copyable block as the
+  chip configuration: the console's `can_selftest` text (the verdict, the
+  bus, the three steps with their timings and details, the exchange lines,
+  the time taken), stamped with the run's time. The exchange: the chip
+  asks `010C` to 7DF, the WiCAN's own CAN controller answers as ECU 7EF
+  with 1726 rpm, so one run proves both transceivers, both directions and
+  the wiring, with or without a vehicle (`live:true` says a vehicle was
+  answering too). A refusal (the chip down, the bus off) is shown as not
+  run with its reason, no block. Ali, 2026-10-28: the first cut's tiles,
+  step cards and failure table were too much.
 
 Probe: `probe_diag.mjs` (plain and `--min`; the mock presets a chip up,
 a chip down with wire notes, a chip left on V2.3.22, and a self-test pass).

@@ -55,6 +55,11 @@ typedef struct
      *  wrote to the chip; UINT32_MAX = never. NULL = no such notion. The
      *  poller yields the chip while this is below AP_CLIENT_YIELD_MS. */
     uint32_t  (*client_idle_ms)(void);
+    /** The chip's run-time settings generation (obd_chip, 2026-10-28):
+     *  moves at every bring-up and when another holder reset the chip's
+     *  volatile settings (the CAN self-test's ATD). The baseline memory
+     *  re-sends the prelude when it moved. NULL = no such notion. */
+    uint32_t  (*settings_generation)(void);
 } ap_transport_t;
 
 /** The OBD transport (never NULL). */

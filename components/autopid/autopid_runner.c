@@ -260,17 +260,19 @@ esp_err_t ap_runner_test(int type, const char *type_init, const char *init,
     snprintf(cmd_s, sizeof(cmd_s), "%s", cmd);
     ap_init_sanitize(cmd_s); /* the tested cmd can be an AT command */
 
-    if (!mem->baseline_sent)
+    if (!mem->baseline_sent || mem->chip_gen != ap_base_chip_gen())
     {
         /* the first chip traffic of this boot (Automate off, or nothing
            polled yet), or the first after a reset: the chip sits on the
            protocol STORED in it, not on the one in effect, and its request
            went out on that one about every third time (bench 2026-10-05).
            The baseline first, as before a poll (the handler has asked the
-           bus guard for it). */
+           bus guard for it). Also after another holder reset the chip
+           (the settings generation moved, 2026-10-28). */
         if (ap_base_send_baseline(&tr))
         {
             mem->baseline_sent = true;
+            mem->chip_gen = ap_base_chip_gen();
         }
     }
 

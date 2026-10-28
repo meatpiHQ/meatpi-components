@@ -4665,20 +4665,9 @@ PAGES.system=async(view,sub)=>{
         if(c!=="factory-reset")return;
         try{await api("/api/settings/factory_reset",{method:"POST",body:{confirm:"factory-reset"}});expectReboot("Factory reset");}
         catch(e2){toast(e2.message,"err");}}},"Factory Reset")),histEl));
-  /* the configuration backup (issue #979, 2026-10-11): three cards from the
-     on-demand chunk web/backup.js, ahead of Maintenance; the old Download /
-     Upload Config buttons (settings only, passwords in the clear) are gone */
-  const bk=h("div",{id:"bk-cards",style:"display:flex;flex-direction:column;gap:16px"});
-  paneMaint.prepend(bk);
-  (async()=>{
-    if(!PAGES.__backup)await loadScript("/ui/backup.js");
-    if(!PAGES.__backup){bk.append(banner("crit","alert","The backup cards could not be loaded (/ui/backup.js). Reload the page, or update the firmware."));return;}
-    try{bk.append(...await PAGES.__backup.cards());}
-    catch(e){bk.append(banner("crit","alert","Backup: "+e.message));}
-  })();
   /* the OBD chip and the CAN self-test cards (issue #1023, 2026-10-28): from
-     the on-demand chunk web/diag.js, after the Maintenance card and ahead of
-     the SD card and factory reset cards */
+     the on-demand chunk web/diag.js, right after the Maintenance card, which
+     leads the page (Ali, 2026-10-28: it used to sit under the backup cards) */
   const dg=h("div",{id:"diag-cards",style:"display:flex;flex-direction:column;gap:16px"});
   paneMaint.append(dg);
   (async()=>{
@@ -4686,6 +4675,17 @@ PAGES.system=async(view,sub)=>{
     if(!PAGES.__diag){dg.append(banner("crit","alert","The diagnostics cards could not be loaded (/ui/diag.js). Reload the page, or update the firmware."));return;}
     try{dg.append(...await PAGES.__diag.cards());}
     catch(e){dg.append(banner("crit","alert","Diagnostics: "+e.message));}
+  })();
+  /* the configuration backup (issue #979, 2026-10-11): three cards from the
+     on-demand chunk web/backup.js, after the diagnostics; the old Download /
+     Upload Config buttons (settings only, passwords in the clear) are gone */
+  const bk=h("div",{id:"bk-cards",style:"display:flex;flex-direction:column;gap:16px"});
+  paneMaint.append(bk);
+  (async()=>{
+    if(!PAGES.__backup)await loadScript("/ui/backup.js");
+    if(!PAGES.__backup){bk.append(banner("crit","alert","The backup cards could not be loaded (/ui/backup.js). Reload the page, or update the firmware."));return;}
+    try{bk.append(...await PAGES.__backup.cards());}
+    catch(e){bk.append(banner("crit","alert","Backup: "+e.message));}
   })();
   try{paneCerts.append(await certsCard());}
   catch(e){paneCerts.append(banner("crit","alert","Certificates: "+e.message));}

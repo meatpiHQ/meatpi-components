@@ -47,6 +47,10 @@ extern "C" {
 typedef struct
 {
     bool     baseline_sent;  /* the boot prelude went out                  */
+    uint32_t chip_gen;       /* the chip's settings generation it went out
+                                under (ap_base_chip_gen): another holder's
+                                reset of the chip moves it, the prelude
+                                goes out again (2026-10-28)                */
     bool     hdr_borrowed;   /* a standard row's init set the request
                                 header: the functional one is owed back    */
     bool     rxheader_set;   /* a row's ATCRA<rx> is in effect             */
@@ -61,6 +65,11 @@ typedef struct
     bool     chain_cut;      /* a chain was stopped behind a reset: no
                                 verdict for the protocol in effect         */
 } ap_base_mem_t;
+
+/** The chip's settings generation as the transport reports it (0 without
+ *  the notion, 2026-10-28): the prelude is stale when it is not the one it
+ *  went out under (a fresh bring-up, another holder's reset of the chip). */
+uint32_t ap_base_chip_gen(void);
 
 ap_base_mem_t *ap_base_mem(void);
 

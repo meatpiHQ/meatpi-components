@@ -145,6 +145,17 @@ void obd_chip_client_touch(void);
  *  no external client ever wrote. */
 uint32_t obd_chip_client_idle_ms(void);
 
+/** The chip's run-time settings generation (2026-10-28): a number that
+ *  moves whenever the chip's volatile settings (echo, headers, protocol,
+ *  timeouts, filters) are no longer what a holder last set them to: at
+ *  every bring-up (boot, a reflash's fresh start, a recovery) and when a
+ *  holder that changed them says so with obd_chip_settings_changed() at
+ *  the end of its transaction (the CAN self-test's ATD + ATE0). AutoPID
+ *  re-sends its prelude when the number moved; any holder that keeps chip
+ *  state should do the same. */
+uint32_t obd_chip_settings_generation(void);
+void     obd_chip_settings_changed(void);
+
 /* ---- request -> response --------------------------------------------------------- */
 
 /**

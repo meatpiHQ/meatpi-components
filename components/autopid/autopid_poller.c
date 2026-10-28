@@ -413,6 +413,26 @@ void ap_core_scan_pause(bool on)
     {
         xTaskNotifyGive(s_task);
     }
+
+    if (on && s_task != NULL && xTaskGetCurrentTaskHandle() != s_task)
+    {
+        /* wait for the poller to park (2026-10-28, the profile e2e bench's
+           test route): a poll or a passive filter's monitor window in
+           flight keeps the chip's claim, and the one-shot job's first
+           command then failed fast as "chip busy (monitor/update)". The
+           poller sets AUTOPID_IDLE once its busy window is over and it
+           reaches a wait; a filter window is bounded by AP_FLT_* (2 s),
+           this wait by 3 s. */
+        for (int i = 0; i < 300; i++)
+        {
+            if (dev_status_manager_is_set(DEV_STATUS_BIT_AUTOPID_IDLE))
+            {
+                break;
+            }
+
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+    }
 }
 
 void ap_poller_pauses(autopid_stats_t *out)

@@ -88,6 +88,7 @@ static portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED; /* internal: spinlock
 
 static bool s_inited;
 static bool s_started;
+static volatile uint32_t s_settings_gen; /* obd_chip_settings_generation() */
 static int  s_active_baud;
 
 /* async bring-up (2026-07-26, meatpi: get the ~2 s ATZ/baud negotiation
@@ -506,6 +507,16 @@ esp_err_t obd_chip_init(void)
     return ESP_OK;
 }
 
+uint32_t obd_chip_settings_generation(void)
+{
+    return s_settings_gen;
+}
+
+void obd_chip_settings_changed(void)
+{
+    s_settings_gen++;
+}
+
 /* The sequence itself (wake, reset, negotiate, provision) lives in
  * obd_chip_bringup.c. */
 static esp_err_t bringup_run(void)
@@ -515,6 +526,7 @@ static esp_err_t bringup_run(void)
     if (err == ESP_OK)
     {
         s_started = true;
+        s_settings_gen++; /* a fresh chip: every holder's prelude is stale */
     }
 
     return err;

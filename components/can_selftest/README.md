@@ -41,8 +41,13 @@ its own line (Ali, 2026-10-28: a live bus runs, reported as `live`).
    400 ms, the reply `7EF [04 41 0C 1A F8]` goes out (`can_manager_send`),
    and the chip's output is collected through the fan-out to its prompt
    (900 ms).
-4. Restore: `ATPC`, `ATD` (the protocol follows the setting again; AutoPID's
-   prelude re-inits on resume), the transaction ended, the queue released.
+4. Restore: `ATPC`, `ATD`, `ATE0` (ATD puts the chip at its defaults, echo
+   on included; the bring-up had the echo off, so it goes off again), the
+   transaction ended, `obd_chip_settings_changed()` (AutoPID's baseline
+   memory compares the chip's settings generation before every poll and
+   re-sends its prelude: spaces, headers, timeout, protocol, functional
+   header, filter; bench 2026-10-28, the chip echoed after a test until
+   then), the queue released.
 5. The verdict (`can_selftest_parse.c`): PASS when the ESP32 heard the request
    and the chip printed the ESP32's line (engine speed 1726 rpm). Otherwise
    where to look: `CAN ERROR` = nothing acknowledged the chip (the shared

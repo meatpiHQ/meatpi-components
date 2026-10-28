@@ -102,8 +102,10 @@ static void rx_note(uint8_t byte)
 }
 
 /** One W line about a command that got no prompt: silent, or N bytes with
- *  the first of them in hex (a chip at 2 Mbaud answers the garbled 115200
- *  bytes with hundreds of bytes of garbage, read at the wrong speed). */
+ *  the first of them in hex (a chip at 2 Mbaud with its echo on answers the
+ *  garbled 115200 bytes with hundreds of bytes of echo read at the wrong
+ *  speed; with the echo off it answers nothing: silence alone does not
+ *  tell a dead wire from a chip at another speed). */
 static void wire_note(const char *what, int baud)
 {
     if (s_rx_total == 0)

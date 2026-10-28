@@ -34,7 +34,11 @@
  *      then `010C` written raw while this task plays the ECU: the 7DF frame
  *      [02 01 0C] arrives on the queue, the reply 7EF [04 41 0C 1A F8] goes
  *      out, the chip's output is collected to its prompt
- *   4. restore: ATPC, ATD; the queue unsubscribed; AutoPID resumes
+ *   4. restore: ATPC, ATD, ATE0 (ATD switches the echo back on; the
+ *      bring-up had it off), then obd_chip_settings_changed() so AutoPID
+ *      re-sends its prelude before its next poll (bench 2026-10-28: the
+ *      chip echoed after a test and AutoPID's baseline memory did not
+ *      know); the queue unsubscribed; AutoPID resumes
  *   5. the verdict from what each side saw (can_selftest_parse.c)
  */
 #include "can_selftest.h"
@@ -379,9 +383,11 @@ static void run(can_selftest_result_t *r)
 
     /* 4. restore */
     uint32_t t_rest = now_ms();
-    bool restored = chip_cmd(r, "ATPC") && chip_cmd(r, "ATD");
+    bool restored = chip_cmd(r, "ATPC") && chip_cmd(r, "ATD") &&
+                    chip_cmd(r, "ATE0");
 
     obd_chip_txn_end();
+    obd_chip_settings_changed(); /* ATD: AutoPID's prelude goes out again */
     vQueueDelete(cq);
     can_manager_unsubscribe_queue(sub);
     vQueueDelete(q);

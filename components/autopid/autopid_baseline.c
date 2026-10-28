@@ -257,14 +257,26 @@ void ap_runner_send_init(const char *init)
     ap_base_send_init(init, NULL);
 }
 
+uint32_t ap_base_chip_gen(void)
+{
+    return (ap_be()->settings_generation != NULL)
+               ? ap_be()->settings_generation() : 0;
+}
+
 bool ap_runner_baseline_ensure(void)
 {
     /* boot baseline, once: spaces/headers/timeout + the protocol the
        setting (or the current car's record under "0") names, BEFORE any
        user init so the inits still win. Without it the chip polled on
        whatever its EEPROM held until the first ELM-app pause
-       (2026-10-01). Re-armed by ap_runner_rebaseline() on a car switch. */
-    if (!s_mem.baseline_sent)
+       (2026-10-01). Re-armed by ap_runner_rebaseline() on a car switch,
+       and by the chip's settings generation (2026-10-28): a fresh
+       bring-up or another holder's reset of the chip (the CAN self-test's
+       ATD) leaves the chip at its defaults while this memory said the
+       prelude was in effect. */
+    uint32_t gen = ap_base_chip_gen();
+
+    if (!s_mem.baseline_sent || s_mem.chip_gen != gen)
     {
         if (!ap_base_send_baseline(NULL))
         {
@@ -272,6 +284,7 @@ bool ap_runner_baseline_ensure(void)
         }
 
         s_mem.baseline_sent = true;
+        s_mem.chip_gen = gen;
     }
 
     return true;

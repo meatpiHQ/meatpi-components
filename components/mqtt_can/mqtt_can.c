@@ -419,10 +419,13 @@ static esp_err_t tr_flush(void *vctx, bridge_sink_fn_t sink,
 esp_err_t mqtt_can_start(void)
 {
     /* jack + codec register UNCONDITIONALLY: bridge settings rows
-       naming mqtt0/canmqtt must validate whether or not this component
-       is enabled (found by the first bench run: the bridge PUT was
-       rejected with "unknown endpoint 'mqtt0'" on a disabled build).
-       `enabled` gates the ATTACH (ep_subscribe) instead. */
+       naming mqtt0/canmqtt must validate and build whether or not this
+       component is enabled (found by the first bench run: the bridge
+       PUT was rejected with "unknown endpoint 'mqtt0'" on a disabled
+       build; since 2026-10-29 a PUT no longer checks endpoint names,
+       the codec check still does, and a jack that is missing at start
+       leaves its bridge unbuilt). `enabled` gates the ATTACH
+       (ep_subscribe) instead. */
     expand_topic(s_pub_topic, s_pub_full, sizeof(s_pub_full));
     expand_topic(s_sub_topic, s_sub_full, sizeof(s_sub_full));
 

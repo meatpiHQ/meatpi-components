@@ -1189,7 +1189,14 @@ const store={
       :await confirmModal("Applying these changes restarts WiCAN (~15 s) to take effect. Continue?","Submit changes");
     if(!need)return;
     try{
-      for(const[c,v]of this.pending)await api("/api/settings/"+c,{method:"PUT",body:v});
+      /* a refused PUT names its settings group: the user then knows which
+         page holds the row to fix (2026-10-29, the field report: "Apply
+         failed: br4: unknown endpoint 'udp3333'" on the CAN bus page, the
+         Bridges list staged on another page days earlier) */
+      for(const[c,v]of this.pending){
+        try{await api("/api/settings/"+c,{method:"PUT",body:v});}
+        catch(e){throw new Error(niceName(c)+": "+e.message);}
+      }
       const r=await api("/api/settings/submit",{method:"POST"});
       this.pending.clear();this.dirty.clear();renderSubmit();
       if(r&&r.reboot)expectReboot("Applying settings");else{toast("Saved, no restart needed","ok");refreshSleep();}
@@ -2183,6 +2190,21 @@ async function bridgesCard(){
   const servers=sm.servers||[],channels=wm.channels||[];
   const IF=new Set(BR_IFACES.map(x=>x[0]));
   const rows=[],passthru=[];
+  /* the device's own word on each bridge (2026-10-29): /api/bridges carries
+     `reason` for an enabled bridge that did not build at the last start
+     (the endpoint its row names does not exist on this device) */
+  const live=await tryGet("/api/bridges");
+  const reasonOf=name=>{const x=live&&(live.bridges||[]).find(b=>b.name===name);return x&&x.up===false&&x.reason?x.reason:"";};
+  /* A row whose connection side is a jack the device does not have (a server
+     or channel renamed or removed under it, a name typed under All Settings):
+     the name the card itself gives a TCP/UDP server (tcp3300, udp3333) is read
+     back into an editable row, so the next Submit re-creates the server or
+     the row's trash button removes it; any other name stays a custom bridge
+     with a Remove button. Until 2026-10-29 such rows were shown with no way
+     out and the firmware refused every save of the list that still carried
+     them (the field report: two rows, udp3333 and udp23, locked a device out
+     of all its settings pages). */
+  const JACK_RE=/^(tcp|udp)(\d{1,5})$/;
   for(const b of(bm.bridges||[])){
     let iface=null,conn=null;
     if(IF.has(b.a)){iface=b.a;conn=b.b;}else if(IF.has(b.b)){iface=b.b;conn=b.a;}
@@ -2193,9 +2215,17 @@ async function bridgesCard(){
     else if(ch){r.conn="ws";r.path=ch.path;}
     else if(conn==="ble")r.conn="ble";
     else if(conn==="usb_obd")r.conn="usb";
-    else{passthru.push(b);continue;}
+    else{const m=JACK_RE.exec(conn);
+      if(!m){b.missing=conn;passthru.push(b);continue;}
+      r.conn=m[1];r.port=Number(m[2]);r.missing=conn;}
     rows.push(r);
   }
+  /* nothing is staged until the user edits a row: the compiled list differs
+     from the stored one in order and in the a/b side for a device set up
+     elsewhere (the raw editor, an older build), and a stage on open used to
+     light the Submit button and carry a list the user never touched into
+     every later save, from any page (2026-10-29) */
+  let touched=!!BR_PREFILL;
   if(BR_PREFILL){rows.push(BR_PREFILL);BR_PREFILL=null;}
   const listEl=h("div",{style:"display:flex;flex-direction:column;gap:8px"});
   const warnEl=h("div",{style:"display:flex;flex-direction:column;gap:6px"});
@@ -2252,49 +2282,59 @@ async function bridgesCard(){
       ...c.errs.map(e=>banner("warn","alert",e)),
       c.canUsed&&canInfo&&canInfo.enabled===false?banner("info","activity","A connection uses the CAN bus but the CAN interface is disabled: enable it in the CAN Interface card above."):null,
       ...brOrphans(c.srv,c.bridges).map(s=>banner("warn","alert",h("b",{},brWhere(s)+" is switched on but no connection uses it. "),"A client can connect to it and gets nothing. ",
-        h("button",{class:"btn sm","data-orphan":s.name,type:"button",style:"margin-left:6px",onclick:()=>{if(rows.length+passthru.length>=BR_MAX)return toast("Max "+BR_MAX+" connections","err");rows.push(brRowForServer(s));refresh();}},
+        h("button",{class:"btn sm","data-orphan":s.name,type:"button",style:"margin-left:6px",onclick:()=>{if(rows.length+passthru.length>=BR_MAX)return toast("Max "+BR_MAX+" connections","err");rows.push(brRowForServer(s));edit();}},
           ic("plus"),"Add a CAN bus connection on "+String(s.proto||"tcp").toUpperCase()+" "+s.port+" ("+brProtoForPort(s.port)+")"))));
-    if(c.errs.length)return;
+    if(c.errs.length||!touched)return;
     if(JSON.stringify(c.bridges)!==JSON.stringify(bm.bridges||[]))store.stage("bridge_manager",{bridges:c.bridges});
     if(JSON.stringify(c.srv)!==JSON.stringify(servers))store.stage("socket_manager",{servers:c.srv});
     if(JSON.stringify(c.chn)!==JSON.stringify(channels))store.stage("websocket_manager",{channels:c.chn});
   }
   function rowBox(r,i){
-    const sel=(opts,cur,cb)=>h("select",{onchange:e=>{cb(e.target.value);refresh();}},...opts.map(([v,l])=>h("option",{value:v,selected:v===cur},l)));
+    const sel=(opts,cur,cb,key)=>h("select",{"data-sel":key,onchange:e=>{cb(e.target.value);edit();}},...opts.map(([v,l])=>h("option",{value:v,selected:v===cur},l)));
     const line1=h("div",{class:"brline"},
-      sel(BR_IFACES,r.iface,v=>{r.iface=v;if(v!=="can")r.translator="raw";}),
+      sel(BR_IFACES,r.iface,v=>{r.iface=v;if(v!=="can")r.translator="raw";},"iface"),
       h("span",{class:"brarrow"},"⇄"),
       sel(BR_CONNS,r.conn||"",v=>{r.conn=v;
         if(v==="ws"&&!r.path)r.path="/ws/br"+(i+1);
-        if((v==="tcp"||v==="udp")&&!r.port)r.port=3300+i;}),
-      switchCtl(!!r.enabled,v=>{r.enabled=v;refresh();},{sm:true,yes:"Enabled",no:"Disabled",title:"Enable or pause this connection"}),
-      h("button",{class:"btn sm gh danger",type:"button",title:"Remove this connection",onclick:()=>{rows.splice(i,1);refresh();}},ic("trash")));
+        if((v==="tcp"||v==="udp")&&!r.port)r.port=3300+i;},"conn"),
+      switchCtl(!!r.enabled,v=>{r.enabled=v;edit();},{sm:true,yes:"Enabled",no:"Disabled",title:"Enable or pause this connection"}),
+      h("button",{class:"btn sm gh danger","data-remove":r.name||"",type:"button",title:"Remove this connection",onclick:()=>{rows.splice(i,1);edit();}},ic("trash")));
     const detail=h("div",{class:"rowflex",style:"gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center"});
     if(r.conn==="tcp"||r.conn==="udp")detail.append(
       h("span",{class:"help"},"Port"),
-      h("input",{type:"number",min:1,max:65535,value:r.port??"",style:"max-width:110px",onchange:e=>{r.port=Number(e.target.value);refresh();}}));
+      h("input",{type:"number","data-port":"",min:1,max:65535,value:r.port??"",style:"max-width:110px",onchange:e=>{r.port=Number(e.target.value);edit();}}));
     if(r.conn==="ws")detail.append(
       h("span",{class:"help"},"Path"),
-      h("input",{class:"mono",value:r.path||"",placeholder:"/ws/mybridge",style:"max-width:200px",onchange:e=>{r.path=e.target.value;refresh();}}));
+      h("input",{class:"mono","data-path":"",value:r.path||"",placeholder:"/ws/mybridge",style:"max-width:200px",onchange:e=>{r.path=e.target.value;edit();}}));
     if(r.iface==="can")detail.append(
       h("span",{class:"help"},"Protocol"),
-      sel(BR_PROTOS.map(x=>[x,x]),r.translator||"raw",v=>{r.translator=v;}));
+      sel(BR_PROTOS.map(x=>[x,x]),r.translator||"raw",v=>{r.translator=v;},"translator"));
     if(r.conn==="ble")detail.append(h("span",{class:"help"},"Uses the BLE data pipe (pair from the app)."));
     if(r.conn==="usb")detail.append(h("span",{class:"help"},"USB port-B serial channel."));
-    return h("div",{style:"border:1px solid var(--border);border-radius:9px;padding:10px 12px;background:var(--surface-2)"},
-      line1,detail.childNodes.length?detail:null);
+    const why=r.missing?"":reasonOf(r.name);
+    return h("div",{"data-row":r.name||"new","data-missing":r.missing||"",style:"border:1px solid var(--border);border-radius:9px;padding:10px 12px;background:var(--surface-2)"},
+      line1,detail.childNodes.length?detail:null,
+      r.missing?h("div",{style:"margin-top:8px"},banner("warn","alert",h("b",{},r.missing+" does not exist on this device. "),
+        "The server this connection used was renamed or removed. Submit re-creates it as "+String(r.conn).toUpperCase()+" "+r.port+", or remove the connection.")):null,
+      why?h("div",{class:"help",style:"margin-top:6px"},"Not running since the last restart: "+why+"."):null);
   }
   function refresh(){
     listEl.replaceChildren(
-      ...passthru.map(b=>h("div",{class:"help",style:"padding:4px 2px"},
-        "custom bridge ",h("code",{},b.name),": ",h("code",{},b.a)," ⇄ ",h("code",{},b.b),": edit under All Settings → Bridges.")),
+      ...passthru.map(b=>{const why=b.missing?"":reasonOf(b.name);
+        return h("div",{class:"help","data-custom":b.name,style:"padding:4px 2px;display:flex;align-items:center;gap:6px;flex-wrap:wrap"},
+        h("span",{},"custom bridge ",h("code",{},b.name),": ",h("code",{},b.a)," ⇄ ",h("code",{},b.b),
+          b.missing?[": ",h("b",{},b.missing+" does not exist on this device"),", a server or channel renamed or removed under it. Remove it, or add the server or channel back under All Settings."]
+          :why?[": not running since the last restart, "+why+". Edit it under All Settings → Bridges, or remove it."]
+          :": edit under All Settings → Bridges."),
+        h("button",{class:"btn sm gh danger","data-remove":b.name,type:"button",title:"Remove this bridge",onclick:()=>{passthru.splice(passthru.indexOf(b),1);edit();}},ic("trash")));}),
       ...rows.map((r,i)=>rowBox(r,i)));
     stage();
   }
+  function edit(){touched=true;refresh();}
   refresh();
-  const add=h("button",{class:"btn sm",type:"button",onclick:()=>{
+  const add=h("button",{class:"btn sm","data-add":"",type:"button",onclick:()=>{
     if(rows.length+passthru.length>=BR_MAX)return toast("Max "+BR_MAX+" connections","err");
-    rows.push({iface:"obd",conn:"tcp",port:35000,translator:"raw",enabled:true});refresh();},},ic("plus"),"Add connection");
+    rows.push({iface:"obd",conn:"tcp",port:35000,translator:"raw",enabled:true});edit();},},ic("plus"),"Add connection");
   return card("Connections","route",listEl,warnEl,h("div",{style:"margin-top:8px"},add),
     note("","Each row wires a vehicle interface to a connection. TCP/UDP ports and WebSocket paths are created automatically. The OBD chip and the CAN bus can feed several connections at once (the factory setup puts the OBD chip on WebSocket, TCP and USB); a TCP/UDP server, WebSocket path, BLE or USB carries ONE enabled connection. Changes apply from the Submit button (device restarts)."));
 }

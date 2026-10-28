@@ -248,3 +248,13 @@ esp_err_t bridge_manager_stats(const char *bridge_name, bridge_stats_t *out)
 
     return bm_pump_stats(bridge_name, out);
 }
+
+const char *bridge_manager_reason(const char *bridge_name)
+{
+    if (bridge_name == NULL || !s_started)
+    {
+        return NULL;
+    }
+
+    return bm_pump_reason(bridge_name);
+}

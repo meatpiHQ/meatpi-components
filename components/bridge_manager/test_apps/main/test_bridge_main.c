@@ -11,6 +11,12 @@
  *  3. SOCKET E2E: a real TCP client on the lwIP loopback talks through
  *     socket_manager("tcp0") <-> bridge <-> "echo" stub endpoint, the full
  *     production path (socket -> bridge -> endpoint -> back) in one device.
+ *  4. CONCURRENCY and 5. OVERLOAD60 (BENCHMARKS.md §3, §4).
+ *  6. REFUSED ROW: "one" is a single-stream stub (its second subscribe is
+ *     refused), so of the two rows on it the second is not built at start
+ *     and keeps its reason; stop/start cycles then prove the refusal leaves
+ *     no queue set behind (internal heap before and after; the 2026-10-29
+ *     cleanup of a refused subscribe).
  *
  * Config is persisted BEFORE the settings boot pass (set() then
  * settings_manager_start(): reboot-to-apply without a reboot).
@@ -73,14 +79,24 @@ static uint32_t s_dst_delay_ms;
 
 static esp_err_t dst_send(const uint8_t *d, size_t l)
 {
-    if (l > 0 && d[0] != s_dst_expect_seq)
+    /* the pump coalesces queued chunks into ONE send (pump_raw_batch,
+       BM_COALESCE_MAX): walk the batch chunk by chunk (the generator sends
+       full-size chunks), count chunks, check the sequence per chunk. Until
+       2026-10-29 this counted sends and read the first byte only, which
+       the coalescing (added after the July flight) turned into
+       PUMP ok=0 in_order=0 and a 2 s drain wait inside the ceiling figure. */
+    for (size_t off = 0; off < l; off += BRIDGE_MANAGER_CHUNK_SIZE)
     {
-        s_dst_in_order = false;
+        if (d[off] != s_dst_expect_seq)
+        {
+            s_dst_in_order = false;
+        }
+
+        s_dst_expect_seq = (uint8_t)(d[off] + 1);
+        s_dst_chunks++;
     }
 
-    s_dst_expect_seq = (uint8_t)(d[0] + 1);
     s_dst_bytes += (uint32_t)l;
-    s_dst_chunks++;
 
     if (s_dst_delay_ms > 0)
     {
@@ -144,6 +160,57 @@ static esp_err_t echo_unsubscribe(QueueHandle_t q)
 {
     (void)q;
     s_echo_sub = NULL;
+    return ESP_OK;
+}
+
+/* one: a single-stream provider (the socket-jack model): a second
+ * subscriber is refused with ESP_ERR_INVALID_STATE. two: a sink. */
+static QueueHandle_t s_one_sub;
+
+static esp_err_t one_send(const uint8_t *d, size_t l)
+{
+    (void)d;
+    (void)l;
+    return ESP_OK;
+}
+
+static esp_err_t one_subscribe(QueueHandle_t q)
+{
+    if (s_one_sub != NULL)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    s_one_sub = q;
+    return ESP_OK;
+}
+
+static esp_err_t one_unsubscribe(QueueHandle_t q)
+{
+    if (s_one_sub == q)
+    {
+        s_one_sub = NULL;
+    }
+
+    return ESP_OK;
+}
+
+static esp_err_t two_send(const uint8_t *d, size_t l)
+{
+    (void)d;
+    (void)l;
+    return ESP_OK;
+}
+
+static esp_err_t two_subscribe(QueueHandle_t q)
+{
+    (void)q;
+    return ESP_OK;
+}
+
+static esp_err_t two_unsubscribe(QueueHandle_t q)
+{
+    (void)q;
     return ESP_OK;
 }
 
@@ -264,11 +331,17 @@ void app_main(void)
         { "echo", echo_send, echo_subscribe, echo_unsubscribe };
     static const bridge_endpoint_t TCP0 =
         { "tcp0", tcp0_send, tcp0_subscribe, tcp0_unsubscribe };
+    static const bridge_endpoint_t ONE =
+        { "one", one_send, one_subscribe, one_unsubscribe };
+    static const bridge_endpoint_t TWO =
+        { "two", two_send, two_subscribe, two_unsubscribe };
 
     ESP_ERROR_CHECK(bridge_manager_register_endpoint(&SRC));
     ESP_ERROR_CHECK(bridge_manager_register_endpoint(&DST));
     ESP_ERROR_CHECK(bridge_manager_register_endpoint(&ECHO));
     ESP_ERROR_CHECK(bridge_manager_register_endpoint(&TCP0));
+    ESP_ERROR_CHECK(bridge_manager_register_endpoint(&ONE));
+    ESP_ERROR_CHECK(bridge_manager_register_endpoint(&TWO));
 
     /* the four concurrency pairs (§3 leg) */
     static const bridge_endpoint_t MEP[MPAIRS * 2] =
@@ -300,7 +373,9 @@ void app_main(void)
         "{\"name\":\"br0\",\"a\":\"src\",\"b\":\"dst\",\"enabled\":true},"
         "{\"name\":\"br1\",\"a\":\"tcp0\",\"b\":\"echo\",\"enabled\":true},"
         "{\"name\":\"mbr0\",\"a\":\"msrc0\",\"b\":\"mdst0\",\"enabled\":true},"
-        "{\"name\":\"mbr1\",\"a\":\"msrc1\",\"b\":\"mdst1\",\"enabled\":true}"
+        "{\"name\":\"mbr1\",\"a\":\"msrc1\",\"b\":\"mdst1\",\"enabled\":true},"
+        "{\"name\":\"o1\",\"a\":\"one\",\"b\":\"two\",\"enabled\":true},"
+        "{\"name\":\"o2\",\"a\":\"one\",\"b\":\"two\",\"enabled\":true}"
         "]}");
 
     char errbuf[96] = "";
@@ -316,18 +391,34 @@ void app_main(void)
     printf("START ok=%d\n", err == ESP_OK);
     vTaskDelay(pdMS_TO_TICKS(500));
 
-    /* runtime PUTs are strict (registry-aware on_validate): an unknown
-     * endpoint must be rejected AND must not clobber the live config.
-     * (Pre-start sets are deliberately lenient: dynamic jacks register
-     * between the boot pass and start, do NOT probe this before start,
-     * a lenient accept would overwrite the good config.) */
+    /* runtime PUTs (registry-aware on_validate): an unknown TRANSLATOR is
+     * refused (codecs are compile-time registrations, complete once
+     * started); an unknown ENDPOINT is accepted since 2026-10-29 (the jack
+     * of a server created in the same submit registers at the next boot,
+     * a row stranded by a server's removal must not refuse every later
+     * save) and the live bridges are untouched either way
+     * (reboot-to-apply). (Pre-start sets are deliberately lenient: dynamic
+     * jacks register between the boot pass and start, do NOT probe this
+     * before start, a lenient accept would overwrite the good config.) */
     cfg = cJSON_Parse(
-        "{\"bridges\":[{\"name\":\"bad\",\"a\":\"nope\",\"b\":\"dst\","
-        "\"enabled\":true}]}");
+        "{\"bridges\":[{\"name\":\"bad\",\"a\":\"src\",\"b\":\"dst\","
+        "\"translator\":\"mystery\",\"enabled\":true}]}");
     err = settings_manager_set("bridge_manager", cfg, errbuf, sizeof(errbuf),
                                NULL);
     cJSON_Delete(cfg);
     printf("CFG-BAD rejected=%d\n", err != ESP_OK);
+
+    cfg = cJSON_Parse(
+        "{\"bridges\":[{\"name\":\"later\",\"a\":\"nope\",\"b\":\"dst\","
+        "\"enabled\":true}]}");
+    err = settings_manager_set("bridge_manager", cfg, errbuf, sizeof(errbuf),
+                               NULL);
+    cJSON_Delete(cfg);
+
+    bridge_stats_t live_st;
+
+    printf("CFG-NEW accepted=%d live=%d\n", err == ESP_OK,
+           bridge_manager_stats("br0", &live_st) == ESP_OK);
 
     /* ---- leg 1: ordered lossless pump + ceiling ------------------------- */
     const int N = 2000;
@@ -396,6 +487,8 @@ void app_main(void)
         int64_t mt0 = esp_timer_get_time();
         const int64_t mwindow_us = 5 * 1000000LL;
 
+        uint32_t rounds = 0;
+
         while (esp_timer_get_time() - mt0 < mwindow_us)
         {
             for (int i = 0; i < MPAIRS; i++)
@@ -404,6 +497,12 @@ void app_main(void)
                 {
                     (void)xQueueSend(s_msrc_sub[i], &mchunk, 0);
                 }
+            }
+
+            if ((++rounds & 0x3FF) == 0)
+            {
+                vTaskDelay(1); /* IDLE0 must run: the task watchdog fired
+                                  here on 2026-10-29 (the OVERLOAD60 rule) */
             }
         }
 
@@ -479,6 +578,43 @@ void app_main(void)
                (unsigned)s_dst_chunks,
                (long long)drain_ms,
                s_dst_chunks > before_drain || bstats.a2b_chunks > 0);
+    }
+
+    /* ---- leg 6: a row refused at start keeps its reason; stop/start
+     *      cycles leak nothing (the 2026-10-29 cleanup) ------------------ */
+    {
+        const char *why = bridge_manager_reason("o2");
+
+        printf("REASON o2='%s' o1_up=%d o2_up=%d\n", (why != NULL) ? why : "",
+               bridge_manager_stats("o1", &bstats) == ESP_OK,
+               bridge_manager_stats("o2", &bstats) == ESP_OK);
+        vTaskDelay(pdMS_TO_TICKS(300));
+
+        uint32_t cyc_before =
+            (uint32_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+        const int cycles = 6;
+        int ok_cycles = 0;
+
+        for (int i = 0; i < cycles; i++)
+        {
+            if (bridge_manager_stop() == ESP_OK &&
+                bridge_manager_start() == ESP_OK)
+            {
+                ok_cycles++;
+            }
+
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(300));
+
+        uint32_t cyc_after =
+            (uint32_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+        int leak = (int)cyc_before - (int)cyc_after;
+
+        /* one leaked queue set per cycle would read about 600 B x cycles */
+        printf("CYCLES n=%d ok=%d leak=%d leak_ok=%d\n", cycles,
+               ok_cycles == cycles, leak, leak < 512 && leak > -512);
     }
 
     /* ---- teardown is clean --------------------------------------------- */

@@ -63,18 +63,23 @@ esp_err_t bm_parse_bridge(const cJSON *item, bm_bridge_cfg_t *out);
 
 /**
  * Cross-item + registry validation, registry passed as plain name lists so
- * this stays pure: endpoint/translator names must be known, a != b, bridge
- * names unique, and an endpoint may appear in at most ONE enabled bridge
+ * this stays pure: translator names must be known, a != b, bridge names
+ * unique, and an endpoint may appear in at most ONE enabled bridge
  * (single-consumer rule: two bridges reading one endpoint would split its
  * RX stream between their queues nondeterministically) UNLESS its
  * endpoint_multi flag says the provider fans RX out to every subscriber
- * (obd: the default TCP+USB passthrough pair rides this).
- * ep_count/tr_count < 0 = registry not final (BOOT apply): the existence
- * checks AND the single-consumer rule are skipped, capabilities are
- * unknowable before the jacks register, boot values are either the
- * authored default or survived a strict runtime PUT, and build_bridge
- * degrades a refused second subscribe alone. endpoint_multi is parallel
- * to endpoint_names (may be NULL = all single-consumer).
+ * (obd: the default TCP+USB passthrough pair rides this). Endpoint names
+ * need NOT be registered (2026-10-29): a socket server or WebSocket
+ * channel created in the same submit registers its jack at the next boot,
+ * and a row left behind by a server renamed or removed must not refuse
+ * every later save; a name that never resolves degrades that bridge alone
+ * at start (bridge_manager_reason). A name not in the registry counts as
+ * single-stream for the rule.
+ * ep_count/tr_count < 0 = registry not final (BOOT apply): the translator
+ * check AND the single-consumer rule are skipped, capabilities are
+ * unknowable before the jacks register, and build_bridge degrades a
+ * refused second subscribe alone. endpoint_multi is parallel to
+ * endpoint_names (may be NULL = all single-consumer).
  */
 esp_err_t bm_validate_bridges(const cJSON *bridges,
                               const char *const *endpoint_names,
@@ -96,8 +101,9 @@ int bm_core_endpoint_names(const char **out, bool *multi_out, int cap);
 int bm_core_translator_names(const char **out, int cap);
 
 /** True once bridge_manager_start ran: the registry is FINAL, so the
- *  settings validator may enforce name existence (runtime PUTs). At the
- *  boot apply this is false and existence checks are skipped (dynamic
+ *  settings validator may use it (the translator check, the capability
+ *  flags of the single-consumer rule) at runtime PUTs. At the boot apply
+ *  this is false and the registry-dependent rules are skipped (dynamic
  *  socket/WS jacks register at bridge_endpoints_start, in between). */
 bool bm_core_started(void);
 
@@ -116,6 +122,11 @@ bool bm_settings_is_configured(void); /* boot apply ran (standard §4.3)     */
 esp_err_t bm_pump_start_all(void);
 void      bm_pump_stop_all(void);
 esp_err_t bm_pump_stats(const char *bridge_name, void *stats_out);
+
+/** Why a configured, enabled bridge was not built at the last start: a
+ *  short sentence (the unregistered endpoint or translator named, or a
+ *  refused subscribe), NULL when it runs, is disabled, or is unknown. */
+const char *bm_pump_reason(const char *bridge_name);
 
 #ifdef __cplusplus
 }

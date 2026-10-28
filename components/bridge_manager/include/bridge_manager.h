@@ -159,8 +159,10 @@ typedef struct
 esp_err_t bridge_manager_init(void);
 
 /** Build and start the enabled bridges from the boot-applied settings.
- *  Unknown endpoint/translator names fail validation earlier (on_validate);
- *  a name that validated but was never registered fails here. */
+ *  A row naming an endpoint this composition never registered (a socket
+ *  server or WebSocket channel renamed or removed after the row was
+ *  written) degrades ALONE: one W line, bridge_manager_reason() says why;
+ *  an unknown translator is refused by on_validate at a runtime PUT. */
 esp_err_t bridge_manager_start(void);
 
 /** Tear down every bridge (unsubscribe, stop pumps). */
@@ -172,6 +174,15 @@ esp_err_t bridge_manager_register_translator(const bridge_translator_t *tr);
 
 /** Per-bridge counters by configured bridge name. */
 esp_err_t bridge_manager_stats(const char *bridge_name, bridge_stats_t *out);
+
+/** Why a configured, ENABLED bridge is not running since start (2026-10-29):
+ *  the endpoint or translator its row names was never registered in this
+ *  composition (a socket server or WebSocket channel renamed or removed
+ *  after the row was written, the raw editor), or a single-stream provider
+ *  refused the second subscribe. A short sentence for the status surface
+ *  (`/api/bridges` "reason"); NULL when the bridge runs, is disabled, is
+ *  unknown, or the manager is not started. */
+const char *bridge_manager_reason(const char *bridge_name);
 
 /** Registry occupancy for the health surface (`WICAN CAPS` + bench
  *  headroom assertion). Any pointer may be NULL. */

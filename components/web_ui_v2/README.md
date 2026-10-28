@@ -1106,9 +1106,35 @@ backing `socket_manager.servers` (reuse by proto+port, else allocate a
 free/disabled slot, name `tcp<port>`) / `websocket_manager.channels`
 (reuse by path, name `ws_<path>`). Client-side guards: single-consumer rule, port and
 `/ws/` path validation, slot caps, "CAN bus disabled" hint. Bridges it
-can't model (hand-made relay pairings) show read-only with a pointer to
-All Settings. Everything applies through the header Submit
-(reboot-to-apply).
+can't model (hand-made relay pairings) show as a "custom bridge" line
+with a pointer to All Settings and a Remove button. Everything applies
+through the header Submit (reboot-to-apply).
+
+2026-10-29 (the field report in `internal/unable-to-save-config`: two
+rows to UDP servers that no longer existed locked a device out of every
+settings page and could not be removed):
+
+- the card stages NOTHING until the user edits a row (the shortcut from
+  the Socket servers card counts as an edit): the compiled list differs
+  from the stored one in order and in the a/b side for a device set up
+  elsewhere, and a stage on open carried a list the user never touched
+  into every later Submit, from any page;
+- a row whose connection side is a jack the device does not have: a name
+  of the card's own form (`tcp3300`, `udp3333`) is read back into an
+  editable row with a banner ("udp3333 does not exist on this device ...
+  Submit re-creates it as UDP 3333, or remove the connection") and the
+  row's trash button; any other name stays a custom bridge line with the
+  device's `reason` from `/api/bridges` when it has one, and Remove;
+- a bridge the device reports as not running (`/api/bridges` `reason`)
+  says so under its row;
+- `store.apply()`: a refused PUT names its settings group in the toast
+  ("Apply failed: Bridges: ...").
+
+The firmware side of the same report: `bridge_manager` no longer refuses
+a bridge whose endpoint is not registered yet (a server and its bridge
+travel in one submit; a stranded row degrades alone with a W line and
+the reason). Bench: `.\test.ps1 connections` (the page leg in Chrome:
+`tools/testbench/system/connections_ui_check.mjs`).
 
 ## Preview + tests WITHOUT a device: `tools/webui_preview/` (2026-07-13)
 

@@ -14,13 +14,23 @@ def test_bridge_manager(dut):
     dut.expect_exact("INIT ok=1")
     dut.expect_exact("ENDPOINTS ok=1 dup_rejected=1")
     dut.expect_exact("CFG ok=1 err=''")
-    dut.expect_exact("CFG-BAD rejected=1")
     dut.expect_exact("START ok=1")
+    # the runtime PUT rules are probed AFTER start (the registry is final
+    # then); the two rows on the single-stream "one" are accepted before
+    # start, the second is refused at build (REASON below)
+    dut.expect_exact("CFG-BAD rejected=1")
+    dut.expect_exact("CFG-NEW accepted=1 live=1")
 
     dut.expect_exact("PUMP ok=1 in_order=1 drops=0")
     dut.expect("PUMP-CEILING chunks_per_s=\\d+ kbytes_per_s=\\d+")
     dut.expect_exact("OVERFLOW drops_gt0=1 pump_alive=1 accounted=1")
     dut.expect_exact("E2E ok=1 match=1")
+    dut.expect("CONC bridges=2 agg_chunks_per_s=\\d+ min_chunks_per_s=\\d+ fair=1")
+    dut.expect("OVERLOAD60 .* pump_alive=1")
+
+    dut.expect_exact("REASON o2='an endpoint is already used by another bridge' "
+                     "o1_up=1 o2_up=0")
+    dut.expect("CYCLES n=6 ok=1 leak=-?\\d+ leak_ok=1")
 
     dut.expect_exact("STOP ok=1")
     dut.expect_exact("TEST DONE")

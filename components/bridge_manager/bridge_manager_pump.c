@@ -90,6 +90,14 @@ typedef struct
 
 static bm_bridge_t s_br[BRIDGE_MANAGER_MAX_BRIDGES] EXT_RAM_BSS_ATTR;
 
+/* why a configured, ENABLED bridge is not running, by config index: the
+ * jack or codec its row names was never registered in this composition (a
+ * socket server or a WebSocket channel renamed or removed after the row
+ * was written, the raw editor), or a single-stream provider refused the
+ * second subscribe. "" = built, or not enabled. Read by the status
+ * surface (/api/bridges "reason") so the user sees the row to fix. */
+static char s_reason[BRIDGE_MANAGER_MAX_BRIDGES][64] EXT_RAM_BSS_ATTR;
+
 /* static queue/task storage per bridge slot (standard §2: PSRAM data,
  * internal control blocks) */
 static uint8_t s_qa_store[BRIDGE_MANAGER_MAX_BRIDGES]
@@ -323,6 +331,38 @@ static void pump_task(void *arg)
 
 /* ---- build/teardown ----------------------------------------------------------- */
 
+/* The two RX queues and their set of a slot whose pump is not running: the
+ * teardown, and a build that stops after the allocations (a refused
+ * subscribe). Until 2026-10-29 the refused-subscribe path returned with the
+ * dynamic set still allocated (internal RAM, once per such row per start).
+ * A queue that still holds chunks stays in the set (pdFAIL): harmless, the
+ * set goes with it. */
+static void drop_queues(bm_bridge_t *br)
+{
+    if (br->qa == NULL)
+    {
+        return;
+    }
+
+    if (br->set != NULL)
+    {
+        xQueueRemoveFromSet(br->qa, br->set);
+        xQueueRemoveFromSet(br->qb, br->set);
+    }
+
+    vQueueDelete(br->qa);
+    vQueueDelete(br->qb);
+
+    if (br->set != NULL)
+    {
+        vQueueDelete(br->set);
+        br->set = NULL;
+    }
+
+    br->qa = NULL;
+    br->qb = NULL;
+}
+
 static void teardown_bridge(bm_bridge_t *br, int idx)
 {
     (void)idx;
@@ -341,16 +381,7 @@ static void teardown_bridge(bm_bridge_t *br, int idx)
 
     br->a->unsubscribe(br->qa);
     br->b->unsubscribe(br->qb);
-
-    if (br->qa != NULL)
-    {
-        xQueueRemoveFromSet(br->qa, br->set);
-        xQueueRemoveFromSet(br->qb, br->set);
-        vQueueDelete(br->qa);
-        vQueueDelete(br->qb);
-        vQueueDelete(br->set);
-    }
-
+    drop_queues(br);
     br->in_use = false;
 }
 
@@ -370,7 +401,25 @@ static esp_err_t build_bridge(int idx, const bm_bridge_cfg_t *cfg)
     if (br->a == NULL || br->b == NULL ||
         (br->tr == NULL && strcmp(cfg->translator, "raw") != 0))
     {
-        ESP_LOGE(TAG, "%s: endpoint/translator not registered", cfg->name);
+        /* a configuration gap, not a fault of this boot: the row names a
+           jack this composition never registered (a server or channel
+           renamed or removed after the row was written, the raw editor)
+           or a codec it does not carry. W, not E: the device runs on
+           without this bridge, and the health net must not latch a
+           boot_errors fault at every start for a row the user can see
+           and fix on the Connections page (the 2026-10-28 field report:
+           such a fault, count 22). */
+        const char *what = (br->tr == NULL && br->a != NULL &&
+                            br->b != NULL) ? "translator" : "endpoint";
+        const char *which = (br->a == NULL)   ? cfg->a
+                            : (br->b == NULL) ? cfg->b
+                                              : cfg->translator;
+
+        snprintf(s_reason[idx], sizeof(s_reason[idx]),
+                 "%s '%s' does not exist on this device", what, which);
+        ESP_LOGW(TAG, "%s: not built: %s (a server or channel renamed or "
+                 "removed? remove the row or add it back)", cfg->name,
+                 s_reason[idx]);
         return ESP_ERR_NOT_FOUND;
     }
 
@@ -409,10 +458,7 @@ static esp_err_t build_bridge(int idx, const bm_bridge_cfg_t *cfg)
     {
         ESP_LOGE(TAG, "%s: queue set alloc failed (internal RAM low)",
                  cfg->name);
-        vQueueDelete(br->qa);
-        vQueueDelete(br->qb);
-        br->qa = NULL;
-        br->qb = NULL;
+        drop_queues(br);
         return ESP_ERR_NO_MEM;
     }
 
@@ -433,7 +479,24 @@ static esp_err_t build_bridge(int idx, const bm_bridge_cfg_t *cfg)
 
     if (err != ESP_OK)
     {
-        ESP_LOGE(TAG, "%s: endpoint subscribe failed", cfg->name);
+        drop_queues(br);
+
+        if (err == ESP_ERR_INVALID_STATE)
+        {
+            /* a single-stream provider already feeding another bridge:
+               the BOOT apply cannot check the single-consumer rule before
+               the jacks register, so this bridge degrades alone (W, see
+               above) */
+            snprintf(s_reason[idx], sizeof(s_reason[idx]),
+                     "an endpoint is already used by another bridge");
+            ESP_LOGW(TAG, "%s: not built: %s", cfg->name, s_reason[idx]);
+        }
+        else
+        {
+            ESP_LOGE(TAG, "%s: endpoint subscribe failed (%s)", cfg->name,
+                     esp_err_to_name(err));
+        }
+
         return err;
     }
 
@@ -450,6 +513,8 @@ static esp_err_t build_bridge(int idx, const bm_bridge_cfg_t *cfg)
 
 esp_err_t bm_pump_start_all(void)
 {
+    memset(s_reason, 0, sizeof(s_reason));
+
     for (int i = 0; bm_core_bridge_cfg(i) != NULL; i++)
     {
         const bm_bridge_cfg_t *cfg = bm_core_bridge_cfg(i);
@@ -489,6 +554,19 @@ void bm_pump_stop_all(void)
     {
         teardown_bridge(&s_br[i], i);
     }
+}
+
+const char *bm_pump_reason(const char *bridge_name)
+{
+    for (int i = 0; bm_core_bridge_cfg(i) != NULL; i++)
+    {
+        if (strcmp(bm_core_bridge_cfg(i)->name, bridge_name) == 0)
+        {
+            return (s_reason[i][0] != '\0') ? s_reason[i] : NULL;
+        }
+    }
+
+    return NULL;
 }
 
 esp_err_t bm_pump_stats(const char *bridge_name, void *stats_out)

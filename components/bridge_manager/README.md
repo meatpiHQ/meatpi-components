@@ -55,30 +55,44 @@ one translator component. No combinatorial code.
 
 ## Settings (`"bridge_manager"`, version 1)
 
-`bridges`: bounded array (maxItems 4) of `{name, a, b, translator
-(default "raw"), enabled (default false)}`. `on_validate` (pure
-`bm_validate_bridges`) enforces: endpoint/translator names registered,
-`a != b`, unique bridge names, and the **single-consumer rule** (an
-endpoint may appear in at most ONE enabled bridge, because two bridges
-subscribing one endpoint would split its RX stream between their queues
-nondeterministically) UNLESS the endpoint declares `multi_consumer`
-(2026-07-18): a fan-out provider (obd, obd_chip copies every RX chunk to
-every subscriber queue and serializes TX) may sit in several enabled
-bridges. At the BOOT apply the rule is skipped entirely (capabilities are
-unknowable before the jacks register; boot values are the authored
-default or survived a strict runtime PUT; a single-stream provider
-refuses the second subscribe at build time and that bridge degrades
-alone). Defaults (2026-07-18, legacy parity): `br_obd = obd <-raw->
-ws_obd` (web-UI terminal), `br_tcp_obd = obd0 <-raw-> obd` (TCP:35000,
-the classic ELM327-WiFi-adapter convention 192.168.0.10:35000) and
-`br_usb_obd = usb_obd <-raw-> obd` (USB port-B serial ELM327), ALL
-enabled on the obd fan-out. A bridge naming endpoints its composition
-never registered degrades ALONE at start (logged, skipped): the baked
-default must not take other bridges down in endpoint-less compositions; a
-refused second subscribe degrades alone too; any other build failure
-(OOM) still aborts the start. Reboot-to-apply per the standard: the
-spec's "live re-apply" wording is superseded (spec defers to the
-standard).
+`bridges`: bounded array (maxItems `BRIDGE_MANAGER_MAX_BRIDGES`, 6) of
+`{name, a, b, translator (default "raw"), enabled (default false)}`.
+`on_validate` (pure `bm_validate_bridges`) enforces: translator names
+registered (a codec is a compile-time registration, so a name nobody
+registered is a typo), `a != b`, unique bridge names, and the
+**single-consumer rule** (an endpoint may appear in at most ONE enabled
+bridge, because two bridges subscribing one endpoint would split its RX
+stream between their queues nondeterministically) UNLESS the endpoint
+declares `multi_consumer` (2026-07-18): a fan-out provider (obd, obd_chip
+copies every RX chunk to every subscriber queue and serializes TX) may
+sit in several enabled bridges; a name not in the registry counts as
+single-stream. **Endpoint names are NOT required to be registered**
+(2026-10-29, the field report in `internal/unable-to-save-config`): the
+jacks of socket servers and WebSocket channels register at the NEXT boot
+under their configured names, so the Connections card creates a server
+and its bridge in ONE submit, and a row left behind by a server renamed
+or removed must not refuse every later save of the list (two such rows,
+`udp3333` and `udp23`, locked a device out of all its settings pages
+with "unknown endpoint" on every Submit, and latched a `boot_errors`
+fault at every start). At the BOOT apply the registry-dependent rules
+are skipped entirely (capabilities are unknowable before the jacks
+register; a single-stream provider refuses the second subscribe at build
+time and that bridge degrades alone). Defaults (2026-07-18, legacy
+parity): `br_obd = obd <-raw-> ws_obd` (web-UI terminal), `br_tcp_obd =
+obd0 <-raw-> obd` (TCP:35000, the classic ELM327-WiFi-adapter convention
+192.168.0.10:35000) and `br_usb_obd = usb_obd <-raw-> obd` (USB port-B
+serial ELM327), ALL enabled on the obd fan-out. A bridge naming an
+endpoint or translator its composition never registered degrades ALONE
+at start: one **W** line (not E: the health net must not latch a fault
+at every boot for a row the user can see and fix), the bridge skipped,
+`bridge_manager_reason(name)` keeps the sentence ("endpoint 'udp3333'
+does not exist on this device") for `/api/bridges` `reason`; the baked
+default must not take other bridges down in endpoint-less compositions;
+a refused second subscribe degrades alone too (its own reason, its two
+queues and their set released: until 2026-10-29 the set stayed
+allocated); any other build failure (OOM) still aborts the start.
+Reboot-to-apply per the standard: the spec's "live re-apply" wording is
+superseded (spec defers to the standard).
 
 ## Dependencies
 
@@ -97,18 +111,22 @@ the providers' `_start()` (their subscribe/send must be live).
 
 ## Tests
 
-- **Host (`host_test/`, 12 tests)**: config parse defaults + validation
-  (unknown endpoint/translator, `raw` always known, a==b, single-consumer
-  rule incl. the disabled-bridge exemption, duplicate names) and the
+- **Host (`host_test/`, 15 tests)**: config parse defaults + validation
+  (an unregistered endpoint accepted at runtime but still single-stream
+  for the rule, unknown translator refused, `raw` always known, a==b,
+  single-consumer rule incl. the disabled-bridge exemption, duplicate
+  names) and the
   **translator contract** driven by a line-splitter test codec:
   fragmentation reassembly across chunk boundaries, zero/one/many outputs
   per input, ctx isolation between directions. **Green on rpi001
-  2026-07-03.**
+  2026-10-29.**
 - **Target (`test_apps/`)**: stub-endpoint pump (ordered + lossless +
-  measured ceiling), overflow drop-and-count under a slow consumer, and a
+  measured ceiling), overflow drop-and-count under a slow consumer, a
   REAL end-to-end leg, TCP client ↔ socket_manager(`tcp0`) ↔ bridge ↔ echo
-  endpoint on the lwIP loopback. Builds clean; on-target run pending DUT
-  reconnection (2026-07-03).
+  endpoint on the lwIP loopback, the runtime PUT rules (`CFG-BAD`,
+  `CFG-NEW`), a row refused at start by a single-stream jack already in
+  use (`REASON`) and stop/start cycles that prove the refusal leaves no
+  queue set behind (`CYCLES`). Last green run: see `test_apps/README.md`.
 - **Benchmarks**: `BENCHMARKS.md` (spec §8 scenarios; scripts + methodology
   committed, numbers pending the DUT).
 
@@ -126,4 +144,7 @@ endpoint: glue registers both, settings enable it.
 `GET /api/bridges` (2026-07-05, served by the `api_http` glue: this component
 stays transport-free): configured entries from this component's settings
 + live counters from `bridge_manager_stats()`; `up:false` = configured but not
-running.
+running, with `reason` (2026-10-29, `bridge_manager_reason()`) when an
+enabled bridge did not build at the last start: the endpoint or translator
+its row names does not exist on this device, or an endpoint is already used
+by another bridge. The bench: `.\test.ps1 connections` (`CONNECTIONS PASS`).

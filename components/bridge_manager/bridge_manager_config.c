@@ -23,8 +23,9 @@
 /**
  * @file bridge_manager_config.c
  * @brief Pure config parsing + validation (host-tested): item parse with
- *        code defaults, registry-name checks, uniqueness, and the
- *        single-consumer rule.
+ *        code defaults, the translator-name check, uniqueness, and the
+ *        single-consumer rule. Endpoint names are not checked against
+ *        the registry (a jack may register at the next boot).
  */
 #include <stdio.h>
 #include <string.h>
@@ -137,21 +138,20 @@ esp_err_t bm_validate_bridges(const cJSON *bridges,
             return ESP_ERR_INVALID_ARG;
         }
 
-        /* ep_count/tr_count < 0 = the registry is not FINAL yet (the BOOT
-           apply: dynamic socket/WS jacks register at
-           bridge_endpoints_start, AFTER the settings pass), skip the
-           existence checks; build_bridge degrades an unknown name alone.
-           A runtime PUT sees the complete registry and stays strict. */
-        if (ep_count >= 0 &&
-            (!name_in_list(c->a, endpoint_names, ep_count) ||
-             !name_in_list(c->b, endpoint_names, ep_count)))
-        {
-            snprintf(err, err_len, "%s: unknown endpoint '%s'", c->name,
-                     name_in_list(c->a, endpoint_names, ep_count) ? c->b
-                                                                  : c->a);
-            return ESP_ERR_INVALID_ARG;
-        }
-
+        /* Endpoint names are NOT required to be registered (2026-10-29,
+           the field report in internal/unable-to-save-config): the jacks
+           of socket servers and WebSocket channels register at the NEXT
+           boot under their configured names, so the Connections card
+           creates a server and its bridge in ONE submit, and a row left
+           behind by a server renamed or removed must not refuse every
+           later save of the list (two such rows, udp3333 and udp23,
+           locked a device out of all its settings pages). A name the
+           composition never resolves degrades that bridge alone at start
+           (one W line, /api/bridges says why). The registry still feeds
+           the single-consumer rule below. Translators are compile-time
+           registrations, complete once the registry is final (tr_count
+           >= 0 = a runtime PUT): a codec name nobody registered is a
+           typo and is refused. */
         if (tr_count >= 0 && strcmp(c->translator, "raw") != 0 &&
             !name_in_list(c->translator, translator_names, tr_count))
         {
@@ -171,10 +171,12 @@ esp_err_t bm_validate_bridges(const cJSON *bridges,
             /* single-consumer rule: an endpoint's RX stream belongs to at
                most one ENABLED bridge, except fan-out providers
                (multi_consumer), whose every subscriber gets a full copy.
-               ep_count < 0 (BOOT apply) skips the rule entirely:
-               capabilities are unknowable before the jacks register, and
-               a genuinely single-stream provider refuses the second
-               subscribe at build time (degrades that bridge alone). */
+               A name not in the registry counts as single-stream (every
+               dynamic jack is). ep_count < 0 (BOOT apply) skips the rule
+               entirely: capabilities are unknowable before the jacks
+               register, and a genuinely single-stream provider refuses
+               the second subscribe at build time (degrades that bridge
+               alone). */
             if (ep_count >= 0 && cfg[i].enabled && c->enabled)
             {
                 const char *pairs[4] = { cfg[i].a, cfg[i].b, c->a, c->b };

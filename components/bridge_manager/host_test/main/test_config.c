@@ -47,14 +47,34 @@ static void test_valid_bridge_set_accepted(void)
           "\"translator\":\"slcan\",\"enabled\":true}]", err, sizeof(err)));
 }
 
-static void test_unknown_endpoint_rejected(void)
+/* A runtime PUT no longer requires endpoint names to be registered
+   (2026-10-29, the field report in internal/unable-to-save-config): the
+   Connections card creates a socket server or a WebSocket channel and its
+   bridge in ONE submit, and the jack registers at the next boot; a row
+   left behind by a server renamed or removed must not refuse every later
+   save of the list. build_bridge degrades a name that never resolves
+   alone (bridge_manager_reason says why). */
+static void test_unknown_endpoint_accepted_at_runtime(void)
+{
+    char err[96] = "";
+
+    TEST_ASSERT_EQUAL(ESP_OK, validate(
+        "[{\"name\":\"br0\",\"a\":\"obd\",\"b\":\"nope\",\"enabled\":true}]",
+        err, sizeof(err)));
+    TEST_ASSERT_EQUAL_STRING("", err);
+}
+
+/* an unregistered name counts as a single-stream jack (every dynamic jack
+   is): two ENABLED bridges on it are still refused */
+static void test_unknown_endpoint_single_consumer(void)
 {
     char err[96] = "";
 
     TEST_ASSERT_NOT_EQUAL(ESP_OK, validate(
-        "[{\"name\":\"br0\",\"a\":\"obd\",\"b\":\"nope\"}]",
+        "[{\"name\":\"br0\",\"a\":\"obd\",\"b\":\"nope\",\"enabled\":true},"
+         "{\"name\":\"br1\",\"a\":\"usb_obd\",\"b\":\"nope\",\"enabled\":true}]",
         err, sizeof(err)));
-    TEST_ASSERT_NOT_NULL(strstr(err, "nope"));
+    TEST_ASSERT_NOT_NULL(strstr(err, "two enabled"));
 }
 
 static void test_unknown_translator_rejected(void)
@@ -170,7 +190,8 @@ void run_config_tests(void)
 {
     RUN_TEST(test_parse_defaults_raw_disabled);
     RUN_TEST(test_valid_bridge_set_accepted);
-    RUN_TEST(test_unknown_endpoint_rejected);
+    RUN_TEST(test_unknown_endpoint_accepted_at_runtime);
+    RUN_TEST(test_unknown_endpoint_single_consumer);
     RUN_TEST(test_unknown_translator_rejected);
     RUN_TEST(test_raw_always_known);
     RUN_TEST(test_boot_lenient_mode);

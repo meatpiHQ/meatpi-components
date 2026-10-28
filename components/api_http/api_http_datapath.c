@@ -144,7 +144,19 @@ static esp_err_t bridges_handler(httpd_req_t *req)
         }
         else
         {
+            /* "reason" (2026-10-29): why an ENABLED bridge is not running,
+               the endpoint or translator its row names that this device
+               never registered (a server or channel renamed or removed
+               under it), so the Connections page can show the row to fix
+               instead of a bare "not up" */
+            const char *why = bridge_manager_reason(name);
+
             cJSON_AddBoolToObject(item, "up", false);
+
+            if (why != NULL)
+            {
+                cJSON_AddStringToObject(item, "reason", why);
+            }
         }
 
         cJSON_AddItemToArray(arr, item);

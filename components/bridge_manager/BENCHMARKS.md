@@ -15,6 +15,7 @@ Printed by the test app (`PUMP-CEILING chunks_per_s= kbytes_per_s=`).
 | chunks/s | KB/s | Commit | Date |
 |---|---|---|---|
 | **38,260** | **4,782 (~4.7 MB/s)** | working tree (data-path track), IDF v6.0.2 | 2026-07-03 |
+| **104,515** | **13,064 (~12.8 MB/s)** | working tree (issue-1023 branch; the raw coalescing, `dst` counting the chunks inside each batch), IDF v6.1 | 2026-10-29 |
 
 Context: a 100 %-loaded 500 kbit/s CAN bus is ~3–4 k frames/s, the pump has
 ~10× headroom over the spec's headline scenario before any real I/O cost.
@@ -96,6 +97,7 @@ Extend the test app with N src→dst bridges; assert per-bridge fairness.
 |---|---|---|---|---|
 | 1 | 37,975 (pump ceiling, leg 1) | - | 9f0a04a+wt | 2026-07-18 |
 | 2 | 37,079 | 18,539 (perfect 50/50, fair=1) | 9f0a04a+wt | 2026-07-18 |
+| 2 | 29,409 | 14,704 (perfect 50/50, fair=1) | working tree (issue-1023 branch; the offering loop yields every 1024 rounds so IDLE0 feeds the task watchdog, hence the lower offered load), IDF v6.1 | 2026-10-29 |
 
 2026-07-18 note: the settings schema caps `bridges` at **maxItems 4**, and
 the app reserves one slot for the tcp0↔echo E2E bridge, a 4-loaded-bridge
@@ -116,6 +118,7 @@ a 60 s overload here:
 | Heap HW before/after | Drops counted | Surviving-chunk latency bound | Commit | Date |
 |---|---|---|---|---|
 | 333,111 / 333,111 (leak 0 B) | 20,477,075 of 20,480,108 offered (exact: drops+delivered==sent) | queue drained ≤1.5 s after the consumer unblocked; pump alive throughout | 9f0a04a+wt | 2026-07-18 |
+| 333,655 / 333,655 (leak 0 B) | 20,456,025 of 20,480,090 offered (exact: drops+delivered==sent) | drained ≤1.5 s; pump alive throughout; six stop/start cycles with a refused row afterwards: internal heap delta -128 B (`CYCLES`) | working tree (issue-1023 branch), IDF v6.1 | 2026-10-29 |
 
 ## 5. Full-bus CAN case (headline number: bench, PCAN)
 

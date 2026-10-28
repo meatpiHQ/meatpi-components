@@ -98,8 +98,12 @@ static esp_err_t on_validate(const cJSON *settings, char *err, size_t err_len)
     /* BOOT apply (bridge_manager not started yet): the registry is not
        final, dynamic socket/WS jacks register at bridge_endpoints_start,
        between this pass and bridge_manager_start. Pass -1 = skip the
-       existence checks (cross-item rules still apply); build_bridge
-       degrades an unknown name alone. A runtime PUT is strict. */
+       registry-dependent rules (cross-item rules still apply). A runtime
+       PUT passes the registry for the translator check and the
+       single-consumer rule; endpoint names need not be registered (a
+       server or channel created in the same submit registers its jack at
+       the next boot; build_bridge degrades a name that never resolves
+       alone, with the reason on /api/bridges). */
     if (!bm_core_started())
     {
         return bm_validate_bridges(bridges, NULL, NULL, -1, NULL, -1,

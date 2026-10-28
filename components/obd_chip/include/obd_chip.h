@@ -278,6 +278,7 @@ typedef struct
     const char *source;    /* "builtin V2.3.24" or the file path          */
     bool        done_once; /* a run finished since boot (last_err valid)  */
     esp_err_t   last_err;
+    const char *chip;      /* the chip's VTVERS as last read ("" = none)  */
 } obd_chip_fw_status_t;
 
 void obd_chip_fw_status(obd_chip_fw_status_t *out);
@@ -322,6 +323,111 @@ typedef struct
  *  EXCLUSIVE meanwhile; the UART's baud is not changed. */
 esp_err_t obd_chip_autobaud(const char *stimulus, uint32_t window_ms,
                             obd_chip_autobaud_t *out);
+
+/* ---- the wire tools as one runner (obd_chip_probe.c, 2026-10-28) ------------
+ * The console command and the HTTP route share it: the console runs it in
+ * place and prints, the route starts it as a job and serves the result. */
+
+typedef enum
+{
+    OBD_PROBE_PROBE = 0, /* ATI + VTVERS at 2 Mbaud and 115200 (or one baud) */
+    OBD_PROBE_SCAN,      /* ATI at every standard baud                         */
+    OBD_PROBE_AUTO,      /* the hardware detector, then a listen where it says */
+    OBD_PROBE_LISTEN,    /* send nothing for N s at a baud                      */
+} obd_probe_kind_t;
+
+#define OBD_PROBE_TEXT  32
+#define OBD_PROBE_LINES 16
+#define OBD_PROBE_RAW   512
+#define OBD_PROBE_CMD   16 /* a stimulus, NUL included (VTDLMIC3422) */
+
+typedef struct
+{
+    int      baud;
+    char     cmd[OBD_PROBE_CMD];         /* "ATI", "VTVERS", "" = a listen  */
+    bool     prompt;
+    uint32_t bytes;                      /* every byte received             */
+    char     text[OBD_PROBE_TEXT + 1];   /* the first of them, printable    */
+    char     hex[3 * OBD_PROBE_TEXT + 1];
+} obd_probe_line_t;
+
+typedef struct
+{
+    bool             running;
+    bool             done;      /* a run finished since boot (err valid) */
+    obd_probe_kind_t kind;
+    int              baud;      /* the request's baud, 0 = the default   */
+    int              seconds;   /* the listen / detection window         */
+    char             cmd[OBD_PROBE_CMD]; /* the stimulus asked for, "" = ATI */
+    esp_err_t        err;
+    size_t           n_lines;
+    obd_probe_line_t lines[OBD_PROBE_LINES];
+    uint32_t         edges;     /* auto: RX edges seen                   */
+    int              measured;  /* auto: the bit time's baud, 0 = none   */
+    int              detected;  /* auto: the nearest standard baud, 0    */
+    uint8_t          raw[OBD_PROBE_RAW]; /* a listen's bytes             */
+    size_t           raw_len;   /* stored                                */
+    uint32_t         raw_total; /* received                              */
+    int              raw_baud;
+    bool             raw_prompt;
+    int64_t          at_us;     /* when the run started                  */
+} obd_probe_result_t;
+
+/** Run one tool in the caller's task (seconds: listen / auto window, 1..60;
+ *  baud 0 = the tool's default). Holds the chip EXCLUSIVE meanwhile. */
+esp_err_t obd_chip_probe_run(obd_probe_kind_t kind, int baud, int seconds,
+                             const char *cmd, obd_probe_result_t *out);
+
+/** The same on a one-shot task (the HTTP route); ESP_ERR_INVALID_STATE
+ *  while a run or a firmware update is in flight. */
+esp_err_t obd_chip_probe_start(obd_probe_kind_t kind, int baud, int seconds,
+                               const char *cmd);
+
+/** The job's result (a copy), running or done. */
+void obd_chip_probe_last(obd_probe_result_t *out);
+
+/** The standard bauds the scan walks and the detector names. */
+const int *obd_chip_probe_bauds(size_t *count);
+
+/** What the last bring-up saw at each baud it tried and got no prompt from
+ *  (issue #1023): up to two notes, none when the chip answered at once. */
+typedef struct
+{
+    int      baud;
+    uint32_t bytes;
+    bool     prompt;
+    char     hex[3 * 12 + 1];
+} obd_wire_note_t;
+
+size_t obd_chip_bringup_wire(obd_wire_note_t *out, size_t max);
+
+/* ---- the chip configuration report (obd_chip_report.c, 2026-10-28) -----------
+ * The read-only commands that show what the chip is and how it is set: ATI,
+ * AT@1, AT@2, VTVERS, ATRV, ATDPN, ATDP, ATCS, ATPPS (the programmable
+ * parameters: the EEPROM-backed settings the firmware provisions), STSLCS
+ * (sleep and wake), VTPPSWS (the power pin switch). One block a user copies
+ * into a bug report. Needs the chip up; about 1.5 s inside one transaction. */
+
+#define OBD_REPORT_ITEMS 11
+
+typedef struct
+{
+    char      cmd[12];
+    char      what[36];
+    char      resp[512];  /* the chip's lines, '\n' separated, prompt gone
+                             (ATPPS alone is 12 lines of 32 parameters)   */
+    esp_err_t err;        /* the request's verdict (a timeout keeps resp "") */
+} obd_chip_report_item_t;
+
+typedef struct
+{
+    size_t                 n;
+    obd_chip_report_item_t items[OBD_REPORT_ITEMS];
+    int64_t                at_us;
+} obd_chip_report_t;
+
+/** ESP_ERR_INVALID_STATE when the chip is down or an update runs. */
+esp_err_t obd_chip_report_run(obd_chip_report_t *out);
 
 /** `obd_chip` CLI; registered internally on the settings apply (§6b). */
 esp_err_t obd_chip_register_cli(void);

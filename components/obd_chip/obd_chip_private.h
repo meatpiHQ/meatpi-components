@@ -124,6 +124,9 @@ bool   obd_fw_line_is_end_marker(const char *line); /* "FFF1..." */
  *  V2.3.24). Pure, host-tested (issue #1023, 2026-10-28). */
 bool        obd_fw_version_is_current(const char *vtvers);
 const char *obd_fw_current_versions(void); /* "V2.3.22, V2.3.24", for logs */
+/* a version answer that is not the packaged one (a chip left on V2.3.22
+   under a packaged V2.3.24): accepted at start-up, flagged to the user */
+bool        obd_fw_version_is_outdated(const char *vtvers, const char *packaged);
 
 /** True when the last update run streamed an image and finalized it (the
  *  chip was hardware-reset: the caller brings it up again). */
@@ -156,6 +159,10 @@ void obd_core_fanout(const uint8_t *data, size_t len);
 
 /** True while EXCLUSIVE is held (RX task pauses fan-out; TX rejects). */
 bool obd_core_exclusive_held(void);
+
+/** The claim held now: 0 none, 1 command, 2 monitor, 3 exclusive
+ *  (obd_chip_claim.c; the stats name it). */
+int obd_core_claim_state(void);
 
 /* Async bring-up gate (2026-07-26): start() launches the wake/negotiate/
  * provision sequence on a one-shot task; wire-touching APIs wait here so
@@ -218,6 +225,10 @@ uint32_t  obd_cmd_protocol_saves(void); /* obd_chip_protocol_save() count */
 
 /* fw update helper (obd_chip_fw.c): VTVERS with update-mode semantics */
 esp_err_t obd_chip_get_fw_version_raw(char *buf, size_t buf_len);
+
+/** Remember the chip's VTVERS answer (the bring-up and the update gate
+ *  call it): GET /api/obd_chip shows it without a wire request. */
+void obd_chip_version_note(const char *vtvers);
 
 #ifdef __cplusplus
 }

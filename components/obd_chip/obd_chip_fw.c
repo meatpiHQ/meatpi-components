@@ -102,8 +102,8 @@ static void rx_note(uint8_t byte)
 }
 
 /** One W line about a command that got no prompt: silent, or N bytes with
- *  the first of them in hex (a 2 Mbaud burst read at 115200 shows up as
- *  one or two bytes of garbage every time the chip prints something). */
+ *  the first of them in hex (a chip at 2 Mbaud answers the garbled 115200
+ *  bytes with hundreds of bytes of garbage, read at the wrong speed). */
 static void wire_note(const char *what, int baud)
 {
     if (s_rx_total == 0)
@@ -170,9 +170,37 @@ bool obd_fw_last_flashed(void)
     return s_last_flashed;
 }
 
+/* the chip's VTVERS as last read by the bring-up or the update gate: the
+ * page shows it without a wire request (GET /api/obd_chip never touches
+ * the wire); "" until a chip answered */
+static char s_chip_version[32];
+
+void obd_chip_version_note(const char *vtvers)
+{
+    if (vtvers == NULL || strstr(vtvers, FW_TARGET_ID) == NULL)
+    {
+        return;
+    }
+
+    size_t n = 0;
+
+    for (const char *p = vtvers; *p != '\0' && n + 1 < sizeof(s_chip_version); p++)
+    {
+        if (*p == '\r' || *p == '\n' || *p == '>')
+        {
+            break;
+        }
+
+        s_chip_version[n++] = *p;
+    }
+
+    s_chip_version[n] = '\0';
+}
+
 void obd_chip_fw_status(obd_chip_fw_status_t *out)
 {
     *out = s_status;
+    out->chip = s_chip_version;
 
     if (out->source == NULL)
     {
@@ -437,6 +465,7 @@ static esp_err_t fw_update_run(const char *fw_buf, size_t fw_len,
 
     if (normal)
     {
+        obd_chip_version_note(resp);
         ESP_LOGI(TAG, "chip reports: %s", resp);
 
         bool current = packaged ? obd_fw_version_is_current(resp)

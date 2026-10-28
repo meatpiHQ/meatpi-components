@@ -694,6 +694,46 @@ no long dash. Mock: `__mockPreset.sd` = `mounted` (default) | `exfat` |
 Design record: `test-reports/logs/sdformat_20261025/` (the override over a
 copy of the preview, the shots, the review page).
 
+### OBD chip and CAN self-test cards (2026-10-28, issue #1023)
+
+System > Maintenance ends with two cards from the on-demand chunk
+`web/diag.js` (`PAGES.__diag.cards()`, loaded by `PAGES.system` into
+`#diag-cards` after the Maintenance card; `internal/TASK_issue_1023_phase2.md`).
+Over `GET /api/obd_chip`, `POST /api/obd_chip/update`, `POST/GET
+/api/obd_chip/probe`, `GET /api/obd_chip/report`, `POST/GET
+/api/can/selftest` (`components/HTTP_API.md`):
+
+- **OBD chip**: the state row (ready at N baud or not up, the chip's
+  firmware from the cached VTVERS, the packaged image, the last rewrite),
+  refreshed every 3 s; a warn banner while the chip is down, with what
+  the bring-up received at each speed (`bringup.wire`), or while the chip's
+  firmware is older than the packaged one (`fw.outdated`: a chip left on
+  V2.3.22 is accepted at start-up and flagged here, with both versions
+  named, until it is rewritten; Ali, 2026-10-28); a help line
+  saying what the button does; the rewrite progress bar while
+  `fw.update` runs; "Read the chip configuration" (the report route into a
+  read-only block with Select all, the text a bug report needs: identity,
+  voltage, protocol, the programmable parameters, the sleep settings;
+  409 = the chip is down, shown as a banner); the wire tools folded
+  (Speed, Send word, Listen seconds; Probe, Scan all speeds, Detect
+  speed, Listen; every byte the chip sent as text and hex in a console
+  box kept in localStorage `wican-diag-wire`; the chip's own log lines
+  from the ring under it); the action at the right edge, **Rewrite the
+  chip firmware**, behind `confirmModal` (Cancel / Continue) and then
+  `force:true`: it rewrites the chip whatever version it reports, the
+  recovery for a chip stuck in its download mode or answering nothing.
+- **CAN self-test**: tiles (bus state and bitrate, the chip), one Run
+  button that POSTs and polls, then the three steps with their timings,
+  the verdict line, the exchange lines, and a table of what failed when
+  it did. The exchange: the chip asks `010C` to 7DF, the WiCAN's own CAN
+  controller answers as ECU 7EF with 1726 rpm, so one run proves both
+  transceivers, both directions and the wiring, with or without a
+  vehicle (`live:true` says a vehicle was answering too). A refusal
+  (the chip down, the bus off) is shown as not run with its reason.
+
+Probe: `probe_diag.mjs` (plain and `--min`; the mock presets a chip up,
+a chip down with wire notes, a chip left on V2.3.22, and a self-test pass).
+
 ## The new-car bar (2026-10-26)
 
 Ali set a device up on the simulator (two standard PIDs chosen), took it to
@@ -743,7 +783,8 @@ Manager) and `monitor.js` (CAN Monitor, 2026-09-07), `setup.js` (Quick Setup, 20
 and `backup.js` (the configuration backup cards of System > Maintenance,
 2026-10-11; a chunk that is not a page: the System page loads it and
 appends its cards), `fwupdate.js` (the Updates card of System > Firmware
-update, 2026-10-18, the same pattern).
+update, 2026-10-18, the same pattern), `diag.js` (the OBD chip and CAN
+self-test cards of System > Maintenance, 2026-10-28, the same pattern).
 
 ## Firmware updates (2026-10-18, `internal/TASK_fw_update.md`)
 

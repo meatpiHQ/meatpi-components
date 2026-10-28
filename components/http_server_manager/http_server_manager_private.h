@@ -52,8 +52,10 @@ extern "C" {
  *               getter (http_server_manager_capacity, WICAN CAPS http_routes,
  *               /api/status health.caps): one more route (/api/j1939) and
  *               /ws/log was refused
- * 144 leaves 31 free; the boot report latches a fault below 2. */
-#define HSM_MAX_BUFFERED_URIS 144
+ * 144 leaves 31 free; the boot report latches a fault below 2.
+ *   2026-10-28  138 of 144 with the chip firmware route (issue #1023); the
+ *               wire tools and the CAN self-test add four more: 160. */
+#define HSM_MAX_BUFFERED_URIS 160
 #define HSM_PATH_MAX 192
 
 /* ---- match (http_server_manager_match.c, pure / host-testable) ------------ */

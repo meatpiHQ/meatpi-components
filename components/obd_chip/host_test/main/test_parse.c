@@ -182,6 +182,19 @@ void test_fw_version_policy(void)
     /* the log string names both; the packaged V2.3.24 is among them */
     TEST_ASSERT_NOT_NULL(strstr(obd_fw_current_versions(), "V2.3.22"));
     TEST_ASSERT_NOT_NULL(strstr(obd_fw_current_versions(), "V2.3.24"));
+    /* the warning (Ali, 2026-10-28): a chip that answered with a version
+       other than the packaged one is outdated (V2.3.22 is accepted at
+       start-up, the user is told to rewrite it); the packaged version,
+       silence, '?' and an empty packaged name are not */
+    TEST_ASSERT_TRUE(obd_fw_version_is_outdated("MIC3624 V2.3.22", "V2.3.24"));
+    TEST_ASSERT_TRUE(obd_fw_version_is_outdated("MIC3624 V2.3.22\r\r>", "V2.3.24"));
+    TEST_ASSERT_TRUE(obd_fw_version_is_outdated("MIC3624 V2.3.18", "V2.3.24"));
+    TEST_ASSERT_FALSE(obd_fw_version_is_outdated("MIC3624 V2.3.24", "V2.3.24"));
+    TEST_ASSERT_FALSE(obd_fw_version_is_outdated("MIC3624 V2.3.24\r\r>", "V2.3.24"));
+    TEST_ASSERT_FALSE(obd_fw_version_is_outdated("?", "V2.3.24"));
+    TEST_ASSERT_FALSE(obd_fw_version_is_outdated("", "V2.3.24"));
+    TEST_ASSERT_FALSE(obd_fw_version_is_outdated(NULL, "V2.3.24"));
+    TEST_ASSERT_FALSE(obd_fw_version_is_outdated("MIC3624 V2.3.22", ""));
 }
 
 /* ---- EEPROM guard (obd_chip_guard.h) ------------------------------------------ */

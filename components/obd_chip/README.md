@@ -103,6 +103,10 @@ zero-copy only with numbers.
 | `obd_chip_probe(cmd, baud, timeout, rx, len, &got, &prompt)` | (2026-10-28, issue #1023) bare-wire diagnostic: send one command at a baud and return every byte that came back, prompt or not; EXCLUSIVE meanwhile, the UART goes back to its baud. The `obd_chip probe` command. |
 | `obd_chip_active_baud()` | The baud the chip answered at during bring-up (0 = never). |
 | `obd_chip_register_cli()` | The `obd_chip` command (standard §6b, self-registered on settings apply behind `cli`). |
+| `obd_chip_probe_run(kind, baud, seconds, cmd, out)` / `obd_chip_probe_start(...)` / `obd_chip_probe_last(out)` / `obd_chip_probe_bauds(&n)` | (2026-10-28) the wire tools as one runner (`obd_chip_probe.c`): probe (ATI + VTVERS at 2 Mbaud and 115200 or one baud), scan (ATI at every standard baud), auto (a CR + ATI at the UART's baud or at `baud`, the hardware bit-time measurement, then a listen where it says), listen (send nothing). `cmd` (NULL or "" = ATI; one printable word under `OBD_PROBE_CMD`) replaces ATI in the first three: `VTDLMIC3422` asks a chip whose application is gone for its bootloader, and a probe with it skips VTVERS. The console runs it in place and prints; `POST/GET /api/obd_chip/probe` start it as a job and serve the result. |
+| `obd_chip_report_run(out)` | (2026-10-28, Ali) the chip configuration report: ATI, AT@1, AT@2, VTVERS, ATRV, ATDPN, ATDP, ATCS, ATPPS (the EEPROM-backed programmable parameters), STSLCS (sleep and wake), VTPPSWS, in one transaction through the request engine. `obd_chip report`, `GET /api/obd_chip/report`, the page's copyable block. |
+| `obd_chip_bringup_wire(out, max)` | (2026-10-28) what the last bring-up received at each baud it tried and got no prompt from (bytes + the first of them in hex): the banner of the page and `obd_chip` on a chip that is down. `obd_chip_fw_status_t.chip` = the chip's VTVERS as last read, for the same page. |
+| `obd_chip_claim/release`, `obd_chip_txn_begin/end` | The claim model, in `obd_chip_claim.c` since 2026-10-28 (the 700-line rule; `obd_core_claim_state()` names the claim for the stats). |
 
 ## Async bring-up (2026-07-26: Ali's boot-time ruling)
 
@@ -242,18 +246,27 @@ bauds aborts (`no answer on the wire ... use force to override`), and
 `force` overrides even that. The bring-up logs the same wire note when
 `ATI` gets no prompt. Bumping the packaged version = new `EMBED_TXTFILES`
 path + `OBD_FW_BUILTIN_VERSION` in `obd_chip_fw.c` + the current list in
-`obd_chip_parse.c`.
+`obd_chip_parse.c`. A chip left on V2.3.22 is accepted (the start-up update
+leaves it alone) but reported outdated (`obd_fw_version_is_outdated`,
+host-tested; `fw.outdated` on `GET /api/obd_chip`; the bring-up's warning
+line; the `warning:` line of `obd_chip`; the Maintenance card's banner):
+the user rewrites it from the card or with `obd_chip update --force` (Ali,
+2026-10-28).
 
 **From the console and the API (2026-10-28):** `obd_chip` (state, the
-chip's `VTVERS`, the packaged image, the job), `obd_chip update [--force]
+chip's `VTVERS` with a warning when it is older than the packaged image,
+the packaged image, the job), `obd_chip update [--force]
 [--file <path>]` and `POST /api/obd_chip/update {"force","path"}` run the
 update as a job (`obd_chip_firmware_update_start`); `--force` reflashes a
 chip that is already current: the recovery for a chip stuck in its
 bootloader. `obd_chip probe [baud]` sends `ATI` and `VTVERS` on the bare
 wire at 2000000 and 115200 and prints every byte that came back, prompt or
 not; `obd_chip probe scan` tries `ATI` at every standard baud (9600 to
-3000000); `obd_chip probe auto [seconds]` lets the S3's UART hardware
-measure the bit time of whatever the chip sends (`obd_chip_autobaud()`
+3000000); `obd_chip probe auto [seconds] [baud]` lets the S3's UART hardware
+measure the bit time of whatever the chip sends; any other word on the line
+(`obd_chip probe scan VTDLMIC3422`, `obd_chip probe auto 15 VTDLMIC3422
+115200`) replaces `ATI` as the stimulus, for a chip whose application is
+gone and whose bootloader answers only the download-mode entry (`obd_chip_autobaud()`
 over IDF's `uart_detect_bitrate_start/stop`: the shortest low and high
 pulse on RX, `clk * 2 / (low + high)`; a CR and `ATI` go out at the current
 baud first so a quiet chip has something to answer, a chip talking on its
@@ -381,8 +394,12 @@ trigger a reprovision-every-boot loop (`obd_parse_feed`, host-tested).
 ## Dependencies
 
 `esp_driver_uart`, `esp_driver_gpio`, `settings_manager`, `log_manager`,
-`filesystem` (fw file reads): all private. Init order: after the core
+`filesystem` (fw file reads), `cmdline_manager` (the `obd_chip` command,
+2026-10-28), `http_server_manager` + `esp_http_server` (the own routes),
+`obd_gate`, `event_manager`: all private. Init order: after the core
 managers; `settings_manager_start()` before `obd_chip_start()`.
+`can_selftest` (above this component) uses the public request, send,
+subscribe and transaction API for the CAN self-test.
 
 ## Memory footprint (estimated: measure before release)
 
@@ -391,10 +408,17 @@ managers; `settings_manager_start()` before `obd_chip_start()`.
 | Internal | UART driver RX 8 KB + TX 4 KB (`// internal: DMA`), RX-task stack 16 KB (`// internal: UART driver path`), TX mutex/TCB | ~29 KB |
 | PSRAM `.bss` | subscriber registry, cmd-engine queue (64×130 B) + accumulator (16 KB since 2026-09-08: a 4 KB ISO-TP response is 8–12.5 KB of hex; the 4 KB accumulator truncated it) + bare_probe accumulator (16 KB), config | ~41 KB |
 | PSRAM heap | fw image buffer during update only | ~500 KB transient |
+| PSRAM `.bss` (2026-10-28) | the wire tools' result (job + console copies, ~3 KB each), the HTTP copy, the report (11 x 512 B, console + HTTP copies), the bring-up's two wire notes | ~22 KB (estimated) |
+| Internal heap, transient (2026-10-28) | the update job's and the wire tools' task stacks (4 KB each, UART driver path), one at a time | 4 KB while one runs |
+| PSRAM heap, transient (2026-10-28) | the bodies of `GET /api/obd_chip/probe` (6 KB) and `/report` (6 KB) | per request |
 
 ## Tests
 
-- **Host (`host_test/`, 16 tests):** pure framing, prompt splits at every
+- **Bench (2026-10-28):** `.\test.ps1 obdfw` (the firmware update paths:
+  `OBD FW PASS` 25 checks) and `.\test.ps1 canselftest` (the wire tools,
+  the report and the CAN self-test routes on the real chip and the bench
+  bus: `CAN SELFTEST PASS`), rows in the app repo's TESTING.md.
+- **Host (`host_test/`, 17 tests):** pure framing, prompt splits at every
   chunk boundary, echo strip, post-prompt bytes not consumed, noise
   interleave, **meatpi's real 36-line proprietary-PID log replayed at chunk
   sizes 1…4096**, overflow flagging, error/monitor classification, fw-file

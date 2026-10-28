@@ -58,6 +58,9 @@ extern const uint8_t backup_gz_end[]   asm("_binary_backup_js_gz_end");
 /* the firmware updates card chunk (web/fwupdate.js, 2026-10-18) */
 extern const uint8_t fwu_gz_start[] asm("_binary_fwupdate_js_gz_start");
 extern const uint8_t fwu_gz_end[]   asm("_binary_fwupdate_js_gz_end");
+/* the OBD chip + CAN self-test cards chunk (web/diag.js, 2026-10-28) */
+extern const uint8_t diag_gz_start[] asm("_binary_diag_js_gz_start");
+extern const uint8_t diag_gz_end[]   asm("_binary_diag_js_gz_end");
 
 static const http_asset_t ASSETS[] =
 {
@@ -87,6 +90,9 @@ static const http_asset_t ASSETS[] =
       .content_encoding = "gzip" },
     { .uri = "/ui/fwupdate.js", .content_type = "application/javascript",
       .data_start = fwu_gz_start, .data_end = fwu_gz_end,
+      .content_encoding = "gzip" },
+    { .uri = "/ui/diag.js", .content_type = "application/javascript",
+      .data_start = diag_gz_start, .data_end = diag_gz_end,
       .content_encoding = "gzip" },
     /* Optional UI extras the page installs on demand (2026-09-06): the
      * dashboard's chart library (uPlot, ~50 KB) is uploaded through

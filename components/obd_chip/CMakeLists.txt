@@ -1,5 +1,8 @@
 idf_component_register(
     SRCS "obd_chip.c"
+         "obd_chip_claim.c"
+         "obd_chip_probe.c"
+         "obd_chip_report.c"
          "obd_chip_bringup.c"
          "obd_chip_events.c"
          "obd_chip_uart.c"

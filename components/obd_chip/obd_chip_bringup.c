@@ -46,11 +46,33 @@ static const char *TAG = "obd_chip"; /* one TAG per component (§10) */
 
 /* What the last bare probe saw, prompt or not (issue #1023, 2026-10-28: a
  * chip that is alive but not in ELM mode was reported as silent; a few
- * bytes tell a bootloader or a reboot loop from a dead wire, and a 2 Mbaud
- * burst read at 115200 shows up as one or two bytes of garbage). */
+ * bytes tell a bootloader or a reboot loop from a dead wire; a chip at
+ * 2 Mbaud answers the garbled 115200 bytes with garbage of its own, read
+ * at the wrong speed: hundreds of bytes and no prompt). */
 static size_t  s_probe_rx;
 static uint8_t s_probe_head[12];
 static size_t  s_probe_head_len;
+
+/* the verdict per baud the negotiation tried and got no prompt from, kept
+ * for GET /api/obd_chip ("bringup":{"wire":[...]}): the page's banner says
+ * what the chip did instead of "not responding" (slot 0 = 2 Mbaud, 1 =
+ * 115200; baud 0 = not tried or answered at once) */
+static obd_wire_note_t s_wire[2];
+
+size_t obd_chip_bringup_wire(obd_wire_note_t *out, size_t max)
+{
+    size_t n = 0;
+
+    for (size_t i = 0; i < 2 && n < max; i++)
+    {
+        if (s_wire[i].baud != 0)
+        {
+            out[n++] = s_wire[i];
+        }
+    }
+
+    return n;
+}
 
 /** One request->response on the bare UART (RX task not running yet). */
 static bool bare_probe(const char *cmd, char *resp, size_t resp_len,
@@ -102,6 +124,13 @@ static bool bare_probe(const char *cmd, char *resp, size_t resp_len,
  *  chip that answers at another baud or in another mode (issue #1023). */
 static void wire_note(const char *what, int baud)
 {
+    obd_wire_note_t *slot = &s_wire[(baud == OBD_CHIP_BAUD) ? 0 : 1];
+
+    slot->baud = baud;
+    slot->bytes = (uint32_t)s_probe_rx;
+    slot->prompt = false;
+    slot->hex[0] = '\0';
+
     if (s_probe_rx == 0)
     {
         ESP_LOGW(TAG, "%s at %d baud: nothing received", what, baud);
@@ -117,6 +146,7 @@ static void wire_note(const char *what, int baud)
                               (i > 0) ? " " : "", s_probe_head[i]);
     }
 
+    strlcpy(slot->hex, hex, sizeof(slot->hex));
     ESP_LOGW(TAG, "%s at %d baud: %u byte(s) but no prompt (%s%s)", what,
              baud, (unsigned)s_probe_rx, hex,
              (s_probe_rx > s_probe_head_len) ? " ..." : "");
@@ -255,6 +285,7 @@ esp_err_t obd_bringup_run(int *active_baud)
     const obd_config_t *cfg = obd_settings_config();
     char resp[64];
 
+    memset(s_wire, 0, sizeof(s_wire)); /* this round's verdicts only */
     obd_pin_wake();
     vTaskDelay(pdMS_TO_TICKS(300));
 
@@ -342,9 +373,29 @@ esp_err_t obd_bringup_run(int *active_baud)
     }
 
     /* legacy elm327_powerpin_commands: fw >= V2.3.22 must run with the
-       power-pin switch config at 10 */
-    if (bare_probe("VTVERS\r", resp, sizeof(resp), 1500) &&
-        strstr(resp, "V2.3.22") != NULL &&
+       power-pin switch config at 10 (v4.52p: V2.3.22 or V2.3.24; until
+       2026-10-28 only a .22 chip got the check). The version is kept for
+       GET /api/obd_chip on the way. */
+    bool have_ver = bare_probe("VTVERS\r", resp, sizeof(resp), 1500);
+
+    if (have_ver)
+    {
+        obd_chip_version_note(resp);
+
+        if (obd_fw_version_is_outdated(resp, obd_chip_builtin_fw_version()))
+        {
+            /* accepted (left alone by the start-up update) but older than
+               the packaged image: the card on System > Maintenance and
+               `obd_chip` say the same (Ali, 2026-10-28) */
+            ESP_LOGW(TAG, "chip firmware %.*s is older than the packaged %s: "
+                     "rewrite it from System > Maintenance or with "
+                     "obd_chip update --force",
+                     (int)strcspn(resp, "\r\n>"), resp,
+                     obd_chip_builtin_fw_version());
+        }
+    }
+
+    if (have_ver && obd_fw_version_is_current(resp) &&
         bare_probe("VTPPSWS\r", resp, sizeof(resp), 1500) &&
         strstr(resp, "10") == NULL)
     {

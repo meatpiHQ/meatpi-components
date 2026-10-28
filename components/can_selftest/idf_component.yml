@@ -1,0 +1,3 @@
+## can_selftest has no managed dependencies of its own (cJSON is not used;
+## can_manager and obd_chip are sibling components).
+dependencies: {}

@@ -60,13 +60,8 @@ typedef struct
     uint32_t      dropped_logged;
 } obd_sub_t;
 
-typedef enum
-{
-    CLAIM_NONE = 0,
-    CLAIM_COMMAND,
-    CLAIM_MONITOR,
-    CLAIM_EXCLUSIVE,
-} claim_state_t;
+/* the claim model (COMMAND / MONITOR / EXCLUSIVE, the transaction hold)
+ * lives in obd_chip_claim.c since 2026-10-28 (700-line rule) */
 
 /* external-client activity clock (obd_chip_client_touch): the last time a
  * bridge (TCP/BLE/USB/WS app) wrote to the chip; 0 = never. Read by
@@ -85,22 +80,11 @@ static uint16_t s_rx_max_chunk;
 static uint32_t s_guard_rewrites;
 static uint32_t s_guard_blocked;
 
-/* multi-command transaction hold (obd_chip_txn_begin): the task that owns
- * the COMMAND claim across several requests. A request from THIS task
- * neither claims nor releases (the transaction owns the claim). s_lock-
- * protected. s_txn_start_us arms a fail-open steal so a transaction whose
- * end() never ran (e.g. an httpd worker recycled mid-request) cannot brick
- * the chip for other requesters: mirrors obd_gate's max-hold expiry. */
-static TaskHandle_t s_txn_task;
-static int64_t      s_txn_start_us;
-#define OBD_TXN_MAX_US (12 * 1000 * 1000) /* > worst UDS transaction */
-
 /* registry + state: PSRAM .bss (§2) */
 static obd_sub_t s_subs[OBD_MAX_SUBSCRIBERS] EXT_RAM_BSS_ATTR;
 static size_t s_sub_count;
 
-static portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED; /* internal: spinlock */
-static volatile claim_state_t s_claim = CLAIM_NONE;
+static portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED; /* internal: spinlock (the registry) */
 
 static bool s_inited;
 static bool s_started;
@@ -258,143 +242,7 @@ uint32_t obd_chip_dropped(QueueHandle_t q)
     return 0;
 }
 
-/* ---- claims -------------------------------------------------------------------- */
-
-esp_err_t obd_core_claim(int type, uint32_t timeout_ms)
-{
-    TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(timeout_ms);
-    TaskHandle_t self = xTaskGetCurrentTaskHandle();
-
-    while (true)
-    {
-        bool granted = false;
-        bool monitor_blocks = false;
-
-        portENTER_CRITICAL(&s_lock);
-
-        /* a request from the transaction owner already holds the claim */
-        if (type == CLAIM_COMMAND && s_txn_task != NULL &&
-            s_txn_task == self)
-        {
-            granted = true;
-        }
-        /* a transaction whose end() never ran can't brick the chip: steal
-           the COMMAND claim after the max hold (fail-open, like obd_gate) */
-        else if (s_claim == CLAIM_COMMAND && s_txn_task != NULL &&
-                 (esp_timer_get_time() - s_txn_start_us) > OBD_TXN_MAX_US)
-        {
-            s_txn_task = NULL;
-            s_claim = (claim_state_t)type;
-            granted = true;
-        }
-        else if (s_claim == CLAIM_NONE)
-        {
-            s_claim = (claim_state_t)type;
-            granted = true;
-        }
-        else if (s_claim == CLAIM_MONITOR && type == CLAIM_COMMAND)
-        {
-            monitor_blocks = true;
-        }
-
-        portEXIT_CRITICAL(&s_lock);
-
-        if (granted)
-        {
-            return ESP_OK;
-        }
-
-        /* v1 policy "manual": a held MONITOR is never auto-interrupted,
-           commands fail fast so callers can surface "bus busy" (task §5) */
-        if (monitor_blocks)
-        {
-            return ESP_ERR_INVALID_STATE;
-        }
-
-        if (xTaskGetTickCount() >= deadline)
-        {
-            return (s_claim == CLAIM_EXCLUSIVE) ? ESP_ERR_INVALID_STATE
-                                                : ESP_ERR_TIMEOUT;
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(10));
-    }
-}
-
-void obd_core_release(void)
-{
-    portENTER_CRITICAL(&s_lock);
-
-    /* a nested request inside a held transaction does NOT release: the
-       transaction owns the claim until obd_chip_txn_end() */
-    if (s_txn_task == NULL || s_txn_task != xTaskGetCurrentTaskHandle())
-    {
-        s_claim = CLAIM_NONE;
-    }
-
-    portEXIT_CRITICAL(&s_lock);
-}
-
-bool obd_core_exclusive_held(void)
-{
-    return s_claim == CLAIM_EXCLUSIVE;
-}
-
-esp_err_t obd_chip_claim(obd_claim_t type, TickType_t timeout)
-{
-    return obd_core_claim((int)type + 1 /* CLAIM_NONE offset */,
-                          timeout * portTICK_PERIOD_MS);
-}
-
-esp_err_t obd_chip_release(void)
-{
-    obd_core_release();
-    return ESP_OK;
-}
-
-esp_err_t obd_chip_txn_begin(TickType_t timeout)
-{
-    TaskHandle_t self = xTaskGetCurrentTaskHandle();
-    bool already;
-
-    portENTER_CRITICAL(&s_lock);
-    already = (s_txn_task == self);
-    portEXIT_CRITICAL(&s_lock);
-
-    if (already)
-    {
-        return ESP_ERR_INVALID_STATE; /* one transaction per task */
-    }
-
-    /* take the COMMAND claim as a normal requester (no txn owner yet), then
-       become the owner: nested obd_chip_request() calls skip claim/release */
-    esp_err_t err = obd_core_claim(CLAIM_COMMAND,
-                                   timeout * portTICK_PERIOD_MS);
-
-    if (err != ESP_OK)
-    {
-        return err;
-    }
-
-    portENTER_CRITICAL(&s_lock);
-    s_txn_task = self;
-    s_txn_start_us = esp_timer_get_time();
-    portEXIT_CRITICAL(&s_lock);
-    return ESP_OK;
-}
-
-void obd_chip_txn_end(void)
-{
-    portENTER_CRITICAL(&s_lock);
-
-    if (s_txn_task == xTaskGetCurrentTaskHandle())
-    {
-        s_txn_task = NULL;
-        s_claim = CLAIM_NONE;
-    }
-
-    portEXIT_CRITICAL(&s_lock);
-}
+/* ---- claims: obd_chip_claim.c --------------------------------------------- */
 
 void obd_core_guard_note(obd_guard_t v, const char *cmd, size_t len)
 {
@@ -522,7 +370,9 @@ esp_err_t obd_chip_get_stats(obd_chip_stats_t *out)
 
     memset(out, 0, sizeof(*out));
     out->ready = obd_chip_ready();
-    out->claim = CLAIMS[(s_claim <= CLAIM_EXCLUSIVE) ? s_claim : 0];
+    int claim = obd_core_claim_state();
+
+    out->claim = CLAIMS[(claim >= 0 && claim <= 3) ? claim : 0];
     out->rx_bytes = s_rx_bytes;
     out->rx_chunks = s_rx_chunks;
     out->rx_max_chunk = s_rx_max_chunk;

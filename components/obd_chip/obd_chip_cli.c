@@ -25,21 +25,25 @@
  * @brief The `obd_chip` console command (standard §6b, registered from the
  *        settings apply behind `cli`, 2026-10-28): the chip's state and
  *        firmware version, the packaged image and its policy, a forced
- *        update as a background job, and a bare-wire probe for a chip that
- *        will not come up. Issue #1023: a stuck MIC3624 could neither be
- *        diagnosed nor reflashed from the device; the web UI shows none of
- *        this on purpose (meatpi 2026-09-07: chip knobs stay API/CLI only).
+ *        update as a background job, and the wire tools (probe, scan, the
+ *        hardware baud detection, listen) for a chip that will not come up.
+ *        Issue #1023: a stuck MIC3624 could neither be diagnosed nor
+ *        reflashed from the device. The tools run through the one runner
+ *        in obd_chip_probe.c that the HTTP route shares; this file prints.
  */
 #include "obd_chip.h"
 
 #include <stdlib.h>
 #include <string.h>
 
+#include "esp_attr.h"
 #include "cmdline_manager.h"
 
 #include "obd_chip_private.h"
 
-#define CLI_PROBE_BYTES 32
+/* the runner's result: ~3 KB, PSRAM (§2); the console runs one tool at a
+ * time (the dispatcher serializes commands) */
+static obd_probe_result_t s_result EXT_RAM_BSS_ATTR;
 
 static void print_status(void)
 {
@@ -63,11 +67,40 @@ static void print_status(void)
                  ESP_OK)
     {
         cmdline_printf("version: %s\n", ver);
+
+        if (obd_fw_version_is_outdated(ver, obd_chip_builtin_fw_version()))
+        {
+            cmdline_printf("warning: the chip's firmware is older than the "
+                           "packaged %s: obd_chip update --force rewrites it "
+                           "(or System > Maintenance)\n",
+                           obd_chip_builtin_fw_version());
+        }
     }
     else
     {
         cmdline_printf("version: - (%s)\n",
                        st.ready ? "no answer" : "chip not up; see: obd_chip probe");
+    }
+
+    if (!st.ready)
+    {
+        obd_wire_note_t wire[2];
+        size_t n = obd_chip_bringup_wire(wire, 2);
+
+        for (size_t i = 0; i < n; i++)
+        {
+            if (wire[i].bytes == 0)
+            {
+                cmdline_printf("bring-up: at %d baud nothing received\n",
+                               wire[i].baud);
+            }
+            else
+            {
+                cmdline_printf("bring-up: at %d baud %lu byte(s), no prompt "
+                               "(%s)\n", wire[i].baud,
+                               (unsigned long)wire[i].bytes, wire[i].hex);
+            }
+        }
     }
 
     cmdline_printf("builtin: %s (auto_update %s; current: %s)\n",
@@ -129,135 +162,53 @@ static int do_update(int argc, char **argv)
         return 1;
     }
 
-    cmdline_printf("update started from %s%s: about 90 s, the chip is busy "
+    cmdline_printf("update started from %s%s: about 20 s, the chip is busy "
                    "meanwhile; `obd_chip` shows the progress\n",
                    (path != NULL) ? path : "the packaged image",
                    force ? " (forced)" : "");
     return 0;
 }
 
-static void print_probe(int baud, const char *cmd, const uint8_t *rx,
-                        size_t stored, size_t got, bool prompt)
+/* ---- the wire tools: run, then print the result ------------------------------ */
+
+static void print_lines(const obd_probe_result_t *r)
 {
-    char text[CLI_PROBE_BYTES + 1];
-    char hex[3 * CLI_PROBE_BYTES + 1];
-    size_t n = 0;
-
-    for (size_t i = 0; i < stored; i++)
+    for (size_t i = 0; i < r->n_lines; i++)
     {
-        text[i] = (rx[i] >= 32 && rx[i] < 127) ? (char)rx[i] : '.';
-        n += (size_t)snprintf(hex + n, sizeof(hex) - n, "%s%02X",
-                              (i > 0) ? " " : "", rx[i]);
-    }
+        const obd_probe_line_t *ln = &r->lines[i];
 
-    text[stored] = '\0';
-    cmdline_printf("  %7d %-7s prompt=%d %3u B '%s'%s %s\n", baud, cmd,
-                   prompt ? 1 : 0, (unsigned)got, text,
-                   (got > stored) ? " ..." : "", hex);
-}
-
-/** `obd_chip probe scan`: ATI at every standard baud (Ali's question on
- *  issue #1023: a chip stuck at a baud nobody expects). Prints the bauds
- *  that returned anything at all and names the first one with a prompt. */
-/* the standard bauds: the scan walks them, the detector names the nearest */
-static const int BAUD_TABLE[] = { 9600, 19200, 38400, 57600, 115200, 230400,
-                                  460800, 500000, 921600, 1000000, 1500000,
-                                  2000000, 3000000 };
-#define BAUD_TABLE_N (sizeof(BAUD_TABLE) / sizeof(BAUD_TABLE[0]))
-
-static int do_probe_scan(void)
-{
-    int found = 0;
-
-    cmdline_printf("baud scan with ATI (about %u s, the chip is busy):\n",
-                   (unsigned)BAUD_TABLE_N);
-
-    for (size_t b = 0; b < BAUD_TABLE_N; b++)
-    {
-        uint8_t rx[CLI_PROBE_BYTES];
-        size_t got = 0;
-        bool prompt = false;
-
-        /* a lone CR first: a chip mid-line answers the next command clean */
-        (void)obd_chip_probe("\r", BAUD_TABLE[b], 150, rx, sizeof(rx), &got,
-                             &prompt);
-
-        esp_err_t err = obd_chip_probe("ATI\r", BAUD_TABLE[b], 600, rx,
-                                       sizeof(rx), &got, &prompt);
-
-        if (err != ESP_OK)
+        if (ln->bytes == 0)
         {
-            cmdline_printf("  %7d ATI     %s\n", BAUD_TABLE[b],
-                           esp_err_to_name(err));
+            cmdline_printf("  %7d %-7s silent\n", ln->baud, ln->cmd);
             continue;
         }
 
-        if (got > 0)
-        {
-            print_probe(BAUD_TABLE[b], "ATI", rx,
-                        (got < sizeof(rx)) ? got : sizeof(rx), got, prompt);
-        }
-
-        if (prompt && found == 0)
-        {
-            found = BAUD_TABLE[b];
-        }
+        cmdline_printf("  %7d %-7s prompt=%d %3lu B '%s'%s %s\n", ln->baud,
+                       ln->cmd, ln->prompt ? 1 : 0, (unsigned long)ln->bytes,
+                       ln->text, (ln->bytes > strlen(ln->text)) ? " ..." : "",
+                       ln->hex);
     }
-
-    if (found != 0)
-    {
-        cmdline_printf("prompt at %d baud\n", found);
-    }
-    else
-    {
-        cmdline_printf("no prompt at any baud (bytes above, if any, are "
-                       "what arrived)\n");
-    }
-
-    return 0;
 }
 
-/** `obd_chip listen <seconds> [baud]`: send nothing, print what the chip
- *  sends on its own (issue #1023: a chip filling the RX ring with about
- *  two bytes every 5 s while the ESP is silent; at the right baud that is
- *  a banner, a reboot loop, a bootloader prompt, readable as text). */
-static int listen_at(int baud, int seconds)
+static void print_raw(const obd_probe_result_t *r)
 {
-    static uint8_t rx[512]; /* a few seconds of a trickle, or one banner */
-    size_t got = 0;
-    bool prompt = false;
-
-    cmdline_printf("listening %d s at %d baud, sending nothing:\n", seconds,
-                   (baud > 0) ? baud : obd_uart_get_baud());
-
-    esp_err_t err = obd_chip_probe("", baud, (uint32_t)seconds * 1000u, rx,
-                                   sizeof(rx), &got, &prompt);
-
-    if (err != ESP_OK)
+    if (r->raw_total == 0)
     {
-        cmdline_printf("  %s\n", esp_err_to_name(err));
-        return 1;
+        cmdline_printf("  nothing received at %d baud\n", r->raw_baud);
+        return;
     }
 
-    if (got == 0)
+    for (size_t off = 0; off < r->raw_len; off += OBD_PROBE_TEXT)
     {
-        cmdline_printf("  nothing received\n");
-        return 0;
-    }
-
-    size_t stored = (got < sizeof(rx)) ? got : sizeof(rx);
-    char text[CLI_PROBE_BYTES + 1];
-
-    for (size_t off = 0; off < stored; off += CLI_PROBE_BYTES)
-    {
-        size_t n = ((stored - off) < CLI_PROBE_BYTES) ? (stored - off)
-                                                     : CLI_PROBE_BYTES;
-        char hex[3 * CLI_PROBE_BYTES + 1];
+        size_t n = ((r->raw_len - off) < OBD_PROBE_TEXT) ? (r->raw_len - off)
+                                                          : OBD_PROBE_TEXT;
+        char text[OBD_PROBE_TEXT + 1];
+        char hex[3 * OBD_PROBE_TEXT + 1];
         size_t h = 0;
 
         for (size_t i = 0; i < n; i++)
         {
-            uint8_t c = rx[off + i];
+            uint8_t c = r->raw[off + i];
 
             text[i] = (c >= 32 && c < 127) ? (char)c : '.';
             h += (size_t)snprintf(hex + h, sizeof(hex) - h, "%s%02X",
@@ -268,10 +219,142 @@ static int listen_at(int baud, int seconds)
         cmdline_printf("  '%s' %s\n", text, hex);
     }
 
-    cmdline_printf("  %u byte(s) in %d s%s%s\n", (unsigned)got, seconds,
-                   prompt ? ", ended at a prompt" : "",
-                   (got > stored) ? " (first 512 shown)" : "");
-    return 0;
+    cmdline_printf("  %lu byte(s) at %d baud%s%s\n", (unsigned long)r->raw_total,
+                   r->raw_baud, r->raw_prompt ? ", ended at a prompt" : "",
+                   (r->raw_total > r->raw_len) ? " (first 512 shown)" : "");
+}
+
+static int run_tool(obd_probe_kind_t kind, int baud, int seconds,
+                    const char *cmd)
+{
+    esp_err_t err = obd_chip_probe_run(kind, baud, seconds, cmd, &s_result);
+
+    if (err == ESP_ERR_INVALID_STATE)
+    {
+        cmdline_printf("the chip is busy (a firmware update or a tool "
+                       "running, or the bring-up)\n");
+        return 1;
+    }
+
+    if (err != ESP_OK && err != ESP_ERR_NO_MEM)
+    {
+        cmdline_printf("  %s\n", esp_err_to_name(err));
+    }
+
+    return (err == ESP_OK) ? 0 : 1;
+}
+
+#define PROBE_USAGE "obd_chip probe [baud] [scan|auto [seconds]] [command]"
+
+/* A number is a baud (above 60) or, after auto, the window in seconds
+ * (1..60); any other word is the stimulus sent instead of ATI (VTDLMIC3422
+ * asks a chip whose application is gone for its bootloader, 2026-10-28). */
+static int do_probe(int argc, char **argv)
+{
+    obd_probe_kind_t kind = OBD_PROBE_PROBE;
+    int baud = 0;
+    int seconds = 10;
+    const char *cmd = NULL;
+
+    for (int i = 2; i < argc; i++)
+    {
+        if (strcmp(argv[i], "scan") == 0)
+        {
+            kind = OBD_PROBE_SCAN;
+        }
+        else if (strcmp(argv[i], "auto") == 0)
+        {
+            kind = OBD_PROBE_AUTO;
+        }
+        else if (argv[i][0] >= '0' && argv[i][0] <= '9')
+        {
+            int n = atoi(argv[i]);
+
+            if (kind == OBD_PROBE_AUTO && n >= 1 && n <= 60)
+            {
+                seconds = n;
+            }
+            else if (n > 60)
+            {
+                baud = n;
+            }
+            else
+            {
+                cmdline_printf("usage: %s\n", PROBE_USAGE);
+                return 1;
+            }
+        }
+        else if (cmd == NULL && strlen(argv[i]) < OBD_PROBE_CMD)
+        {
+            cmd = argv[i];
+        }
+        else
+        {
+            cmdline_printf("usage: %s\n", PROBE_USAGE);
+            return 1;
+        }
+    }
+
+    const char *stim = (cmd != NULL) ? cmd : "ATI";
+
+    if (kind == OBD_PROBE_SCAN)
+    {
+        size_t n;
+
+        (void)obd_chip_probe_bauds(&n);
+        cmdline_printf("baud scan with %s (about %u s, the chip is busy):\n",
+                       stim, (unsigned)n);
+        int rc = run_tool(OBD_PROBE_SCAN, 0, 0, cmd);
+
+        print_lines(&s_result);
+
+        if (s_result.detected != 0)
+        {
+            cmdline_printf("prompt at %d baud\n", s_result.detected);
+        }
+        else
+        {
+            cmdline_printf("no prompt at any baud\n");
+        }
+
+        return rc;
+    }
+
+    if (kind == OBD_PROBE_AUTO)
+    {
+        cmdline_printf("baud detection: CR + %s at %d baud, then %d s of "
+                       "measuring the RX edges:\n", stim,
+                       (baud > 0) ? baud : obd_uart_get_baud(), seconds);
+        int rc = run_tool(OBD_PROBE_AUTO, baud, seconds, cmd);
+
+        if (s_result.edges == 0)
+        {
+            cmdline_printf("  no edges: the chip sent nothing in %d s\n", seconds);
+            return rc;
+        }
+
+        cmdline_printf("  %lu edges, bit time says %d baud\n",
+                       (unsigned long)s_result.edges, s_result.measured);
+
+        if (s_result.detected == 0)
+        {
+            cmdline_printf("  no standard baud within 8 %% of %d\n",
+                           s_result.measured);
+            return rc;
+        }
+
+        cmdline_printf("  nearest standard baud: %d; listening there 6 s:\n",
+                       s_result.detected);
+        print_raw(&s_result);
+        return rc;
+    }
+
+    cmdline_printf("bare-wire probe with %s%s (the chip is busy for a few "
+                   "seconds):\n", stim, (cmd == NULL) ? " and VTVERS" : "");
+    int rc = run_tool(OBD_PROBE_PROBE, baud, 0, cmd);
+
+    print_lines(&s_result);
+    return rc;
 }
 
 static int do_listen(int argc, char **argv)
@@ -285,146 +368,65 @@ static int do_listen(int argc, char **argv)
         return 1;
     }
 
-    return listen_at(baud, seconds);
+    cmdline_printf("listening %d s at %d baud, sending nothing:\n", seconds,
+                   (baud > 0) ? baud : obd_uart_get_baud());
+    int rc = run_tool(OBD_PROBE_LISTEN, baud, seconds, NULL);
+
+    print_raw(&s_result);
+    return rc;
 }
 
-/** The table entry within 8 % of @p baud, else 0. */
-static int nearest_standard_baud(int baud)
+/** `obd_chip report`: the chip configuration block for a bug report. */
+static int do_report(void)
 {
-    for (size_t i = 0; baud > 0 && i < BAUD_TABLE_N; i++)
+    static obd_chip_report_t s_report EXT_RAM_BSS_ATTR;
+    esp_err_t err = obd_chip_report_run(&s_report);
+
+    if (err == ESP_ERR_INVALID_STATE)
     {
-        int d = baud - BAUD_TABLE[i];
-
-        if (d < 0)
-        {
-            d = -d;
-        }
-
-        if ((int64_t)d * 100 <= (int64_t)BAUD_TABLE[i] * 8)
-        {
-            return BAUD_TABLE[i];
-        }
-    }
-
-    return 0;
-}
-
-/** `obd_chip probe auto [seconds]`: the UART hardware measures the bit
- *  time of whatever the chip sends (Ali, issue #1023: a chip stuck at a
- *  baud nobody tries). A CR and ATI go out at the current baud first so a
- *  quiet chip has something to answer; a chip talking on its own (a reboot
- *  loop's banner) is measured as it comes. Then a listen at that baud. */
-static int do_probe_auto(int argc, char **argv)
-{
-    int seconds = (argc > 3) ? atoi(argv[3]) : 10;
-    obd_chip_autobaud_t ab;
-
-    if (seconds <= 0 || seconds > 60)
-    {
-        cmdline_printf("usage: obd_chip probe auto [seconds 1..60]\n");
+        cmdline_printf("the chip is not up or an update runs: see obd_chip probe\n");
         return 1;
     }
-
-    cmdline_printf("baud detection: CR + ATI at %d baud, then %d s of "
-                   "measuring the RX edges:\n", obd_uart_get_baud(), seconds);
-
-    esp_err_t err = obd_chip_autobaud("\rATI\r", (uint32_t)seconds * 1000u, &ab);
 
     if (err != ESP_OK)
     {
-        cmdline_printf("  %s\n", esp_err_to_name(err));
+        cmdline_printf("could not read the chip (%s)\n", esp_err_to_name(err));
         return 1;
     }
 
-    if (ab.edges == 0)
+    cmdline_printf("--- OBD chip configuration ---\n");
+
+    for (size_t i = 0; i < s_report.n; i++)
     {
-        cmdline_printf("  no edges: the chip sent nothing in %d s\n", seconds);
-        return 0;
-    }
+        const obd_chip_report_item_t *it = &s_report.items[i];
 
-    cmdline_printf("  %lu edges, ticks at %lu Hz: low %lu high %lu pos %lu "
-                   "neg %lu\n", (unsigned long)ab.edges,
-                   (unsigned long)ab.clk_hz, (unsigned long)ab.low,
-                   (unsigned long)ab.high, (unsigned long)ab.pos,
-                   (unsigned long)ab.neg);
-    cmdline_printf("  bit time says %d baud (pulses), %d (positive edges), "
-                   "%d (negative edges)\n", ab.baud_lh, ab.baud_pos,
-                   ab.baud_neg);
-
-    int near = nearest_standard_baud(ab.baud_lh);
-
-    if (near == 0)
-    {
-        cmdline_printf("  no standard baud within 8 %% of %d\n", ab.baud_lh);
-        return 0;
-    }
-
-    cmdline_printf("  nearest standard baud: %d\n", near);
-    return listen_at(near, 6);
-}
-
-static int do_probe(int argc, char **argv)
-{
-    const int both[2] = { OBD_CHIP_BAUD, OBD_CHIP_FALLBACK_BAUD };
-    const char *cmds[2] = { "ATI", "VTVERS" };
-    int bauds[2];
-    size_t n_bauds = 2;
-
-    if (argc > 2 && strcmp(argv[2], "scan") == 0)
-    {
-        return do_probe_scan();
-    }
-
-    if (argc > 2 && strcmp(argv[2], "auto") == 0)
-    {
-        return do_probe_auto(argc, argv);
-    }
-
-    if (argc > 2)
-    {
-        bauds[0] = atoi(argv[2]);
-        n_bauds = 1;
-
-        if (bauds[0] <= 0)
+        if (it->err != ESP_OK)
         {
-            cmdline_printf("usage: obd_chip probe [baud|scan|auto [seconds]]\n");
-            return 1;
+            cmdline_printf("%-8s %s: %s\n", it->cmd, it->what,
+                           esp_err_to_name(it->err));
         }
-    }
-    else
-    {
-        bauds[0] = both[0];
-        bauds[1] = both[1];
-    }
-
-    cmdline_printf("bare-wire probe (the chip is busy for a few seconds):\n");
-
-    for (size_t b = 0; b < n_bauds; b++)
-    {
-        for (size_t c = 0; c < 2; c++)
+        else if (strchr(it->resp, '\n') == NULL)
         {
-            uint8_t rx[CLI_PROBE_BYTES];
-            size_t got = 0;
-            bool prompt = false;
-            char line[16];
+            cmdline_printf("%-8s %s: %s\n", it->cmd, it->what, it->resp);
+        }
+        else
+        {
+            cmdline_printf("%-8s %s:\n", it->cmd, it->what);
 
-            snprintf(line, sizeof(line), "%s\r", cmds[c]);
+            const char *p = it->resp;
 
-            esp_err_t err = obd_chip_probe(line, bauds[b], 1500, rx,
-                                           sizeof(rx), &got, &prompt);
-
-            if (err != ESP_OK)
+            while (*p != '\0')
             {
-                cmdline_printf("  %7d %-7s %s\n", bauds[b], cmds[c],
-                               esp_err_to_name(err));
-                continue;
-            }
+                const char *e = strchr(p, '\n');
+                size_t len = (e != NULL) ? (size_t)(e - p) : strlen(p);
 
-            print_probe(bauds[b], cmds[c], rx,
-                        (got < sizeof(rx)) ? got : sizeof(rx), got, prompt);
+                cmdline_printf("         %.*s\n", (int)len, p);
+                p += len + ((e != NULL) ? 1 : 0);
+            }
         }
     }
 
+    cmdline_printf("--- end ---\n");
     return 0;
 }
 
@@ -441,6 +443,11 @@ static int cmd_obd_chip(int argc, char **argv)
         return do_update(argc, argv);
     }
 
+    if (strcmp(argv[1], "report") == 0)
+    {
+        return do_report();
+    }
+
     if (strcmp(argv[1], "probe") == 0)
     {
         return do_probe(argc, argv);
@@ -451,9 +458,10 @@ static int cmd_obd_chip(int argc, char **argv)
         return do_listen(argc, argv);
     }
 
-    cmdline_printf("usage: obd_chip | obd_chip update [--force] [--file "
-                   "<path>] | obd_chip probe [baud|scan|auto [seconds]] | "
-                   "obd_chip listen <seconds> [baud]\n");
+    cmdline_printf("usage: obd_chip | obd_chip report | obd_chip update "
+                   "[--force] [--file <path>] | obd_chip probe [baud] "
+                   "[scan|auto [seconds]] [command] | obd_chip listen "
+                   "<seconds> [baud]\n");
     return 1;
 }
 
@@ -462,11 +470,11 @@ esp_err_t obd_chip_register_cli(void)
     static const esp_console_cmd_t CMD =
     {
         .command = "obd_chip",
-        .help = "OBD chip (MIC3624): state, firmware version, update, probe, "
-                "listen",
-        .hint = "Usage: obd_chip | obd_chip update [--force] [--file <path>] "
-                "| obd_chip probe [baud|scan|auto [seconds]] | obd_chip "
-                "listen <seconds> [baud]",
+        .help = "OBD chip (MIC3624): state, configuration report, firmware "
+                "update, probe, listen",
+        .hint = "Usage: obd_chip | obd_chip report | obd_chip update [--force] "
+                "[--file <path>] | obd_chip probe [baud] [scan|auto [seconds]] [command] | "
+                "obd_chip listen <seconds> [baud]",
         .func = cmd_obd_chip,
     };
 

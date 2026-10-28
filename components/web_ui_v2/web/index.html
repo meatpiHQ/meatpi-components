@@ -4676,6 +4676,17 @@ PAGES.system=async(view,sub)=>{
     try{bk.append(...await PAGES.__backup.cards());}
     catch(e){bk.append(banner("crit","alert","Backup: "+e.message));}
   })();
+  /* the OBD chip and the CAN self-test cards (issue #1023, 2026-10-28): from
+     the on-demand chunk web/diag.js, after the Maintenance card and ahead of
+     the SD card and factory reset cards */
+  const dg=h("div",{id:"diag-cards",style:"display:flex;flex-direction:column;gap:16px"});
+  paneMaint.append(dg);
+  (async()=>{
+    if(!PAGES.__diag)await loadScript("/ui/diag.js");
+    if(!PAGES.__diag){dg.append(banner("crit","alert","The diagnostics cards could not be loaded (/ui/diag.js). Reload the page, or update the firmware."));return;}
+    try{dg.append(...await PAGES.__diag.cards());}
+    catch(e){dg.append(banner("crit","alert","Diagnostics: "+e.message));}
+  })();
   try{paneCerts.append(await certsCard());}
   catch(e){paneCerts.append(banner("crit","alert","Certificates: "+e.message));}
   /* firmware / OTA */

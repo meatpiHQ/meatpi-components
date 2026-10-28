@@ -17,7 +17,12 @@ with no Kconfig choice (only the IPv6 hook has one). The CMakeLists adds
 NULL source and from `ip4_route_src()` with a bound one) land in
 `__wrap_ip4_route_src_hook`: the destination is matched against the table
 (longest prefix wins; the netif must be up with its link up) and anything
-else falls through to `__real_ip4_route_src_hook`, IDF's hook. The same
+else falls through to `__real_ip4_route_src_hook`, IDF's hook. A
+`-u __wrap_ip4_route_src_hook` beside the wrap makes the linker take the
+wrapper out of this static library at its first scan: without it a link
+that nothing else ties to the component (an on-target test app, which
+builds every component in the tree) applied the wrap and ended in an
+undefined reference to the wrapper (found 2026-10-29). The same
 pattern wraps `esp_panic_handler` (restart_tracker) and
 `twai_hal_read_rx_fifo` (can_manager); re-check it at every IDF bump.
 

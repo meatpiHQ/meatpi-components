@@ -31,7 +31,8 @@
  * The hook: IDF's lwIP port defines `LWIP_HOOK_IP4_ROUTE_SRC` as its own
  * `ip4_route_src_hook` (source-address routing; a strong symbol with no
  * Kconfig choice). This component wraps that symbol at link time
- * (`-Wl,--wrap=ip4_route_src_hook`, the restart_tracker / can_manager
+ * (`-Wl,--wrap=ip4_route_src_hook` with a `-u` on the wrapper so every
+ * link takes it out of this library, the restart_tracker / can_manager
  * pattern): lwIP's calls land in `__wrap_ip4_route_src_hook`, which
  * matches the destination against the table (longest prefix wins, the
  * netif must be up with its link up) and otherwise falls through to IDF's

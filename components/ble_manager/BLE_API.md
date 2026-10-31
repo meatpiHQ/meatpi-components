@@ -446,7 +446,24 @@ The full WiCAN command line (same registry as UART/WebSocket; commands in
 `extended` | `both`, default `legacy`): the defaults are byte-for-byte
 the 4.2 behaviour, so a stored v3 config migrates by filling the
 defaults. `GET /api/ble` mirrors both settings and the live link's
-`phy_tx`/`phy_rx`. `/api/settings/ble_http`: `enabled` (true), `cli`.
+`phy_tx`/`phy_rx`.
+
+Since descriptor v5 (2026-10-31) the **Bluetooth memory profile**
+`ble_ram_profile` (`lean` default | `full` | `custom`) sizes the ESP32-S3
+controller at the next boot (the README's "Bluetooth memory profile"
+section has the numbers). What an app sees: under `lean` the device runs
+**one central at a time** (it always did: advertising stops on connect),
+the **legacy advertising set on the 1M PHY only** (`advertising` other
+than `legacy` and `phy` other than `1m` are refused with a reason), and
+never scans; nothing in the GATT contract, the pairing or the pipes
+changes. `full` keeps the BLE 5 options (2M and coded PHY, extended
+advertising) at the Full memory cost; `custom` reads `ble_max_act`
+(2..10), `ble_acl_tx_bufs` (0..12) and `ble_scan_cache` (0 = scanning off,
+or 10..1000); the controller's BLE 5 feature set itself is never a knob
+(the host is built with it). A v4 device that had chosen a BLE 5 option
+migrates to `full`; every other device takes `lean`. `GET /api/ble` echoes
+`ram_profile` and, once the stack is up, the sizing applied (`ram`).
+`/api/settings/ble_http`: `enabled` (true), `cli`.
 `/api/settings/j2534_server`: `enabled` (false) gates the J2534 channel,
 `exclusive`, `allow_lan` (the TCP listener only; `allow_reflash` was removed
 2026-10-27). `/api/settings/interface_manager`

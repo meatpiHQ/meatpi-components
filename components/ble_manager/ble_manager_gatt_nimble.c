@@ -48,6 +48,7 @@
 
 #include "esp_attr.h"
 #include "esp_bt.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -60,6 +61,7 @@
 #include "services/gatt/ble_svc_gatt.h"
 
 #include "ble_manager.h"
+#include "ble_manager_ctrl.h"
 #include "ble_manager_private.h"
 
 /* NimBLE's NVS-backed key store: the config store module registers the
@@ -391,7 +393,49 @@ esp_err_t blm_gatt_stack_up(const char *dev_name)
 
     blm_tx_init(); /* the indication semaphores, once */
 
-    esp_err_t err = nimble_port_init(); /* controller + host */
+    /* the controller sized by the memory profile (v5): nimble_port_init()
+       builds BT_CONTROLLER_INIT_CONFIG_DEFAULT() itself and refuses a
+       controller that is already up, so its three steps run here
+       (nimble_port.c: init, enable, then the host) with the same unwinding */
+    esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
+
+    blm_ctrl_configure(&bt_cfg);
+
+    /* the internal heap at each step of the bring-up: the memory profile
+       moves the first number, the rest is the stack's structure (the
+       controller and host task stacks are internal by IDF's design) */
+    size_t ram[6];
+
+    ram[0] = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+
+    esp_err_t err = esp_bt_controller_init(&bt_cfg);
+
+    ram[1] = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+
+    if (err == ESP_OK)
+    {
+        err = esp_bt_controller_enable(ESP_BT_MODE_BLE);
+
+        if (err != ESP_OK)
+        {
+            (void)esp_bt_controller_deinit();
+        }
+    }
+
+    ram[2] = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+
+    if (err == ESP_OK)
+    {
+        err = esp_nimble_init(); /* the host; nimble_port_deinit() undoes all three */
+
+        if (err != ESP_OK)
+        {
+            (void)esp_bt_controller_disable();
+            (void)esp_bt_controller_deinit();
+        }
+    }
+
+    ram[3] = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
 
     if (err != ESP_OK)
     {
@@ -455,7 +499,14 @@ esp_err_t blm_gatt_stack_up(const char *dev_name)
 
     esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT, lvl);
 
+    ram[4] = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
     nimble_port_freertos_init(host_task);
+    ram[5] = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    ESP_LOGI(TAG, "internal RAM per step: controller init %d, enable %d, host init %d, "
+             "services %d, host task %d B (%u free before)",
+             (int)ram[0] - (int)ram[1], (int)ram[1] - (int)ram[2],
+             (int)ram[2] - (int)ram[3], (int)ram[3] - (int)ram[4],
+             (int)ram[4] - (int)ram[5], (unsigned)ram[0]);
     return ESP_OK;
 }
 

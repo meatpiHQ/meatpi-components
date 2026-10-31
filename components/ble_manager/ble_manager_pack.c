@@ -185,3 +185,91 @@ uint8_t blm_channel_pick_out(uint8_t allowed, bool sub_notify, bool sub_indicate
        a CCCD (custom indicate) - the behaviour every client saw so far */
     return BLE_MANAGER_CH_OUT_INDICATE;
 }
+
+/* ---- Bluetooth memory profile (v5) ------------------------------------------------- */
+
+blm_ram_profile_t blm_ident_ram_profile(const char *word)
+{
+    if (word != NULL && strcmp(word, "full") == 0)
+    {
+        return BLM_RAM_FULL;
+    }
+
+    if (word != NULL && strcmp(word, "custom") == 0)
+    {
+        return BLM_RAM_CUSTOM;
+    }
+
+    return BLM_RAM_LEAN;                /* "lean" and anything unknown: the default */
+}
+
+const char *blm_ident_ram_profile_word(blm_ram_profile_t profile)
+{
+    switch (profile)
+    {
+        case BLM_RAM_FULL:   return "full";
+        case BLM_RAM_CUSTOM: return "custom";
+        case BLM_RAM_LEAN:
+        default:             return "lean";
+    }
+}
+
+static int clamp_int(int v, int lo, int hi)
+{
+    return v < lo ? lo : (v > hi ? hi : v);
+}
+
+void blm_ident_ram_config(blm_ram_profile_t profile, const blm_ram_cfg_t *full,
+                          const blm_ram_cfg_t *custom, blm_ram_cfg_t *out)
+{
+    switch (profile)
+    {
+        case BLM_RAM_LEAN:
+            out->max_act = BLM_RAM_LEAN_MAX_ACT;
+            out->acl_tx_bufs = BLM_RAM_LEAN_ACL_TX_BUFS;
+            out->scan_cache = BLM_RAM_LEAN_SCAN_CACHE;
+            out->ble5 = full->ble5; /* the host's feature set, never a knob */
+            break;
+
+        case BLM_RAM_CUSTOM:
+            /* the controller's own ranges (esp_bt.h); 0 keeps the scan
+               feature off, anything else is a usable cache */
+            out->max_act = (uint8_t)clamp_int(custom->max_act, 2, 10);
+            out->acl_tx_bufs = (uint8_t)clamp_int(custom->acl_tx_bufs, 0, 12);
+            out->scan_cache = custom->scan_cache == 0
+                ? 0 : (uint16_t)clamp_int(custom->scan_cache, 10, 1000);
+            out->ble5 = full->ble5;
+            break;
+
+        case BLM_RAM_FULL:
+        default:
+            *out = *full;
+            break;
+    }
+}
+
+const char *blm_ident_ram_check(blm_ram_profile_t profile, uint8_t adv_mode,
+                                uint8_t phy_mask, int scan_cache)
+{
+    if (profile == BLM_RAM_LEAN &&
+        (adv_mode != BLM_ADV_LEGACY || phy_mask != BLM_PHY_1M))
+    {
+        return "the Lean Bluetooth memory profile runs legacy advertising on "
+               "the 1M PHY: set advertising to legacy and phy to 1m, or choose "
+               "the Full profile";
+    }
+
+    if (profile == BLM_RAM_CUSTOM && scan_cache > 0 && scan_cache < 10)
+    {
+        return "ble_scan_cache is 0 (scanning off) or 10 to 1000 entries";
+    }
+
+    return NULL;
+}
+
+const char *blm_ident_ram_migrated(uint8_t adv_mode, uint8_t phy_mask)
+{
+    /* a device that chose a BLE 5 option on v4 keeps it (Full); the 4.2
+       defaults take the schema default (Lean) through the fill-missing rule */
+    return (adv_mode != BLM_ADV_LEGACY || phy_mask != BLM_PHY_1M) ? "full" : NULL;
+}

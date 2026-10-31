@@ -93,6 +93,63 @@ uint8_t blm_ident_phy_mask(const char *phy);
 /** `advertising` setting -> BLM_ADV_* ("legacy"/unknown = legacy). */
 uint8_t blm_ident_adv_mode(const char *mode);
 
+/* ---- Bluetooth memory profile (v5, 2026-10-31) --------------------------------
+   The ESP32-S3 controller's sizing is RUNTIME (esp_bt_controller_config_t,
+   read once at esp_bt_controller_init), so a setting trades internal RAM
+   for Bluetooth features at the next boot, the way wifi_ram_profile does
+   for the WiFi driver. The mapping below is pure (host-tested); the two
+   GATT backends apply it through blm_ctrl_configure() (ble_manager_ctrl.h). */
+
+typedef enum
+{
+    BLM_RAM_FULL = 0,   /* the build's Kconfig values: today's behaviour     */
+    BLM_RAM_LEAN,       /* one phone, legacy advertising on 1M, no scanning  */
+    BLM_RAM_CUSTOM,     /* the three knobs                                   */
+} blm_ram_profile_t;
+
+typedef struct
+{
+    uint8_t  max_act;      /* controller activities = connections + advertising
+                              instances, 828 B each; 2..10                    */
+    uint8_t  acl_tx_bufs;  /* static ACL TX buffers, about 270 B each; 0..12  */
+    uint16_t scan_cache;   /* scan duplicate cache entries, 10..1000; 0 = the
+                              scan feature and its caches off                 */
+    bool     ble5;         /* the controller's BLE 5 feature set: ALWAYS the
+                              build's (the NimBLE host is compiled with it and
+                              esp_bt.h ties the two; a controller without it
+                              crashed the device at the stack bring-up, three
+                              times, into the park brake, 2026-10-31). Reported
+                              on /api/ble, never a knob                       */
+} blm_ram_cfg_t;
+
+/* the Lean set (measured on the bench unit: README, "Bluetooth memory
+   profile") */
+#define BLM_RAM_LEAN_MAX_ACT     2
+#define BLM_RAM_LEAN_ACL_TX_BUFS 12
+#define BLM_RAM_LEAN_SCAN_CACHE  0
+
+/** `ble_ram_profile` word -> profile ("lean" and anything unknown = lean,
+ *  the default). */
+blm_ram_profile_t blm_ident_ram_profile(const char *word);
+const char *blm_ident_ram_profile_word(blm_ram_profile_t profile);
+
+/** The controller sizing for @p profile: full = @p full (the build's
+ *  defaults as BT_CONTROLLER_INIT_CONFIG_DEFAULT() carries them), lean =
+ *  the BLM_RAM_LEAN_* set, custom = @p custom clamped to the controller's
+ *  ranges. */
+void blm_ident_ram_config(blm_ram_profile_t profile, const blm_ram_cfg_t *full,
+                          const blm_ram_cfg_t *custom, blm_ram_cfg_t *out);
+
+/** on_validate: why a combination is refused (lean with extended
+ *  advertising or a PHY other than 1M, a custom scan cache of 1..9),
+ *  NULL when it is fine. */
+const char *blm_ident_ram_check(blm_ram_profile_t profile, uint8_t adv_mode,
+                                uint8_t phy_mask, int scan_cache);
+
+/** on_migrate (v4 -> v5): the profile a stored v4 object gets: "full" when
+ *  it chose a BLE 5 option (kept), NULL = the schema default otherwise. */
+const char *blm_ident_ram_migrated(uint8_t adv_mode, uint8_t phy_mask);
+
 /* ---- settings (ble_manager_settings.c) --------------------------------------- */
 
 typedef struct
@@ -109,6 +166,8 @@ typedef struct
     uint16_t conn_max_units;
     uint8_t  phy_mask;         /* v4: BLM_PHY_* preferred on a link          */
     uint8_t  adv_mode;         /* v4: BLM_ADV_* advertising set(s)            */
+    blm_ram_profile_t ram_profile; /* v5: the Bluetooth memory profile        */
+    blm_ram_cfg_t     ram_custom;  /* v5: the custom profile's knobs          */
 } blm_config_t;
 
 /** Register the "ble_manager" descriptor with settings_manager. */

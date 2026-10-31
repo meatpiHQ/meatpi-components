@@ -43,6 +43,7 @@
 #include "http_server_manager.h"
 
 #include "ble_manager.h"
+#include "ble_manager_ctrl.h"
 #include "ble_manager_private.h"
 
 static const char *TAG = "ble_manager";
@@ -88,6 +89,23 @@ static esp_err_t status_handler(httpd_req_t *req)
             cfg->adv_mode == BLM_ADV_BOTH ? "both" : "legacy");
         cJSON_AddNumberToObject(o, "phy_tx", tx); /* 1 = 1M, 2 = 2M, 3 = coded */
         cJSON_AddNumberToObject(o, "phy_rx", rx);
+
+        /* the memory profile (v5): the word and the controller sizing the
+           last bring-up applied (the bench asserts the active value) */
+        const blm_ram_cfg_t *ram = blm_ctrl_applied();
+
+        cJSON_AddStringToObject(o, "ram_profile",
+                                blm_ident_ram_profile_word(cfg->ram_profile));
+
+        if (ram != NULL)
+        {
+            cJSON *r = cJSON_AddObjectToObject(o, "ram");
+
+            cJSON_AddNumberToObject(r, "max_act", ram->max_act);
+            cJSON_AddNumberToObject(r, "acl_tx_bufs", ram->acl_tx_bufs);
+            cJSON_AddNumberToObject(r, "scan_cache", ram->scan_cache);
+            cJSON_AddBoolToObject(r, "ble5", ram->ble5);
+        }
     }
 
     {

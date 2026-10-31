@@ -43,6 +43,7 @@
 #include "freertos/task.h"
 
 #include "ble_manager.h"
+#include "ble_manager_ctrl.h"
 #include "ble_manager_private.h"
 
 static const char *TAG = "ble_manager";
@@ -583,6 +584,7 @@ esp_err_t blm_gatt_stack_up(const char *dev_name)
     esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
 
     bt_cfg.controller_task_stack_size = 1024 * 8; /* legacy sizing */
+    blm_ctrl_configure(&bt_cfg);                  /* the memory profile (v5) */
 
     esp_err_t err = esp_bt_controller_init(&bt_cfg);
 

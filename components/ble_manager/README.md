@@ -5,6 +5,92 @@
 > and J2534 ride on stream channels: `ble_http/BLE_HTTP_PROTOCOL.md`,
 > `j2534_server/J2534_WIRE_PROTOCOL.md` (2026-09-21).
 
+## Bluetooth memory profile (settings v5, 2026-10-31)
+
+Bluetooth on this build costs about 38 KB of internal RAM (the bench unit:
+49.5 KB free with it off, 11.3 KB with it on, station on the Lean WiFi
+profile with the ESPNetLink dongle enumerated; the boot line says `WICAN
+RAMMAP ble_manager=39860`), which left a default-mode device with Bluetooth
+one burst from failed saves and no room for Tailscale (issue 1024). The
+ESP32-S3 controller sizes itself from `esp_bt_controller_config_t` at
+`esp_bt_controller_init()`, RUNTIME fields read once, so the sizing is a
+setting applied at the next boot, the `wifi_ram_profile` model:
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `ble_ram_profile` | enum full / lean / custom | `lean` | `full` = the build's Kconfig sizing (today's behaviour and the BLE 5 options); `lean` = one phone at a time, legacy advertising on the 1M PHY, no scanning: `ble_max_act` 2, the 12 static ACL TX buffers kept, the scan feature and its duplicate caches off; `custom` = the three knobs below |
+| `ble_max_act` | int 2..10 | 4 | custom only: controller activities = connections plus advertising instances, 828 B each (Kconfig `BT_CTRL_BLE_MAX_ACT`) |
+| `ble_acl_tx_bufs` | int 0..12 | 12 | custom only: static ACL TX buffers, about 270 B each; fewer than 12 brings back the silent notification loss of 2026-09-22 when the heap is low |
+| `ble_scan_cache` | int 0 or 10..1000 | 100 | custom only: the scan duplicate cache; 0 = the scan feature and both caches off (the product never scans); 1..9 refused by `on_validate` |
+
+Rules: under `lean` the `advertising` and `phy` words must be `legacy` and
+`1m` (`on_validate` refuses the others with a reason the UI and the API
+show; `on_apply` forces them for a stored object from before the rule).
+Migration v4 to v5 (`on_migrate`): a device that had chosen a BLE 5 option
+(`advertising` extended or both, `phy` other than 1m) gets `full`, every
+other device takes the default. The controller's BLE 5 feature set is NOT a
+knob: the NimBLE host is compiled with it (`CONFIG_BT_NIMBLE_50_FEATURE_
+SUPPORT`) and `esp_bt.h` ties `ble_50_feat_supp` to the host's choice; the
+measurement build's `ble_5_features=false` row took the device off the bench
+network within a minute of its boot (no crash recorded), and the knob went
+before the final image.
+
+Mechanics: `blm_ident_ram_config()` (pure, `ble_manager_pack.c`, host-tested
+in `host_test/main/test_ram.c`) maps the profile onto `blm_ram_cfg_t`;
+`blm_ctrl_configure()` (`ble_manager_ctrl.c`) writes it into the
+`BT_CONTROLLER_INIT_CONFIG_DEFAULT()` struct either GATT backend builds, logs
+`ble ram profile=<word> (act=.. acl_tx=.. scan=.. ble5=..)` once per
+bring-up and keeps the applied sizing for `GET /api/ble` (`ram_profile`,
+`ram`). The NimBLE backend makes the port's three calls itself
+(`esp_bt_controller_init`, `esp_bt_controller_enable`, `esp_nimble_init`)
+because `nimble_port_init()` builds the default config internally and
+refuses a controller that is already up; `nimble_port_deinit()` still undoes
+all three. Each bring-up also logs `internal RAM per step: controller init
+N, enable N, host init N, services N, host task N B`.
+
+**Measured (2026-10-31, bench unit 68ee8f5a653d, station on the Lean WiFi
+profile, the dongle enumerated; `ble_ram_bench.py --measure`, the free
+internal heap at 75 s of uptime, `.\test.ps1 bleram` for the gate rows):**
+
+| row | internal free | min free | against Full |
+|---|---|---|---|
+| Bluetooth off | 49.5 KB | 38.8 KB | - |
+| Full (act 4, ACL 12, scan cache 100) | 11.3 KB | 5.7 KB | Bluetooth costs 38.1 KB |
+| act 2 | 13.2 KB | 7.6 KB | +1.9 KB |
+| ACL buffers 6 | 12.9 KB | 7.3 KB | +1.6 KB |
+| ACL buffers 0 | 14.4 KB | 8.8 KB | +3.1 KB |
+| scanning off | 12.6 KB | 7.0 KB | +1.3 KB |
+| **Lean** (act 2, ACL 12, scanning off; the gate run on the final image, where Full read 11.4 KB) | 14.5 KB | 9.0 KB | +3.2 KB (Bluetooth costs 34.9 KB) |
+
+Where the 38 KB goes (the per-step line of a Full bring-up, 84.5 KB free
+before it): `esp_bt_controller_init` 34.3 KB (the activities 3.3, the ACL
+buffers 3.2, the scan caches 1.3, the controller task's 3.5 KB stack, and
+about 22 KB of the controller library's own state that no config field
+reaches), `esp_bt_controller_enable` 0, `esp_nimble_init` 1.0 KB, the GATT
+services 16 B, the NimBLE host task 4.4 KB (its 4 KB stack is internal by
+IDF's design: the NVS bond store writes from it, and a flash write from a
+PSRAM stack is forbidden, standard §2). So the profile moves what the config
+can move: about 3 KB on Lean, 8 KB at most with the ACL buffers given up.
+The structural remainder (the library's 22 KB, the two task stacks' 7.9 KB)
+needs other levers; moving the bond store's write off the host task would
+free its 4 KB and is the next one worth measuring. The Tailscale hold reason
+(vpn_manager) does not name this profile on purpose: 3 KB is no help against
+a 30 KB floor.
+
+**The lever that did reach (2026-10-31 evening): `CONFIG_BT_CTRL_RUN_IN_FLASH_ONLY`**
+(the firmware's `sdkconfig.defaults`), the controller's code in flash instead
+of IRAM. On the ESP32-S3 every IRAM byte freed becomes an internal-heap byte:
+measured +19.4 KB at idle (51.5 to 69.3 KB free), and Bluetooth itself got
+cheaper (Full 34.6 KB, Lean 31.5 KB on that build), so a Lean device with
+Bluetooth on has 37.9 KB free and Tailscale starts beside it (the first time:
+`.\test.ps1 tspublic` PASS with Bluetooth on, 18.6 KB steady). The price, from
+`blethru` with the station up: the 2M PHY about a quarter slower (notify 374
+kbps, was 484; write 245, was 407; tunnels 333 to 380, were 456 to 512), 1M
+unchanged; and the controller cannot run while the cache is off for a flash
+erase (no auto-suspend on this flash chip), so a settings save or a firmware
+update pauses the link for each erase; `blehttp`'s 512 KB uploads to the
+internal flash over a live link still completed byte-exact with 0 link drops.
+
 ## Stream channels (2026-09-21)
 
 Besides the legacy data pipe (FFF1/FFF2, the bridge_manager `ble` jack)

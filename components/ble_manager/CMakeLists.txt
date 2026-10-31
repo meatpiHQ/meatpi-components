@@ -11,7 +11,8 @@ if(CONFIG_BT_ENABLED)
                  "ble_manager_io.c"
                  "ble_manager_pack.c"
                  "ble_manager_channel.c"
-                 "ble_manager_http.c")
+                 "ble_manager_http.c"
+                 "ble_manager_ctrl.c")
     if(CONFIG_BT_NIMBLE_ENABLED)
         # GAP/security/notify path + the service table (stream channels
         # are NimBLE-only; the Bluedroid backend stubs them)

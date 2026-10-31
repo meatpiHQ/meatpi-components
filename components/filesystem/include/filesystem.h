@@ -53,11 +53,13 @@
  * cache too, bench-proven 2026-07-07 via the event dispatcher) needs a task
  * stack in internal RAM. Since 2026-10-13 the component takes care of that
  * itself: an operation called from a task whose stack is in PSRAM runs on
- * the component's own internal-stack writer task, synchronously, one at a
- * time (the caller waits; a filesystem_list() callback then runs on that
- * task's 5 KB stack, so keep callbacks small). The one exception is
- * filesystem_open(): its stream is the caller's, so a /data stream must be
- * used from an internal-stack task.
+ * an internal-stack worker (the shared flash_jobs worker since 2026-10-31),
+ * synchronously, one at a time (the caller waits; a filesystem_list()
+ * callback then runs on that worker's 6 KB stack, so keep callbacks small).
+ * A stream from filesystem_open() is the caller's: use filesystem_fread(),
+ * filesystem_fstat() and filesystem_fclose() on a /data stream from a
+ * PSRAM-stack task (they marshal the call), plain stdio only from an
+ * internal-stack task.
  */
 #pragma once
 
@@ -65,6 +67,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <sys/stat.h>
 
 #include "esp_err.h"
 
@@ -185,8 +188,22 @@ bool filesystem_api_hidden(const char *path);
  * Returns NULL on invalid path, unavailable backend, or fopen failure.
  * NOTE: streaming writes bypass the atomic-replace guarantee; prefer
  * filesystem_write() for anything that must survive a power cut.
+ * The open of a /data stream runs on the worker for a PSRAM-stack caller
+ * (the directory walk reads the flash).
  */
 FILE *filesystem_open(const char *path, const char *mode);
+
+/**
+ * The stream helpers for a PSRAM-stack caller (2026-10-31): fread, fstat
+ * and fclose on a filesystem_open() handle, run on the worker when the
+ * calling task's stack is in PSRAM, in line otherwise. They do not know
+ * the handle's backend, so a call from a PSRAM stack is marshalled for
+ * /sd streams too (harmless). filesystem_fread() returns the bytes read
+ * (0 at the end or on an error, as fread does).
+ */
+size_t    filesystem_fread(void *buf, size_t len, FILE *f);
+esp_err_t filesystem_fstat(FILE *f, struct stat *st);
+esp_err_t filesystem_fclose(FILE *f);
 
 /**
  * Capacity of the backend owning @p prefix ("/data" or "/sd"), in bytes.

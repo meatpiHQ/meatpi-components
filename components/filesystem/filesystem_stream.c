@@ -35,10 +35,11 @@
 
 #include "esp_attr.h"
 #include "esp_log.h"
-#include "esp_memory_utils.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+
+#include "flash_jobs.h"
 
 #include "filesystem.h"
 #include "filesystem_private.h"
@@ -51,9 +52,29 @@ struct filesystem_wstream
     char  final_path[FS_PATH_MAX];
     char  tmp_path[FS_PATH_MAX];
     bool  used;
+    bool  flash; /* a /data stream: its writes need an internal stack */
 };
 
 static struct filesystem_wstream s_wstream; /* ONE stream at a time */
+
+/* The stack rule for the streams (2026-10-31): a /data stream's open,
+   chunks, commit and abort reach the flash with the cache off, so each of
+   the four runs through fs_run_internal (the flash_jobs worker) when the
+   caller's stack is in PSRAM: the async pipe's writer task itself, the
+   HTTP server task. An /sd stream runs on the caller's stack. */
+
+typedef struct
+{
+    const char            *path;
+    filesystem_wstream_t **out;
+} wopen_args_t;
+
+static esp_err_t wopen_job(void *p)
+{
+    wopen_args_t *a = p;
+
+    return filesystem_write_open(a->path, a->out);
+}
 
 esp_err_t filesystem_write_open(const char *path,
                                 filesystem_wstream_t **out)
@@ -63,11 +84,19 @@ esp_err_t filesystem_write_open(const char *path,
         return ESP_ERR_INVALID_ARG;
     }
 
-    esp_err_t err = fs_check_path(path, NULL);
+    fs_backend_t backend;
+    esp_err_t err = fs_check_path(path, &backend);
 
     if (err != ESP_OK)
     {
         return err;
+    }
+
+    if (backend == FS_BACKEND_INTERNAL && !fs_on_internal_stack())
+    {
+        wopen_args_t a = { path, out };
+
+        return fs_run_internal(wopen_job, &a);
     }
 
     fs_lock();
@@ -106,11 +135,26 @@ esp_err_t filesystem_write_open(const char *path,
         snprintf(s_wstream.final_path, sizeof(s_wstream.final_path), "%s",
                  path);
         s_wstream.used = true;
+        s_wstream.flash = (backend == FS_BACKEND_INTERNAL);
         *out = &s_wstream;
     }
 
     fs_unlock();
     return err;
+}
+
+typedef struct
+{
+    filesystem_wstream_t *ws;
+    const void           *data;
+    size_t                len;
+} wchunk_args_t;
+
+static esp_err_t wchunk_job(void *p)
+{
+    wchunk_args_t *a = p;
+
+    return filesystem_write_chunk(a->ws, a->data, a->len);
 }
 
 esp_err_t filesystem_write_chunk(filesystem_wstream_t *ws,
@@ -119,6 +163,13 @@ esp_err_t filesystem_write_chunk(filesystem_wstream_t *ws,
     if (ws == NULL || !ws->used || (data == NULL && len > 0))
     {
         return ESP_ERR_INVALID_ARG;
+    }
+
+    if (ws->flash && !fs_on_internal_stack())
+    {
+        wchunk_args_t a = { ws, data, len };
+
+        return fs_run_internal(wchunk_job, &a);
     }
 
     const uint8_t *src = data;
@@ -150,11 +201,21 @@ esp_err_t filesystem_write_chunk(filesystem_wstream_t *ws,
     return err;
 }
 
+static esp_err_t wcommit_job(void *p)
+{
+    return filesystem_write_commit((filesystem_wstream_t *)p);
+}
+
 esp_err_t filesystem_write_commit(filesystem_wstream_t *ws)
 {
     if (ws == NULL || !ws->used)
     {
         return ESP_ERR_INVALID_ARG;
+    }
+
+    if (ws->flash && !fs_on_internal_stack())
+    {
+        return fs_run_internal(wcommit_job, ws);
     }
 
     esp_err_t err = ESP_OK;
@@ -178,10 +239,22 @@ esp_err_t filesystem_write_commit(filesystem_wstream_t *ws)
     return err;
 }
 
+static esp_err_t wabort_job(void *p)
+{
+    filesystem_write_abort((filesystem_wstream_t *)p);
+    return ESP_OK;
+}
+
 void filesystem_write_abort(filesystem_wstream_t *ws)
 {
     if (ws == NULL || !ws->used)
     {
+        return;
+    }
+
+    if (ws->flash && !fs_on_internal_stack())
+    {
+        (void)fs_run_internal(wabort_job, ws);
         return;
     }
 
@@ -212,25 +285,15 @@ static SemaphoreHandle_t s_async_done;       /* writer: drained         */
 static StaticSemaphore_t s_async_done_buf;   /* internal: FreeRTOS obj  */
 static TaskHandle_t s_writer_task;
 static StaticTask_t s_writer_tcb;            /* internal: FreeRTOS obj  */
-/* internal: flash writes. 5 KB since 2026-10-13: the marshalled /data jobs
- * of PSRAM-stack callers run here too (the probe read 1.3 KB headroom of
- * 4 KB after config_backup's sweeps; the standard wants a kilobyte spare) */
-static StackType_t s_writer_stack[5120];
+/* PSRAM since 2026-10-31: the writer only drains the pipe; each chunk's
+ * flash write goes through filesystem_write_chunk(), which hands a
+ * PSRAM-stack caller to the flash_jobs worker like every other /data
+ * operation. 5 KB internal before that (the marshalled jobs of PSRAM-stack
+ * callers ran here from 2026-10-13 to 2026-10-31). */
+static StackType_t s_writer_stack[5120] EXT_RAM_BSS_ATTR;
 static filesystem_wstream_t *volatile s_async_ws;
 static volatile esp_err_t s_async_err;
 static int s_prod_idx; /* producer/writer stay in lockstep forever      */
-
-/* the internal-stack job mailbox (fs_run_internal): one job at a time
- * under s_job_lock; the writer is woken through s_slot_filled, whose count
- * leaves room for the two slots AND a job (a slot's own signal, if one
- * arrives with the job's, stays counted and is served next) */
-static SemaphoreHandle_t s_job_lock;         /* callers queue here      */
-static StaticSemaphore_t s_job_lock_buf;     /* internal: FreeRTOS obj  */
-static SemaphoreHandle_t s_job_done;         /* writer -> caller        */
-static StaticSemaphore_t s_job_done_buf;     /* internal: FreeRTOS obj  */
-static fs_job_fn_t volatile s_job_fn;
-static void *volatile s_job_arg;
-static volatile esp_err_t s_job_err;
 
 static void writer_task(void *arg)
 {
@@ -241,16 +304,6 @@ static void writer_task(void *arg)
     while (true)
     {
         xSemaphoreTake(s_slot_filled, portMAX_DELAY);
-
-        if (s_job_fn != NULL)
-        {
-            fs_job_fn_t fn = s_job_fn;
-
-            s_job_err = fn(s_job_arg);
-            s_job_fn = NULL;
-            xSemaphoreGive(s_job_done);
-            continue;
-        }
 
         fs_async_slot_t *slot = &s_slot[idx];
 
@@ -277,13 +330,10 @@ static void writer_task(void *arg)
 
 esp_err_t fs_stream_service_init(void)
 {
-    /* two slots plus one job may be signalled at once */
-    s_slot_filled = xSemaphoreCreateCountingStatic(3, 0,
+    s_slot_filled = xSemaphoreCreateCountingStatic(2, 0,
                                                    &s_slot_filled_buf);
     s_slot_free = xSemaphoreCreateCountingStatic(2, 2, &s_slot_free_buf);
     s_async_done = xSemaphoreCreateBinaryStatic(&s_async_done_buf);
-    s_job_lock = xSemaphoreCreateMutexStatic(&s_job_lock_buf);
-    s_job_done = xSemaphoreCreateBinaryStatic(&s_job_done_buf);
     s_writer_task = xTaskCreateStatic(writer_task, "fs_writer",
                                       sizeof(s_writer_stack) /
                                           sizeof(s_writer_stack[0]),
@@ -292,13 +342,11 @@ esp_err_t fs_stream_service_init(void)
     return (s_writer_task != NULL) ? ESP_OK : ESP_FAIL;
 }
 
-/* ---- the internal-stack service ---------------------------------------------- */
+/* ---- the internal-stack service: the shared flash_jobs worker ---------------- */
 
 bool fs_on_internal_stack(void)
 {
-    int probe = 0;
-
-    return esp_ptr_internal(&probe);
+    return flash_jobs_on_internal_stack();
 }
 
 esp_err_t fs_run_internal(fs_job_fn_t fn, void *arg)
@@ -308,27 +356,10 @@ esp_err_t fs_run_internal(fs_job_fn_t fn, void *arg)
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (s_writer_task == NULL)
-    {
-        return ESP_ERR_INVALID_STATE; /* the service never started */
-    }
-
-    if (xTaskGetCurrentTaskHandle() == s_writer_task)
-    {
-        return fn(arg); /* a job inside a job: already on the right stack */
-    }
-
-    xSemaphoreTake(s_job_lock, portMAX_DELAY);
-    s_job_arg = arg;
-    s_job_err = ESP_FAIL;
-    s_job_fn = fn;              /* last: the writer looks at this one */
-    xSemaphoreGive(s_slot_filled);
-    xSemaphoreTake(s_job_done, portMAX_DELAY);
-
-    esp_err_t err = s_job_err;
-
-    xSemaphoreGive(s_job_lock);
-    return err;
+    /* in line on an internal stack (a job inside a job included), on the
+       worker otherwise; the worker is the only internal stack the
+       filesystem needs since 2026-10-31 */
+    return flash_jobs_run(fn, arg);
 }
 
 esp_err_t filesystem_write_async_begin(filesystem_wstream_t *ws)

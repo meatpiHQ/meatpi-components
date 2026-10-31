@@ -26,9 +26,11 @@
  *        into a buffer, size, existence, a directory listing, a raw stdio
  *        handle and the capacity of a backend (split out of filesystem.c
  *        2026-10-13). The same stack rule as the writes: a /data operation
- *        from a PSRAM-stack task runs on the writer task (LittleFS reads go
- *        through esp_partition_read, which disables the flash cache too);
- *        filesystem_open() is the exception, its stream is the caller's.
+ *        from a PSRAM-stack task runs on the flash worker (LittleFS reads go
+ *        through esp_partition_read, which disables the flash cache too).
+ *        A stream from filesystem_open() is the caller's, but its open,
+ *        reads, stat and close go through the same rule when the caller
+ *        uses filesystem_fread() and its siblings (2026-10-31).
  */
 #include "filesystem.h"
 
@@ -296,16 +298,132 @@ esp_err_t filesystem_list(const char *dir_path, filesystem_list_cb_t cb,
     return err;
 }
 
-/* ---- a raw handle: the caller's stream, the caller's stack rule --------------- */
+/* ---- a raw handle: the caller's stream, the component's stack rule ------------
+   The open of a /data stream reads the flash (the directory walk) and so
+   runs on the worker for a PSRAM-stack caller; the stream itself is the
+   caller's. Its reads, stat and close carry the rule when the caller uses
+   the helpers below: those do not know the backend of a handle, so they
+   marshal every call made from a PSRAM stack (an /sd stream from the HTTP
+   server task runs on the worker too, which is harmless and serializes
+   SD streaming behind the flash jobs for the duration of a chunk). */
+
+typedef struct
+{
+    const char *path;
+    const char *mode;
+    FILE       *f;
+} open_args_t;
+
+static esp_err_t open_job(void *p)
+{
+    open_args_t *a = p;
+
+    a->f = fopen(a->path, a->mode);
+    return (a->f != NULL) ? ESP_OK : ESP_ERR_NOT_FOUND;
+}
 
 FILE *filesystem_open(const char *path, const char *mode)
 {
-    if (mode == NULL || fs_check_path(path, NULL) != ESP_OK)
+    fs_backend_t backend;
+
+    if (mode == NULL || fs_check_path(path, &backend) != ESP_OK)
     {
         return NULL;
     }
 
+    if (backend == FS_BACKEND_INTERNAL && !fs_on_internal_stack())
+    {
+        open_args_t a = { path, mode, NULL };
+
+        (void)fs_run_internal(open_job, &a);
+        return a.f;
+    }
+
     return fopen(path, mode);
+}
+
+typedef struct
+{
+    void   *buf;
+    size_t  len;
+    FILE   *f;
+    size_t  got;
+} fread_args_t;
+
+static esp_err_t fread_job(void *p)
+{
+    fread_args_t *a = p;
+
+    a->got = fread(a->buf, 1, a->len, a->f);
+    return ESP_OK;
+}
+
+size_t filesystem_fread(void *buf, size_t len, FILE *f)
+{
+    if (f == NULL || (buf == NULL && len > 0))
+    {
+        return 0;
+    }
+
+    if (!fs_on_internal_stack())
+    {
+        fread_args_t a = { buf, len, f, 0 };
+
+        (void)fs_run_internal(fread_job, &a);
+        return a.got;
+    }
+
+    return fread(buf, 1, len, f);
+}
+
+typedef struct
+{
+    FILE        *f;
+    struct stat *st;
+} fstat_args_t;
+
+static esp_err_t fstat_job(void *p)
+{
+    fstat_args_t *a = p;
+
+    return (fstat(fileno(a->f), a->st) == 0) ? ESP_OK : ESP_FAIL;
+}
+
+esp_err_t filesystem_fstat(FILE *f, struct stat *st)
+{
+    if (f == NULL || st == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (!fs_on_internal_stack())
+    {
+        fstat_args_t a = { f, st };
+
+        return fs_run_internal(fstat_job, &a);
+    }
+
+    return (fstat(fileno(f), st) == 0) ? ESP_OK : ESP_FAIL;
+}
+
+static esp_err_t fclose_job(void *p)
+{
+    return (fclose((FILE *)p) == 0) ? ESP_OK : ESP_FAIL;
+}
+
+esp_err_t filesystem_fclose(FILE *f)
+{
+    if (f == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (!fs_on_internal_stack())
+    {
+        return fs_run_internal(fclose_job, f);
+    }
+
+    return (fclose(f) == 0) ? ESP_OK : ESP_FAIL;
 }
 
 /* ---- capacity ---------------------------------------------------------------- */

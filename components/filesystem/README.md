@@ -81,31 +81,40 @@ exists.
 - **The stack rule is the component's job since 2026-10-13.** Every `/data`
   operation (reads included: a LittleFS read goes through `esp_partition_read`,
   which disables the flash cache too) needs a task stack in internal RAM. An
-  operation called from a task whose stack is in PSRAM is run on the
-  component's own internal-stack writer task (`fs_writer`, the async pipe's
-  task) instead: synchronous, one job at a time, the caller waits
-  (`fs_run_internal` in `filesystem_stream.c`; the public function notices
-  the PSRAM stack with `esp_ptr_internal` on a local and re-enters itself on
-  the writer task). A `filesystem_list()` callback then runs on that task's
-  5 KB stack: keep callbacks small. `/sd` operations never touch the flash
-  cache and run on the caller's stack. The exception is `filesystem_open()`:
-  its stream is the caller's, so a `/data` stream must be used from an
-  internal-stack task. This is what let `config_backup`'s copies worker move
-  its 8 KB stack to PSRAM.
+  operation called from a task whose stack is in PSRAM is run on an
+  internal-stack worker instead: synchronous, one job at a time, the caller
+  waits (`fs_run_internal` in `filesystem_stream.c`; the public function
+  notices the PSRAM stack and re-enters itself on the worker). Since
+  2026-10-31 that worker is the shared `flash_jobs` one (created at the
+  first marshalled job, gone 5 s after the last; `fs_writer` carried the
+  jobs on its own 5 KB internal stack from 2026-10-13 until then, and lives
+  on a PSRAM stack now, draining the async pipe with each chunk's write
+  marshalled like any other `/data` write). A `filesystem_list()` callback
+  then runs on the worker's 6 KB stack: keep callbacks small. `/sd`
+  operations never touch the flash cache and run on the caller's stack. A
+  stream from `filesystem_open()` is the caller's: its open runs on the
+  worker for a `/data` path, and `filesystem_fread()` /
+  `filesystem_fstat()` / `filesystem_fclose()` carry the rule for the
+  reads, the stat and the close (they do not know a handle's backend, so a
+  call from a PSRAM stack is marshalled for `/sd` streams too, harmless).
+  The streaming writes (`filesystem_write_open/chunk/commit/abort`) carry
+  it for `/data` streams. This is what let `config_backup`'s copies worker
+  move its 8 KB stack to PSRAM (2026-10-13) and the HTTP server task its
+  stack (2026-10-31).
 - Files: `filesystem.c` (lifecycle, the factory wipe, write, delete, mkdirs,
-  the shared internals), `filesystem_read.c` (read, size, exists, list, open, info),
-  `filesystem_stream.c` (the atomic streams, the async pipe, the writer task
-  and the internal-stack job service), `filesystem_path.c` (PURE), 
-  `filesystem_mount.c`, `filesystem_settings.c`, `filesystem_cli.c`.
+  the shared internals), `filesystem_read.c` (read, size, exists, list, open,
+  the stream helpers, info), `filesystem_stream.c` (the atomic streams, the
+  async pipe, the writer task and the job service's entry), `filesystem_path.c`
+  (PURE), `filesystem_mount.c`, `filesystem_settings.c`, `filesystem_cli.c`.
 
 ## Memory footprint (estimated: replace with measured before release)
 
 | Where | What | Size |
 |---|---|---|
-| Internal `.bss` | scratch buffer + mutex + the job mailbox's two semaphores | ~2.4 KiB |
-| PSRAM `.bss` | state struct | < 32 B |
+| Internal `.bss` | scratch buffer + mutex + the pipe's semaphores | ~2.3 KiB |
+| PSRAM `.bss` | state struct, the writer's 5 KB stack (2026-10-31) | ~5 KiB |
 | Heap (internal) | LittleFS mount (esp_littlefs caches) | ~4 to 8 KiB while mounted |
-| Task stacks | `fs_writer` 5 KB internal (the async pipe and the marshalled `/data` jobs of PSRAM-stack callers; 4 KB until 2026-10-13, the probe read 1.3 KB headroom under config_backup's sweeps); everything else runs in the caller's context | 5 KiB |
+| Task stacks | `fs_writer` 5 KB in PSRAM (the async pipe's drain; its chunk writes run on the `flash_jobs` worker); the marshalled `/data` jobs of PSRAM-stack callers run on that worker's 6 KB internal stack, which exists only while jobs come; everything else runs in the caller's context | 0 internal at idle |
 
 ## First boot, and a partition that is not ours
 

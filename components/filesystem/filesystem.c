@@ -33,8 +33,9 @@
  *
  * The stack rule (2026-10-13): every /data operation reads or writes the
  * flash with the cache off, which a task on a PSRAM stack cannot survive
- * (standard §2). An operation called from such a task runs on the stream
- * writer's internal stack instead (fs_run_internal, filesystem_stream.c),
+ * (standard §2). An operation called from such a task runs on an internal
+ * stack instead (fs_run_internal, filesystem_stream.c: the flash_jobs
+ * worker since 2026-10-31, the stream writer's own stack before that),
  * synchronously, so callers no longer have to know.
  */
 #include "filesystem.h"

@@ -45,6 +45,8 @@
 #include "freertos/semphr.h"
 #include "nvs.h"
 
+#include "flash_jobs.h"
+
 static const char *TAG = "dev_status_manager";
 
 #define DSM_FAULT_NVS_NS  "dfc"
@@ -56,13 +58,19 @@ static uint32_t s_persisted_this_boot; /* bitmask: count-update done */
 static SemaphoreHandle_t s_fault_lock;
 static StaticSemaphore_t s_fault_lock_buf;
 
-static void faults_save(void)
+/* The NVS blob is read and written through flash_jobs_run() (2026-10-31):
+   a fault may be raised or cleared from any task, the HTTP server task on
+   its PSRAM stack included; the job runs on the flash worker for those. */
+
+static esp_err_t save_job(void *arg)
 {
     nvs_handle_t h;
 
+    (void)arg;
+
     if (nvs_open(DSM_FAULT_NVS_NS, NVS_READWRITE, &h) != ESP_OK)
     {
-        return;
+        return ESP_FAIL;
     }
 
     if (s_fault_count == 0)
@@ -77,20 +85,23 @@ static void faults_save(void)
 
     nvs_commit(h);
     nvs_close(h);
+    return ESP_OK;
 }
 
-void dsm_faults_load(void)
+static void faults_save(void)
 {
-    if (s_fault_lock == NULL)
-    {
-        s_fault_lock = xSemaphoreCreateMutexStatic(&s_fault_lock_buf);
-    }
+    (void)flash_jobs_run(save_job, NULL);
+}
 
+static esp_err_t load_job(void *arg)
+{
     nvs_handle_t h;
+
+    (void)arg;
 
     if (nvs_open(DSM_FAULT_NVS_NS, NVS_READONLY, &h) != ESP_OK)
     {
-        return; /* fresh device: no namespace yet */
+        return ESP_OK; /* fresh device: no namespace yet */
     }
 
     size_t len = sizeof(s_faults);
@@ -111,6 +122,17 @@ void dsm_faults_load(void)
     }
 
     nvs_close(h);
+    return ESP_OK;
+}
+
+void dsm_faults_load(void)
+{
+    if (s_fault_lock == NULL)
+    {
+        s_fault_lock = xSemaphoreCreateMutexStatic(&s_fault_lock_buf);
+    }
+
+    (void)flash_jobs_run(load_job, NULL);
 }
 
 esp_err_t dev_status_manager_fault_raise(const char *code,

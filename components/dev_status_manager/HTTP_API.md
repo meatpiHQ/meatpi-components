@@ -146,9 +146,9 @@ runtime counter. Busiest first.
   "total_us": 23785179,
   "tasks": [
     { "name": "IDLE1", "state": "R", "core": 1, "prio": 0,
-      "stack_hw": 776, "runtime_us": 21699114 },
+      "stack_hw": 776, "stack_ext": false, "runtime_us": 21699114 },
     { "name": "httpd", "state": "B", "core": -1, "prio": 5,
-      "stack_hw": 2148, "runtime_us": 913245 }
+      "stack_hw": 8532, "stack_ext": true, "runtime_us": 913245 }
   ]
 }
 ```
@@ -157,6 +157,9 @@ runtime counter. Busiest first.
   deleted-pending-cleanup. `core`: `-1` = unpinned.
 - `stack_hw` = stack bytes the task has NEVER used: small values mean
   it is close to overflowing (the httpd-4KB lesson).
+- `stack_ext` (2026-10-31) = the task's stack is in PSRAM (`true`) or
+  internal RAM (`false`); the stack audit asserts the HTTP server's and
+  the filesystem writer's are external on the shipped configuration.
 - **CPU% is a client-side delta**: poll twice, then per task
   `Δruntime_us / (Δtotal_us × cores) × 100`. `total_us` is PER-CORE
   scheduler time; the IDLE0/IDLE1 deltas give the idle share (system

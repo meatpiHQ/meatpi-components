@@ -118,7 +118,7 @@ problems are LATCHED and survive reboots/power cycles until MANUALLY
 cleared, a fault that fired once in the field is still visible on the
 bench weeks later.
 
-- Store: `dev_status_faults.c`, NVS namespace `dfc`, 16 slots of
+- Store: `dev_status_faults.c`, NVS namespace `dfc` (read and written through `flash_jobs_run()` since 2026-10-31: a fault may be raised or cleared from any task, the HTTP server's PSRAM stack included), 16 slots of
   `{code, detail, count, first/last unix time}`. Wear-disciplined: one
   NVS write on first occurrence of a code + at most one count-update per
   code per boot (recurrences count in RAM). This feature must never

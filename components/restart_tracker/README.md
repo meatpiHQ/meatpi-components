@@ -39,7 +39,7 @@ device instead of starting it again (the crash-loop brake).
 | `restart_tracker_set_test_retry(seconds)` | Bench: the next park ends by itself after 10..3600 s, once. |
 | `restart_tracker_get_report(out)` | The crash report stored in NVS; `ESP_ERR_NOT_FOUND` when there is none. |
 | `restart_tracker_report_text(report, buf, cap)` | The report as the text a user sends on (`RESTART_TRACKER_REPORT_TEXT_MAX` = 1024 holds any). |
-| `restart_tracker_clear_report()` / `_restore_report()` | Forget it (one NVS erase) / write it back after a caller erased NVS wholesale (safe mode's factory reset). Flash: internal-stack callers only. |
+| `restart_tracker_clear_report()` / `_restore_report()` | Forget it (one NVS erase) / write it back after a caller erased NVS wholesale (safe mode's factory reset). Flash: through `flash_jobs_run()` since 2026-10-31 (in line on an internal stack, on the flash worker for the HTTP server task), so any caller. |
 | `restart_tracker_boot_mode_to_str(mode)` | `normal`, `park`, `park_bare`, `safe`. |
 
 Reasons: none / user_request / config_apply / config_recovery / ota_apply /

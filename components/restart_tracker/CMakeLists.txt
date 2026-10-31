@@ -1,4 +1,4 @@
-﻿# The crash note's hooks walk an Xtensa stack and keep the note in RTC
+# The crash note's hooks walk an Xtensa stack and keep the note in RTC
 # memory: the WiCAN Pro (ESP32-S3). Any other target builds the stub.
 if(CONFIG_IDF_TARGET_ARCH_XTENSA AND CONFIG_SOC_RTC_MEM_SUPPORTED)
     set(crash_src "restart_tracker_crash.c")
@@ -23,7 +23,7 @@ idf_component_register(
     # esp_app_format: the image id the crash note carries;
     # nvs_flash: the stored crash report (restart_tracker_report.c)
     PRIV_REQUIRES esp_mm esp_timer log_manager cmdline_manager
-                  settings_manager esp_app_format nvs_flash
+                  settings_manager esp_app_format nvs_flash flash_jobs
 )
 
 if(CONFIG_IDF_TARGET_ARCH_XTENSA AND CONFIG_SOC_RTC_MEM_SUPPORTED)

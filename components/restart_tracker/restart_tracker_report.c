@@ -36,8 +36,9 @@
  * purpose. When the write happens at all is decided by the pure half
  * (restart_tracker_report_core.c, the wear guard): standard 11.
  *
- * Flash: only the boot task (init), the console and the HTTP worker reach
- * the writers here, all three on internal stacks.
+ * Flash: the NVS reads and writes run through flash_jobs_run() (2026-10-31):
+ * in line for the boot task (init) and the console, on the flash worker for
+ * the HTTP server task, whose stack is in PSRAM since that day.
  */
 #include "restart_tracker.h"
 
@@ -50,6 +51,8 @@
 #include "esp_mac.h"
 #include "freertos/FreeRTOS.h"
 #include "nvs.h"
+
+#include "flash_jobs.h"
 
 #include "restart_tracker_private.h"
 
@@ -64,8 +67,9 @@ static rt_report_t s_report EXT_RAM_BSS_ATTR;
 static bool s_have;
 static portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED; /* internal: spinlock */
 
-static esp_err_t nvs_load(rt_report_t *out)
+static esp_err_t load_job(void *arg)
 {
+    rt_report_t *out = arg;
     nvs_handle_t h;
     esp_err_t err = nvs_open(RT_NVS_NAMESPACE, NVS_READONLY, &h);
 
@@ -88,8 +92,14 @@ static esp_err_t nvs_load(rt_report_t *out)
                                                          : ESP_ERR_INVALID_CRC;
 }
 
-static esp_err_t nvs_store(const rt_report_t *report)
+static esp_err_t nvs_load(rt_report_t *out)
 {
+    return flash_jobs_run(load_job, out);
+}
+
+static esp_err_t store_job(void *arg)
+{
+    const rt_report_t *report = arg;
     nvs_handle_t h;
     esp_err_t err = nvs_open(RT_NVS_NAMESPACE, NVS_READWRITE, &h);
 
@@ -103,6 +113,38 @@ static esp_err_t nvs_store(const rt_report_t *report)
     if (err == ESP_OK)
     {
         err = nvs_commit(h);
+    }
+
+    nvs_close(h);
+    return err;
+}
+
+static esp_err_t nvs_store(const rt_report_t *report)
+{
+    return flash_jobs_run(store_job, (void *)report);
+}
+
+static esp_err_t clear_job(void *arg)
+{
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(RT_NVS_NAMESPACE, NVS_READWRITE, &h);
+
+    (void)arg;
+
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+
+    err = nvs_erase_key(h, RT_NVS_KEY);
+
+    if (err == ESP_OK)
+    {
+        err = nvs_commit(h);
+    }
+    else if (err == ESP_ERR_NVS_NOT_FOUND)
+    {
+        err = ESP_OK; /* nothing stored: nothing to write */
     }
 
     nvs_close(h);
@@ -220,24 +262,7 @@ esp_err_t restart_tracker_get_report(restart_tracker_report_t *out)
 
 esp_err_t restart_tracker_clear_report(void)
 {
-    nvs_handle_t h;
-    esp_err_t err = nvs_open(RT_NVS_NAMESPACE, NVS_READWRITE, &h);
-
-    if (err == ESP_OK)
-    {
-        err = nvs_erase_key(h, RT_NVS_KEY);
-
-        if (err == ESP_OK)
-        {
-            err = nvs_commit(h);
-        }
-        else if (err == ESP_ERR_NVS_NOT_FOUND)
-        {
-            err = ESP_OK; /* nothing stored: nothing to write */
-        }
-
-        nvs_close(h);
-    }
+    esp_err_t err = flash_jobs_run(clear_job, NULL);
 
     if (err == ESP_OK)
     {
@@ -251,7 +276,8 @@ esp_err_t restart_tracker_clear_report(void)
 
 esp_err_t restart_tracker_restore_report(void)
 {
-    rt_report_t report; /* internal: the caller's stack; NVS writes from it */
+    rt_report_t report; /* the caller's stack, wherever it is: the flash
+                           driver bounces a PSRAM source */
 
     if (!held(&report))
     {

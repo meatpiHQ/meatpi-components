@@ -243,14 +243,17 @@ static esp_err_t fs_download_handler(httpd_req_t *req)
 
     size_t n;
 
+    /* the stream's reads and close through the filesystem's helpers: this
+       task's stack is in PSRAM (2026-10-31) and a /data stream reads the
+       flash with the cache off */
     while (err == ESP_OK &&
-           (n = fread(s_chunk, 1, sizeof(s_chunk), f)) > 0)
+           (n = filesystem_fread(s_chunk, sizeof(s_chunk), f)) > 0)
     {
         err = httpd_resp_send_chunk(req, s_chunk, (ssize_t)n);
     }
 
     xSemaphoreGive(s_chunk_lock);
-    fclose(f);
+    filesystem_fclose(f);
 
     if (err == ESP_OK)
     {

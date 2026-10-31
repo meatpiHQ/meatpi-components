@@ -384,7 +384,11 @@ static esp_err_t info_handler(httpd_req_t *req)
 
 /* ---- GET /api/status/tasks (task monitor: see dev_status HTTP_API.md) ------ */
 
-#define TASKS_MAX 48 /* > any real composition (~25 tasks observed) */
+#define TASKS_MAX 64 /* > any real composition: 49 tasks on 2026-10-31 (the
+                        bench DUT with the dongle, the logger and the
+                        webhook poster), and the list is cut silently
+                        at the cap, which hid fs_writer from the stack
+                        audit; PSRAM, so headroom is cheap */
 
 static esp_err_t tasks_handler(httpd_req_t *req)
 {
@@ -427,6 +431,9 @@ static esp_err_t tasks_handler(httpd_req_t *req)
         cJSON_AddNumberToObject(t, "core", tasks[i].core);
         cJSON_AddNumberToObject(t, "prio", tasks[i].prio);
         cJSON_AddNumberToObject(t, "stack_hw", tasks[i].stack_hw);
+        /* 2026-10-31: where the stack lives, for the stack audit (the HTTP
+           server's and the filesystem writer's are in PSRAM now) */
+        cJSON_AddBoolToObject(t, "stack_ext", tasks[i].stack_ext);
         cJSON_AddNumberToObject(t, "runtime_us",
                                 (double)tasks[i].runtime_us);
         cJSON_AddItemToArray(arr, t);

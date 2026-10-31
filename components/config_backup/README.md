@@ -141,7 +141,7 @@ still opens.
 ## The key
 
 32 bytes from `esp_fill_random()` the first time the component starts, kept
-in NVS (`cfg_backup`: `key`, `created`, `dl`, `dl_at`) outside the settings
+in NVS (`cfg_backup`: `key`, `created`, `dl`, `dl_at`; read and written through `flash_jobs_run()` since 2026-10-31, the key route's downloaded flag runs on the flash worker for the HTTP server task) outside the settings
 partition; the factory reset erases NVS since 2026-10-26 and writes the key
 and its record back (`config_backup_key_rewrite()`), so a reset keeps it,
 from the web UI, the console and safe mode alike. Never logged, never in `/api/settings`;

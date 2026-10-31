@@ -25,5 +25,5 @@ idf_component_register(
     PRIV_REQUIRES settings_manager filesystem dev_status_manager
                   http_server_manager cmdline_manager restart_tracker
                   log_manager nvs_flash esp_hw_support mbedtls fatfs
-                  esp_http_server console
+                  esp_http_server console flash_jobs
 )

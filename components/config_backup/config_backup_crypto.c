@@ -39,6 +39,8 @@
 #include "nvs.h"
 #include "psa/crypto.h"
 
+#include "flash_jobs.h"
+
 #include "config_backup_private.h"
 
 static const char *TAG = "config_backup";
@@ -54,11 +56,16 @@ static bool          s_have_key;
 static cb_key_info_t s_info;
 
 /* ---- the key in NVS --------------------------------------------------------------- */
+/* The NVS reads and writes run through flash_jobs_run() (2026-10-31): in
+   line at boot and on main's factory reset task, on the flash worker for
+   the key route's downloaded flag (the HTTP server task, a PSRAM stack). */
 
-static esp_err_t key_load(void)
+static esp_err_t load_job(void *arg)
 {
     nvs_handle_t h;
     esp_err_t    err = nvs_open(NVS_NS, NVS_READONLY, &h);
+
+    (void)arg;
 
     if (err != ESP_OK)
     {
@@ -99,12 +106,19 @@ static esp_err_t key_load(void)
     return err;
 }
 
+static esp_err_t key_load(void)
+{
+    return flash_jobs_run(load_job, NULL);
+}
+
 /* the key and its record from RAM into NVS: a new key (cb_crypto_init) and
    the write-back after the factory reset's NVS erase (key_rewrite) */
-static esp_err_t key_store(void)
+static esp_err_t store_job(void *arg)
 {
     nvs_handle_t h;
     esp_err_t    err = nvs_open(NVS_NS, NVS_READWRITE, &h);
+
+    (void)arg;
 
     if (err != ESP_OK)
     {
@@ -135,6 +149,11 @@ static esp_err_t key_store(void)
 
     nvs_close(h);
     return err;
+}
+
+static esp_err_t key_store(void)
+{
+    return flash_jobs_run(store_job, NULL);
 }
 
 esp_err_t config_backup_key_load(void)
@@ -233,18 +252,12 @@ const cb_key_info_t *cb_key_info(void)
     return &s_info;
 }
 
-esp_err_t cb_key_mark_downloaded(void)
+static esp_err_t mark_job(void *arg)
 {
-    if (!s_have_key)
-    {
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    s_info.downloaded = true;
-    s_info.downloaded_at = cb_now_epoch();
-
     nvs_handle_t h;
     esp_err_t    err = nvs_open(NVS_NS, NVS_READWRITE, &h);
+
+    (void)arg;
 
     if (err != ESP_OK)
     {
@@ -265,6 +278,18 @@ esp_err_t cb_key_mark_downloaded(void)
 
     nvs_close(h);
     return err;
+}
+
+esp_err_t cb_key_mark_downloaded(void)
+{
+    if (!s_have_key)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    s_info.downloaded = true;
+    s_info.downloaded_at = cb_now_epoch();
+    return flash_jobs_run(mark_job, NULL);
 }
 
 /* ---- AES-256-GCM through PSA ------------------------------------------------------ */

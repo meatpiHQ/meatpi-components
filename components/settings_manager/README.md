@@ -180,9 +180,14 @@ changed). Password-typed fields are redacted in GET responses.
 
 ## Memory footprint
 
-No task of its own (passive; driven by callers), so no task stacks. All numbers
-**estimated**: replace with **measured** before release using the commands
-below.
+No task of its own (passive; driven by callers), so no task stacks. The
+settings files are read and written on an internal-RAM stack whoever the
+caller is (2026-10-31): `settings_manager_storage.c` runs every mount,
+load, save, existence check and wipe through `flash_jobs_run()`, in line
+for an internal-stack caller (the boot task, the console, main's factory
+reset task) and on the `flash_jobs` worker for a PSRAM-stack caller (the
+HTTP server task since that day). All numbers **estimated**: replace with
+**measured** before release using the commands below.
 
 | Region                         | Where         | Size (est.) | Notes                                  |
 |--------------------------------|---------------|-------------|----------------------------------------|

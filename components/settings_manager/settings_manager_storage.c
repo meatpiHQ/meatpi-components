@@ -39,6 +39,8 @@
 #include "esp_log.h"
 #include "esp_partition.h"
 
+#include "flash_jobs.h"
+
 #include "settings_manager_private.h"
 
 #define SM_PARTITION_LABEL "settings"
@@ -143,13 +145,18 @@ static void build_path(char *buf, size_t buf_len, const char *name, const char *
     snprintf(buf, buf_len, "%s/%s%s", SM_DIR, name, ext);
 }
 
-esp_err_t sm_storage_mount(void)
-{
-    if (s_mounted)
-    {
-        return ESP_OK;
-    }
+/* ---- the stack rule (2026-10-31) ----------------------------------------------
+   Every operation below reads or writes the settings partition with the
+   flash cache off, which a task on a PSRAM stack cannot survive (standard,
+   section 2). Each one runs its flash part through flash_jobs_run(): in
+   line on an internal stack (the boot task, the console, main's factory
+   reset task), on the flash worker otherwise (the HTTP server task runs on
+   a PSRAM stack since 2026-10-31). The arguments may live anywhere: the
+   flash driver bounces a PSRAM source or destination itself. */
 
+static esp_err_t mount_job(void *arg)
+{
+    (void)arg;
     format_if_not_ours();
 
     esp_vfs_littlefs_conf_t conf =
@@ -169,8 +176,26 @@ esp_err_t sm_storage_mount(void)
     }
 
     mkdir(SM_DIR, 0775);   /* harmless if it already exists */
-    s_mounted = true;
     return ESP_OK;
+}
+
+esp_err_t sm_storage_mount(void)
+{
+    if (s_mounted)
+    {
+        return ESP_OK;
+    }
+
+    esp_err_t err = flash_jobs_run(mount_job, NULL);
+
+    s_mounted = (err == ESP_OK);
+    return err;
+}
+
+static esp_err_t unmount_job(void *arg)
+{
+    (void)arg;
+    return esp_vfs_littlefs_unregister(SM_PARTITION_LABEL);
 }
 
 esp_err_t sm_storage_unmount(void)
@@ -180,7 +205,8 @@ esp_err_t sm_storage_unmount(void)
         return ESP_OK;
     }
 
-    esp_err_t err = esp_vfs_littlefs_unregister(SM_PARTITION_LABEL);
+    esp_err_t err = flash_jobs_run(unmount_job, NULL);
+
     s_mounted = false;
     return err;
 }
@@ -221,6 +247,19 @@ static esp_err_t read_file(const char *path, char **out)
     return ESP_OK;
 }
 
+typedef struct
+{
+    const char *path;
+    char      **out;
+} load_args_t;
+
+static esp_err_t load_job(void *arg)
+{
+    load_args_t *a = arg;
+
+    return read_file(a->path, a->out);
+}
+
 esp_err_t sm_storage_load(const char *name, uint32_t *version_out, cJSON **data_out)
 {
     if (name == NULL || data_out == NULL)
@@ -232,7 +271,8 @@ esp_err_t sm_storage_load(const char *name, uint32_t *version_out, cJSON **data_
     build_path(path, sizeof(path), name, ".json");
 
     char *raw = NULL;
-    esp_err_t err = read_file(path, &raw);
+    load_args_t a = { path, &raw };
+    esp_err_t err = flash_jobs_run(load_job, &a);
 
     if (err != ESP_OK)
     {
@@ -242,6 +282,49 @@ esp_err_t sm_storage_load(const char *name, uint32_t *version_out, cJSON **data_
     err = sm_codec_decode(raw, version_out, data_out);
     free(raw);
     return err;
+}
+
+typedef struct
+{
+    const char *tmp_path;
+    const char *path;
+    const char *scratch;
+    size_t      len;
+} save_args_t;
+
+/* the temp file written and synced, then renamed over the target */
+static esp_err_t save_job(void *arg)
+{
+    save_args_t *a = arg;
+    FILE *f = fopen(a->tmp_path, "wb");
+
+    if (f == NULL)
+    {
+        ESP_LOGE(TAG, "open %s failed", a->tmp_path);
+        return ESP_FAIL;
+    }
+
+    size_t written = fwrite(a->scratch, 1, a->len, f);
+    fflush(f);
+    fsync(fileno(f));   /* force to media before rename: fflush alone only empties
+                           stdio buffers, leaving a power-cut corruption window */
+    fclose(f);
+
+    if (written != a->len)
+    {
+        remove(a->tmp_path);
+        return ESP_FAIL;
+    }
+
+    /* Atomic swap: the .json is either the old good file or the new one. */
+    if (rename(a->tmp_path, a->path) != 0)
+    {
+        remove(a->tmp_path);
+        ESP_LOGE(TAG, "rename %s -> %s failed", a->tmp_path, a->path);
+        return ESP_FAIL;
+    }
+
+    return ESP_OK;
 }
 
 esp_err_t sm_storage_save(const char *name, uint32_t version, const cJSON *data)
@@ -278,55 +361,25 @@ esp_err_t sm_storage_save(const char *name, uint32_t version, const cJSON *data)
     build_path(tmp_path, sizeof(tmp_path), name, ".tmp");
     build_path(path, sizeof(path), name, ".json");
 
-    FILE *f = fopen(tmp_path, "wb");
+    save_args_t a = { tmp_path, path, scratch, env_len };
 
-    if (f == NULL)
-    {
-        free(scratch);
-        ESP_LOGE(TAG, "open %s failed", tmp_path);
-        return ESP_FAIL;
-    }
-
-    size_t written = fwrite(scratch, 1, env_len, f);
-    fflush(f);
-    fsync(fileno(f));   /* force to media before rename: fflush alone only empties
-                           stdio buffers, leaving a power-cut corruption window */
-    fclose(f);
+    err = flash_jobs_run(save_job, &a);
     free(scratch);
-
-    if (written != env_len)
-    {
-        remove(tmp_path);
-        return ESP_FAIL;
-    }
-
-    /* Atomic swap: the .json is either the old good file or the new one. */
-    if (rename(tmp_path, path) != 0)
-    {
-        remove(tmp_path);
-        ESP_LOGE(TAG, "rename %s -> %s failed", tmp_path, path);
-        return ESP_FAIL;
-    }
-
-    return ESP_OK;
+    return err;
 }
 
-esp_err_t sm_storage_wipe(void)
+/* 2026-10-26: the whole partition, raw, after the unmount (the file
+   deletes it did until then left every old setting on the flash until
+   LittleFS reused the blocks): the next boot finds it blank, formats
+   it (format_if_not_ours, one I line) and applies pure factory
+   defaults. The registry stays as loaded: the running configuration
+   is untouched until the caller's restart, a save in between answers
+   ESP_ERR_INVALID_STATE. */
+static esp_err_t wipe_job(void *arg)
 {
-    if (!s_mounted)
-    {
-        return ESP_ERR_INVALID_STATE;
-    }
+    (void)arg;
 
-    /* 2026-10-26: the whole partition, raw, after the unmount (the file
-       deletes it did until then left every old setting on the flash until
-       LittleFS reused the blocks): the next boot finds it blank, formats
-       it (format_if_not_ours, one I line) and applies pure factory
-       defaults. The registry stays as loaded: the running configuration
-       is untouched until the caller's restart, a save in between answers
-       ESP_ERR_INVALID_STATE. Flash: the caller's stack is internal (the
-       HTTP task, the console task, main's factory reset task). */
-    esp_err_t err = sm_storage_unmount();
+    esp_err_t err = sm_storage_unmount(); /* a job inside a job: in line */
 
     if (err != ESP_OK)
     {
@@ -359,6 +412,23 @@ esp_err_t sm_storage_wipe(void)
     return ESP_OK;
 }
 
+esp_err_t sm_storage_wipe(void)
+{
+    if (!s_mounted)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    return flash_jobs_run(wipe_job, NULL);
+}
+
+static esp_err_t exists_job(void *arg)
+{
+    struct stat st;
+
+    return (stat((const char *)arg, &st) == 0) ? ESP_OK : ESP_ERR_NOT_FOUND;
+}
+
 bool sm_storage_file_exists(const char *name)
 {
     if (name == NULL)
@@ -369,6 +439,5 @@ bool sm_storage_file_exists(const char *name)
     char path[SM_PATH_MAX];
     snprintf(path, sizeof(path), "%s/%s", SM_BASE_PATH, name);
 
-    struct stat st;
-    return stat(path, &st) == 0;
+    return flash_jobs_run(exists_job, path) == ESP_OK;
 }

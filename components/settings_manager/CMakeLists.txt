@@ -9,9 +9,7 @@ idf_component_register(
          "settings_manager_lfs.c"
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "."
-    # cJSON is a public dependency (the header exposes its types); it is
-    # declared in idf_component.yml (espressif/cjson, require: public) because
-    # IDF v6 dropped the bundled `json` component.
-    # littlefs is only used by the .c files -> keep it private (shallow graph).
-    PRIV_REQUIRES littlefs
+    # flash_jobs: the settings files are read and written on an internal
+    # stack whoever the caller is (2026-10-31)
+    PRIV_REQUIRES littlefs flash_jobs
 )

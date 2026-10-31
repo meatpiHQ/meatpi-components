@@ -300,13 +300,17 @@ void fwu_run_install(const fwu_cmd_t *cmd)
         return;
     }
 
-    FWU->job.state = FW_JOB_DOWNLOADING;
     FWU->job.total = FWU->job_rel.size;
     fwu_engine_unlock();
 
     if (verdict == FWU_LAYOUT_WIPE)
     {
-        /* the copies on the device are refreshed before anything formats */
+        /* the copies on the device are refreshed before anything formats.
+           The job stays `checking` until the step is done, so a status
+           that says `downloading` carries the step's result: on 2026-10-31
+           the bench read `downloading` with backup.sd still false while
+           the refresh (half a second) was running, because the state used
+           to move first. */
         bool internal = false;
         bool sd = false;
 
@@ -316,6 +320,9 @@ void fwu_run_install(const fwu_cmd_t *cmd)
         fwu_engine_unlock();
     }
 
+    fwu_engine_lock();
+    FWU->job.state = FW_JOB_DOWNLOADING;
+    fwu_engine_unlock();
     fwu_notify();
 
     uint8_t attempt = 0;

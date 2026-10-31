@@ -43,6 +43,11 @@ The snapshot. Never mutates, never fetches.
 - `job` is `null` when there never was one; after a job it stays with
   `active:false` and its final state until the next job. States:
   `checking`, `downloading`, `verifying`, `rebooting`, `failed`, `aborted`.
+  `job.backup.sd`: a layout-changing update (`wipe`) refreshes the device's
+  backup copies before anything downloads, and `sd` says the card copy was
+  written; the step runs while the job is still `checking`, so a status
+  that says `downloading` carries the step's result (since 2026-10-31; it
+  used to move to `downloading` first).
   Failure codes in `error` (the sentence in `detail`): `manifest_fetch_failed`,
   `unknown_version`, `yanked`, `layout_serial`, `layout_unknown`,
   `needs_confirm_wipe`, `busy_upload`, `no_slot`, `image_too_large`,

@@ -25,7 +25,12 @@
  * @brief esp_ota glue around the pure session: partition selection, flash
  *        I/O, the SHA-256 digest (PSA), the boot-partition switch, the
  *        confirm of a pending image, and the mutex that serializes
- *        transports. The pipe for PSRAM-stack producers is ota_pipe.c.
+ *        transports. Every esp_ota call runs through flash_jobs_run()
+ *        (2026-10-31): in line for an internal-stack caller, on the flash
+ *        worker for the HTTP server task (its stack is in PSRAM since that
+ *        day; the upload routes write the flash chunk by chunk). The pipe
+ *        for PSRAM-stack producers that must not wait per chunk is
+ *        ota_pipe.c (fw_update's fetch).
  */
 #include "ota_manager.h"
 
@@ -37,6 +42,7 @@
 #include "freertos/semphr.h"
 #include "psa/crypto.h"
 
+#include "flash_jobs.h"
 #include "log_manager.h"
 
 #include "ota_manager_private.h"
@@ -76,10 +82,12 @@ static void notify(ota_manager_state_t before, ota_manager_state_t after)
  *  before a new session: esp_ota_begin refuses otherwise with the rollback
  *  option on, and a restart into the new image would otherwise fall back
  *  to the one that was never confirmed. */
-esp_err_t ota_manager_confirm_running(void)
+static esp_err_t confirm_job(void *arg)
 {
     const esp_partition_t *running = esp_ota_get_running_partition();
     esp_ota_img_states_t st;
+
+    (void)arg;
 
     if (running == NULL ||
         esp_ota_get_state_partition(running, &st) != ESP_OK)
@@ -107,9 +115,16 @@ esp_err_t ota_manager_confirm_running(void)
     return err;
 }
 
-static esp_err_t io_begin(void *io, size_t total_size)
+esp_err_t ota_manager_confirm_running(void)
 {
-    (void)io;
+    /* the otadata read and write: flash, on an internal stack */
+    return flash_jobs_run(confirm_job, NULL);
+}
+
+static esp_err_t begin_job(void *arg)
+{
+    size_t total_size = *(const size_t *)arg;
+
     s_target = esp_ota_get_next_update_partition(NULL);
 
     if (s_target == NULL)
@@ -118,7 +133,7 @@ static esp_err_t io_begin(void *io, size_t total_size)
         return ESP_ERR_NOT_FOUND;
     }
 
-    (void)ota_manager_confirm_running();
+    (void)ota_manager_confirm_running(); /* a job inside a job: in line */
 
     ESP_LOGI(TAG, "update session -> %s (%s size, erased as written)",
              s_target->label, (total_size > 0) ? "announced" : "unknown");
@@ -132,15 +147,38 @@ static esp_err_t io_begin(void *io, size_t total_size)
     return esp_ota_begin(s_target, OTA_WITH_SEQUENTIAL_WRITES, &s_handle);
 }
 
-static esp_err_t io_write(void *io, const void *data, size_t len)
+static esp_err_t io_begin(void *io, size_t total_size)
 {
     (void)io;
-    return esp_ota_write(s_handle, data, len);
+    return flash_jobs_run(begin_job, &total_size);
 }
 
-static esp_err_t io_end(void *io)
+typedef struct
 {
+    const void *data;
+    size_t      len;
+} write_args_t;
+
+static esp_err_t write_job(void *arg)
+{
+    const write_args_t *a = arg;
+
+    /* the source may be in PSRAM (the receive buffer): esp_flash bounces
+       it through an internal buffer during the cache-off write */
+    return esp_ota_write(s_handle, a->data, a->len);
+}
+
+static esp_err_t io_write(void *io, const void *data, size_t len)
+{
+    write_args_t a = { data, len };
+
     (void)io;
+    return flash_jobs_run(write_job, &a);
+}
+
+static esp_err_t end_job(void *arg)
+{
+    (void)arg;
 
     esp_err_t err = esp_ota_end(s_handle); /* validates magic + digest */
 
@@ -157,10 +195,23 @@ static esp_err_t io_end(void *io)
     return err;
 }
 
+static esp_err_t io_end(void *io)
+{
+    (void)io;
+    return flash_jobs_run(end_job, NULL);
+}
+
+static esp_err_t abort_job(void *arg)
+{
+    (void)arg;
+    esp_ota_abort(s_handle);
+    return ESP_OK;
+}
+
 static void io_abort(void *io)
 {
     (void)io;
-    esp_ota_abort(s_handle);
+    (void)flash_jobs_run(abort_job, NULL);
     ESP_LOGW(TAG, "update session aborted");
 }
 

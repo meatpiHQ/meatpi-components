@@ -31,6 +31,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 
 #include "microlink.h"
@@ -68,6 +69,11 @@ esp_err_t vpn_ts_up(const vpn_config_t *cfg)
         .control_url = s_control_url[0] != '\0' ? s_control_url : NULL,
     };
 
+    /* the internal heap around the two bring-up calls: init = the client's
+       state, queues and the device keys from NVS; start = the sockets and
+       the tasks (microlink logs its own per-step line inside) */
+    size_t ram_before = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+
     s_ml = microlink_init(&ml_cfg);
 
     if (s_ml == NULL)
@@ -76,6 +82,7 @@ esp_err_t vpn_ts_up(const vpn_config_t *cfg)
         return ESP_FAIL;
     }
 
+    size_t ram_init = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
     esp_err_t err = microlink_start(s_ml);
 
     if (err != ESP_OK)
@@ -85,8 +92,13 @@ esp_err_t vpn_ts_up(const vpn_config_t *cfg)
         return err;
     }
 
-    ESP_LOGI(TAG, "tailscale starting (%s)",
-             s_control_url[0] ? s_control_url : "tailscale.com");
+    size_t ram_start = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+
+    ESP_LOGI(TAG, "tailscale starting (%s), internal RAM: init %d, start %d B "
+             "(%u free before, %u after)",
+             s_control_url[0] ? s_control_url : "tailscale.com",
+             (int)ram_before - (int)ram_init, (int)ram_init - (int)ram_start,
+             (unsigned)ram_before, (unsigned)ram_start);
     return ESP_OK;
 }
 

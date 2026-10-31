@@ -23,6 +23,7 @@
 
 #include "microlink_internal.h"
 #include "x25519.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_random.h"
@@ -1165,8 +1166,10 @@ static void parse_peers_from_map_response(microlink_t *ml, cJSON *root) {
     }
 
     int count = cJSON_GetArraySize(peers);
-    ESP_LOGI(TAG, "MapResponse: %d peers%s", count,
-             full_map ? " (full map: mark-and-sweep)" : "");
+    ESP_LOGI(TAG, "MapResponse: %d peers%s (internal RAM free %u B, min %u)", count,
+             full_map ? " (full map: mark-and-sweep)" : "",
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
 
     /* Full map: bracket the adds so wg_mgr can prune peers the control
      * server no longer lists (removed while we were offline, NVS-cached

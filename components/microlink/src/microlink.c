@@ -7,6 +7,7 @@
  */
 
 #include "microlink_internal.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_random.h"
 #include "esp_timer.h"
@@ -415,6 +416,12 @@ esp_err_t microlink_start(microlink_t *ml) {
 
     ml->state = ML_STATE_WIFI_WAIT;
 
+    /* WiCAN (2026-10-31): the internal heap at each step of the start, the
+     * map of what Tailscale costs where (the task stacks on PSRAM cost
+     * nothing here, wg_mgr's internal stack and the sockets do) */
+    size_t ram[7] = { 0 };
+    ram[0] = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+
     /* Set WiFi TX power if configured */
     if (ml->config.wifi_tx_power_dbm > 0) {
         int8_t power_quarter_dbm = ml->config.wifi_tx_power_dbm * 4;
@@ -485,6 +492,7 @@ skip_bsd_socket:
      * stack forbids. Self-deleting static tasks are safe: the memory
      * is ours; the PSRAM stacks are freed in microlink_destroy. */
     BaseType_t ret;
+    ram[1] = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
 
     if (!ml_start_psram_task(ml_net_io_task, "ml_net_io",
                              ML_TASK_NET_IO_STACK, ml, ML_TASK_NET_IO_PRIO,
@@ -492,6 +500,7 @@ skip_bsd_socket:
         ESP_LOGE(TAG, "Failed to create net_io task");
         return ESP_FAIL;
     }
+    ram[2] = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
 
     if (!ml_start_psram_task(ml_derp_tx_task, "ml_derp_tx",
                              ML_TASK_DERP_TX_STACK, ml, ML_TASK_DERP_TX_PRIO,
@@ -499,6 +508,7 @@ skip_bsd_socket:
         ESP_LOGE(TAG, "Failed to create derp_tx task");
         return ESP_FAIL;
     }
+    ram[3] = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
 
     if (!ml_start_psram_task(ml_coord_task, "ml_coord",
                              ML_TASK_COORD_STACK, ml, ML_TASK_COORD_PRIO,
@@ -506,6 +516,7 @@ skip_bsd_socket:
         ESP_LOGE(TAG, "Failed to create coord task");
         return ESP_FAIL;
     }
+    ram[4] = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
 
     /* wg_mgr: INTERNAL stack (NVS peer-cache writes) */
     ret = xTaskCreatePinnedToCore(ml_wg_mgr_task, "ml_wg_mgr", ML_TASK_WG_MGR_STACK,
@@ -514,6 +525,7 @@ skip_bsd_socket:
         ESP_LOGE(TAG, "Failed to create wg_mgr task");
         return ESP_FAIL;
     }
+    ram[5] = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
 
     /* WiFi is expected to be connected before microlink_start() is called.
      * Signal the event so coord/wg_mgr tasks proceed immediately. */
@@ -527,8 +539,14 @@ skip_bsd_socket:
     if (ml->config_httpd) {
         ml_config_httpd_start(ml->config_httpd, ml);
     }
+    ram[6] = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
 
     ESP_LOGI(TAG, "All tasks started");
+    ESP_LOGI(TAG, "internal RAM per step: disco socket %d, net_io task %d, derp_tx task %d, "
+             "coord task %d, wg_mgr task %d, config httpd %d B (%u free before, %u after)",
+             (int)ram[0] - (int)ram[1], (int)ram[1] - (int)ram[2], (int)ram[2] - (int)ram[3],
+             (int)ram[3] - (int)ram[4], (int)ram[4] - (int)ram[5], (int)ram[5] - (int)ram[6],
+             (unsigned)ram[0], (unsigned)ram[6]);
     return ESP_OK;
 }
 

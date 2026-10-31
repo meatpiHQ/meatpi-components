@@ -20,6 +20,7 @@
  */
 
 #include "microlink_internal.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_random.h"
@@ -1090,7 +1091,9 @@ esp_err_t ml_derp_connect(microlink_t *ml) {
              (t_derp_tcp - t_derp_dns) / 1000,
              (t_derp_tls - t_derp_tcp) / 1000,
              (t_derp_done - t_derp_tls) / 1000);
-    ESP_LOGI(TAG, "DERP handshake complete, connected");
+    ESP_LOGI(TAG, "DERP handshake complete, connected (internal RAM free %u B, min %u)",
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
     return ESP_OK;
 }
 

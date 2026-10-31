@@ -12,6 +12,7 @@
  */
 
 #include "microlink_internal.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "lwip/udp.h"
 #include "lwip/pbuf.h"
@@ -23,6 +24,7 @@ static const char *TAG = "ml_udp";
 
 #define UDP_RX_QUEUE_SIZE   4
 #define UDP_MAX_PKT_SIZE    1400
+#define UDP_RX_TASK_STACK   4096   /* bytes; PSRAM (WiCAN 2026-10-31) */
 
 /* ============================================================================
  * Internal Types
@@ -53,9 +55,15 @@ struct microlink_udp_socket {
     microlink_udp_rx_cb_t rx_cb;
     void *rx_cb_data;
 
-    /* Dedicated RX task */
+    /* Dedicated RX task. WiCAN (2026-10-31): a PSRAM stack: the task only
+     * drains the rx ring into the callback (WireGuard decrypt, lwIP input),
+     * nothing on that path touches flash, and its 4 KB were one of
+     * Tailscale's three internal-RAM stacks. The TCB stays internal. */
     TaskHandle_t rx_task;
     volatile bool rx_running;
+    volatile bool rx_exited;     /* the task's last word before vTaskDelete */
+    StaticTask_t rx_tcb;         /* internal: FreeRTOS TCB */
+    StackType_t *rx_stack;       /* PSRAM; freed after a real join */
 };
 
 /* ============================================================================
@@ -141,6 +149,7 @@ static void udp_rx_task(void *arg) {
         }
     }
 
+    sock->rx_exited = true;  /* microlink_udp_close waits for this before freeing the stack */
     vTaskDelete(NULL);
 }
 
@@ -196,12 +205,23 @@ microlink_udp_socket_t *microlink_udp_create(microlink_t *ml, uint16_t local_por
     sock->local_port = sock->pcb->local_port;
     udp_recv(sock->pcb, udp_recv_cb, sock);
 
-    /* Start RX task on Core 1 */
+    /* Start RX task on Core 1, on a PSRAM stack (see the struct) */
     sock->rx_running = true;
-    if (xTaskCreatePinnedToCore(udp_rx_task, "ml_udp_rx", 4096, sock,
-                                 configMAX_PRIORITIES - 2, &sock->rx_task, 1) != pdPASS) {
+    sock->rx_exited = false;
+    sock->rx_stack = heap_caps_malloc(UDP_RX_TASK_STACK,
+                                      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    sock->rx_task = sock->rx_stack
+        ? xTaskCreateStaticPinnedToCore(udp_rx_task, "ml_udp_rx",
+                                        UDP_RX_TASK_STACK / sizeof(StackType_t), sock,
+                                        configMAX_PRIORITIES - 2, sock->rx_stack,
+                                        &sock->rx_tcb, 1)
+        : NULL;
+    if (sock->rx_task == NULL) {
+        ESP_LOGW(TAG, "no rx task (stack %s): the socket is polled",
+                 sock->rx_stack ? "refused" : "unavailable");
         sock->rx_running = false;
-        sock->rx_task = NULL;
+        heap_caps_free(sock->rx_stack);
+        sock->rx_stack = NULL;
     }
 
     char ip_buf[16];
@@ -232,7 +252,12 @@ void microlink_udp_close(microlink_udp_socket_t *sock) {
     if (sock->rx_running) {
         sock->rx_running = false;
         if (sock->rx_sem) xSemaphoreGive(sock->rx_sem);
-        vTaskDelay(pdMS_TO_TICKS(150));
+        /* a real join: the task reads this struct and runs on rx_stack
+         * until its last line, so neither may go before it has left */
+        for (int i = 0; i < 50 && !sock->rx_exited; i++) {
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+        vTaskDelay(pdMS_TO_TICKS(10)); /* the deleted task's final switch */
     }
 
     if (sock->pcb) {
@@ -240,6 +265,13 @@ void microlink_udp_close(microlink_udp_socket_t *sock) {
     }
 
     if (sock->rx_sem) vSemaphoreDelete(sock->rx_sem);
+    if (sock->rx_stack) {
+        if (sock->rx_task == NULL || sock->rx_exited) {
+            heap_caps_free(sock->rx_stack);
+        } else {
+            ESP_LOGW(TAG, "rx task not joined; keeping its stack");
+        }
+    }
     free(sock);
     ESP_LOGI(TAG, "UDP socket closed");
 }

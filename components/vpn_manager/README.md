@@ -143,7 +143,24 @@ latency ever hurts, add a rule on `vpn.state`.
 
 ## Footprint
 
-PSRAM: 6 KB state-task stack, plus the two peer-snapshot tables of the HTTP and CLI surfaces (1.3 KB each, PSRAM since 2026-09-22) and the 176 B hold reason. Internal: FreeRTOS objects + the lwip
+PSRAM: the two peer-snapshot tables of the HTTP and CLI surfaces (1.3 KB each, PSRAM since 2026-09-22) and the 176 B hold reason. The 6 KB state-task stack is INTERNAL (`vpn_manager.c`: the Tailscale start reads and writes the device keys in NVS from it; `WICAN RAMMAP vpn_manager=6520` with the VPN enabled).
+
+**Where Tailscale's internal RAM goes (mapped 2026-10-31 on the public rig, `.\test.ps1 tspublic`, the per-step lines of `vpn_ts_up()`, `microlink_start()`, the relay and the coordinator; a fresh boot with 53.6 KB free before the start):**
+
+| step | internal RAM | what it is |
+|---|---|---|
+| `microlink_init` | 4.0 KB | the client's state, queues and event group (FreeRTOS objects are internal), the device keys from NVS |
+| `microlink_start`: the DISCO socket | 0.25 KB | one UDP socket |
+| the net_io, derp_tx and coord tasks | 0.1 KB | their 34 KB of stacks are PSRAM; only the TCBs stay |
+| the `ml_wg_mgr` task | 7.5 KB | its 7 KB stack is internal because it writes the peer cache to NVS |
+| the connect (control TCP + Noise, the map stream, the WireGuard netif, the `ml_udp_rx` task's 4 KB internal stack, the sockets) | 9.0 KB | 41.6 KB before, 32.6 KB at `connected` |
+| the DERP relay | 0.3 KB | the TLS session is PSRAM (mbedTLS external allocation) |
+| the first peer | 0.8 KB | 32.1 KB at the map with the peer, 31.3 KB steady and flat over the soak |
+| the lowest point of the first minute | 27.9 KB | 3.4 KB below steady, the bursts of the map and the handshakes |
+
+With the BLE controller's code in flash (`CONFIG_BT_CTRL_RUN_IN_FLASH_ONLY`, the evening's build 1) the same start read 73.0 KB before and 51.5 KB steady, the same 21.5 KB, and with Bluetooth on the Lean profile beside it (40.9 KB before the start) Tailscale connected and held 18.6 KB steady, 15.2 KB at the lowest point: the first run of both together (`.\test.ps1 tspublic` PASS, ble_manager README "the lever that did reach"). The `ml_udp_rx` stack is PSRAM since that build, which changed nothing here: the client's UDP socket API is never used on the WiCAN's path.
+
+So Tailscale costs 22.3 KB steady and 25.7 KB at its lowest point, and three task stacks account for 17.5 KB of it: `ml_wg_mgr` 7 KB (NVS peer cache), `vpn_state` 6 KB (NVS device keys at the start) and `ml_udp_rx` 4 KB (nothing in its path touches flash: the one that could move today). Moving the two NVS writers to PSRAM stacks means handing their flash writes to an internal-stack worker, the pattern the NimBLE bond store needs too. The per-packet buffers, the TLS contexts and the map's JSON are PSRAM already (`CONFIG_SPIRAM_USE_MALLOC`, allocations above 32 B). Internal: FreeRTOS objects + the lwip
 netif esp_wireguard creates while up. **Tailscale, measured 2026-10-31 on
 the bench unit (ESP-IDF 6.1, the ESPNetLink on the USB port, BLE off, the
 WiFi Lean profile):** the internal floor settles at 51.9 KB with the VPN

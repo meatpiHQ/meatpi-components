@@ -82,7 +82,9 @@ bool vpn_check_routes(const char *routes, char *err, size_t err_len);
 /* Pure, host-tested: the hold reason shown on /api/vpn and the console
  * while Tailscale waits for internal RAM: what the device can change,
  * from its own settings (Bluetooth on, the WiFi memory profile not Lean),
- * else WireGuard. Returns @p out. */
+ * else WireGuard. Returns @p out. The Bluetooth memory profile of
+ * ble_manager v5 is not named here on purpose: its Lean frees about 3 KB
+ * on the bench unit (2026-10-31), no help against a 30 KB floor. */
 const char *vpn_ts_hold_reason(unsigned free_kb, unsigned need_kb, bool ble_on,
                                bool wifi_full, char *out, size_t len);
 

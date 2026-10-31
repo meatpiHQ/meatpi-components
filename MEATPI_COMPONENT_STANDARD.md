@@ -59,7 +59,7 @@ xTaskCreateStatic(comp_task, "comp", 8192, NULL, 5, s_stack, &s_tcb);
 - **Must stay in internal RAM**: these are the only acceptable reasons to leave PSRAM:
   - **DMA buffers** (TWAI/CAN, SPI, I2S, USB, …). Static: `DMA_ATTR`. Dynamic: `MALLOC_CAP_DMA`.
   - **Anything reached with the cache disabled**: data/code touched by an IRAM ISR (`ESP_INTR_FLAG_IRAM`), or accessed during flash/OTA/LittleFS writes. PSRAM is unreachable when cache is off, so this is a crash, not a perf issue.
-  - **A task whose path hits the above** (IRAM ISR handler, cache-disabling work) → its stack stays internal too. **Corollary: a task running on a PSRAM stack must never perform flash writes directly**, hand the work to a task with an internal stack. (This is why the Settings Manager's writer runs on an internal stack, §4.)
+  - **A task whose path hits the above** (IRAM ISR handler, cache-disabling work) → its stack stays internal too. **Corollary: a task running on a PSRAM stack must never touch the flash directly**, reads included (a LittleFS or NVS read, `esp_partition_read`, `esp_partition_mmap` and the OTA state reads all switch the cache off; the beta.1 crash of 2026-10-21 was an otadata read from the webhook poster), hand the work to a task with an internal stack. Since 2026-10-31 that task is the shared `flash_jobs` worker: `flash_jobs_run(fn, arg)` runs the job in line on an internal stack and on the worker otherwise (the Settings Manager, the filesystem, the NVS records and the OTA session route through it, which is what lets the HTTP server task live on a PSRAM stack, §4). IDF asserts the rule (`cache_utils.c`, `esp_task_stack_is_sane_cache_disabled`), so a missed path is an immediate abort with a backtrace, never a silent fault.
   - **Hot, latency-sensitive paths** where PSRAM access cost is measured and matters.
 - When you use internal RAM, say why in a one-word comment: `// internal: DMA`.
 - **PSRAM-stack overflow is SILENT** (found the hard way 2026-07-22, autopid DTC
@@ -270,7 +270,7 @@ The Settings Manager is the only code that touches settings storage. These behav
 - **Atomic writes**: write to a temp file, sync, rename over the target. A power cut mid-write must leave either the old object or the new one: never a torn file.
 - **Integrity**: every stored object carries a CRC-32 (polynomial `0xEDB88320`); a mismatch at load is treated as missing (§4.3 step 1).
 - **Write deduplication**: `set` with content identical to what's persisted returns `ESP_OK` without writing (the `persisted_clean` guard). This protects flash from redundant wear and is what makes the no-op-submit reboot skip (§4.2) work.
-- The manager's **writer task runs on an internal-RAM stack** (§2 corollary: flash writes from a PSRAM stack are forbidden).
+- The manager's **storage runs on an internal-RAM stack whoever the caller is** (§2 corollary: flash access from a PSRAM stack is forbidden): every read and write of a settings file goes through `flash_jobs_run()`, in line for an internal-stack caller and on the `flash_jobs` worker for a PSRAM-stack caller (the HTTP server task since 2026-10-31).
 
 ## 5. Settings format
 

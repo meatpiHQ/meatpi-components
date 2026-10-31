@@ -741,6 +741,29 @@ Over `GET /api/obd_chip`, `POST /api/obd_chip/update`, `POST/GET
 Probe: `probe_diag.mjs` (plain and `--min`; the mock presets a chip up,
 a chip down with wire notes, a chip left on V2.3.22, and a self-test pass).
 
+### The Bluetooth memory profile and the VPN hold note (2026-10-31, issue #1024)
+
+Settings > Bluetooth is built by `bleForm()` instead of a bare
+`settingsForm("ble_manager")`: the `ble_ram_profile` row (label "Memory
+profile", words Full (BLE 5 options) / Lean (recommended) / Custom, the
+help text with what Lean frees and what Full keeps) sits with the
+essentials in the schema's order, right after `advertising`; the three
+controller knobs (`ble_max_act`, `ble_acl_tx_bufs`, `ble_scan_cache`) are
+advanced rows that the `visible` filter shows only under Custom, the WiFi
+card's pattern for its buffer knobs. Under Lean the
+firmware accepts legacy advertising on 1M only, so the `advertising` and
+`phy` selects are greyed and a note under the advertising row
+(`data-key="ble_lean_note"`) says so; picking Lean while a BLE 5 word is
+staged puts `legacy` / `1m` back into the staged values (`rows.load()`)
+and stages the group, so Submit never meets the firmware's refusal. The
+VPN page shows `/api/vpn` `reason` (why a Tailscale tunnel is held in
+`waiting`: the internal-RAM floor and the levers the device has) as a
+warn note above the settings card (`data-key="vpn_hold_note"`, hidden
+while the field is empty) and a `Relay` row (`derp`) in the debug block.
+Probe: `probe_ble_ram.mjs` (the mock presets `window.__mockPreset.ble`
+for the Bluetooth values and `.vpn` for the tunnel state; 23 checks,
+`BLE RAM PROBE PASS`).
+
 ## The new-car bar (2026-10-26)
 
 Ali set a device up on the simulator (two standard PIDs chosen), took it to

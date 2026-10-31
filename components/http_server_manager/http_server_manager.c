@@ -31,7 +31,9 @@
 #include <string.h>
 
 #include "esp_attr.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "sdkconfig.h"
 
 #include "log_manager.h"
 
@@ -141,8 +143,24 @@ static esp_err_t hsm_gate_trampoline(httpd_req_t *req)
         return auth_reject(req);
     }
 
+    /* the flash audit (2026-10-31): the SPI flash counters before and
+       after the handler, accounted to the route (the catch-all's row for
+       the asset server). A route that moves them touched the flash from
+       this task, or ran while another task did: the superset the `http`
+       console command prints is the list to read when this task's stack
+       placement is in question. */
+    size_t idx = (orig >= s_uris && orig < s_uris + HSM_MAX_BUFFERED_URIS)
+                     ? (size_t)(orig - s_uris)
+                     : HSM_AUDIT_CATCHALL;
+    hsm_flash_ops_t before;
+
+    hsm_audit_snapshot(&before);
     req->user_ctx = orig->user_ctx;
-    return orig->handler(req);
+
+    esp_err_t err = orig->handler(req);
+
+    hsm_audit_note(idx, &before);
+    return err;
 }
 
 static esp_err_t hsm_gate_ws_pre_handshake(httpd_req_t *req)
@@ -341,7 +359,19 @@ esp_err_t http_server_manager_start(void)
        12 KB never used through the BLE tunnel + storage + UDS benches, i.e.
        ~3.2 KB in use; 8 KB keeps ~4.9 KB of headroom and returns 4 KB of
        internal RAM (handlers write flash, so the stack stays internal). */
-    config.stack_size = 8192;
+    /* PSRAM since 2026-10-31 (CONFIG_HTTP_SERVER_MANAGER_STACK_PSRAM, the
+       default): every flash access a handler makes (the settings files,
+       the NVS records, an OTA session, a /data stream) goes through the
+       flash_jobs worker, so nothing on this task runs with the cache off
+       and the stack may live in PSRAM. 12 KB there: PSRAM is plentiful and
+       a PSRAM stack overflow is silent (standard, section 2), so the
+       8180 B peak of 2026-07-11 keeps a wide margin; the watermark is on
+       `system -t`. The TCB stays internal (IDF allocates it so). The
+       internal 8 KB is one option away for a build that needs it. */
+#if CONFIG_HTTP_SERVER_MANAGER_STACK_PSRAM
+    config.task_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
+#endif
+    config.stack_size = HSM_STACK_BYTES;
 
     esp_err_t err = httpd_start(&s_server, &config);
 
@@ -410,7 +440,12 @@ httpd_handle_t http_server_manager_handle(void)
     return s_server;
 }
 
-/* ---- accessors for serve.c ------------------------------------------------ */
+/* ---- accessors for serve.c and the audit ------------------------------------- */
+
+const httpd_uri_t *hsm_route_at(size_t idx)
+{
+    return (idx < s_uri_count) ? &s_uris[idx] : NULL;
+}
 
 const http_asset_t *const *hsm_asset_tables(size_t *count_out)
 {

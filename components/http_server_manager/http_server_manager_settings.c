@@ -91,6 +91,15 @@ static esp_err_t on_apply(const cJSON *settings)
         s_password[sizeof(s_password) - 1] = '\0';
     }
 
+    /* the `http` console command (2026-10-31): registered once, at the
+       boot apply; no `cli` switch here, the command is read-only */
+    static bool s_cli_registered;
+
+    if (!s_cli_registered && hsm_register_cli() == ESP_OK)
+    {
+        s_cli_registered = true;
+    }
+
     return ESP_OK;
 }
 

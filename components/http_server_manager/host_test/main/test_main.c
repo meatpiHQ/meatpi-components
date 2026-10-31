@@ -21,6 +21,10 @@ void test_auth_basic_any_username(void);
 void test_auth_basic_garbage_rejected(void);
 void test_auth_bearer(void);
 void test_auth_cookie(void);
+void test_audit_accounts_the_deltas_to_the_route(void);
+void test_audit_index_past_the_table_is_the_catch_all(void);
+void test_audit_survives_a_counter_wrap(void);
+void test_audit_ignores_bad_arguments(void);
 
 void app_main(void)
 {
@@ -42,5 +46,9 @@ void app_main(void)
     RUN_TEST(test_auth_basic_garbage_rejected);
     RUN_TEST(test_auth_bearer);
     RUN_TEST(test_auth_cookie);
+    RUN_TEST(test_audit_accounts_the_deltas_to_the_route);
+    RUN_TEST(test_audit_index_past_the_table_is_the_catch_all);
+    RUN_TEST(test_audit_survives_a_counter_wrap);
+    RUN_TEST(test_audit_ignores_bad_arguments);
     UNITY_END();
 }

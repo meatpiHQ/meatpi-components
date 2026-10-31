@@ -8,8 +8,10 @@ idf_component_register(
     SRCS "test_main.c"
          "test_match.c"
          "test_auth.c"
+         "test_audit.c"
          "${comp_dir}/http_server_manager_match.c"
          "${comp_dir}/http_server_manager_auth.c"
+         "${comp_dir}/http_server_manager_audit_core.c"
     INCLUDE_DIRS "${comp_dir}/include" "${comp_dir}"
     REQUIRES unity esp_http_server
 )

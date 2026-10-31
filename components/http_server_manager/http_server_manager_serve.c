@@ -177,16 +177,19 @@ static esp_err_t serve_file(httpd_req_t *req, const http_asset_t *e,
         }
     }
 
+    /* the stream's reads, stat and close go through the filesystem's
+       helpers: this task's stack is in PSRAM (2026-10-31) and a /data
+       stream reads the flash with the cache off */
     struct stat st = { 0 };
 
-    fstat(fileno(f), &st);
+    (void)filesystem_fstat(f, &st);
 
     char etag[HSM_ETAG_LEN];
     make_etag(etag, sizeof(etag), (size_t)st.st_size, (long)st.st_mtime);
 
     if (client_has_current(req, etag))
     {
-        fclose(f);
+        filesystem_fclose(f);
         return reply_304(req, etag);
     }
 
@@ -195,7 +198,7 @@ static esp_err_t serve_file(httpd_req_t *req, const http_asset_t *e,
 
     if (chunk == NULL)
     {
-        fclose(f);
+        filesystem_fclose(f);
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "No memory");
         return ESP_OK;
     }
@@ -205,7 +208,7 @@ static esp_err_t serve_file(httpd_req_t *req, const http_asset_t *e,
     esp_err_t result = ESP_OK;
     size_t    n;
 
-    while ((n = fread(chunk, 1, HSM_CHUNK_SIZE, f)) > 0)
+    while ((n = filesystem_fread(chunk, HSM_CHUNK_SIZE, f)) > 0)
     {
         if (httpd_resp_send_chunk(req, chunk, n) != ESP_OK)
         {
@@ -223,7 +226,7 @@ static esp_err_t serve_file(httpd_req_t *req, const http_asset_t *e,
     }
 
     free(chunk);
-    fclose(f);
+    filesystem_fclose(f);
     return result;
 }
 

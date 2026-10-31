@@ -1,0 +1,19 @@
+menu "HTTP server manager"
+
+    config HTTP_SERVER_MANAGER_STACK_PSRAM
+        bool "Run the HTTP server task on a PSRAM stack"
+        default y
+        # IDF 6: the option that lets a task stack live in PSRAM is
+        # FREERTOS_TASK_CREATE_ALLOW_EXT_MEM (SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY
+        # is its deprecated spelling and no longer a symbol)
+        depends on FREERTOS_TASK_CREATE_ALLOW_EXT_MEM
+        help
+            The HTTP server task's 12 KB stack is allocated from PSRAM
+            (esp_http_server's task_caps) instead of 8 KB of internal RAM.
+            Every flash access a route handler makes (the settings files,
+            the NVS records, an OTA upload, a /data stream) runs through
+            the flash_jobs worker, so nothing on this task runs with the
+            flash cache off. Switch off for a build that must keep the
+            server's stack internal (then 8 KB, the 2026-09-22 size).
+
+endmenu

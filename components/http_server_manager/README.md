@@ -105,21 +105,43 @@ component, not to this server, see ARCHITECTURE.md §9.)
 
 ## Memory footprint
 
-Task stack: **8 KB internal** since 2026-09-22 (was 12 KB). `system -t`
-showed 9060 B of the 12 KB never used through the BLE tunnel + storage +
-UDS benches (~3.2 KB in use); 8 KB keeps ~4.9 KB of headroom and returns
-4 KB of internal RAM. The stack stays internal because route handlers
-write flash (`/api/fs/upload`, OTA, settings). `TASK_internal_ram.md`.
+Task stack: **12 KB in PSRAM** since 2026-10-31
+(`CONFIG_HTTP_SERVER_MANAGER_STACK_PSRAM`, the default; `TASK_httpd_psram.md`).
+Every flash access a route handler makes runs through the `flash_jobs`
+worker: the settings files (settings_manager), the `/data` operations and
+streams (filesystem: `filesystem_open()` plus `filesystem_fread()` /
+`filesystem_fstat()` / `filesystem_fclose()` in `serve_file()`), the NVS
+records (restart_tracker, dev_status_manager, config_backup) and the OTA
+session (ota_manager), so nothing on this task runs with the flash cache
+off. 12 KB there because PSRAM is plentiful and a PSRAM stack overflow is
+silent (standard, section 2): the 8180 B peak of 2026-07-11 keeps a wide
+margin, the watermark is on `system -t`. The TCB stays internal (IDF
+allocates it so). With the option off the stack is 8 KB internal, the
+2026-09-22 size (`system -t` had shown 9060 B of 12 KB never used through
+the BLE tunnel, storage and UDS benches; `TASK_internal_ram.md`).
+
+**The flash audit** (2026-10-31): the gate trampoline reads the SPI flash
+counters (`CONFIG_SPI_FLASH_ENABLE_COUNTERS`) before and after every
+handler and accounts the deltas to the route's row (the catch-all's row for
+the asset server; 161 rows of 16 B in PSRAM). The `http` console command
+prints the routes whose requests moved the counters (`http -a`: every route
+served): a superset of the routes that touch the flash from this task
+(another task's flash work during the request counts too), which is the
+list to read when the task's stack placement is in question. Pure half
+`http_server_manager_audit_core.c` (host-tested), target half
+`http_server_manager_audit.c`.
 
 No task of its own beyond httpd's own workers (owned by esp_http_server). All
 numbers **estimated**: replace with **measured** before release.
 
 | Region                          | Where           | Size (est.) | Notes                          |
 |---------------------------------|-----------------|-------------|---------------------------------|
-| Route buffer `s_uris[144]`      | PSRAM `.bss`    | ~4.6 KB     | `EXT_RAM_BSS_ATTR` (113 in use, 2026-10-03) |
+| Route buffer `s_uris[160]`      | PSRAM `.bss`    | ~5 KB       | `EXT_RAM_BSS_ATTR` (138 in use, 2026-10-28) |
 | Asset table ptrs `s_tables[16]` | PSRAM `.bss`    | 128 B       | `EXT_RAM_BSS_ATTR`             |
+| Audit rows `s_rows[161]`        | PSRAM `.bss`    | ~2.6 KB     | `EXT_RAM_BSS_ATTR`, the per-route flash counters |
 | Chunk buffer (per active file)  | internal heap   | 4 KB transient | `// internal: DMA / cache-off during FS read` |
-| httpd stack/control             | per esp_http_server config | ~4–8 KB | owned by IDF httpd          |
+| httpd stack                     | PSRAM heap (`task_caps`) | 12 KB | 8 KB internal with the option off |
+| httpd control, TCB              | internal heap   | about 1 KB  | owned by IDF httpd             |
 
 Without PSRAM (`CONFIG_SPIRAM` off) `EXT_RAM_BSS_ATTR` is empty and the
 registries (~1.6 KB) land in internal `.bss`: correct fallback, not a bug.

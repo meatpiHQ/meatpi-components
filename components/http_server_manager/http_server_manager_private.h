@@ -29,7 +29,9 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 #include "esp_err.h"
+#include "sdkconfig.h"
 #include "http_server_manager.h"
 
 #ifdef __cplusplus
@@ -57,6 +59,18 @@ extern "C" {
  *               wire tools and the CAN self-test add four more: 160. */
 #define HSM_MAX_BUFFERED_URIS 160
 #define HSM_PATH_MAX 192
+
+/* The server task's stack (2026-10-31): 12 KB in PSRAM by default
+   (CONFIG_HTTP_SERVER_MANAGER_STACK_PSRAM; every flash access a handler
+   makes runs through the flash_jobs worker), 8 KB internal otherwise (the
+   2026-09-22 size). The history of the number is in http_server_manager.c. */
+#if CONFIG_HTTP_SERVER_MANAGER_STACK_PSRAM
+#define HSM_STACK_PSRAM 1
+#define HSM_STACK_BYTES 12288
+#else
+#define HSM_STACK_PSRAM 0
+#define HSM_STACK_BYTES 8192
+#endif
 
 /* ---- match (http_server_manager_match.c, pure / host-testable) ------------ */
 
@@ -107,6 +121,56 @@ esp_err_t hsm_serve_catchall(httpd_req_t *req);
 /* Accessors serve.c uses to reach the registries owned by the core file. */
 const http_asset_t *const *hsm_asset_tables(size_t *count_out);
 http_asset_fetch_fn_t      hsm_asset_fetcher(void);
+
+/** The route a row of the audit belongs to; NULL past the registered
+ *  routes (the catch-all's row). */
+const httpd_uri_t *hsm_route_at(size_t idx);
+
+/* ---- the flash audit (audit_core.c pure, audit.c target, 2026-10-31) -------
+   The SPI flash counters (reads, writes, erases: CONFIG_SPI_FLASH_ENABLE_
+   COUNTERS) are read before and after every handler by the gate
+   trampoline and the deltas accounted to the route's row; the catch-all
+   (the asset server) has the last row. A route whose row moved touched the
+   flash from the server task, or served while another task did: the
+   superset to read when the task's stack placement is in question. */
+
+typedef struct
+{
+    uint32_t reads;
+    uint32_t writes;
+    uint32_t erases;
+} hsm_flash_ops_t;
+
+typedef struct
+{
+    uint32_t        requests;
+    hsm_flash_ops_t ops;
+} hsm_audit_row_t;
+
+#define HSM_AUDIT_ROWS     (HSM_MAX_BUFFERED_URIS + 1)
+#define HSM_AUDIT_CATCHALL HSM_MAX_BUFFERED_URIS
+
+/** PURE: account one request's deltas (@p after minus @p before) to row
+ *  @p idx; an index past the table lands on the last row. */
+void hsm_audit_account(hsm_audit_row_t *rows, size_t row_count, size_t idx,
+                       const hsm_flash_ops_t *before,
+                       const hsm_flash_ops_t *after);
+
+/** PURE: the row's requests moved at least one counter. */
+bool hsm_audit_row_touched_flash(const hsm_audit_row_t *row);
+
+/** The counters now (zeros without CONFIG_SPI_FLASH_ENABLE_COUNTERS). */
+void hsm_audit_snapshot(hsm_flash_ops_t *out);
+
+/** A request on row @p idx finished: snapshot and account. */
+void hsm_audit_note(size_t idx, const hsm_flash_ops_t *before);
+
+/** The table (HSM_AUDIT_ROWS rows; read without a lock: counters). */
+const hsm_audit_row_t *hsm_audit_rows(size_t *count_out);
+
+/* ---- the `http` console command (http_server_manager_cli.c) --------------- */
+
+esp_err_t hsm_register_cli(void);
 
 #ifdef __cplusplus
 }

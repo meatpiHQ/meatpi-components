@@ -101,6 +101,50 @@ DERP stack are validated through `vpn_manager` on the bench
     tunnel (registration + map + ICMP + HTTP): wg_mgr uses ~3 KB,
     4.1 KB headroom at 7 KB. vpn_manager's state task went 7168→6144
     the same day (3.9 KB headroom measured).
+14. **The public DERP relays on mbedTLS 4** (2026-10-31, issue 1024,
+    `src/ml_x509_wrap.c`): every public Tailscale relay ends its TLS
+    chain with a self-signed Ed25519 "derpkey" meta certificate. mbedTLS
+    has no Ed25519 in X.509 and parses it to the bare UNKNOWN_OID, which
+    both TLS chain parsers tolerate, but the TLS 1.3 one
+    (`mbedtls_ssl_tls13_parse_certificate`) returns its loop's last
+    `ret` from its exit path, so the tolerated code of a LAST certificate
+    becomes the handshake's error; the relays negotiate 1.3, firmware 4.x
+    ran 1.2 (whose parser returns 0). So every relay handshake failed on
+    v6: `TLS handshake failed: X509 - Requested OID is unknown`, no
+    relay at all with the real control plane, direct paths only. The two
+    parse entry points the TLS layer uses are link-wrapped
+    (CMakeLists.txt): the unknown-algorithm outcome in a chain that
+    already holds a parsed certificate answers 0 (the parser has already
+    unlinked the failed node); nothing else changes for a certificate
+    that parses or fails otherwise, and a chain's first certificate is
+    never skipped. Behind that door a second TLS 1.3 difference: the relay
+    sends session tickets right after the handshake and
+    `mbedtls_ssl_read` reports each as
+    `MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET` (-0x7B00), which the
+    HTTP-upgrade reader took for a fatal error; `derp_io_read` answers
+    WANT_READ for it (the ticket is consumed inside the library).
+15. **`ml_derp_connect()` frees its TLS context on every failure exit**
+    (`derp_connect_fail`, same day): the context (two record buffers and
+    the handshake state) was freed only by `ml_derp_disconnect()`, so
+    each refused handshake leaked about 21 KB of PSRAM and 230 B of
+    internal RAM; three attempts per connect request and a request after
+    every map update emptied a WiCAN PRO in minutes (the first name
+    lookup of a task then hit IDF's lwIP NULL-semaphore panic, the crash
+    of issue 1024). A failed round now arms a backoff in the DERP I/O
+    task (10 s doubling to 5 min, `ml_derp_conn_t.retry_after_ms`); the
+    request bit stays set so the next round starts by itself. The
+    connect path's failures log at W (they are retried), the attempts at
+    D, the relay state once per round. `microlink_derp_connected()`
+    reports the relay for `/api/vpn` `derp`.
+16. **Log levels** (same day): the per-packet and periodic lines of
+    `ml_wg_mgr.c` / `ml_net_io.c` (`wireguardif_periodic`, the DISCO
+    pings and pongs, `WG RX`/`WG UDP TX`, `UDP RX`) and the DERP task's
+    5 s heartbeat and 10 s status line went to debug level: they were
+    about 360 lines a minute at idle on the console (Standard §10). The
+    coordinator's retried failures (`coord_recv failed`, the Noise msg2
+    header, `Noise handshake failed`, `TCP connect failed, retrying`,
+    the two DNS lines) log at W, not E: the coord task retries them
+    itself (rule 5 of the change rules, zero E lines on a retry path).
 
 ## Upstream layout kept
 

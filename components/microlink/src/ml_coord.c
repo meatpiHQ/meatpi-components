@@ -124,7 +124,7 @@ static int coord_recv(microlink_t *ml, uint8_t *buf, size_t len) {
                 vTaskDelay(pdMS_TO_TICKS(10));
                 continue;
             }
-            ESP_LOGE(TAG, "coord_recv failed: %d (errno %d, recvd %d/%d)",
+            ESP_LOGW(TAG, "coord_recv failed: %d (errno %d, recvd %d/%d)",
                      n, errno, (int)recvd, (int)len);
             return -1;
         }
@@ -230,7 +230,7 @@ static int do_tcp_connect(microlink_t *ml) {
     char _pbuf[8];
     snprintf(_pbuf, sizeof(_pbuf), "%d", ml->ctrl_port ? ml->ctrl_port : 80);
     if (ml_getaddrinfo(CTRL_HOST(ml), _pbuf, &hints, &res) != 0 || !res) {
-        ESP_LOGE(TAG, "DNS resolve failed for %s", CTRL_HOST(ml));
+        ESP_LOGW(TAG, "DNS resolve failed for %s", CTRL_HOST(ml));
         return -1;
     }
 
@@ -304,7 +304,7 @@ static int fetch_custom_server_key(microlink_t *ml) {
     char _pbuf[8];
     snprintf(_pbuf, sizeof(_pbuf), "%d", ml->ctrl_port ? ml->ctrl_port : 80);
     if (ml_getaddrinfo(CTRL_HOST(ml), _pbuf, &hints, &res) != 0 || !res) {
-        ESP_LOGE(TAG, "/key: DNS resolve failed for %s", CTRL_HOST(ml));
+        ESP_LOGW(TAG, "/key: DNS resolve failed for %s", CTRL_HOST(ml));
         return -1;
     }
 
@@ -486,7 +486,7 @@ static int do_noise_handshake(microlink_t *ml, ml_noise_state_t *noise) {
             if (!body_buf) return -1;
         }
         if (coord_recv(ml, body_buf + body_buf_len, 3 - body_buf_len) < 0) {
-            ESP_LOGE(TAG, "Failed to read Noise msg2 header");
+            ESP_LOGW(TAG, "Failed to read Noise msg2 header");
             free(body_buf);
             return -1;
         }
@@ -2474,7 +2474,7 @@ void ml_coord_task(void *arg) {
         case COORD_DNS_RESOLVE:
         case COORD_TCP_CONNECT:
             if (do_tcp_connect(ml) < 0) {
-                ESP_LOGE(TAG, "TCP connect failed, retrying...");
+                ESP_LOGW(TAG, "TCP connect failed, retrying...");
                 state = COORD_RECONNECTING;
                 break;
             }
@@ -2485,7 +2485,7 @@ void ml_coord_task(void *arg) {
         case COORD_NOISE_HANDSHAKE:
             ml->state = ML_STATE_REGISTERING;
             if (do_noise_handshake(ml, &noise) < 0) {
-                ESP_LOGE(TAG, "Noise handshake failed");
+                ESP_LOGW(TAG, "Noise handshake failed");
                 ml_close_sock(ml->coord_sock);
                 ml->coord_sock = -1;
                 state = COORD_RECONNECTING;

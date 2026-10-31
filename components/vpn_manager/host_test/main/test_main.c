@@ -258,6 +258,36 @@ static void test_state_words_cover_every_state(void)
     TEST_ASSERT_EQUAL_STRING("disabled", vpn_manager_state_str(99));
 }
 
+static void test_ts_hold_reason_names_the_levers(void)
+{
+    char out[176];
+
+    /* nothing to change but the type */
+    TEST_ASSERT_EQUAL_STRING(
+        "not started: 24 KB of internal RAM free, Tailscale needs 30 KB: use WireGuard",
+        vpn_ts_hold_reason(24, 30, false, false, out, sizeof(out)));
+
+    /* Bluetooth on: named first, WireGuard as the alternative */
+    TEST_ASSERT_EQUAL_STRING(
+        "not started: 24 KB of internal RAM free, Tailscale needs 30 KB: "
+        "turn Bluetooth off (about 40 KB), or use WireGuard",
+        vpn_ts_hold_reason(24, 30, true, false, out, sizeof(out)));
+
+    /* both levers */
+    TEST_ASSERT_EQUAL_STRING(
+        "not started: 9 KB of internal RAM free, Tailscale needs 30 KB: "
+        "turn Bluetooth off (about 40 KB), set the WiFi memory profile to Lean "
+        "(about 14 KB), or use WireGuard",
+        vpn_ts_hold_reason(9, 30, true, true, out, sizeof(out)));
+
+    /* a short buffer truncates cleanly */
+    char tiny[40];
+
+    TEST_ASSERT_EQUAL_STRING("not started: 9 KB of internal RAM free,",
+                             vpn_ts_hold_reason(9, 30, true, true, tiny, sizeof(tiny)));
+    TEST_ASSERT_EQUAL_STRING("", vpn_ts_hold_reason(9, 30, true, true, NULL, 0));
+}
+
 void app_main(void)
 {
     UNITY_BEGIN();
@@ -272,5 +302,6 @@ void app_main(void)
     RUN_TEST(test_routes_list_rules);
     RUN_TEST(test_legacy_allowed_ip_converts);
     RUN_TEST(test_state_words_cover_every_state);
+    RUN_TEST(test_ts_hold_reason_names_the_levers);
     UNITY_END();
 }

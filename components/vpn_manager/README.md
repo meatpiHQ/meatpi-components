@@ -84,9 +84,34 @@ and `GET /api/vpn` list the routes. Bench: `tools/testbench/vpn/vpn_routes_bench
 receiver from the tunnel address, one to any other address from the
 station's.
 
+## Tailscale: the relay, the leak and the internal-RAM floor (issue 1024, 2026-10-31)
+
+Two field reports (a crash loop with a self-park, and "DNS and connectivity
+issues after a reboot") were one chain: every public DERP relay was refused
+at its TLS handshake on mbedTLS 4 (the relay's Ed25519 meta certificate,
+see `microlink/PROVENANCE.md` 14), every refused attempt leaked the TLS
+context (15), the device ran out of internal RAM within minutes, and a
+task's first name lookup then hit IDF's lwIP NULL-semaphore panic
+(`lwip_guard` turns that into a failed call). The relay works again and the
+leak is gone, which leaves the structural budget: Tailscale's bring-up takes
+about 20 KB of internal RAM on a bench unit (51.9 KB settled with the dongle
+and BLE off, 33.1 KB at the connect, 31.5 KB steady), BLE about 40 KB on
+this build (13 KB free at the floor check with it on, 5 KB a minute later),
+and both together left 1.2 KB at the connect: sockets, the SD card's DMA
+buffers and the web server failed. So Tailscale starts only with
+`VPN_TS_INTERNAL_FLOOR_KB` (30 KB) free at that moment; otherwise the state
+task holds in `waiting` with a reason built by `vpn_ts_hold_reason()` (pure,
+host-tested) from the device's own settings (Bluetooth on, the WiFi memory
+profile not Lean, else WireGuard), logs one W line per hold, and starts by
+itself when RAM frees up. The reason is on `/api/vpn` `reason` and the `vpn`
+command (`held: ...`). The relay's state is `/api/vpn` `derp` (`relay up` /
+`relay down` on the console); the `connected (...)` log line carries the
+internal RAM left at that moment. Bench: `ts_public_soak.sh` (the DERP leg,
+the internal-RAM-flat leg; `.\test.ps1 tspublic`).
+
 ## Surfaces
 
-- `GET /api/vpn`: `{state, type, endpoint, network, paused, routes, connects, failures, uptime_s}` (`state` is `disabled | waiting | paused | connecting | connected`; `network` = the station's network, "" without one).
+- `GET /api/vpn`: `{state, type, endpoint, network, paused, routes, ts_ip, ts_peers, derp, reason, connects, failures, uptime_s, peers}` (`state` is `disabled | waiting | paused | connecting | connected`; `network` = the station's network, "" without one; `derp` (2026-10-31, issue 1024) = the Tailscale DERP relay connection is up, false for wireguard, while the relay is in backoff and before the first map; `reason` = why the tunnel is held in `waiting`, "" otherwise, see the internal-RAM floor below).
 - `POST /api/vpn/keygen`: `{public_key, pending_reboot:true}`.
 - CLI `vpn`, same status as text.
 - Event source `vpn.state {connected, paused, network}`.
@@ -118,8 +143,17 @@ latency ever hurts, add a rule on `vpn.state`.
 
 ## Footprint
 
-PSRAM: 6 KB state-task stack, plus the two peer-snapshot tables of the HTTP and CLI surfaces (1.3 KB each, PSRAM since 2026-09-22). Internal: FreeRTOS objects + the lwip
-netif esp_wireguard creates while up. Host tests: `host_test/`
-(11 tests: the pure config checks, the routes list, the v1 route
-migration, the state words). Bench: WireGuard server on rpi001,
-LOCAL-ONLY (TASK §3.1), handshake + ping + MQTT-through-tunnel.
+PSRAM: 6 KB state-task stack, plus the two peer-snapshot tables of the HTTP and CLI surfaces (1.3 KB each, PSRAM since 2026-09-22) and the 176 B hold reason. Internal: FreeRTOS objects + the lwip
+netif esp_wireguard creates while up. **Tailscale, measured 2026-10-31 on
+the bench unit (ESP-IDF 6.1, the ESPNetLink on the USB port, BLE off, the
+WiFi Lean profile):** the internal floor settles at 51.9 KB with the VPN
+off; the Tailscale bring-up (microlink's tasks, queues, the WireGuard
+netif, the sockets, the relay) leaves 33.1 KB at the connect and 31.5 KB
+steady (largest block 23.5 KB, the minimum of the first minute 27.7 KB),
+so about 20 KB; flat afterwards (32219 B over 5 minutes, 30919 to 31531 B
+over the bench's 60 s leg). PSRAM: about 0.7 MB while up (the HTTP/2
+and map buffers, the relay's TLS context). Host tests: `host_test/`
+(12 tests: the pure config checks, the routes list, the v1 route
+migration, the state words, the hold reason). Bench: WireGuard server on
+rpi001, LOCAL-ONLY (TASK §3.1), handshake + ping + MQTT-through-tunnel;
+Tailscale on the betty rig (`ts_public_soak.sh`, `.\test.ps1 tspublic`).

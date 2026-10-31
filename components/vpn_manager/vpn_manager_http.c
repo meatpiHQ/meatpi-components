@@ -84,6 +84,11 @@ static esp_err_t vpn_get_handler(httpd_req_t *req)
     }
     cJSON_AddStringToObject(obj, "ts_ip", st.ts_ip);
     cJSON_AddNumberToObject(obj, "ts_peers", st.ts_peers);
+    /* the DERP relay (2026-10-31, issue 1024): false until the relay
+     * handshake is through, and while the relay is in backoff */
+    cJSON_AddBoolToObject(obj, "derp", st.ts_derp);
+    /* the internal-RAM floor (issue 1024): "" unless the tunnel is held */
+    cJSON_AddStringToObject(obj, "reason", st.reason);
     cJSON_AddNumberToObject(obj, "connects", st.connects);
     cJSON_AddNumberToObject(obj, "failures", st.failures);
     cJSON_AddNumberToObject(obj, "uptime_s", st.uptime_s);

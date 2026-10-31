@@ -114,15 +114,18 @@ bool vpn_ts_failed(void)
     return s_ml != NULL && microlink_get_state(s_ml) == ML_STATE_ERROR;
 }
 
-void vpn_ts_status(char *ip, size_t ip_len, int *peers)
+void vpn_ts_status(char *ip, size_t ip_len, int *peers, bool *derp)
 {
     ip[0] = '\0';
     *peers = 0;
+    *derp = false;
 
     if (s_ml == NULL)
     {
         return;
     }
+
+    *derp = microlink_derp_connected(s_ml);
 
     uint32_t vpn_ip = microlink_get_vpn_ip(s_ml);
 

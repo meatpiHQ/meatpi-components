@@ -73,6 +73,19 @@ const char *vpn_check_config(const vpn_config_t *cfg);
 #define VPN_MAX_ROUTES 8
 bool vpn_check_routes(const char *routes, char *err, size_t err_len);
 
+/* The internal-RAM floor Tailscale needs at the moment it starts (issue
+ * 1024, 2026-10-31): its bring-up takes about 20 KB on a bench unit
+ * (51.9 KB settled -> 33.1 KB at the connect, 31.5 KB steady), and the
+ * device keeps headroom for WiFi bursts, the SD card's DMA and TLS. */
+#define VPN_TS_INTERNAL_FLOOR_KB 30u
+
+/* Pure, host-tested: the hold reason shown on /api/vpn and the console
+ * while Tailscale waits for internal RAM: what the device can change,
+ * from its own settings (Bluetooth on, the WiFi memory profile not Lean),
+ * else WireGuard. Returns @p out. */
+const char *vpn_ts_hold_reason(unsigned free_kb, unsigned need_kb, bool ble_on,
+                               bool wifi_full, char *out, size_t len);
+
 /* settings v1 -> v2: the network v1 actually routed, as ONE route
  * ("a.b.c.d/n"): the tunnel `address` under allowed_ip_mask (v1 gave the
  * netif the address with that netmask, so lwIP routed address & mask; the
@@ -95,7 +108,7 @@ esp_err_t vpn_ts_up(const vpn_config_t *cfg);   /* init + start        */
 void      vpn_ts_down(void);                    /* stop + destroy      */
 bool      vpn_ts_connected(void);
 bool      vpn_ts_failed(void);
-void      vpn_ts_status(char *ip, size_t ip_len, int *peers);
+void      vpn_ts_status(char *ip, size_t ip_len, int *peers, bool *derp);
 
 /* Per-peer snapshot for /api/vpn + the `vpn` CLI ("peer online +
  * direct-vs-relay"). Returns the number of entries written (0 when the

@@ -34,15 +34,18 @@
 #include <string.h>
 
 #include "esp_attr.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "lwip/sockets.h"
 
+#include "cJSON.h"
 #include "dev_status_manager.h"
 #include "log_manager.h"
 #include "rtc_manager.h"
+#include "settings_manager.h"
 #include "wifi_manager.h"
 
 #include "vpn_manager_private.h"
@@ -67,6 +70,9 @@ static TaskHandle_t s_task;
 
 static vpn_manager_status_t s_status;
 static uint32_t s_up_since_ms;
+/* PSRAM: why Tailscale is held in waiting (issue 1024); "" while not held.
+ * Written by the state task, read by the status surfaces. */
+static char s_hold_reason[176] EXT_RAM_BSS_ATTR;
 
 /* DNS override bookkeeping */
 static esp_netif_dns_info_t s_saved_dns;
@@ -184,7 +190,11 @@ static void enter_connected(void)
 
     sta_network(net, sizeof(net));
     vpn_events_state(true, false, net);
-    ESP_LOGI(TAG, "connected (%s)", vpn_settings_endpoint());
+    /* the internal RAM left at this moment: the tunnel's own cost is read
+     * against the boot's floor (2026-10-31: Tailscale takes about 26 KB) */
+    ESP_LOGI(TAG, "connected (%s), internal RAM free %u B",
+             vpn_settings_endpoint(),
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
 }
 
 /* @p paused: the teardown is a pause (the station joined a marked
@@ -224,6 +234,74 @@ static bool tunnel_alive(void)
 {
     return vpn_settings_config()->tailscale ? vpn_ts_connected()
                                             : vpn_wg_peer_up();
+}
+
+/* A bool / an enum word of another component's stored settings, read
+ * through the Settings Manager (no dependency on the component): only on
+ * the first lap of a hold, never on the hot path. */
+static bool setting_bool(const char *component, const char *key)
+{
+    cJSON *obj = NULL;
+    bool value = false;
+
+    if (settings_manager_get(component, &obj) == ESP_OK && obj != NULL)
+    {
+        value = cJSON_IsTrue(cJSON_GetObjectItem(obj, key));
+    }
+
+    cJSON_Delete(obj);
+    return value;
+}
+
+static bool setting_is(const char *component, const char *key, const char *word)
+{
+    cJSON *obj = NULL;
+    bool value = false;
+
+    if (settings_manager_get(component, &obj) == ESP_OK && obj != NULL)
+    {
+        const cJSON *item = cJSON_GetObjectItem(obj, key);
+
+        value = cJSON_IsString(item) && strcmp(item->valuestring, word) == 0;
+    }
+
+    cJSON_Delete(obj);
+    return value;
+}
+
+/* The internal-RAM floor (issue 1024, 2026-10-31): Tailscale starts only
+ * with VPN_TS_INTERNAL_FLOOR_KB free at that moment; otherwise the tunnel
+ * holds in WAITING with a reason that names what the device can change,
+ * one W line per hold, and starts by itself when RAM frees up. With
+ * Bluetooth on (about 40 KB) a bench unit's connect left 1.2 KB: sockets,
+ * the SD card's DMA buffers and the web server failed, and before the
+ * guard a task's first name lookup crashed it. */
+static bool ts_ram_ok(void)
+{
+    size_t free_b = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+
+    if (free_b >= VPN_TS_INTERNAL_FLOOR_KB * 1024u)
+    {
+        if (s_hold_reason[0] != '\0')
+        {
+            ESP_LOGI(TAG, "tailscale: %u KB of internal RAM free, starting",
+                     (unsigned)(free_b / 1024u));
+            s_hold_reason[0] = '\0';
+        }
+
+        return true;
+    }
+
+    if (s_hold_reason[0] == '\0')
+    {
+        vpn_ts_hold_reason((unsigned)(free_b / 1024u), VPN_TS_INTERNAL_FLOOR_KB,
+                           setting_bool("ble_manager", "enabled"),
+                           !setting_is("wifi_manager", "wifi_ram_profile", "lean"),
+                           s_hold_reason, sizeof(s_hold_reason));
+        ESP_LOGW(TAG, "tailscale %s", s_hold_reason);
+    }
+
+    return false;
 }
 
 static void state_task(void *arg)
@@ -287,6 +365,13 @@ static void state_task(void *arg)
                 s_warned = true;
             }
 
+            vTaskDelay(pdMS_TO_TICKS(VPN_POLL_MS));
+            continue;
+        }
+
+        /* ---- the internal-RAM floor (issue 1024): hold here, say why */
+        if (cfg->tailscale && !ts_ram_ok())
+        {
             vTaskDelay(pdMS_TO_TICKS(VPN_POLL_MS));
             continue;
         }
@@ -475,13 +560,15 @@ esp_err_t vpn_manager_status(vpn_manager_status_t *out)
             sizeof(out->endpoint));
     out->tailscale = cfg->tailscale;
     out->paused = (s_status.state == VPN_STATE_PAUSED);
+    strlcpy(out->reason, s_hold_reason, sizeof(out->reason));
     sta_network(out->network, sizeof(out->network));
     out->uptime_s = (s_status.state == VPN_STATE_CONNECTED)
         ? (esp_log_timestamp() - s_up_since_ms) / 1000 : 0;
 
     if (cfg->tailscale)
     {
-        vpn_ts_status(out->ts_ip, sizeof(out->ts_ip), &out->ts_peers);
+        vpn_ts_status(out->ts_ip, sizeof(out->ts_ip), &out->ts_peers,
+                      &out->ts_derp);
     }
 
     return ESP_OK;
@@ -506,8 +593,9 @@ esp_err_t vpn_manager_tunnel_ip(char *buf, size_t len)
     if (cfg->tailscale)
     {
         int peers = 0;
+        bool derp = false;
 
-        vpn_ts_status(buf, len, &peers);
+        vpn_ts_status(buf, len, &peers, &derp);
     }
     else
     {

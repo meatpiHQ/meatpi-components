@@ -335,6 +335,11 @@ typedef struct {
     bool use_tls;                   /* WiCAN: false = plain TCP (Headscale embedded DERP) */
     bool connected;
     uint64_t last_recv_ms;          /* For keepalive watchdog */
+    /* WiCAN (2026-10-31): the backoff after a round of failed connects
+     * (ml_derp.c derp_arm_backoff): no attempt before retry_after_ms,
+     * backoff_ms doubles per failed round and is 0 again once connected */
+    uint64_t retry_after_ms;
+    uint32_t backoff_ms;
 } ml_derp_conn_t;
 
 /* ============================================================================

@@ -233,3 +233,59 @@ bool vpn_check_legacy_route(const char *address, const char *ip,
     ip4_routes_format(&e, out, len);
     return true;
 }
+
+/* ---- the Tailscale hold reason (issue 1024, 2026-10-31) ------------------- */
+
+static void append(char *out, size_t len, size_t *pos, const char *text)
+{
+    if (*pos >= len)
+    {
+        return;
+    }
+
+    int n = snprintf(out + *pos, len - *pos, "%s", text);
+
+    if (n < 0)
+    {
+        return;
+    }
+
+    *pos = (*pos + (size_t)n < len) ? *pos + (size_t)n : len - 1;
+}
+
+const char *vpn_ts_hold_reason(unsigned free_kb, unsigned need_kb, bool ble_on,
+                               bool wifi_full, char *out, size_t len)
+{
+    if (out == NULL || len == 0)
+    {
+        return "";
+    }
+
+    char head[80];
+    size_t pos = 0;
+    const char *sep = ": ";
+
+    snprintf(head, sizeof(head),
+             "not started: %u KB of internal RAM free, Tailscale needs %u KB",
+             free_kb, need_kb);
+    out[0] = '\0';
+    append(out, len, &pos, head);
+
+    if (ble_on)
+    {
+        append(out, len, &pos, sep);
+        append(out, len, &pos, "turn Bluetooth off (about 40 KB)");
+        sep = ", ";
+    }
+
+    if (wifi_full)
+    {
+        append(out, len, &pos, sep);
+        append(out, len, &pos, "set the WiFi memory profile to Lean (about 14 KB)");
+        sep = ", ";
+    }
+
+    append(out, len, &pos, sep);
+    append(out, len, &pos, (ble_on || wifi_full) ? "or use WireGuard" : "use WireGuard");
+    return out;
+}

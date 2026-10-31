@@ -79,6 +79,9 @@ typedef struct
     char        endpoint[64];     /**< peer host:port / control server  */
     char        ts_ip[16];        /**< tailnet 100.x address ("" none)  */
     int         ts_peers;         /**< tailnet peers visible            */
+    bool        ts_derp;          /**< the DERP relay connection is up  */
+    char        reason[176];      /**< why the tunnel is held in waiting
+                                       ("" none): the internal-RAM floor */
     uint32_t    connects;         /**< successful peer-up transitions   */
     uint32_t    failures;         /**< connect attempts that never came up */
     uint32_t    uptime_s;         /**< seconds since the last peer-up   */

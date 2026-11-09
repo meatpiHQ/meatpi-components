@@ -1075,6 +1075,32 @@ err_t wireguardif_peer_is_up(struct netif *netif, u8_t peer_index, ip_addr_t *cu
 	return result;
 }
 
+// WiCAN (2026-11-09): can a data packet for this peer be encrypted right now?
+// The key choice and the checks of wireguardif_output_to_peer(): ERR_OK when
+// that call would send, ERR_CONN when it would drop the packet and report the
+// want. wireguardif_peer_is_up() is also true for a previous keypair alone,
+// and with the current keypair gone nothing is sent: an owner that starts
+// sessions on demand has to ask this question, or a want is taken for served
+// while the packets are still dropped.
+err_t wireguardif_peer_can_send(struct netif *netif, u8_t peer_index) {
+	struct wireguard_peer *peer;
+	err_t result = wireguardif_lookup_peer(netif, peer_index, &peer);
+	if (result == ERR_OK) {
+		struct wireguard_keypair *keypair = &peer->curr_keypair;
+		if (keypair->valid && (!keypair->initiator) && (keypair->last_rx == 0)) {
+			keypair = &peer->prev_keypair;
+		}
+		if (keypair->valid && (keypair->initiator || keypair->last_rx != 0) &&
+				!wireguard_expired(keypair->keypair_millis, REJECT_AFTER_TIME) &&
+				(keypair->sending_counter < REJECT_AFTER_MESSAGES)) {
+			result = ERR_OK;
+		} else {
+			result = ERR_CONN;
+		}
+	}
+	return result;
+}
+
 err_t wireguardif_remove_peer(struct netif *netif, u8_t peer_index) {
 	struct wireguard_peer *peer;
 	err_t result = wireguardif_lookup_peer(netif, peer_index, &peer);
@@ -1222,6 +1248,21 @@ static bool should_destroy_current_keypair(struct wireguard_peer *peer) {
 	return result;
 }
 
+// WiCAN (2026-11-09): the previous keypair ages out like the current one. As
+// ported only curr_keypair was destroyed by time: prev_keypair, filled at the
+// first rekey, stayed valid for the life of the peer entry. A peer whose
+// session had lapsed (nothing from it for REJECT_AFTER_TIME) therefore still
+// read as up: wireguardif_peer_is_up() answered ERR_OK and the netif link
+// stayed up, while wireguardif_output_to_peer() had no key to send with. On a
+// tunnel that starts its sessions on demand (microlink) the want was taken
+// for served and nothing ever handshook again; on a plain tunnel the owner's
+// "peer silent" watch never fired. A keypair past REJECT_AFTER_TIME is
+// refused by the receive path anyway, so nothing that still works is lost.
+static bool should_destroy_previous_keypair(struct wireguard_peer *peer) {
+	return peer->prev_keypair.valid &&
+			wireguard_expired(peer->prev_keypair.keypair_millis, REJECT_AFTER_TIME);
+}
+
 static bool should_reset_peer(struct wireguard_peer *peer) {
 	bool result = false;
 	if (peer->curr_keypair.valid && (wireguard_expired(peer->curr_keypair.keypair_millis, REJECT_AFTER_TIME * 3))) {
@@ -1261,6 +1302,9 @@ static void wireguardif_tmr(void *arg) {
 			if (should_destroy_current_keypair(peer)) {
 				// Destroy current keypair
 				keypair_destroy(&peer->curr_keypair);
+			}
+			if (should_destroy_previous_keypair(peer)) {
+				keypair_destroy(&peer->prev_keypair);
 			}
 			if (should_send_keepalive(peer)) {
 				wireguardif_send_keepalive(device, peer);
@@ -1304,6 +1348,9 @@ void wireguardif_periodic(struct netif *netif) {
 			}
 			if (should_destroy_current_keypair(peer)) {
 				keypair_destroy(&peer->curr_keypair);
+			}
+			if (should_destroy_previous_keypair(peer)) {
+				keypair_destroy(&peer->prev_keypair);
 			}
 			if (should_send_keepalive(peer)) {
 				wireguardif_send_keepalive(device, peer);

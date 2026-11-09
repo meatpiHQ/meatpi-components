@@ -136,6 +136,12 @@ err_t wireguardif_disconnect(struct netif *netif, u8_t peer_index);
 // Is the given peer "up"? A peer is up if it has a valid session key it can communicate with
 err_t wireguardif_peer_is_up(struct netif *netif, u8_t peer_index, ip_addr_t *current_ip, u16_t *current_port);
 
+// WiCAN (2026-11-09): can a data packet for the given peer be encrypted right
+// now? ERR_OK when wireguardif's output would send it, ERR_CONN when it would
+// drop it and report the want (wireguardif_set_session_wanted). "Up" above
+// is also true for a previous keypair alone, which sends nothing.
+err_t wireguardif_peer_can_send(struct netif *netif, u8_t peer_index);
+
 // Register a DERP relay output callback for peers without direct endpoints
 // This callback is invoked when a WireGuard packet needs to be sent to a peer
 // that has no direct IP endpoint (ip is 0.0.0.0 or port is 0)

@@ -34,15 +34,18 @@
  * (`-Wl,--wrap=ip4_route_src_hook` with a `-u` on the wrapper so every
  * link takes it out of this library, the restart_tracker / can_manager
  * pattern): lwIP's calls land in `__wrap_ip4_route_src_hook`, which
- * matches the destination against the table (longest prefix wins, the
- * netif must be up with its link up) and otherwise falls through to IDF's
- * hook. lwIP calls the hook from `ip4_route()` and `ip4_route_src()`
+ * matches the destination against the table (longest prefix wins; the
+ * netif must be administratively up, its link need not be: 2026-11-03, a
+ * tunnel whose sessions start on demand) and otherwise falls through to
+ * IDF's hook. lwIP calls the hook from `ip4_route()` and `ip4_route_src()`
  * alike, so every outbound packet passes here: the table is tiny and read
  * under a spinlock.
  *
  * Owners: a component that brings a netif up with remote networks behind
- * it (vpn_manager's WireGuard netif today) sets its routes once the netif
- * exists and clears them BEFORE the netif is removed. Entries are host
+ * it (vpn_manager's WireGuard netif, microlink's Tailscale netif) sets its
+ * routes once the netif exists and clears them BEFORE the netif is removed.
+ * A netif whose link is down while it has no session must list its OWN
+ * network too (2026-11-09): lwIP's walk skips it then. Entries are host
  * order with the network pre-masked. The table is bounded
  * (IP4_ROUTES_MAX; occupancy on the WICAN CAPS line, standard section 12).
  *

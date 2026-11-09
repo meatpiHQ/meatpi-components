@@ -14,7 +14,9 @@
 
 #include "microlink_internal.h"
 #include "ml_disco_pong.h"
+#include "ml_routes.h"
 #include "ml_config_httpd.h"
+#include "esp_attr.h"
 #include "esp_log.h"
 #include "esp_random.h"
 #include "esp_netif.h"
@@ -87,28 +89,28 @@ typedef struct {
  * way a phone does). routes_apply() rebuilds the tunnel's table from every
  * active peer after an add or a remove (wg_mgr task only).
  * ========================================================================== */
-static void routes_apply(microlink_t *ml) {
-    ip4_routes_entry_t entries[ML_MAX_ROUTES];
-    int n = 0;
-    bool dropped = false;
+/* WiCAN (2026-11-09): the tunnel's own network heads the table (ml_routes.c
+ * has the why: a peer's own address must reach the driver while the link is
+ * down, or the session it asks for never starts). The list last handed to
+ * ip4_routes is kept, so a rebuild that changes nothing (every peer of every
+ * map update calls here) installs nothing and logs nothing. wg_mgr task only;
+ * PSRAM, never read with the cache off. */
+static ip4_routes_entry_t s_routes_applied[ML_ROUTES_TABLE_MAX] EXT_RAM_BSS_ATTR;
+static int s_routes_applied_n = -1;     /* -1 = nothing installed */
 
-    for (int i = 0; i < ml->peer_count; i++) {
-        const ml_peer_t *p = &ml->peers[i];
-        if (!p->active) continue;
-        for (int r = 0; r < p->route_count; r++) {
-            if (n >= ML_MAX_ROUTES) {
-                dropped = true;
-                break;
-            }
-            entries[n].network = p->routes[r].network;
-            entries[n].mask = p->routes[r].mask;
-            ml->routes[n].network = p->routes[r].network;
-            ml->routes[n].mask = p->routes[r].mask;
-            ml->routes[n].via_vpn_ip = p->vpn_ip;
-            n++;
-        }
+static void routes_apply(microlink_t *ml) {
+    ip4_routes_entry_t entries[ML_ROUTES_TABLE_MAX];
+    bool dropped = false;
+    uint32_t own_addr = 0;
+    uint32_t own_mask = 0;
+
+    if (ml->wg_netif) {
+        struct netif *netif = (struct netif *)ml->wg_netif;
+        own_addr = lwip_ntohl(ip4_addr_get_u32(netif_ip4_addr(netif)));
+        own_mask = lwip_ntohl(ip4_addr_get_u32(netif_ip4_netmask(netif)));
     }
-    ml->route_count = n;
+
+    int n = ml_routes_build(ml, own_addr, own_mask, entries, ML_ROUTES_TABLE_MAX, &dropped);
 
     if (dropped) {
         ESP_LOGW(TAG, "more than %d subnet routes on the tailnet: the rest are not installed",
@@ -116,11 +118,18 @@ static void routes_apply(microlink_t *ml) {
     }
 
     if (!ml->wg_netif) return;
+    if (n == s_routes_applied_n &&
+        memcmp(entries, s_routes_applied, (size_t)n * sizeof(entries[0])) == 0) {
+        return;
+    }
     if (n == 0) {
         ip4_routes_clear(ml->wg_netif);
     } else if (ip4_routes_set(ml->wg_netif, entries, (size_t)n) != ESP_OK) {
-        ESP_LOGW(TAG, "subnet routes not installed (the route table is full)");
+        ESP_LOGW(TAG, "routes not installed (the route table is full)");
+        return;     /* not recorded: the next rebuild tries again */
     }
+    memcpy(s_routes_applied, entries, (size_t)n * sizeof(entries[0]));
+    s_routes_applied_n = n;
 }
 
 /* the peer's routes into its WireGuard entry (after wireguardif_add_peer) */
@@ -1672,7 +1681,14 @@ static void session_wants_service(microlink_t *ml) {
             s_session_started_ms[i] = 0;
             continue;
         }
-        if (wireguardif_peer_is_up(netif, (u8_t)p->wg_peer_index, NULL, NULL) == ERR_OK) {
+        /* WiCAN (2026-11-09): served means the driver can SEND to the peer
+         * now, the test its output path makes. wireguardif_peer_is_up() is
+         * also true for a previous keypair alone, which sends nothing: after
+         * a session the peer had opened lapsed, that stale key answered "up"
+         * here, the want was dropped and nothing ever handshook again
+         * (reproduced on beta.8: the pushes to a peer's own address stayed
+         * dead until the peer itself contacted the device). */
+        if (wireguardif_peer_can_send(netif, (u8_t)p->wg_peer_index) == ERR_OK) {
             /* the session is there: the want is served */
             if (s_session_started_ms[i]) {
                 ESP_LOGI(TAG, "session with %s up after %lu ms", p->hostname,
@@ -1752,11 +1768,15 @@ void ml_wg_mgr_task(void *arg) {
     ESP_LOGI(TAG, "Coord registered, initializing WireGuard...");
 
     /* Initialize WireGuard interface (magicsock mode) */
+    s_routes_applied_n = -1;    /* a new netif: nothing installed for it yet */
     if (wg_init_interface(ml) != ESP_OK) {
         ESP_LOGE(TAG, "Failed to init WireGuard, continuing without tunneling");
     } else {
         /* Update VPN IP if coord already set it */
         wg_update_vpn_ip(ml);
+        /* WiCAN (2026-11-09): the tunnel's own network into lwIP's routes
+         * now, before any peer or session exists */
+        routes_apply(ml);
         xEventGroupSetBits(ml->events, ML_EVT_WG_READY);
     }
 
@@ -1872,6 +1892,7 @@ void ml_wg_mgr_task(void *arg) {
     if (ml->wg_netif) {
         struct netif *netif = (struct netif *)ml->wg_netif;
         ip4_routes_clear(netif);    /* WiCAN: before the netif goes */
+        s_routes_applied_n = -1;
         ml->route_count = 0;
         vTaskDelay(pdMS_TO_TICKS(100));
         /* the timer, the down flags and the list removal (which aborts the

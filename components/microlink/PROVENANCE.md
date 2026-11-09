@@ -7,11 +7,13 @@ Sole consumer: `vpn_manager` (type "tailscale"). Design +
 decisions: `vpn_manager/TASK_tailscale.md`.
 
 **Testing:** `host_test/` compiles the local DISCO reply implementation
-with transport and crypto test doubles (8 cases, `.\test.ps1 host microlink`).
+with transport and crypto test doubles (8 cases) and the tunnel's route
+list builder (8 cases, 2026-11-09): `.\test.ps1 host microlink`, 16 tests.
 The vendored crypto and protocol stack are not copied into a parallel test
 tree. The config server (12 routes) and ts2021/WireGuard/DERP stack are
 validated through `vpn_manager` on the bench (`TS TARGET PASS` and
-`.\test.ps1 tspublic`, including relay-only subnet traffic and direct upgrade).
+`.\test.ps1 tspublic`, including relay-only subnet traffic, the request to
+a peer's own address after every session lapsed, and direct upgrade).
 
 ## Local changes (this repo)
 
@@ -267,6 +269,40 @@ validated through `vpn_manager` on the bench (`TS TARGET PASS` and
     recovery, RAM flat at 88,519 B, zero errors/faults, exact settings restore.
     References: Tailscale v1.78.1 `wgengine/magicsock/magicsock.go`
     `handlePingLocked` and `endpoint.go` `handlePongConnLocked`.
+23. **A peer's own address, and a lapsed session** (2026-11-09, a field
+    report on 6.0.0-beta.8: the Home Assistant webhook at HA's tailnet
+    address timing out while the VPN said connected; the write-up is in
+    `vpn_manager/README.md`). Two gaps the sessions on demand of item 21
+    left, both reproduced on the published beta.8 against betty:
+    - `routes_apply` handed `ip4_routes` the peers' subnet routes only and
+      left a peer's own address to lwIP's netif walk, which skips the
+      tunnel while its link is down (no session): the first packet left on
+      the station and no want was raised. `src/ml_routes.c` (new, pure,
+      host-tested) builds the table with the tunnel's own network first;
+      `routes_apply` installs it when the netif comes up, before any peer,
+      and skips an unchanged list (one `ip4_routes` line per change, not
+      one per peer of every map update). `ml->routes`, the status surface,
+      still holds the subnet routes only.
+    - `session_wants_service` took `wireguardif_peer_is_up()` for "the want
+      is served". That call counts the previous keypair, which the shared
+      driver never expired, so a session the PEER had opened and that had
+      lapsed read as up for ever and no handshake followed. The test is
+      `wireguardif_peer_can_send()` now (new in `wireguard_lwip`: the key
+      choice of the driver's output path), and the driver destroys the
+      previous keypair at REJECT_AFTER_TIME like the current one
+      (`should_destroy_previous_keypair`, both timer paths). The driver
+      change reaches `esp_wireguard` too: see `vpn_manager/README.md`.
+    The new module follows the component standard (Allman, under 100
+    columns); the edits inside `ml_wg_mgr.c` and `wireguardif.c` keep those
+    files' own layout. Retained state: 72 B of PSRAM `.bss` (the list last
+    installed) and its 4 B count. No task, no heap, no flash write.
+    `.\test.ps1 tspublic` with its new peer's-own-address legs: FAIL on
+    the published beta.8 (16:23) and on a build with the own network left
+    out (16:49, 10 clear-text SYNs seen on the bench AP), PASS on the fix
+    at 17:06 (ELF `8da296f7c66bb2eb`, 834 s): the request to a peer's own
+    address after every session lapsed 200 in 1023 ms, `session ... up
+    after 566 ms`, 0 clear-text packets, the 2026-11-03 legs unchanged,
+    RAM flat at 86,523 B, zero errors/faults.
 
 ## Upstream layout kept
 

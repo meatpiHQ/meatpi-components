@@ -203,6 +203,101 @@ PSRAM with 3816/4012 B headroom, and errors/faults were zero. Both original
 settings documents were restored and verified after the planned restart.
 Report: firmware repo `test-reports/2026-11-03_1557_tspublic.md`.
 
+## A peer's own address, and a session that lapsed (2026-11-09)
+
+The sessions on demand of 2026-11-03 were built and gated through a subnet
+route. A field report on 6.0.0-beta.8 (the Home Assistant webhook addressed
+to HA's own tailnet address, `http://100.x.y.z:8123/...`, timing out every
+15 s while the VPN said connected) showed two cases they did not cover; both
+reproduced on the published beta.8 against betty with direct UDP blocked.
+
+1. **No session with anyone (after a start, or after every peer went
+   quiet).** `routes_apply` installed only the peers' subnet routes in
+   `ip4_routes`. A peer's own address was left to lwIP's netif walk, which
+   takes the tunnel netif by its `/10` netmask only while the netif's link
+   is up, and the driver lowers the link while no peer holds a session. The
+   first SYN for the peer therefore left on the station, in clear text (seen
+   on the bench AP's interface), never reached the driver and never raised
+   the session want: 14 of 14 pushes failed until the peer itself made a
+   request to the device. Since 2026-11-09 the tunnel's own network heads
+   the tunnel's table (`microlink/src/ml_routes.c`, installed when the
+   netif comes up, before any peer exists), so the packet reaches the driver
+   on the netif's administrative state alone, the rule the subnet routes
+   already depended on.
+2. **A session the peer had opened, lapsed.** `wireguardif_peer_is_up()`
+   and the netif's link count the current OR the previous keypair as a
+   session. Only the current one was destroyed by time; the previous one,
+   filled at the first rekey, stayed valid for the life of the peer entry.
+   Once such a session had lapsed (the peer away past WireGuard's 180 s
+   REJECT_AFTER_TIME), the device's packets still raised the want, the
+   WireGuard manager asked "is the peer up", the stale key said yes, the
+   want was dropped and nothing ever handshook again: 23 more failures with
+   the peer back, until the peer contacted the device. A session the DEVICE
+   had opened recovered, because its driver entry stays `active` and the
+   driver retries by itself. Since 2026-11-09 the driver destroys the
+   previous keypair at REJECT_AFTER_TIME like the current one, and the
+   manager's test is `wireguardif_peer_can_send()`: the key choice of the
+   driver's own output path.
+
+**Plain WireGuard had the stale key too.** The key ageing is in the shared
+driver, and the state task's "peer silent for 30 s; reconnecting" watch
+reads the same `peer_is_up` (`vpn_wg_peer_up`). On beta.8 a tunnel that had
+rekeyed once (any tunnel older than two minutes) therefore read as up for
+as long as the device ran: with the server gone the VPN page kept saying
+connected, and the teardown and reconnect, which also resolves the server's
+name again, never came. The watch only ever fired on a tunnel younger than
+its first rekey, which is all the `wgcycle` peer trigger had exercised.
+Since 2026-11-09 the previous key expires and the watch works at any age:
+the keys are gone 180 s after the last handshake, 30 s of silence follow,
+then the reconnect. For a server that answers nothing changes: the peer
+entry of a plain tunnel stays active, so the driver starts the next
+handshake at the timer pass that finds a key expired (read from the code;
+the bench's tunnel held `connected` on the same `connects` across its
+rekey). A server that stays away longer than the key's remaining life plus
+30 s now gets the teardown and the reconnect cycle the state task was
+written to give it, and the connections on the tunnel address are aborted
+with it, as they already were on a young tunnel.
+
+The reporter's own case turned out to be neither: the Home Assistant
+integration had registered HA's LOCAL address on a device that reaches HA
+over the tailnet only (set the tailnet URL on Automate > Home Assistant with
+Manual URL override on). Both defects stand on their own: with that URL
+pinned his pushes use exactly this path.
+
+Cost: one more `ip4_routes` row while Tailscale runs (9 of 16 at most), 72 B
+of PSRAM for the list last installed, 448 B of image. No setting, no task,
+no flash write (`ip4_routes` is a RAM table and session keys are never
+stored). The session a want starts retries every 5 s for at most 90 s after
+lwIP last asked, as before.
+
+Bench, all on 2026-11-09 against betty with direct UDP blocked
+(`.\test.ps1 tspublic`, the peer's-own-address legs: a second peer that
+opens its session itself, five requests to its own address across its
+rekey, both peers away 200 s, the request again with that peer back and
+silent):
+
+- the published beta.8 (16:23): **FAIL as intended**, both requests after
+  the lapse `ESP_ERR_HTTP_CONNECT`, no `session wanted`, no handshake;
+- a diagnostic build with the key ageing in and the own network left out
+  (16:49): **FAIL as intended**, and a raw-socket watch on the bench AP saw
+  the 10 SYNs for `100.64.0.3:8199` leave in clear text: the leg guards
+  each change by itself;
+- the fix (17:06, ELF `8da296f7c66bb2eb`): **TS PUBLIC PASS**, 834 s. The
+  request after the lapse 200 in 1023 ms (`session wanted with betty-peer2
+  (lwIP traffic): handshake through the relay`, `up after 566 ms`), the next
+  308 ms, both arrived exactly once, 0 clear-text packets for the tailnet
+  on the bench AP over the whole run; the 2026-11-03 legs unchanged (first
+  subnet request 1080 ms, six exactly once through rekey, direct recovery),
+  internal RAM 86,523 to 86,523 B, zero errors/faults.
+
+Plain WireGuard (`wg_teardown_cycle_bench.py --trigger peer --hold-s 150`,
+new: the peer is removed on the server only after the tunnel has rekeyed):
+beta.8 stayed `connected` for the 300 s the bench waits (FAIL as intended);
+the fix left `connected` and was back with MQTT 198 s after the removal
+(PASS). `.\test.ps1 wgcycle` (10 teardowns under MQTT) and `vpnroutes`
+passed on the same image. Records: firmware repo `testing/tspublic.md`,
+`testing/wgcycle.md`.
+
 ## Subnet routes on the tailnet (2026-11-01)
 
 A tailnet node that advertises a network as a subnet router (`tailscale up

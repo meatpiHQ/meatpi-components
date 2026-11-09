@@ -16,8 +16,8 @@ with no Kconfig choice (only the IPv6 hook has one). The CMakeLists adds
 `-Wl,--wrap=ip4_route_src_hook`, so lwIP's calls (from `ip4_route()` with a
 NULL source and from `ip4_route_src()` with a bound one) land in
 `__wrap_ip4_route_src_hook`: the destination is matched against the table
-(longest prefix wins; the netif must be up with its link up) and anything
-else falls through to `__real_ip4_route_src_hook`, IDF's hook. A
+(longest prefix wins; the netif must be administratively up, its link need
+not be since 2026-11-03) and anything else falls through to `__real_ip4_route_src_hook`, IDF's hook. A
 `-u __wrap_ip4_route_src_hook` beside the wrap makes the linker take the
 wrapper out of this static library at its first scan: without it a link
 that nothing else ties to the component (an on-target test app, which
@@ -39,9 +39,22 @@ network. The default route (`netif_set_default`) never had this problem: a
 connected network was always more specific than it.
 
 **Owners.** vpn_manager's WireGuard glue (the `routes` setting, up to 8) and
-microlink's WireGuard manager (the subnet routes a tailnet's subnet routers
-carry, up to 8 across the peers, `ml_wg_mgr.c` routes_apply); one VPN type
-runs at a time, so the 16-slot table holds either.
+microlink's WireGuard manager (the tailnet's own network, always, and the
+subnet routes a tailnet's subnet routers carry, up to 8 across the peers:
+9 rows at most, `ml_wg_mgr.c` routes_apply, the list built by
+`microlink/src/ml_routes.c`); one VPN type runs at a time, so the 16-slot
+table holds either.
+
+**A tunnel's own network belongs in the table when its sessions start on
+demand (2026-11-09).** A netif's own network needs no row as long as its
+link is up: lwIP's walk finds it. The Tailscale tunnel's link is down while
+no peer holds a session, and the hook is the only lookup that takes a netif
+on its administrative state alone (2026-11-03). Until its own `/10` was a
+row, a packet for a peer's own address therefore left on the station in
+clear text whenever no session existed, never reached the driver and never
+asked for the session (the field report of 2026-11-09, `vpn_manager`
+README). The plain WireGuard netif has no such network: its address is a
+`/32` and every network it carries is a row of the `routes` setting.
 
 ## API (`include/ip4_routes.h`)
 
@@ -56,13 +69,13 @@ runs at a time, so the 16-slot table holds either.
 | `ip4_routes_format(&e, out, len)` | pure: "a.b.c.d/n" |
 
 Entries are host order with the network pre-masked. The table holds
-`IP4_ROUTES_MAX` (16) routes for every owner together; vpn_manager uses up to 8.
+`IP4_ROUTES_MAX` (16) routes for every owner together; the VPN uses up to 8
+(WireGuard) or 9 (Tailscale).
 
 ## Dependencies
 
 `lwip` (the netif type, the address helpers), `log_manager`. Owners today:
-`vpn_manager` (the WireGuard netif; the Tailscale netif keeps its own /10
-netmask and needs no table).
+`vpn_manager` (the WireGuard netif) and `microlink` (the Tailscale netif).
 
 ## Settings
 

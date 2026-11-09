@@ -172,6 +172,8 @@ static void test_relay_failure_does_not_fall_back(void)
     TEST_ASSERT_EQUAL_UINT(1, s_derp_calls);
 }
 
+void run_routes_tests(void); /* test_routes.c */
+
 void app_main(void)
 {
     UNITY_BEGIN();
@@ -183,5 +185,6 @@ void app_main(void)
     RUN_TEST(test_crypto_failure_is_not_sent);
     RUN_TEST(test_udp_failure_does_not_fall_back);
     RUN_TEST(test_relay_failure_does_not_fall_back);
+    run_routes_tests();
     UNITY_END();
 }

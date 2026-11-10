@@ -1058,7 +1058,14 @@ while WiCAN is on X" for the auto choice, else secured or factory password / Hom
 Assistant via `GET /api/webhook` / MQTT via `bits.mqtt_connected`, polled every 3 s, Fix
 links back into the earlier steps; the mode read from `/api/settings/wifi_manager` after
 the restart's reload), Vehicle (second pass, 2026-10-01 evening: DETECT
-first, profile last. "Detect my vehicle" = `POST /api/autopid/vehicles/detect` (falls back to
+first, profile last. Since 2026-10-26 the step asks which car it is before that ("1. Which
+car is this?"), and the detection carries the chosen profile along: its name, the protocol
+of its first `ATSP`, its init and three requests (`probeCmds()`: since 2026-11-10 the
+profile's first three MANUFACTURER requests, each with its own init, because the job uses
+them only after the standard requests stayed silent; a profile of standard rows only sends
+those). The step's words say what the job does: standard requests on each CAN protocol
+first, the profile's own requests for a car that answers none. Probe:
+`probe_profile_first.mjs` in the firmware repo. "Detect my vehicle" = `POST /api/autopid/vehicles/detect` (falls back to
 `POST /api/autopid/std_scan` on older firmware), the phases protocol / vin / pids from
 `GET /api/autopid/std_scan`, then the result card from `/std_scan/result` + the store
 `GET /api/autopid/vehicles` (VIN or "identified by its ECUs", detected protocol, PID

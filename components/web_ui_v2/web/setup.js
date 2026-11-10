@@ -1240,7 +1240,7 @@ SCREENS.vehicle=async()=>{
          the probe): a published profile, or no profile and detection as
          before; the action of the first choice at the right edge of its row */
       out.push(sub("1. Which car is this?"));
-      out.push(h("p",{class:"qs-lead",style:"font-size:13px"},"WiCAN knows the published profiles (what each car answers beyond the standard PIDs). Say which car this is first: the detection then uses the profile's protocol and requests, and the car is stored under this name even when it answers no standard request."));
+      out.push(h("p",{class:"qs-lead",style:"font-size:13px"},"WiCAN knows the published profiles (what each car answers beyond the standard PIDs). Say which car this is first: a car that answers no standard request is then confirmed by the profile's own requests, and the car is stored under this name either way."));
       const car1=W.carChoice==="profile"?W.profCar:null;
       const pickProfile=()=>{W.carChoice="profile";picker.open();};
       out.push(h("div",{class:"qs-radios"},
@@ -1262,7 +1262,7 @@ SCREENS.vehicle=async()=>{
       out.push(ack("ignition","qs-ignition","Ignition is on","The engine can stay off. On an EV, \"ready\" mode."));
       out.push(h("div",{class:"rowflex",style:"gap:12px"},detBtn,chipOld()?chip("Update the chip first","warn"):null));
       out.push(note("",W.carChoice==="profile"&&W.profCar
-        ?"About 10 to 20 s. WiCAN pins the protocol the profile expects, reads the VIN and the standard PIDs, and sends the profile's first requests. A car that answers no standard request is still confirmed by those and stored under the name above."
+        ?"About 10 to 20 s. WiCAN looks for the car with standard requests on each CAN protocol, then reads the VIN and the standard PIDs. A car that answers no standard request is confirmed by the profile's own first requests instead, and stored under the name above."
         :"About 15 to 30 s. WiCAN learns the protocol, reads the VIN and finds the standard PIDs, then remembers all of it under this vehicle. Plug it into another car later and it tells the cars apart."));
       if(!D.vehicles)out.push(note("","This firmware keeps one vehicle only (no vehicle store): the result is stored, but moving WiCAN between cars needs a new scan each time."));
     }else if(phase==="detecting"){
@@ -1372,7 +1372,7 @@ SCREENS.vehicle=async()=>{
            confirms a car that answers nothing standard with those */
         const pc=W.carChoice==="profile"?W.profCar:null;
         const detectBody=pc?{profile:String(pc.car_model||"").slice(0,maxName),name:String(W.vehName||"").slice(0,31),protocol:profileProtocol(pc)||"",init:String(pc.init||"").slice(0,95),
-          cmds:(pc.pids||[]).map(p=>({cmd:String(p.pid||"").replace(/\s+/g,""),init:String(p.pid_init||"").slice(0,95)})).filter(x=>/^[0-9A-Fa-f]{2,15}$/.test(x.cmd)).slice(0,3).map(x=>x.init?x:x.cmd)}:{};
+          cmds:probeCmds(pc)}:{};
         try{await api("/api/autopid/vehicles/detect",{method:"POST",body:detectBody});}
         catch(e){if(/404|not found/i.test(e.message))await api("/api/autopid/std_scan",{method:"POST",body:{}});else throw e;}
       }
@@ -1470,6 +1470,18 @@ SCREENS.vehicle=async()=>{
     [body],
     [back("checks"),grow(),btn("Skip for now",()=>{W.noVeh=true;go("done");},"gh sm"),finish]);
 };
+/* the requests the detection confirms a car with when it answers nothing
+   standard: the profile's first three MANUFACTURER requests, each with its
+   own init when it has one. The job only gets here after the standard
+   requests stayed silent, so a profile's standard rows (services 01 to 0A:
+   015B, 01A6 ahead of 221F9A in the Toyota Sienna's) would use up the three
+   places for nothing (2026-11-10). A profile of standard rows only sends
+   them as before: a car may answer 015B and not 0100. */
+function probeCmds(car){
+  const all=((car&&car.pids)||[]).map(p=>({cmd:String(p.pid||"").replace(/\s+/g,""),init:String(p.pid_init||"").slice(0,95)})).filter(x=>/^[0-9A-Fa-f]{2,15}$/.test(x.cmd));
+  const own=all.filter(x=>!/^0[1-9A]/i.test(x.cmd));
+  return(own.length?own:all).slice(0,3).map(x=>x.init?x:x.cmd);
+}
 /* the protocol a profile's init chains name (ATSP/ATTP n), "" when none */
 function profileProtocol(car){
   const rx=/AT\s*[ST]P\s*([0-9A-C])/i;

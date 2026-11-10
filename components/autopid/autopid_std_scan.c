@@ -371,6 +371,11 @@ static void scan_task(void *arg)
 
     ap_core_scan_pause(true);
 
+    /* the poller is parked: what its rows left in the chip beyond the
+       prelude (a profile row's own flow control swallows the VIN's reply)
+       goes back before the job's first request */
+    ap_runner_undo_tables();
+
     static ap_veh_seen_t seen EXT_RAM_BSS_ATTR;      /* scan task only  */
     const char *setting = ap_core_std_protocol();
     char proto = '\0';

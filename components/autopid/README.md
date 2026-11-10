@@ -505,6 +505,25 @@ Bench: `tools/testbench/obd/autopid_init_leak_bench.py` (`AUTOPID INIT LEAK
 PASS`, the ECU simulator as the car plus `actors/pcan_ext_addr_ecu.py` as
 the extended-addressed gateway on the PCAN).
 
+**The same for the firmware's own requests (2026-11-10).** The undo was
+owed to the next row type only. The identity check, the contact probe, the
+baseline after an app or a tool had the chip and the detection job sent the
+prelude alone, and the memory of what the tables had moved was dropped with
+it. A profile row's `ATFCSH17FC007B;ATFCSD300000;ATFCSM1` (its own flow
+control, in nearly every vehicle profile) stayed in effect under them: on
+the wire `0902` came back as its first frame only (`7E8 10 14 49 02 01 31 57
+43`, the flow control went to the row's ECU) until an `ATFCSM0`. So the
+identity knew the car by its ECU set alone, and with only such rows in the
+tables the detection job failed with "no ECU response (ignition on?)" (bench,
+3 of 3: `detection FAILED: 0 rows, protocol 6 (obd2), vin (none)`). Now
+every prelude of the firmware's own carries the undo (`send_prelude_clean()`
+in `autopid_baseline.c`), the detection job asks for it before its first
+request (`ap_runner_undo_tables()`), and the chains the job's probe sends
+for a profile are remembered like a row's (`ap_runner_note_moved()`). Bench:
+the flip leg of `tools/testbench/obd/profile_protocol_bench.py` in the
+firmware repo (a detection run with only the profile's rows live reads the
+VIN).
+
 **Contact.** The chip's own protocol search (`ATTP0`) asks `0100`: it
 cannot find a `uds` car, and it needs 9.3 s to say `UNABLE TO CONNECT`. So
 first contact (`autopid_contact.c`) and the detection job look for the car

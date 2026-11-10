@@ -44,6 +44,18 @@
  *   undo command per thing the prelude does not cover). Within a type a
  *   row still finds what the rows before it set, as it always did.
  *
+ * The same is owed to the firmware's OWN requests (2026-11-10): the identity
+ * check, the contact probe, the baseline after an app or a tool had the chip
+ * and the detection job sent the prelude alone and dropped the memory of
+ * what the tables had moved. A profile row's `ATFCSH17FC007B;ATFCSD300000;
+ * ATFCSM1` stayed in effect under them: the chip answered the VIN request
+ * with its first frame only (`7E8 10 14 49 02 01 31 57 43`, the flow control
+ * went to the row's ECU), the identity knew the car by its ECU set alone,
+ * and with only such rows in the tables the detection job failed with "no
+ * ECU response" (bench, 3 of 3). Every prelude of the firmware's own carries
+ * the undo now (send_prelude_clean), and a job that talks to the chip
+ * directly asks for it first (ap_runner_undo_tables).
+ *
  * Poller-task context, plus the httpd task for test-a-PID while the poller
  * is paused (the chip job serializes them).
  */
@@ -104,6 +116,28 @@ static void prelude_out(void)
     s_mem.init_pin = '\0';     /* the chip is on the prelude's protocol */
     s_mem.moved = 0;
     s_mem.rxheader_set = false; /* its ATCRA cleared the filter */
+}
+
+/**
+ * A prelude of the firmware's own with one undo command behind it per thing
+ * the chains of the tables moved (ap_chain_restore): what goes out whenever
+ * the baseline is put back. Not after a reset inside a chain: the chip is
+ * at its defaults there (after_reset).
+ */
+static void send_prelude_clean(const char *prelude, ap_tr_t *tr)
+{
+    char chain[AP_RESTORE_LEN];
+
+    (void)ap_chain_restore(s_mem.moved, prelude, chain, sizeof(chain));
+
+    if (s_mem.moved != 0)
+    {
+        ESP_LOGD(TAG, "the tables moved the chip (0x%x): baseline back: %s",
+                 s_mem.moved, chain);
+    }
+
+    ap_base_send_chain(chain, tr);
+    prelude_out();
 }
 
 /**
@@ -236,8 +270,7 @@ bool ap_base_send_baseline(ap_tr_t *tr)
         return false;
     }
 
-    ap_base_send_chain(ap_veh_prelude_for(proto), tr);
-    prelude_out();
+    send_prelude_clean(ap_veh_prelude_for(proto), tr);
     return true;
 }
 
@@ -254,8 +287,31 @@ void ap_runner_restore_baseline(void)
 
 void ap_runner_send_prelude(const char *prelude)
 {
-    ap_base_send_chain(prelude, NULL);
-    prelude_out();
+    send_prelude_clean(prelude, NULL);
+}
+
+void ap_runner_undo_tables(void)
+{
+    if (s_mem.moved == 0)
+    {
+        return;
+    }
+
+    char chain[AP_RESTORE_LEN];
+
+    (void)ap_chain_restore(s_mem.moved, "", chain, sizeof(chain));
+    ESP_LOGD(TAG, "the tables moved the chip (0x%x): put back for the job: %s",
+             s_mem.moved, chain);
+    ap_base_send_chain(chain, NULL);
+    s_mem.moved = 0;
+}
+
+void ap_runner_note_moved(const char *chain)
+{
+    if (chain != NULL)
+    {
+        s_mem.moved |= ap_chain_sets(chain);
+    }
 }
 
 void ap_runner_send_init(const char *init)
@@ -324,8 +380,7 @@ void ap_base_header_give_back(ap_tr_t *tr)
         /* the chip's search (it picks its own headers), or a protocol
            without a functional header here: the whole prelude, which pins
            that protocol (hence the guard's word, as for the baseline) */
-        ap_base_send_chain(ap_veh_prelude_for(proto), tr);
-        prelude_out();
+        send_prelude_clean(ap_veh_prelude_for(proto), tr);
     }
 
     s_mem.hdr_borrowed = false;
@@ -342,13 +397,6 @@ bool ap_base_restore(ap_tr_t *tr)
         return false;
     }
 
-    char chain[AP_RESTORE_LEN];
-
-    (void)ap_chain_restore(s_mem.moved, ap_veh_prelude_for(proto), chain,
-                           sizeof(chain));
-    ESP_LOGD(TAG, "the tables moved the chip (0x%x): baseline back: %s",
-             s_mem.moved, chain);
-    ap_base_send_chain(chain, tr);
-    prelude_out();
+    send_prelude_clean(ap_veh_prelude_for(proto), tr);
     return true;
 }

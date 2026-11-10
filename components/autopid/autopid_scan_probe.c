@@ -105,6 +105,16 @@ static void send_chain(const char *chain, char *resp, size_t len)
     }
 }
 
+/** A chain of the TABLES (the profile's init, a request's own): what it
+ *  sets beyond the prelude (its own flow control, CAN priority, extended
+ *  addressing) is owed back like a row's, before the next row type or job
+ *  (ap_runner_note_moved, 2026-11-10). */
+static void send_init_chain(const char *chain, char *resp, size_t len)
+{
+    send_chain(chain, resp, len);
+    ap_runner_note_moved(chain);
+}
+
 /** The service byte of a request: "2101" -> 0x21, "22F4051" -> 0x22. */
 static int cmd_service(const char *cmd)
 {
@@ -142,7 +152,7 @@ bool ap_scan_probe_run(char *resp, size_t resp_len, ap_veh_seen_t *seen,
 
     if (p->init[0] != '\0')
     {
-        send_chain(p->init, resp, resp_len);
+        send_init_chain(p->init, resp, resp_len);
     }
 
     for (int i = 0; i < p->n_cmds && i < AP_PROBE_CMDS_MAX; i++)
@@ -159,7 +169,7 @@ bool ap_scan_probe_run(char *resp, size_t resp_len, ap_veh_seen_t *seen,
            request: ATSH / ATCRA per row) goes out before it */
         if (p->cmd_inits[i][0] != '\0')
         {
-            send_chain(p->cmd_inits[i], resp, resp_len);
+            send_init_chain(p->cmd_inits[i], resp, resp_len);
         }
 
         if (probe_request(cmd, resp, resp_len, AP_PROBE_REQ_TIMEOUT) != ESP_OK)

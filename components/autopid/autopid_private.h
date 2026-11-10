@@ -403,7 +403,22 @@ void ap_tr_add(ap_tr_t *t, char dir, const char *s);
    poller-task context) */
 void ap_runner_send_init(const char *init);      /* a ';'-separated chain  */
 void ap_runner_send_prelude(const char *prelude); /* ... that resets the
-                                                    header: nothing borrowed */
+                                                    header: nothing borrowed,
+                                                    and what the tables moved
+                                                    put back behind it       */
+/** A one-shot job of the firmware's own that talks to the chip directly (the
+ *  detection job) starts here: whatever the chains of the tables set beyond
+ *  the prelude (a row's own flow control, CAN priority, extended addressing)
+ *  is put back, once. Bench 2026-11-10: with only the rows of a profile
+ *  live, the row's `ATFCSH` / `ATFCSM1` stayed in effect under the job, the
+ *  VIN's reply stopped after its first frame and the detection failed with
+ *  "no ECU response". The caller holds the chip job and the poller is
+ *  parked (the scan pause). */
+void ap_runner_undo_tables(void);
+/** Such a job sent a chain of the tables itself (the profile's inits in the
+ *  detection's probe): remembered like a row's, undone before the next row
+ *  type or job. */
+void ap_runner_note_moved(const char *chain);
 /** The boot prelude, once. false = it is due and the bus guard has no
  *  verdict for the protocol it would pin: nothing was sent, do not send a
  *  request on top (the next poll asks again). */

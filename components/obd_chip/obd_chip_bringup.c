@@ -304,13 +304,24 @@ static void chip_provision(void)
  * Twice; the caller pulses the reset pin when that fails.
  *
  * The word is `ATWS` since 2026-11-02 (what 4.x sent in place of every
- * `ATZ`): the same complete reset (the session and every RAM setting gone,
- * the baud kept) without the LED test, about 40 ms instead of 1.3 s, and
- * without the junk bytes the MIC3624 puts ahead of its `ATZ` banner (5 of
- * 16 tries on the bench, a NUL among them: the "soft reset not confirmed"
- * of every third software restart since 2026-10-19, and a reset pulse plus
- * 1.5 s on top of a chip that had reset fine). The extract behind
- * bare_probe skips such bytes now as well.
+ * `ATZ`): every RAM setting gone, the baud kept, without the LED test,
+ * about 40 ms instead of 1.3 s, and without the junk bytes the MIC3624 puts
+ * ahead of its `ATZ` banner (5 of 16 tries on the bench, a NUL among them:
+ * the "soft reset not confirmed" of every third software restart since
+ * 2026-10-19, and a reset pulse plus 1.5 s on top of a chip that had reset
+ * fine). The extract behind bare_probe skips such bytes now as well.
+ *
+ * It is NOT the complete reset it was taken for: on the MIC3624 the warm
+ * start leaves an established CAN session standing (2026-11-09: `ATDP`
+ * still names the protocol, and the chip stays an active node at that
+ * bitrate). So the 2026-10-03 fault was back from 2026-11-02 on: polls at
+ * 500 kbit/s, software restarts only, the bus at 250 kbit/s, and a chip the
+ * firmware had not written one byte to destroyed 4527 frames in 8 s. The
+ * protocol is therefore CLOSED behind the banner (`ATPC`, acknowledged):
+ * the session ends, the protocol number and the stored protocol stay as
+ * they are (`ATDPN` reads the same before and after), and the next request
+ * opens it again in the usual 350 ms. Not acknowledged = not confirmed:
+ * the second try, then the caller's reset pin, which does end a session.
  */
 static bool chip_soft_reset(char *resp, size_t resp_len)
 {
@@ -318,11 +329,22 @@ static bool chip_soft_reset(char *resp, size_t resp_len)
     {
         (void)bare_probe("ATI\r", resp, resp_len, 500);
 
-        if (bare_probe("ATWS\r", resp, resp_len, 2500) &&
-            strstr(resp, "ELM") != NULL)
+        if (!bare_probe("ATWS\r", resp, resp_len, 2500) ||
+            strstr(resp, "ELM") == NULL)
+        {
+            continue;
+        }
+
+        resp[0] = '\0';
+
+        if (bare_probe("ATPC\r", resp, resp_len, 1000) &&
+            strstr(resp, "OK") != NULL)
         {
             return true;
         }
+
+        ESP_LOGW(TAG, "ATPC not acknowledged behind the warm start ('%.12s'): "
+                      "the chip may still hold its CAN session", resp);
     }
 
     return false;

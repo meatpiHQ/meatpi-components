@@ -167,8 +167,9 @@ until its next request, whatever its default protocol is.
 `chip_soft_reset()`: one throw-away `ATI` (whatever sits in front ends with
 it), then the reset word, and the answer must carry the banner (`ELM`).
 Twice, then the reset pin as before. The word is `ATWS` since 2026-11-02
-(what 4.x sent in place of every `ATZ`): the same complete reset without
-the LED test, about 40 ms instead of 1.3 s, and without the junk bytes the
+(what 4.x sent in place of every `ATZ`): taken then for the same complete
+reset (it is not, for an established CAN session: the paragraph after this
+one) without the LED test, about 40 ms instead of 1.3 s, and without the junk bytes the
 MIC3624 puts ahead of its `ATZ` banner (`00`, `00 F0 FD 00 00`, `BF 80 04`
 in 5 of 16 tries on the bench, `test-reports/logs/atz_soft_reset_2026-11-02`
 in the firmware repo; a NUL among them ended the C string before `ELM`, so
@@ -180,8 +181,30 @@ of an answer and behind the echo now as well (host test
 reads `chip awake; warm start (ATWS)` and `bring-up done in` about 1.1 s
 (1079 ms on the bench DUT, 2147 ms with `ATZ`, about 5 s on a boot that
 fell to the reset pulse), `ATDPN` through the ELM port reads the stored
-protocol (the warm start dropped the session); bench `test.ps1 obdbringup`
-in the firmware repo (PASS 2026-11-02, 36 checks).
+protocol; bench `test.ps1 obdbringup` in the firmware repo (PASS
+2026-11-02, 36 checks).
+
+**The warm start does not end a CAN session; `ATPC` does (2026-11-11).**
+"The same complete reset" was wrong in the one way that matters on the
+wire. `ATWS` on the MIC3624 clears the RAM settings and reloads the
+protocol NUMBER (which is why `ATDPN` read right), but an established CAN
+session stays up: `ATDP` still names it, and the chip stays an active node
+at that bitrate. So from 2026-11-02 on the 2026-10-03 fault was back: 155
+polls at 500 kbit/s, software restarts only, the bench bus moved to 250
+kbit/s, and a chip the firmware had not written one byte to since its boot
+(`tx_bytes` +0, the poller parked by the bus guard) put 1477 error frames on
+the bus in 3 s and 4527 in the next 8 s, the adapter through bus-off 332
+times (`can_autobaud_bench.py --only c0,c1`; the whole `autobaud` stage had
+been red in its 250k legs since 2026-11-09 for this). `chip_soft_reset()`
+now sends `ATPC` behind the banner and wants its `OK`: the session ends,
+the protocol number and the stored protocol stay (`ATDPN` reads the same
+before and after, so the stored-protocol read further down is untouched),
+and the next request opens the protocol again in the usual 350 ms. An
+`ATPC` that is not acknowledged counts as a reset that did not happen: the
+second try, then the reset pin. About 50 ms of bring-up. A device in a
+vehicle rarely meets the fault (unplugging it powers the chip off, and the
+session it kept was the right one for the car it stayed in); a bench that
+moves its bus between bitrates meets it at once.
 
 Related chip fact, corrected 2026-11-01 (issue #1023, the second dead chip):
 the chip's memory function (`ATM1` / `ATM0`) is ON after every reset (the

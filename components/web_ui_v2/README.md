@@ -817,6 +817,33 @@ Probe: `probe_ble_ram.mjs` (the mock presets `window.__mockPreset.ble`
 for the Bluetooth values and `.vpn` for the tunnel state; 23 checks,
 `BLE RAM PROBE PASS`).
 
+### The car's name in the header (2026-11-10, a user's request)
+
+The header pill shows the current car's name as a first line above the id
+and the address, and the browser tab reads `<name> · WiCAN Pro`. The name is
+the vehicle store's `name` (Quick Setup's Name field, 31 characters), read
+from the status poll's `vehicle` summary: no new route, no new setting. No
+current car = the pill as before, one line, and the plain tab title. A car
+whose setup never finished carries a `not set up` chip beside its name.
+
+Inside the pill, not beside it: measured on the real page, with the sleep
+warning and pending changes showing the header has 164 px to spare at
+1280 px and none at 1024 px, the width every phone gets (the viewport is
+pinned to 1024). A second line costs no width (`.conn-pill.named`: the id
+line drops to 11 px).
+
+A click on the name opens a popover (`#cp-name-pop`: the field, the count,
+the VIN, the stored cars with a link to Quick Setup's vehicle step). Set
+name sends nothing: it stages the rename into the header's Submit button
+(`store.veh = {key, name}`, counted and listed as "Car name"; the header
+shows the staged name in italics). Submit sends
+`PUT /api/autopid/vehicles/<key>` after the settings and restarts the
+device even when no setting changed (Ali, 2026-11-10: the rename goes through
+Submit and a restart like a setting, so the store file on the flash is
+written once per submit, not once per edit). The stored name typed back
+unstages the rename; Discard on the unsaved-changes dialog drops it
+(`store.clear()`). Probe: `tools/webui_preview/probe_car_name.mjs`.
+
 ## The new-car bar (2026-10-26)
 
 Ali set a device up on the simulator (two standard PIDs chosen), took it to

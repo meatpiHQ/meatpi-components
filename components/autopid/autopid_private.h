@@ -585,6 +585,14 @@ int ap_chain_strip_print(char *chain);
  *  sets none, or resets it (a bare `ATCRA`) last. PURE. */
 bool ap_chain_cra_id(const char *chain, uint32_t *id, bool *is_29bit);
 
+/** What a chain of the tables changes about how its replies read
+ *  (ap_resp_set_id29_hint), element by element as the chip takes them:
+ *  @p rx_id = the 29-bit id its `ATCRA` names (0 after an 11-bit or a bare
+ *  one), @p pin = the protocol its `ATSP` / `ATTP` sets. Both stay as they
+ *  are when the chain says nothing about them, so a caller carries them
+ *  from one chain to the next as the chip carries the settings. PURE. */
+void ap_chain_reply_hint(const char *chain, uint32_t *rx_id, char *pin);
+
 /* ---- pure: bus guard (autopid_bus_guard.c, host-tested) -------------------
  * May the OBD chip transmit on a protocol, given what the native
  * controller heard on the bus (can_manager_probe)? A request on a pinned

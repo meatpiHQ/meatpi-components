@@ -390,3 +390,44 @@ bool ap_chain_cra_id(const char *chain, uint32_t *id, bool *is_29bit)
 
     return found;
 }
+
+void ap_chain_reply_hint(const char *chain, uint32_t *rx_id, char *pin)
+{
+    if (chain == NULL || rx_id == NULL || pin == NULL)
+    {
+        return;
+    }
+
+    const char *p = chain;
+
+    while (*p != '\0')
+    {
+        const char *e = p;
+
+        while (*e != '\0' && *e != ';')
+        {
+            e++;
+        }
+
+        char body[CMD_MAX];
+        char proto = ap_guard_cmd_proto(p, (size_t)(e - p));
+
+        if (proto != '\0')
+        {
+            *pin = proto;
+        }
+        else if (element_body(p, (size_t)(e - p), body, sizeof(body)) &&
+                 strncmp(body, "ATCRA", 5) == 0)
+        {
+            uint32_t id = 0;
+            bool ext = false;
+
+            /* this element's word: a 29-bit id is the one to look for, an
+               11-bit one is printed as a header anyway, a bare ATCRA takes
+               the filter away */
+            *rx_id = (ap_chain_cra_id(body, &id, &ext) && ext) ? id : 0;
+        }
+
+        p = (*e == ';') ? e + 1 : e;
+    }
+}

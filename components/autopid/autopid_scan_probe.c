@@ -105,14 +105,26 @@ static void send_chain(const char *chain, char *resp, size_t len)
     }
 }
 
+/** How the replies read right now (ap_resp_set_id29_hint): the 29-bit id
+ *  the chains sent so far filter on, and the protocol they left the chip on.
+ *  Carried from chain to chain, as the chip carries the settings. */
+typedef struct
+{
+    uint32_t rx_id;     /* 0 = none named                                  */
+    char     pin;       /* the prelude's protocol until a chain sets one   */
+} probe_hint_t;
+
 /** A chain of the TABLES (the profile's init, a request's own): what it
  *  sets beyond the prelude (its own flow control, CAN priority, extended
  *  addressing) is owed back like a row's, before the next row type or job
- *  (ap_runner_note_moved, 2026-11-10). */
-static void send_init_chain(const char *chain, char *resp, size_t len)
+ *  (ap_runner_note_moved, 2026-11-10), and what it says about the replies
+ *  is kept for the parser. */
+static void send_init_chain(const char *chain, char *resp, size_t len,
+                            probe_hint_t *hint)
 {
     send_chain(chain, resp, len);
     ap_runner_note_moved(chain);
+    ap_chain_reply_hint(chain, &hint->rx_id, &hint->pin);
 }
 
 /** The service byte of a request: "2101" -> 0x21, "22F4051" -> 0x22. */
@@ -148,14 +160,17 @@ bool ap_scan_probe_run(char *resp, size_t resp_len, ap_veh_seen_t *seen,
 
     /* the CAN prelude for the profile's protocol (headers on, the frame of
        reference of the profile), then the profile's own init chain */
+    probe_hint_t hint = { 0, proto };
+    bool confirmed = false;
+
     send_chain(ap_veh_prelude_for(proto), resp, resp_len);
 
     if (p->init[0] != '\0')
     {
-        send_init_chain(p->init, resp, resp_len);
+        send_init_chain(p->init, resp, resp_len, &hint);
     }
 
-    for (int i = 0; i < p->n_cmds && i < AP_PROBE_CMDS_MAX; i++)
+    for (int i = 0; i < p->n_cmds && i < AP_PROBE_CMDS_MAX && !confirmed; i++)
     {
         const char *cmd = p->cmds[i];
         int sid = cmd_service(cmd);
@@ -169,13 +184,22 @@ bool ap_scan_probe_run(char *resp, size_t resp_len, ap_veh_seen_t *seen,
            request: ATSH / ATCRA per row) goes out before it */
         if (p->cmd_inits[i][0] != '\0')
         {
-            send_init_chain(p->cmd_inits[i], resp, resp_len);
+            send_init_chain(p->cmd_inits[i], resp, resp_len, &hint);
         }
 
         if (probe_request(cmd, resp, resp_len, AP_PROBE_REQ_TIMEOUT) != ESP_OK)
         {
             continue;
         }
+
+        /* the reply is read as a poll of this request would read it: the
+           poller tells the parser per row which 29-bit id is the row's own
+           and whether the protocol in effect is a 29-bit one. The probe
+           did not (2026-11-10) and parsed with whatever the row polled
+           last had left: a reply from an id that is not a legislated one
+           (17FE007B, the battery ECU of the VW MEB cars) was read as data
+           and the request passed over. */
+        ap_resp_set_id29_hint(hint.rx_id, ap_veh_proto_is_29bit(hint.pin));
 
         int n = ap_resp_to_payloads(resp, ecus, AP_RESP_ECUS_MAX);
         bool positive = false;
@@ -218,8 +242,10 @@ bool ap_scan_probe_run(char *resp, size_t resp_len, ap_veh_seen_t *seen,
                       "%s did (%u responder%s): %s confirmed", cmd,
                  (unsigned)seen->n_ecus, seen->n_ecus == 1 ? "" : "s",
                  p->profile[0] ? p->profile : "(no profile name)");
-        return true;
+        confirmed = true;
     }
 
-    return false;
+    /* the hint was this probe's: the next reader sets its own */
+    ap_resp_set_id29_hint(0, false);
+    return confirmed;
 }

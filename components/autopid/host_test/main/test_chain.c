@@ -163,10 +163,60 @@ void test_chain_restore_builds(void)
     TEST_ASSERT_EQUAL(0, ap_chain_restore(all, PRELUDE6, NULL, 0));
 }
 
+void test_chain_reply_hint_carries_like_the_chip(void)
+{
+    /* the Quick Setup's probe sends a profile's chains one after the other
+       and reads each reply: which 29-bit id is the answer's own, and is the
+       protocol in effect a 29-bit one (bench 2026-11-10: the probe told the
+       parser neither, and a reply from 17FE007B was read as data) */
+    uint32_t rx = 0;
+    char pin = '6';     /* the probe's prelude */
+
+    /* a published MEB row: the protocol and the battery ECU's reply id */
+    ap_chain_reply_hint("ATSP7;ATCP17;ATSHFC007B;ATFCSH17FC007B;"
+                        "ATCRA17FE007B;", &rx, &pin);
+    TEST_ASSERT_EQUAL_HEX32(0x17FE007B, rx);
+    TEST_ASSERT_EQUAL_CHAR('7', pin);
+
+    /* a chain that says nothing about either: both stay (the chip keeps
+       them too) */
+    ap_chain_reply_hint("ATAT1;ATST96;ATSH710", &rx, &pin);
+    TEST_ASSERT_EQUAL_HEX32(0x17FE007B, rx);
+    TEST_ASSERT_EQUAL_CHAR('7', pin);
+
+    /* the next row goes to the gateway: an 11-bit filter is printed as a
+       header, there is no 29-bit id to look for any more */
+    ap_chain_reply_hint(" at sp 6 ;ATSH710;ATFCSH710;ATFCSD300000;ATFCSM1;"
+                        "atcra 77a;", &rx, &pin);
+    TEST_ASSERT_EQUAL_HEX32(0, rx);
+    TEST_ASSERT_EQUAL_CHAR('6', pin);
+
+    /* a temporary switch counts like a stored one (the driver sends every
+       ATSP of the tables as ATTP); the last word of a chain wins */
+    ap_chain_reply_hint("ATTP9;ATCRA18DAF110;ATCRA1EC6AE80", &rx, &pin);
+    TEST_ASSERT_EQUAL_HEX32(0x1EC6AE80, rx);
+    TEST_ASSERT_EQUAL_CHAR('9', pin);
+
+    /* a bare ATCRA takes the filter away, the protocol stays */
+    ap_chain_reply_hint("ATSH18DB33F1;ATCRA", &rx, &pin);
+    TEST_ASSERT_EQUAL_HEX32(0, rx);
+    TEST_ASSERT_EQUAL_CHAR('9', pin);
+
+    /* nothing, NULL: untouched, no crash */
+    rx = 0x17FE007B;
+    ap_chain_reply_hint("", &rx, &pin);
+    ap_chain_reply_hint(NULL, &rx, &pin);
+    ap_chain_reply_hint("ATSP6", NULL, &pin);
+    ap_chain_reply_hint("ATSP6", &rx, NULL);
+    TEST_ASSERT_EQUAL_HEX32(0x17FE007B, rx);
+    TEST_ASSERT_EQUAL_CHAR('9', pin);
+}
+
 void run_chain_tests(void)
 {
     RUN_TEST(test_chain_the_report);
     RUN_TEST(test_chain_published_profiles);
     RUN_TEST(test_chain_reads_like_the_chip);
     RUN_TEST(test_chain_restore_builds);
+    RUN_TEST(test_chain_reply_hint_carries_like_the_chip);
 }

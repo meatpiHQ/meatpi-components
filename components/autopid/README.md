@@ -568,7 +568,17 @@ as one row without an id, and a DTC scan on any 29-bit car found "no ECU".
 2026-10-24 (headers on for every poll) also for the id a row's own
 receive filter names (`ATCRA17FE007B`, the MEB profile) and, on a 29-bit
 protocol, for any four bytes followed by a whole frame: the runner tells
-the parser both before a reply is read (`ap_runner_reply_hint()`).
+the parser both before a reply is read (`ap_runner_reply_hint()`). The
+detection job's profile probe did not (found 2026-11-10): it parsed with
+whatever the row polled last had left, so the same detect body confirmed a
+car or failed with "no ECU response" depending on that row (bench, one
+image: failed behind an `ATSP6` row, confirmed behind an `ATSP7` one), and
+in the Quick Setup, where standard rows are what is polled, a profile whose
+replies carry such an id was never confirmed by them (13 of the 89 published
+profiles use one: the VW group's MEB cars, the Porsche Taycan, Volvo, Geely,
+Zeekr, the GMC Sierra EV, the Honda Prologue). The probe now
+carries the hint from chain to chain as the chip carries the settings
+(`ap_chain_reply_hint()`, pure, host-tested) and sets it before each reply.
 
 **Trouble codes.** `dtc_protocol` = `obd` means "the legislated codes": on
 a `uds` car the scan and the clear take the WWH-OBD path

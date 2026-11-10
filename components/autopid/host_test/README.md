@@ -7,7 +7,7 @@ store's `autopid_vehicle_index.c` + `autopid_vehicle_codec.c` with
 `test_vehicle_index.c`, compiled with `AUTOPID_HOST_TEST`: no chip, no
 filesystem). Run via `.\test.ps1 host autopid`.
 
-## What is covered (150 tests, 2026-11-10)
+## What is covered (151 tests, 2026-11-10)
 
 | Case | What it proves |
 |---|---|
@@ -69,6 +69,7 @@ filesystem). Run via `.\test.ps1 host autopid`.
 | chain: published profiles | the i3 (`ATAT0` too: `ATAT1` comes back), Mini (`ATSP6;ATS0`: protocol + print), e-Ulysse chains and a uds car's `ATSH18DA58F1` classify as documented |
 | chain: read like the chip | spaces and case ignored; the off / reset forms (`ATCEA`, `ATCRA`, `ATFCSM0`, `ATCAF1`, `ATH0`...) set nothing; the on forms do; resets, displays, reads, requests, junk and NULL set nothing; an overlong command is nobody's |
 | chain: the restore builds | prelude alone when it covers everything; every bit at once fits `AP_RESTORE_LEN`; no prelude = the undo commands alone; a short buffer is cut and terminated |
+| chain: the reply hint carries like the chip (2026-11-10) | `ap_chain_reply_hint`: a published MEB row gives the id `17FE007B` and protocol 7; a chain that says nothing leaves both; an 11-bit or a bare `ATCRA` takes the id away and keeps the protocol; `ATTP` counts like `ATSP`, the last word of a chain wins; nothing and NULL change nothing (bench: the Quick Setup's probe read a reply from `17FE007B` as data) |
 | **bounds: the report (#1004)** | 0xFF through `B2*0.3921568692` (100.000001646) against a max of 100 is clamped to 100 on a standard and on a custom row; the reporter's 100.00000076 clamps, 99.99999823 is kept, 101.2 drops on a custom row and clamps on a standard one |
 | bounds: the rule | no bounds keeps everything; on the bound kept; the tolerance is 1e-6 of the bound (1e-6 at least) both ways; a J1939 not-available raw drops; a standard row clamps both ways; NaN never reaches the cache |
 | bounds: the exact literal | a percent row's full scale is the ratio `B2*100/255` (`[B2:B3]*25700/65535`, shifted `B3*100/255`), RPM / offset / fuel-trim / unranged rows keep the decimal, a range below zero is the signed span `[S2:S3]*0.25`; the ratio decodes exactly through the real parser |

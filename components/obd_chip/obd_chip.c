@@ -342,6 +342,24 @@ static void bringup_task(void *arg)
 
     int64_t t0 = esp_timer_get_time();
     esp_err_t err = bringup_run();
+    bool check = obd_settings_config()->auto_update;
+
+    /* The start-up check's claim BEFORE the gate opens (2026-11-11). The
+       check used to claim behind the DONE bit and raced the first requester
+       the bit woke. With AutoPID on that is AutoPID's first contact, and a
+       claim is polled, not queued: the check got the chip seconds later
+       ("bring-up done in" 3.6 to 4.6 s on the bench, in 2 of 5 boots, then
+       in nearly all once the UART's ISR had moved to the app core) or, past
+       its 5 s wait, not at all in that boot, without a line. Nothing else
+       holds a claim here (every wire-touching API gates on the bit), and
+       the engine's own claim below is the holder claiming again. The first
+       requester waits for the check, as it did whenever the check won:
+       about 130 ms at an accepted version. */
+    if (check && obd_core_claim(3 /* CLAIM_EXCLUSIVE */, 0) != ESP_OK)
+    {
+        ESP_LOGW(TAG, "the chip is claimed before its bring-up ended: the "
+                      "start-up firmware check waits for it");
+    }
 
     bringup_finish();
 
@@ -357,11 +375,12 @@ static void bringup_task(void *arg)
        accepted versions (V2.3.22, V2.3.24: the v4.52p list) is flashed
        to the packaged image, never the same version or a newer chip.
        Runs AFTER the DONE bit (the update path waits on it, ordering
-       matters) and ALSO after a FAILED bring-up: a chip stuck in download
-       mode fails bring-up and completing the download is its recovery
-       path. A dead wire aborts on the VTVERS timeout inside. At an
-       accepted version this costs one VTVERS round-trip. */
-    if (obd_settings_config()->auto_update)
+       matters), under the claim taken before it, and ALSO after a FAILED
+       bring-up: a chip stuck in download mode fails bring-up and completing
+       the download is its recovery path. A dead wire aborts on the VTVERS
+       timeout inside. At an accepted version this costs one VTVERS
+       round-trip. */
+    if (check)
     {
         esp_err_t up = obd_chip_firmware_update_builtin(OBD_FW_RULE_STARTUP);
 

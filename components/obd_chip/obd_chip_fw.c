@@ -441,11 +441,14 @@ static esp_err_t fw_update_run(const char *fw_buf, size_t fw_len,
         return ESP_ERR_INVALID_STATE;
     }
 
-    /* EXCLUSIVE: fan-out pauses, send() rejects, we own the wire now */
+    /* EXCLUSIVE: fan-out pauses, send() rejects, we own the wire now (the
+       bring-up task holds it already for its start-up check) */
     esp_err_t err = obd_core_claim(3 /* CLAIM_EXCLUSIVE */, 5000);
 
     if (err != ESP_OK)
     {
+        ESP_LOGW(TAG, "%s: not run, the chip stayed claimed for 5 s (%s)", src,
+                 esp_err_to_name(err));
         return err;
     }
 

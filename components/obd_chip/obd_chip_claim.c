@@ -35,6 +35,14 @@
  * task neither claims nor releases. A transaction whose end() never ran
  * cannot brick the chip: the COMMAND claim is stolen after the max hold
  * (fail-open, like obd_gate's expiry).
+ *
+ * A claim is polled, not queued: a waiter gets the chip when it finds it
+ * free at one of its 10 ms looks, so a holder that claims and releases in a
+ * tight loop keeps a waiter out for as long as the loop runs. Whoever must
+ * be first takes the claim before the others can ask. The EXCLUSIVE holder
+ * may claim again (2026-11-11): the bring-up task takes EXCLUSIVE before it
+ * opens the bring-up gate, and the start-up firmware check it then runs
+ * claims as every caller of the update engine does. One release ends it.
  */
 #include "obd_chip.h"
 
@@ -58,6 +66,14 @@ static portMUX_TYPE s_claim_lock = portMUX_INITIALIZER_UNLOCKED; /* internal: sp
 static volatile claim_state_t s_claim = CLAIM_NONE;
 static TaskHandle_t s_txn_task;
 static int64_t      s_txn_start_us;
+static TaskHandle_t s_excl_task; /* the EXCLUSIVE holder, NULL without one */
+
+/** Book a granted claim (the claim lock held). */
+static void claim_take(int type, TaskHandle_t self)
+{
+    s_claim = (claim_state_t)type;
+    s_excl_task = (type == CLAIM_EXCLUSIVE) ? self : NULL;
+}
 
 esp_err_t obd_core_claim(int type, uint32_t timeout_ms)
 {
@@ -83,12 +99,18 @@ esp_err_t obd_core_claim(int type, uint32_t timeout_ms)
                  (esp_timer_get_time() - s_txn_start_us) > OBD_TXN_MAX_US)
         {
             s_txn_task = NULL;
-            s_claim = (claim_state_t)type;
+            claim_take(type, self);
             granted = true;
         }
         else if (s_claim == CLAIM_NONE)
         {
-            s_claim = (claim_state_t)type;
+            claim_take(type, self);
+            granted = true;
+        }
+        /* the EXCLUSIVE holder claiming again already has the chip */
+        else if (type == CLAIM_EXCLUSIVE && s_claim == CLAIM_EXCLUSIVE &&
+                 s_excl_task == self)
+        {
             granted = true;
         }
         else if (s_claim == CLAIM_MONITOR && type == CLAIM_COMMAND)
@@ -129,6 +151,7 @@ void obd_core_release(void)
     if (s_txn_task == NULL || s_txn_task != xTaskGetCurrentTaskHandle())
     {
         s_claim = CLAIM_NONE;
+        s_excl_task = NULL;
     }
 
     portEXIT_CRITICAL(&s_claim_lock);

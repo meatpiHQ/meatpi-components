@@ -5,7 +5,7 @@ Two layers in one binary, run via `.\test.ps1 host obd_chip`:
 - the pure modules (`obd_chip_parse.c`, `obd_chip_class.c`, `obd_chip_fw_version.c`, `obd_chip_stslcs.c`: no UART/GPIO);
 - since 2026-11-10 the production request engine, claim model and fan-out (`obd_chip_cmd.c`, `obd_chip_claim.c`, `obd_chip_fanout.c`) against a fake chip that stands in for the UART (`test_request.c`). The fake collects bytes in a line buffer up to a CR as the real chip does, answers `OK` to AT words, data to `0100` and `?` to anything else; bytes left in its buffer without a CR merge with the next word, which is how a real chip comes to refuse the driver's `ATM0`. The tests assert the words on the wire. The bring-up gate, the obd_gate and the clock are stubs in that file.
 
-## What is covered (40 tests)
+## What is covered (41 tests)
 
 | Case | What it proves |
 |---|---|
@@ -27,6 +27,7 @@ Two layers in one binary, run via `.\test.ps1 host obd_chip`:
 | **request: the switch not sent when `ATM0` answers `?`** | (the reproduction, 2026-11-10) `XX` in the chip's line buffer: the wire reads `ATM0` alone, `ESP_ERR_INVALID_RESPONSE`, an empty answer, `refused` +1, a switch owed, the generation moved. On the driver before the change the switch went out and the call returned `ESP_OK` |
 | **request: the switch not sent when `ATM0` times out** | (the reproduction) a chip silent to `ATM0`: `ESP_ERR_TIMEOUT`, the wire reads `ATM0` alone. Before the change: `ESP_OK`, the switch on the wire |
 | request: `OK` and nothing else | `NOT OK`, `STOPPED`, `BUS BUSY`, an `OK` with a banner behind it and an empty answer each refuse the switch; an `OK` with CR and LF around it is taken, the guard's `ATSP6` going out as `ATTP6` |
+| claim: the EXCLUSIVE holder claims again | (2026-11-11, the start-up check's order) the bring-up task takes EXCLUSIVE before it opens its gate and the firmware check it then runs claims again: the second claim of the holder is granted at once, another task's and a COMMAND claim are refused meanwhile (`ESP_ERR_INVALID_STATE`, nothing on the wire), one release frees the chip, and the task that held it is not let in over a later MONITOR claim |
 | request: bus requests held while a switch is owed | after a refusal `0100` and `22F190` return `ESP_ERR_NOT_FINISHED` with nothing on the wire and the generation moved; `ATSH7DF` and `ATCRA` pass; the next acknowledged switch ends it and `0100` is answered |
 | request: an owed switch ends with the echo on | the chip echoing and the guard rewriting (`ATSP6` sent as `ATTP6`): the answer carries the echo ahead of `OK` and is still taken |
 | request: inside the caller's transaction | the pair rides the caller's hold, a refusal leaves the hold with the caller, `txn_end` frees the chip |

@@ -323,6 +323,27 @@ bridge_manager; production replaces it with a configured bridge.
   `monitor_policy` reserves `auto_interrupt`, pending meatpi's answer to task
   §11.6; nothing auto-sends the stop byte in v1).
 - EXCLUSIVE (fw update): fan-out pauses (RX task discards), `send()` rejects.
+- **A claim is polled, not queued (2026-11-11).** A waiter gets the chip
+  when it finds it free at one of its 10 ms looks, so a requester that
+  claims and releases request after request (a poller) keeps a waiter out
+  until it pauses. Whoever must be first takes the claim before the others
+  may ask. That is what the bring-up does for its start-up firmware check:
+  the bring-up task claims EXCLUSIVE BEFORE it sets the done bit that lets
+  everybody else in, and the check it then runs (the builtin update with
+  `OBD_FW_RULE_STARTUP`) claims as every caller of the update engine
+  does. For that the holder of EXCLUSIVE may claim again (granted
+  at once; one release ends the hold; another task is refused as before).
+  Until then the check claimed behind the done bit and raced the first
+  requester the bit woke. With AutoPID on that is AutoPID's first contact:
+  `bring-up done in` read 3.6 to 4.6 s instead of 1.18 s (in 2 of 5 boots,
+  then in nearly all once the UART's interrupt had moved to the app core),
+  and past its 5 s wait the check gave up for that boot without a line (the
+  caller took the time-out for a dead wire), so a chip below the accepted
+  versions would have kept its firmware until a later start. The first
+  requester of a boot now waits for the check, about 130 ms at an accepted
+  version, as it did whenever the check had won. Bench: the app repo's
+  `.\test.ps1 obdbringup`, the check-first leg, and `.\test.ps1 obdfw`
+  (the start-up completes an update that was cut).
 - Raw bridges are ungoverned by nature: a user typing `ATMA` through a bridge
   without claiming makes `request()` callers see garbage-until-timeout, not
   corruption, the engine treats an unterminated window as `ESP_ERR_TIMEOUT`
@@ -634,7 +655,7 @@ subscribe and transaction API for the CAN self-test.
   UART timeout inert; `-ProvisionLeg`: a hidden settings change provisions
   nothing, a control switched on provisions the controls off and leaves
   the thresholds alone).
-- **Host (`host_test/`, 40 tests):** since 2026-11-10 also the production
+- **Host (`host_test/`, 41 tests):** since 2026-11-10 also the production
   request engine, claim model and fan-out against a fake chip that stands
   in for the UART (`test_request.c`: the words on the wire, "Fail closed"
   and "Read back first" below); pure framing, prompt splits at every

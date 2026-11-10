@@ -391,6 +391,54 @@ void test_request_no_hold_no_switch(void)
     TEST_ASSERT_EQUAL(ESP_OK, obd_chip_release());
 }
 
+/* The start-up check's order (2026-11-11): the bring-up task takes EXCLUSIVE
+ * before it opens the bring-up gate, and the firmware check it then runs
+ * claims again, as every caller of the update engine does. The holder is let
+ * in; anybody else is refused while it holds; one release ends the hold. */
+static volatile esp_err_t s_other_claim;
+
+static void other_task_claims_exclusive(void *arg)
+{
+    (void)arg;
+    s_other_claim = obd_chip_claim(OBD_CHIP_CLAIM_EXCLUSIVE, 0);
+    vTaskDelete(NULL);
+}
+
+void test_claim_exclusive_holder_claims_again(void)
+{
+    engine_up();
+    TEST_ASSERT_EQUAL(ESP_OK, obd_chip_claim(OBD_CHIP_CLAIM_EXCLUSIVE, 0));
+    TEST_ASSERT_EQUAL(ESP_OK, obd_chip_claim(OBD_CHIP_CLAIM_EXCLUSIVE, 0));
+    TEST_ASSERT_EQUAL(3, obd_core_claim_state());
+
+    /* another task is not the holder: refused, not let in */
+    s_other_claim = ESP_FAIL;
+    TEST_ASSERT_EQUAL(pdPASS, xTaskCreate(other_task_claims_exclusive, "other",
+                                          4096, NULL, 5, NULL));
+
+    for (int i = 0; i < 100 && s_other_claim == ESP_FAIL; i++)
+    {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, s_other_claim);
+
+    /* a request meanwhile is refused too (the first requester of a boot
+       waits its 2 s for the check; here the wait is the short one) */
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE,
+                      obd_chip_claim(OBD_CHIP_CLAIM_COMMAND, T_SHORT));
+    TEST_ASSERT_EQUAL_STRING("", s_wire);
+
+    /* claimed twice, released once: the chip is free and remembers no
+       holder (the task that held it is not let in over another claim) */
+    TEST_ASSERT_EQUAL(ESP_OK, obd_chip_release());
+    TEST_ASSERT_EQUAL(0, obd_core_claim_state());
+    TEST_ASSERT_EQUAL(ESP_OK, obd_chip_claim(OBD_CHIP_CLAIM_MONITOR, 0));
+    TEST_ASSERT_EQUAL(ESP_ERR_TIMEOUT,
+                      obd_chip_claim(OBD_CHIP_CLAIM_EXCLUSIVE, 0));
+    TEST_ASSERT_EQUAL(ESP_OK, obd_chip_release());
+}
+
 /* A fresh bring-up: nothing is owed from the chip's life before it. */
 void test_request_bringup_clears_what_is_owed(void)
 {

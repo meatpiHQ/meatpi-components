@@ -36,6 +36,7 @@ void test_request_bus_requests_held_while_a_switch_is_owed(void);
 void test_request_owed_switch_ends_with_the_echo_on(void);
 void test_request_switch_inside_the_callers_transaction(void);
 void test_request_no_hold_no_switch(void);
+void test_claim_exclusive_holder_claims_again(void);
 void test_request_bringup_clears_what_is_owed(void);
 void test_bus_request_classification(void);
 void test_save_lost_answer_is_not_written_twice(void);
@@ -80,6 +81,7 @@ void app_main(void)
     RUN_TEST(test_request_owed_switch_ends_with_the_echo_on);
     RUN_TEST(test_request_switch_inside_the_callers_transaction);
     RUN_TEST(test_request_no_hold_no_switch);
+    RUN_TEST(test_claim_exclusive_holder_claims_again);
     RUN_TEST(test_request_bringup_clears_what_is_owed);
     RUN_TEST(test_bus_request_classification);
     RUN_TEST(test_save_lost_answer_is_not_written_twice);

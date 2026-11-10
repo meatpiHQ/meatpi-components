@@ -37,6 +37,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "soc/soc_caps.h"
 
 #include "log_manager.h"
 
@@ -75,11 +76,57 @@ static const char *TAG = "obd_chip";
 #define OBD_UART_EVT_DEPTH 32
 #define OBD_UART_EVT_WAIT_MS 100 /* wake to re-check the running flag */
 
+/* The hand-over of the hardware FIFO (128 bytes), two settings.
+ *
+ * The driver's ISR is called when OBD_UART_RX_FULL_THRESH bytes wait in the
+ * FIFO, or at the rx-timeout for less. At 2 Mbaud a byte arrives every 5 us,
+ * so the ISR has (128 - threshold) * 5 us to start reading before the FIFO
+ * runs over. With the SDK's default of 120 that was 8 bytes, 40 us, and a
+ * long output of the chip (ATPPS, STSLCS, the protocol tables: 250 to 1600
+ * bytes unbroken) arrived cut: 40 of 280 on the bench of 2026-11-11, one in
+ * four with the web server busy. (The bring-up's own STSLCS and ATPPS reads
+ * go through the same FIFO; in 20 boots of that bench they were on time.)
+ *
+ * What made the ISR late was its place. The driver binds it to the core
+ * that installs the driver, which was core 0, behind the WiFi interrupts
+ * (and the Bluetooth, timer and bus ones) at the same level: of 11349
+ * hand-overs there, the web server busy for half, 2.2 % started more than
+ * 40 us late, and the latest of three runs 310 us. Installed from
+ * OBD_UART_ISR_CORE, the app core, 0.07 % of 11514 did, and the latest of
+ * three runs 200 us, once. (Level 3 on core 0 measured the same, 0.03 %,
+ * but Bluetooth's controller takes its interrupts at level 3 there, and
+ * that core has two level-triggered slots for it.) At a threshold of 32
+ * the ISR has 96 bytes, 480 us: 2.4 times the latest seen on the app core.
+ * Neither setting is enough alone: at 0.07 % a threshold of 120 would still
+ * lose a hand-over now and then, and 32 on core 0 passed its reads with one
+ * hand-over in 45 late and 170 us to spare, which is not a margin.
+ *
+ * Nothing covers a flash write: the ISR is flash code (UART_ISR_IN_IRAM is
+ * off, its ring buffers would have to leave PSRAM) and does not run while
+ * the cache is off, so a long output under one still loses bytes.
+ *
+ * What the fan-out hands on does not change with the threshold: a hand-over
+ * that is not the end of a burst only passes on whole chunks (rx_drain), and
+ * the always-timeout mode makes the rx-timeout the end of EVERY burst (the
+ * ISR leaves one byte in the FIFO at a hand-over, so a burst that stops on
+ * a multiple of the threshold still times out). */
+#define OBD_UART_RX_FULL_THRESH 32
+#define OBD_UART_LATE_BYTES     8 /* 40 us: all the old threshold allowed  */
+#define OBD_UART_TAIL_WAIT_MS   5 /* a burst's end event lost: drain anyway */
+#define OBD_UART_ISR_CORE       (portNUM_PROCESSORS - 1) /* the app core */
+
+_Static_assert(OBD_UART_RX_FULL_THRESH < SOC_UART_FIFO_LEN,
+               "the hand-over point lies inside the hardware FIFO");
+
 static QueueHandle_t s_evt_q; /* driver-owned (uart_driver_install) */
 
 /* wire accounting for GET /api/obd_chip */
 static uint32_t s_tx_bytes;
 static uint32_t s_rx_overflows;
+static uint16_t s_rx_fifo_peak; /* the fullest an ISR pass found the FIFO */
+static uint32_t s_rx_handovers; /* ISR passes at or above the threshold   */
+static uint32_t s_rx_late;      /* of those, started OBD_UART_LATE_BYTES
+                                   or more behind their interrupt         */
 
 /* the baud the UART runs at now (the one set last): the firmware update
  * gate probes the chip here first, then at the other one (issue #1023) */
@@ -187,7 +234,9 @@ bool obd_pin_ready(void)
 
 /* ---- UART --------------------------------------------------------------------- */
 
-esp_err_t obd_uart_init(int baud)
+/** The driver install and the port's configuration, on the calling core:
+ *  the driver binds its ISR to the core that runs the install. */
+static esp_err_t uart_install(int baud)
 {
     uart_config_t cfg =
     {
@@ -198,11 +247,6 @@ esp_err_t obd_uart_init(int baud)
         .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
         .source_clk = UART_SCLK_DEFAULT,
     };
-
-    if (s_tx_lock == NULL)
-    {
-        s_tx_lock = xSemaphoreCreateMutexStatic(&s_tx_lock_buf);
-    }
 
     esp_err_t err = uart_driver_install(OBD_UART, OBD_UART_RX_BUF,
                                         OBD_UART_TX_BUF, OBD_UART_EVT_DEPTH,
@@ -220,9 +264,63 @@ esp_err_t obd_uart_init(int baud)
         return err;
     }
 
+    /* the driver install left the hand-over point at the SDK's 120 */
+    err = uart_set_rx_full_threshold(OBD_UART, OBD_UART_RX_FULL_THRESH);
+
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+
+    uart_set_always_rx_timeout(OBD_UART, true);
     s_baud = baud;
     return uart_set_pin(OBD_UART, OBD_TX_PIN, OBD_RX_PIN,
                         UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+}
+
+typedef struct
+{
+    int               baud;
+    esp_err_t         result;
+    SemaphoreHandle_t done;
+} uart_install_ctx_t;
+
+static void uart_install_task(void *arg)
+{
+    uart_install_ctx_t *ctx = (uart_install_ctx_t *)arg;
+
+    ctx->result = uart_install(ctx->baud);
+    xSemaphoreGive(ctx->done);
+    vTaskDelete(NULL);
+}
+
+esp_err_t obd_uart_init(int baud)
+{
+    static StaticSemaphore_t done_buf; /* internal: FreeRTOS object */
+    uart_install_ctx_t ctx =
+    {
+        .baud = baud,
+        .result = ESP_FAIL,
+        .done = xSemaphoreCreateBinaryStatic(&done_buf),
+    };
+
+    if (s_tx_lock == NULL)
+    {
+        s_tx_lock = xSemaphoreCreateMutexStatic(&s_tx_lock_buf);
+    }
+
+    /* the install on a one-shot task pinned to OBD_UART_ISR_CORE (the
+       can_manager pattern); on this core when the task cannot be made */
+    if (xTaskCreatePinnedToCore(uart_install_task, "obd_uart_init", 3072, &ctx,
+                                10, NULL, OBD_UART_ISR_CORE) != pdPASS)
+    {
+        ESP_LOGW(TAG, "no task for the UART install: its interrupt stays on "
+                      "core %d", (int)xPortGetCoreID());
+        return uart_install(baud);
+    }
+
+    (void)xSemaphoreTake(ctx.done, portMAX_DELAY);
+    return ctx.result;
 }
 
 esp_err_t obd_uart_set_baud(int baud)
@@ -271,20 +369,91 @@ int obd_uart_read(uint8_t *buf, size_t len, uint32_t timeout_ms)
     return uart_read_bytes(OBD_UART, buf, len, pdMS_TO_TICKS(timeout_ms));
 }
 
+/** What a driver event says about the hardware FIFO: how full the ISR found
+ *  it (a hand-over that started late found more than the threshold in it)
+ *  and whether it ran over. A hand-over that is not a burst's end leaves
+ *  one byte behind for the rx-timeout (always-timeout mode), hence the 1.
+ *  @return true for an overflow event (the FIFO or the ring). */
+static bool evt_note(const uart_event_t *evt)
+{
+    if (evt->type == UART_FIFO_OVF)
+    {
+        s_rx_fifo_peak = SOC_UART_FIFO_LEN;
+        return true;
+    }
+
+    if (evt->type == UART_DATA)
+    {
+        size_t fill = evt->size + (evt->timeout_flag ? 0u : 1u);
+
+        if (fill > s_rx_fifo_peak)
+        {
+            s_rx_fifo_peak = (uint16_t)fill;
+        }
+
+        /* the peak is one event; the share of late hand-overs is what
+           tells the ISR's place (2.2 % behind the WiFi interrupts on
+           core 0, 0.07 % on the app core, bench 2026-11-11) */
+        if (fill >= OBD_UART_RX_FULL_THRESH)
+        {
+            s_rx_handovers++;
+
+            if (fill >= OBD_UART_RX_FULL_THRESH + OBD_UART_LATE_BYTES)
+            {
+                s_rx_late++;
+            }
+        }
+    }
+
+    return evt->type == UART_BUFFER_FULL;
+}
+
+/** Book the waiting events without acting on them: their bytes belong to a
+ *  direct reader (the bring-up's bare probes), nobody else reads the queue. */
+static void evt_book(void)
+{
+    uart_event_t evt;
+    unsigned over = 0;
+
+    while (xQueueReceive(s_evt_q, &evt, 0) == pdTRUE)
+    {
+        over += evt_note(&evt) ? 1u : 0u;
+    }
+
+    if (over > 0)
+    {
+        s_rx_overflows += over;
+        ESP_LOGW(TAG, "rx overflow (%u) under a direct read: an answer of "
+                      "the bring-up was cut", over);
+    }
+}
+
 void obd_uart_flush_input(void)
 {
+    /* no RX task (the bring-up): each bare probe flushes first, so the
+       events of the answer before it are booked here. Its long reads
+       (STSLCS, ATPPS) count in the peak, and one the FIFO ran over under is
+       counted and logged; until 2026-11-11 those events were thrown away
+       unread. With the RX task up the events are its own. */
+    if (s_rx_task == NULL && s_evt_q != NULL)
+    {
+        evt_book();
+    }
+
     uart_flush_input(OBD_UART);
 }
 
-void obd_uart_get_stats(uint32_t *tx_bytes, uint32_t *rx_overflows,
-                        uint32_t *rx_buffered)
+void obd_uart_get_stats(obd_uart_stats_t *out)
 {
     size_t buffered = 0;
 
     uart_get_buffered_data_len(OBD_UART, &buffered);
-    *tx_bytes = s_tx_bytes;
-    *rx_overflows = s_rx_overflows;
-    *rx_buffered = (uint32_t)buffered;
+    out->tx_bytes = s_tx_bytes;
+    out->rx_overflows = s_rx_overflows;
+    out->rx_buffered = (uint32_t)buffered;
+    out->rx_fifo_peak = s_rx_fifo_peak;
+    out->rx_handovers = s_rx_handovers;
+    out->rx_late = s_rx_late;
 }
 
 /* ---- baud detection (issue #1023, Ali's question 2026-10-28) --------------------
@@ -375,10 +544,15 @@ esp_err_t obd_chip_autobaud(const char *stimulus, uint32_t window_ms,
 
 /* ---- RX fan-out task ------------------------------------------------------------- */
 
-/** Fan out everything the driver has buffered, chunk by chunk. The bytes
- *  are already in the ring buffer, so the 1-tick budget only guards the
- *  driver's rx mutex - there is no waiting for "more" after the last byte. */
-static void rx_drain(void)
+/** Fan out what the driver has buffered, chunk by chunk. The bytes are
+ *  already in the ring buffer, so the 1-tick budget only guards the
+ *  driver's rx mutex: there is no waiting for "more" after the last byte.
+ *  @param whole_only  the burst is still arriving (a FIFO hand-over, not
+ *         its end): only whole chunks go out, so that a long output reaches
+ *         the subscribers in chunks of OBD_CHIP_CHUNK_SIZE whatever the
+ *         hand-over point is (their queues are counted in chunks)
+ *  @return the bytes left in the ring for the next event */
+static size_t rx_drain(bool whole_only)
 {
     /* internal: handed to the UART driver read path */
     static uint8_t chunk[OBD_CHIP_CHUNK_SIZE];
@@ -391,6 +565,11 @@ static void rx_drain(void)
        engine's own first response */
     while (avail > 0 && s_rx_running && !obd_core_exclusive_held())
     {
+        if (whole_only && avail < sizeof(chunk))
+        {
+            return avail;
+        }
+
         size_t want = (avail > sizeof(chunk)) ? sizeof(chunk) : avail;
         int got = uart_read_bytes(OBD_UART, chunk, want, 1);
 
@@ -402,11 +581,14 @@ static void rx_drain(void)
         obd_core_fanout(chunk, (size_t)got);
         avail -= (size_t)got;
     }
+
+    return 0;
 }
 
 static void rx_task(void *arg)
 {
     uart_event_t evt;
+    size_t left = 0; /* a part chunk kept back: the burst goes on */
 
     (void)arg;
     ESP_LOGD(TAG, "rx task up");
@@ -420,21 +602,28 @@ static void rx_task(void *arg)
         if (obd_core_exclusive_held())
         {
             vTaskDelay(pdMS_TO_TICKS(50));
+            left = 0;
             continue;
         }
 
-        bool have_evt = (xQueueReceive(s_evt_q, &evt,
-                                       pdMS_TO_TICKS(OBD_UART_EVT_WAIT_MS))
+        /* with a part chunk kept back the next event is due within a
+           hand-over (160 us) or at the burst's end: a short wait, so that
+           a lost end event costs OBD_UART_TAIL_WAIT_MS and not the idle one */
+        uint32_t wait_ms = (left > 0) ? OBD_UART_TAIL_WAIT_MS
+                                      : OBD_UART_EVT_WAIT_MS;
+        bool have_evt = (xQueueReceive(s_evt_q, &evt, pdMS_TO_TICKS(wait_ms))
                          == pdTRUE);
 
-        if (have_evt &&
-            (evt.type == UART_FIFO_OVF || evt.type == UART_BUFFER_FULL))
+        if (have_evt && evt_note(&evt))
         {
-            /* the chip out-ran the 18 KB ring (monitor flood with every
-               subscriber stalled): drop the backlog, keep the stream sane */
+            /* the hardware FIFO ran over (the ISR came too late for a
+               hand-over), or the chip out-ran the 18 KB ring (monitor flood
+               with every subscriber stalled): drop the backlog, keep the
+               stream sane */
             uart_flush_input(OBD_UART);
             xQueueReset(s_evt_q);
             s_rx_overflows++;
+            left = 0;
             ESP_LOGW(TAG, "rx overflow (%s) - input flushed",
                      evt.type == UART_FIFO_OVF ? "fifo" : "ring");
             continue;
@@ -442,8 +631,10 @@ static void rx_task(void *arg)
 
         /* drain on data events AND on the idle wake: a lost event (queue
            full while exclusive) can never strand bytes in the ring for
-           longer than OBD_UART_EVT_WAIT_MS */
-        rx_drain();
+           longer than the wait above. Everything goes out at a burst's end
+           (the rx-timeout) and on a wake without an event; whole chunks
+           only at a hand-over in the middle of one. */
+        left = rx_drain(have_evt && evt.type == UART_DATA && !evt.timeout_flag);
     }
 
     s_rx_task = NULL;
@@ -462,9 +653,10 @@ esp_err_t obd_uart_rx_task_start(void)
         return ESP_ERR_INVALID_STATE; /* driver not installed */
     }
 
-    /* bring-up's bare probes left their events behind; the ring itself
-       was flushed before each probe, so only the queue needs clearing */
-    xQueueReset(s_evt_q);
+    /* the bring-up's last bare probe left its events behind; the ring
+       itself was flushed before each probe, so the queue is only read for
+       what it says about the FIFO (obd_uart_flush_input) */
+    evt_book();
     s_rx_running = true;
     s_rx_task = xTaskCreateStatic(rx_task, "obd_chip_rx",
                                   sizeof(s_rx_stack) / sizeof(s_rx_stack[0]),

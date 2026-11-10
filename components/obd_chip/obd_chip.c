@@ -151,8 +151,16 @@ esp_err_t obd_chip_get_stats(obd_chip_stats_t *out)
     _Static_assert(sizeof(out->stored_protocol) == OBD_STORED_LEN,
                    "obd_chip_stats_t.stored_protocol holds the chip's words");
     obd_cmd_stored_text(out->stored_protocol, sizeof(out->stored_protocol));
-    obd_uart_get_stats(&out->tx_bytes, &out->rx_overflows,
-                       &out->rx_buffered);
+
+    obd_uart_stats_t wire;
+
+    obd_uart_get_stats(&wire);
+    out->tx_bytes = wire.tx_bytes;
+    out->rx_overflows = wire.rx_overflows;
+    out->rx_buffered = wire.rx_buffered;
+    out->rx_fifo_peak = wire.rx_fifo_peak;
+    out->rx_handovers = wire.rx_handovers;
+    out->rx_late = wire.rx_late;
     return ESP_OK;
 }
 

@@ -527,6 +527,17 @@ typedef struct
     uint32_t    rx_chunks;
     uint16_t    rx_max_chunk;
     uint32_t    rx_overflows;   /* UART FIFO/ring overflows (input flushed) */
+    uint16_t    rx_fifo_peak;   /* the fullest the driver's ISR found the
+                                   128-byte hardware FIFO since boot: it is
+                                   called at 32, so the rest is how late it
+                                   came (5 us a byte at 2 Mbaud); 128 = the
+                                   FIFO was full or ran over              */
+    uint32_t    rx_handovers;   /* ISR passes that found the FIFO at or
+                                   above that threshold (a long output is
+                                   taken out in several)                  */
+    uint32_t    rx_late;        /* of those, 40 us or more behind their
+                                   interrupt: the share tells whether the
+                                   ISR has a quiet core                   */
     uint32_t    rx_buffered;    /* bytes waiting in the driver ring now   */
     uint32_t    tx_bytes;       /* bytes written to the chip              */
     uint32_t    client_idle_ms; /* obd_chip_client_idle_ms()              */

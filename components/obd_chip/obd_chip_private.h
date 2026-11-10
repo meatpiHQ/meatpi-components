@@ -214,8 +214,20 @@ int       obd_uart_get_baud(void); /* the baud set last: what the UART runs at *
 esp_err_t obd_uart_write(const uint8_t *data, size_t len);
 int       obd_uart_read(uint8_t *buf, size_t len, uint32_t timeout_ms);
 void      obd_uart_flush_input(void);
-void      obd_uart_get_stats(uint32_t *tx_bytes, uint32_t *rx_overflows,
-                             uint32_t *rx_buffered);
+
+/** The wire's counters since boot (obd_chip_stats_t carries them on). */
+typedef struct
+{
+    uint32_t tx_bytes;
+    uint32_t rx_overflows;
+    uint32_t rx_buffered;  /* in the driver's ring now                      */
+    uint32_t rx_handovers; /* ISR passes that found the hardware FIFO at or
+                              above the hand-over threshold                 */
+    uint32_t rx_late;      /* of those, 40 us or more behind their interrupt */
+    uint16_t rx_fifo_peak; /* the fullest any pass found the FIFO           */
+} obd_uart_stats_t;
+
+void      obd_uart_get_stats(obd_uart_stats_t *out);
 esp_err_t obd_uart_rx_task_start(void);
 void      obd_uart_rx_task_stop(void);
 

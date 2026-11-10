@@ -98,6 +98,8 @@ static esp_err_t obd_chip_get_handler(httpd_req_t *req)
                           "\"protocol_kept\":%lu,\"stored_protocol\":\"%s\"},"
                           "\"uart\":{\"rx_bytes\":%lu,\"rx_chunks\":%lu,"
                           "\"rx_max_chunk\":%u,\"rx_overflows\":%lu,"
+                          "\"rx_fifo_peak\":%u,\"rx_handovers\":%lu,"
+                          "\"rx_late\":%lu,"
                           "\"rx_buffered\":%lu,\"tx_bytes\":%lu},"
                           "\"fw\":{\"builtin\":\"%s\",\"current\":\"%s\","
                           "\"chip\":\"%s\",\"outdated\":%s,"
@@ -124,6 +126,9 @@ static esp_err_t obd_chip_get_handler(httpd_req_t *req)
                           (unsigned long)st.rx_chunks,
                           (unsigned)st.rx_max_chunk,
                           (unsigned long)st.rx_overflows,
+                          (unsigned)st.rx_fifo_peak,
+                          (unsigned long)st.rx_handovers,
+                          (unsigned long)st.rx_late,
                           (unsigned long)st.rx_buffered,
                           (unsigned long)st.tx_bytes,
                           obd_chip_builtin_fw_version(),

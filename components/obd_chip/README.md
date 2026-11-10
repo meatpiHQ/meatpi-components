@@ -36,6 +36,85 @@ events (`UART_FIFO_OVF`/`UART_BUFFER_FULL`) flush the ring and log a
 WARN; the idle wake (100 ms) drains too, so a lost event can never
 strand bytes. Do not reintroduce a timed read on this task.
 
+**The FIFO hand-over (2026-11-11):** the hardware receive FIFO holds 128
+bytes, and at 2 Mbaud (a byte every 5 us) it fills in 640 us. The driver's
+ISR is called when `OBD_UART_RX_FULL_THRESH` bytes wait in it, or at the
+rx-timeout for less, and has the rest of the FIFO to start reading. With
+the SDK's default of 120 that was 8 bytes, 40 us. A long output of the
+chip (`ATPPS`, `STSLCS`, the user area, the protocol tables: 250 to 1600
+bytes unbroken) then arrived cut, a piece missing and a few stale bytes of
+the FIFO in its place, with `rx overflow (fifo) - input flushed` in the
+log: 7 of 140 long reads on an idle unit, 33 of 140 with the web server
+busy (bench 2026-11-11). Short replies fit the FIFO whole and a
+multi-frame reply is printed frame by frame, each line ended by the
+rx-timeout; neither was hit.
+
+Two settings since, and it takes both:
+
+- **The threshold is 32:** 96 bytes, 480 us for the ISR. The same code
+  with the threshold left at 120 lost 34 of 280 long reads.
+- **The ISR lives on the app core** (`OBD_UART_ISR_CORE`). The driver
+  binds its interrupt to the core that installs it, which was core 0 (the
+  main task's), behind the WiFi interrupts and the Bluetooth, timer and
+  bus ones at the same level. `obd_uart_init()` runs the install on a
+  one-shot task pinned to the app core (the can_manager pattern).
+
+Measured as "how late did a hand-over start" (a temporary count in the RX
+task, bins of 40 us, about 11500 hand-overs a run, the web server busy for
+half of them):
+
+| ISR on | within 40 us | later | latest, all runs |
+|---|---|---|---|
+| core 0, level 1 (as shipped) | 97.8 % | 2.2 %: 194, 30, 12, 8, 1 per further 40 us | 310 us |
+| core 0, level 3 | 99.97 % | 3 hand-overs | under 120 us (one run) |
+| the app core, level 1 (the fix) | 99.93 % | 8 hand-overs | 200 us, once in five runs (35000 hand-overs) |
+
+2.2 % later than 40 us is the old loss: one hand-over in 45. Level 3 on
+core 0 measures as well as the app core but was not taken: Bluetooth's
+controller allocates its interrupts at level 3 on core 0, and a core has
+two level-triggered level-3 slots. With the threshold at 32 on core 0 the
+reads passed, but with one hand-over in 45 late and one of them 310 us
+late (`rx_fifo_peak` 94): 170 us to spare is not a margin. On the app core
+the peak read 46 to 72 in five runs (Bluetooth on and AutoPID polling in
+one of them): a rare late hand-over remains on either core, and the
+threshold is what covers it, with 280 us to spare in the worst case seen.
+
+Not covered, by construction: a flash write. The ISR is flash code
+(`UART_ISR_IN_IRAM` is off: every UART's ring buffers and objects would
+have to leave PSRAM for internal RAM, 36 KB for this port alone) and does
+not run while the flash cache is off (milliseconds for a write, tens of
+them for an erase), so a long output under one still loses bytes; a short
+reply waits in the FIFO.
+
+What the subscribers get does not change with the threshold. A hand-over
+in the middle of a burst passes on whole chunks of `OBD_CHIP_CHUNK_SIZE`
+only and keeps the rest for the next event (the subscriber queues are
+counted in chunks: at 32-byte chunks a queue would hold a quarter as much
+of a long output), and the driver's always-timeout mode makes the rx-timeout
+the end of EVERY burst (the ISR leaves one byte in the FIFO at a hand-over,
+so a burst that stops on a multiple of the threshold still times out). A
+part chunk kept back waits `OBD_UART_TAIL_WAIT_MS` for its end event at
+most.
+
+`uart.rx_fifo_peak` of `GET /api/obd_chip` is the fullest an ISR pass
+found the FIFO since boot: what lies above the threshold is how late the
+latest hand-over started, and 128 means the FIFO was full or ran over
+(`rx_overflows` tells which). It is one event. `uart.rx_late` of
+`uart.rx_handovers` is the share of the hand-overs that started 40 us or
+more behind their interrupt (`OBD_UART_LATE_BYTES`, all the old threshold
+allowed): 0.07 to 0.14 % on the app core, 2.2 % on core 0. That share, not the
+peak, tells where the ISR lives. The bring-up's bare probes count in all
+since the same day (`obd_uart_flush_input()` books their events; they were
+thrown away unread before): its `STSLCS` and `ATPPS` reads are two of the
+long outputs, and what they return decides on a write of the chip. At the
+old threshold they were on time in 20 of 20 boots (peak 120, no overflow:
+the unit is not busy yet when the bring-up runs), so no write is known to
+have come from a cut read. Bench:
+the app repo's `tools/testbench/obd/chip_uart_burst_bench.py`
+(`testing/chip_uart_burst_bench.md`). Do not raise the threshold, move the
+install back to the main task's core, or hand on part chunks at a
+hand-over, without that bench.
+
 ## Measured chip behaviour, large payloads and floods (2026-09-08)
 
 Bench: `tools/testbench/obd/vt_large_bench.py` (PCAN memory ECU on
@@ -87,7 +166,7 @@ zero-copy only with numbers.
 | `obd_chip_subscribe/unsubscribe(q, name)` | RX fan-out registration (caller owns the queue, item = `obd_chunk_t`). |
 | `obd_chip_dropped(q)` | Per-subscriber drop counter. |
 | `obd_chip_send(data,len)` | Serialized raw TX (a 4 KB VT payload is one call); rejected during EXCLUSIVE. |
-| `obd_chip_get_stats()` / `obd_chip_get_subscribers()` / `obd_chip_register_http()` | Observability (2026-09-08): wire + fan-out counters (`rx_bytes/chunks/max_chunk`, `rx_overflows`, `rx_buffered`, `tx_bytes`, claim, client idle) and per-subscriber `dropped/queued/depth`, served as `GET /api/obd_chip` (`obd_chip_http.c`, hand-formatted JSON). The first hop of any "missed frames" investigation: compare with `/api/bridges` and `/api/sockets`. |
+| `obd_chip_get_stats()` / `obd_chip_get_subscribers()` / `obd_chip_register_http()` | Observability (2026-09-08): wire + fan-out counters (`rx_bytes/chunks/max_chunk`, `rx_overflows`, `rx_fifo_peak` / `rx_handovers` / `rx_late` since 2026-11-11, `rx_buffered`, `tx_bytes`, claim, client idle) and per-subscriber `dropped/queued/depth`, served as `GET /api/obd_chip` (`obd_chip_http.c`, hand-formatted JSON). The first hop of any "missed frames" investigation: compare with `/api/bridges` and `/api/sockets`. |
 | `obd_chip_client_touch()` / `obd_chip_client_idle_ms()` | The external-client activity clock (2026-09-08): the bridge glue's `obd` endpoint touches it on every app write (TCP/BLE/USB/WS), autopid reads the idle time and yields the chip while an app drives it (legacy `DEV_AUTOPID_ELM327_APP_BIT` parity, 10 s). NOT touched by `obd_chip_send` itself - autopid's own monitor sends go through that and would pause autopid against itself. `UINT32_MAX` = no client ever wrote. |
 | `obd_chip_settings_generation()` / `obd_chip_settings_changed()` | The chip's run-time settings generation (2026-10-28): a number that moves at every bring-up (boot, a reflash's fresh start, a recovery) and when a holder that changed the chip's volatile settings (echo, headers, protocol, timeouts, filters) says so at the end of its transaction (the CAN self-test's `ATD` + `ATE0`), and since 2026-11-10 when the request engine refused a protocol switch or held a bus request back behind one. AutoPID's baseline memory compares it before every poll and re-sends its prelude when it moved (bench 2026-10-28: the chip echoed after a self-test and AutoPID's memory did not know). Any holder that keeps chip state should do the same. |
 | `obd_chip_request(cmd,resp,len,timeout)` | One transaction: claims COMMAND, collects to the `>` prompt, strips echo+prompt. Refuses monitor-class cmds (`ESP_ERR_NOT_SUPPORTED`). A protocol switch goes out only behind an `ATM0` the chip acknowledged (2026-11-10, "Fail closed" below): otherwise it is not sent (`ESP_ERR_INVALID_RESPONSE`, or the `ATM0`'s own error), and bus requests are held back (`ESP_ERR_NOT_FINISHED`) until a switch has gone through. |

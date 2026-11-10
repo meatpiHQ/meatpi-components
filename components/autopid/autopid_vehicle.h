@@ -127,6 +127,17 @@ void ap_veh_fingerprint(const ap_veh_ecu_t *ecus, size_t n,
 char ap_veh_effective_protocol(const char *setting, const char *stored,
                                bool search_fallback);
 
+/** May a detection's protocol be saved in the chip (the one deliberate
+ *  write of its store, obd_chip_protocol_save)? Only a protocol a STANDARD
+ *  request answered on (@p confirmed_by AP_VEH_BY_OBD). A car confirmed by
+ *  its profile's own request carries the protocol the wizard read out of
+ *  the profile's init strings (the first `ATSP` it found, which need not
+ *  even be the one the answering request used): that is the profile's
+ *  business, pinned by its rows at every poll, and never reaches the chip's
+ *  store (2026-11-10; bench: `ATSP7` written for a car whose `ATSP6` row
+ *  answered). False for an empty or unknown protocol too. */
+bool ap_veh_chip_learns(const char *protocol, uint8_t confirmed_by);
+
 /** The ';'-separated chip prelude for @p proto: ATS1;ATH<h>;ATST96;ATTP<p>
  *  plus the functional header + CRA clear for the CAN protocols 6..9.
  *  Headers are ON for every CAN protocol (6..9, A..C; 2026-10-24, issue

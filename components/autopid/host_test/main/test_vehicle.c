@@ -424,6 +424,32 @@ void test_veh_init_chain_atsp_stays_ram_only(void)
     TEST_ASSERT_EQUAL_STRING(ap_veh_prelude_for('6'), chain);
 }
 
+void test_veh_chip_learns_only_a_standard_answer(void)
+{
+    /* the one deliberate write of the chip's protocol store follows a
+       protocol a STANDARD request answered on, every valid one */
+    TEST_ASSERT_TRUE(ap_veh_chip_learns("6", AP_VEH_BY_OBD));
+    TEST_ASSERT_TRUE(ap_veh_chip_learns("7", AP_VEH_BY_OBD));
+    TEST_ASSERT_TRUE(ap_veh_chip_learns("3", AP_VEH_BY_OBD));
+    TEST_ASSERT_TRUE(ap_veh_chip_learns("a", AP_VEH_BY_OBD));
+
+    /* a car confirmed by its profile's request (nothing standard answered):
+       the protocol is the first ATSP the wizard found in the profile's init
+       strings. Bench 2026-11-10: the MEB rows, the probe named 7, the row
+       that answered was pinned on 6, and ATSP7 was written to a chip that
+       held 6. The profile's protocol never reaches the store. */
+    TEST_ASSERT_FALSE(ap_veh_chip_learns("7", AP_VEH_BY_PROFILE));
+    TEST_ASSERT_FALSE(ap_veh_chip_learns("6", AP_VEH_BY_PROFILE));
+
+    /* nothing to learn: no protocol (a J1939-only truck, a car that
+       answered nothing), the search, junk */
+    TEST_ASSERT_FALSE(ap_veh_chip_learns("", AP_VEH_BY_OBD));
+    TEST_ASSERT_FALSE(ap_veh_chip_learns(NULL, AP_VEH_BY_OBD));
+    TEST_ASSERT_FALSE(ap_veh_chip_learns("0", AP_VEH_BY_OBD));
+    TEST_ASSERT_FALSE(ap_veh_chip_learns("67", AP_VEH_BY_OBD));
+    TEST_ASSERT_FALSE(ap_veh_chip_learns("?", AP_VEH_BY_OBD));
+}
+
 /* ---- runner ------------------------------------------------------------------------ */
 
 void run_vehicle_tests(void)
@@ -439,5 +465,6 @@ void run_vehicle_tests(void)
     RUN_TEST(test_veh_effective_protocol_and_prelude);
     RUN_TEST(test_veh_legacy_doc_import);
     RUN_TEST(test_veh_init_chain_atsp_stays_ram_only);
+    RUN_TEST(test_veh_chip_learns_only_a_standard_answer);
 }
 

@@ -533,7 +533,18 @@ esp_err_t autopid_vehicle_detected(const ap_veh_seen_t *seen,
         ap_events_vehicle_changed(result.vin, result.name, false);
     }
 
-    learn_chip_protocol(result.key, seen->protocol);
+    if (ap_veh_chip_learns(seen->protocol, seen->confirmed_by))
+    {
+        learn_chip_protocol(result.key, seen->protocol);
+    }
+    else if (seen->protocol[0] != '\0')
+    {
+        /* confirmed by the profile's own request: its protocol is pinned by
+           its rows, the chip's store keeps the last car's base protocol */
+        ESP_LOGI(TAG, "vehicle %s: confirmed by its profile (protocol %s): "
+                      "the chip's stored protocol is left as it is",
+                 result.key, seen->protocol);
+    }
 
     /* the caller's copy carries the chip_protocol the save just set */
     ap_veh_lock();

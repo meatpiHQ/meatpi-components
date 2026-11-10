@@ -851,6 +851,19 @@ after an ELM app had the chip, and mixed-protocol profiles (per-PID
 `ATSP7` in init chains, the VW MEB family) keep being rewritten to `ATTP7`
 by the guard, unchanged.
 
+What is saved is the protocol a STANDARD request answered on, never a
+profile's (2026-11-10, `ap_veh_chip_learns()`, pure, host-tested). A car
+that answers nothing standard is confirmed by the wizard's probe
+(`confirmed_by` `profile`), and its `protocol` is the first `ATSP` the
+wizard found in the profile's init strings, which need not be the one the
+answering request used. Until that day the job handed it to the save:
+on the bench the probe named 7, the `ATSP6` row `222AB6` answered, and
+`ATSP7` went into a chip that held 6. Such a car now keeps `chip_protocol`
+empty and one `I` line says the store was left as it is. The bench with
+rows on both protocols beside the save, on a chip holding either one:
+`tools/testbench/obd/profile_protocol_bench.py` in the firmware repo
+(`PROFILE PROTOCOL PASS`).
+
 **Routes** (`components/HTTP_API.md` 6e4): `GET /api/autopid/vehicles`
 (the index, every entry plus `"current":bool`, top-level `"max":8`),
 `POST /api/autopid/vehicles/detect` (the detection job, 202 / 409; `POST

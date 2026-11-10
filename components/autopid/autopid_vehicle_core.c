@@ -358,6 +358,18 @@ char ap_veh_effective_protocol(const char *setting, const char *stored,
     return '0';
 }
 
+bool ap_veh_chip_learns(const char *protocol, uint8_t confirmed_by)
+{
+    if (!has(protocol) || protocol[1] != '\0' ||
+        !ap_veh_proto_valid((char)toupper((unsigned char)protocol[0])))
+    {
+        return false;
+    }
+
+    /* the car's BASE protocol only: what a standard request answered on */
+    return confirmed_by == AP_VEH_BY_OBD;
+}
+
 const char *ap_veh_prelude_for(char proto)
 {
     /* CAN protocols: headers ON (2026-10-24, issue #1014): every reply is

@@ -156,9 +156,11 @@ uint32_t obd_chip_client_idle_ms(void);
  *  timeouts, filters) are no longer what a holder last set them to: at
  *  every bring-up (boot, a reflash's fresh start, a recovery) and when a
  *  holder that changed them says so with obd_chip_settings_changed() at
- *  the end of its transaction (the CAN self-test's ATD + ATE0). AutoPID
- *  re-sends its prelude when the number moved; any holder that keeps chip
- *  state should do the same. */
+ *  the end of its transaction (the CAN self-test's ATD + ATE0), and when
+ *  the request engine refused a protocol switch or held a bus request back
+ *  behind one (obd_chip_request, 2026-11-10). AutoPID re-sends its prelude
+ *  when the number moved; any holder that keeps chip state should do the
+ *  same. */
 uint32_t obd_chip_settings_generation(void);
 void     obd_chip_settings_changed(void);
 
@@ -185,6 +187,19 @@ void     obd_chip_settings_changed(void);
  * fan-out hides, so an app's session runs with the memory function off too
  * and nothing it sends is answered twice. Counted in
  * obd_chip_stats_t.memory_off and .app_resets.
+ *
+ * Fail closed (2026-11-10): the switch goes out only when the chip answered
+ * that `ATM0` with `OK` and nothing else. Otherwise the switch is NOT sent,
+ * @p resp is empty and the call returns ESP_ERR_INVALID_RESPONSE (the chip
+ * answered something else, a `?` for one) or the error of the `ATM0` itself
+ * (ESP_ERR_TIMEOUT on silence); without the transaction hold neither word
+ * is sent. A refused switch is owed: until a switch has gone through, a
+ * word that would transmit on the vehicle bus (hex data, the K-line starts,
+ * the transmit words) is held back with ESP_ERR_NOT_FINISHED, because the
+ * chip is still on the protocol, and the bit rate, of whoever used it
+ * before; words that only set or read the chip pass. Both move the settings
+ * generation, so a holder that keeps chip state sends its prelude again.
+ * Counted in obd_chip_stats_t.memory_refused and .requests_held.
  */
 esp_err_t obd_chip_request(const char *cmd, char *resp, size_t resp_len,
                            TickType_t timeout);
@@ -202,10 +217,20 @@ esp_err_t obd_chip_request(const char *cmd, char *resp, size_t resp_len,
  * vehicle detection job ONLY, when the detected base protocol differs
  * from the car record's `chip_protocol`. Rules enforced here: @p proto
  * must be '1'..'9' or 'A'..'C' (ESP_ERR_INVALID_ARG; never ATSP0), at
- * most ONE save per boot (ESP_ERR_INVALID_STATE afterwards), the chip
+ * most ONE `ATSP` per boot (ESP_ERR_INVALID_STATE afterwards), the chip
  * must answer `OK` (ESP_FAIL otherwise; ESP_ERR_TIMEOUT on silence).
  * Counted in obd_chip_stats_t.protocol_saves and `GET /api/obd_chip`
  * `eeprom_guard.protocol_saves`.
+ *
+ * Read back first (2026-11-10): the bring-up reads the chip's stored
+ * protocol (`ATDPN` right after the chip's reset). When the chip holds
+ * @p proto already, with or without its automatic flag (`6` or `A6`),
+ * nothing is sent and the call returns ESP_OK (obd_chip_stats_t
+ * .protocol_kept): the caller records the protocol as saved. The one
+ * `ATSP` of a boot is counted when it goes out, not when it is answered:
+ * the chip acts on the word before it answers, so after a lost answer a
+ * second call returns ESP_ERR_INVALID_STATE instead of writing again, and
+ * the next boot's read tells whether the write was taken.
  */
 esp_err_t obd_chip_protocol_save(char proto);
 
@@ -520,6 +545,18 @@ typedef struct
     uint32_t    pp_restores;    /* PP 0F found off or not 95 at a bring-up
                                    and written back (2026-11-02): 0 on an
                                    intact chip                            */
+    uint32_t    memory_refused; /* protocol switches NOT sent: the chip did
+                                   not acknowledge the ATM0 ahead of them
+                                   (2026-11-10): 0 on a healthy chip      */
+    uint32_t    requests_held;  /* bus requests not sent while such a
+                                   switch was owed                        */
+    bool        switch_owed;    /* a refused switch, none through since   */
+    uint32_t    protocol_kept;  /* obd_chip_protocol_save() calls that sent
+                                   nothing: the chip held the protocol    */
+    char        stored_protocol[12]; /* the chip's stored protocol in its
+                                   own words (`6`, `A6`, `34 [ST]`), read
+                                   at the bring-up or acknowledged by a
+                                   save; "" = not known (2026-11-10)      */
 } obd_chip_stats_t;
 
 typedef struct

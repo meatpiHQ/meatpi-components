@@ -77,7 +77,13 @@ esp_err_t ap_base_request_tr(const char *cmd, char *resp, size_t resp_len,
 
     esp_err_t err = ap_be()->request(cmd, resp, resp_len, timeout);
 
-    ap_tr_add(tr, '<', (err != ESP_OK) ? "(no reply)"
+    /* the two refusals of the chip driver's memory protection (obd_chip.h,
+       2026-11-10) are not a silent chip: the word never went out */
+    ap_tr_add(tr, '<', (err == ESP_ERR_INVALID_RESPONSE)
+                           ? "(not sent: the chip did not acknowledge ATM0)"
+                    : (err == ESP_ERR_NOT_FINISHED)
+                           ? "(not sent: a protocol switch is owed)"
+                    : (err != ESP_OK) ? "(no reply)"
                     : (resp[0] == '\0') ? "(empty)" : resp);
     return err;
 }

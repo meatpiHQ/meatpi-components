@@ -116,6 +116,24 @@ typedef enum
 
 obd_reset_t obd_parse_reset_word(const char *buf, size_t len);
 
+/** True when @p cmd makes the chip transmit on the vehicle bus: hex data, a
+ *  bare CR (the chip repeats its last command), the K-line starts (`ATFI`,
+ *  `ATSI`), `ATRTR`, STN `STPX`, the vendor's `VTFullyRequestCk`. Every
+ *  other AT / ST / VT word only sets or reads the chip. Spaces and case as
+ *  the chip reads them, a ';' ends the word. The request engine holds these
+ *  back while a protocol switch is owed (2026-11-10). Pure, host-tested
+ *  (obd_chip_class.c). */
+bool obd_parse_is_bus_request(const char *cmd);
+
+/** The protocol an `ATDPN` answer names, as one of the ELM numbers: `6` ->
+ *  '6', `A6` -> '6' with @p automatic set (the chip searches when 6 fails),
+ *  `A` -> 'A' (J1939), `AA` -> 'A' automatic; blanks and line ends around it
+ *  ignored. False for anything else: an empty answer, `?`, the STN and
+ *  vendor presets (`34 [ST]`, `11A [VT]`). Read right after a reset it is
+ *  the chip's STORED protocol (2026-11-10). Pure, host-tested
+ *  (obd_chip_class.c). */
+bool obd_parse_dpn(const char *resp, char *proto, bool *automatic);
+
 /* ---- STSLCS sleep-config (obd_chip_stslcs.c, pure, host-testable) -----------
  * Ported from legacy main/obd.c: the sscanf patterns are the accepted
  * chip-output grammar. */
@@ -252,6 +270,11 @@ esp_err_t obd_bringup_run(int *active_baud);
 esp_err_t obd_core_claim(int type, uint32_t timeout_ms);
 void      obd_core_release(void);
 
+/** True when the calling task holds a transaction (obd_chip_txn_begin):
+ *  the request engine's ATM0 + switch pair then rides the caller's hold
+ *  instead of taking one of its own. */
+bool      obd_core_txn_owned(void);
+
 /** EEPROM guard accounting + log line (GET /api/obd_chip
  *  `eeprom_guard`): called by every TX path that ran the guard with a
  *  non-PASS verdict; @p cmd/@p len is the text as the caller received it. */
@@ -318,6 +341,43 @@ esp_err_t obd_settings_register(void);
 /* request engine (obd_chip_cmd.c) */
 esp_err_t obd_cmd_engine_init(void);
 uint32_t  obd_cmd_protocol_saves(void); /* obd_chip_protocol_save() count */
+
+/** The request path's memory protection (2026-11-10): the protocol switches
+ *  the engine refused because the chip did not acknowledge the `ATM0` ahead
+ *  of them, the bus requests held back since, and whether a switch is still
+ *  owed (GET /api/obd_chip `eeprom_guard`). */
+typedef struct
+{
+    uint32_t refused;
+    uint32_t held;
+    bool     owed;
+} obd_cmd_memory_t;
+
+void obd_cmd_memory_stats(obd_cmd_memory_t *out);
+
+/** A fresh chip (the bring-up finished): nothing is owed any more, every
+ *  holder sends its own prelude again. */
+void obd_cmd_memory_reset(void);
+
+/** The chip's stored protocol as the bring-up read it (`ATDPN` right after
+ *  the chip's reset, before anything of this boot names a protocol); NULL
+ *  when the chip did not answer. obd_chip_protocol_save() writes only when
+ *  the chip holds something else (2026-11-10). */
+void obd_cmd_stored_note(const char *dpn);
+
+/** The save's side of the stats: the saves that were not needed because
+ *  the chip held the protocol already, and the stored protocol in the
+ *  chip's words ("" = not known: never read, or an `ATSP` went out and its
+ *  answer was lost). */
+#define OBD_STORED_LEN 12
+uint32_t obd_cmd_protocol_kept(void);
+void     obd_cmd_stored_text(char *out, size_t out_len);
+
+#ifdef OBD_CHIP_HOST_TEST
+/** Host tests only (standard §3): the per-boot state of the save as a
+ *  restart leaves it. */
+void obd_cmd_test_new_boot(void);
+#endif
 
 /* fw update helper (obd_chip_fw.c): VTVERS with update-mode semantics */
 esp_err_t obd_chip_get_fw_version_raw(char *buf, size_t buf_len);

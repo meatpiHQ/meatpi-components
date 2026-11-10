@@ -178,6 +178,17 @@ in this component changed; the transcript of test-a-PID shows the
 switches as before and `GET /api/obd_chip` `eeprom_guard.memory_off`
 counts the `ATM0` words sent ahead of them.
 
+Since 2026-11-10 that `ATM0` must be acknowledged: a switch behind an
+`ATM0` the chip did not answer `OK` to is not sent, and the driver holds
+the bus requests back until a switch has gone through (the obd_chip
+README, "Fail closed"). Nothing in this component decides it; what shows
+here: the transcript of test-a-PID names the two cases (`(not sent: the
+chip did not acknowledge ATM0)` under the switch, `(not sent: a protocol
+switch is owed)` under the request), the call answers not ok, and the
+poller sends its prelude again at the next row because the driver moved
+the chip's settings generation. Polling resumes by itself once the chip
+acknowledges.
+
 ## Bus guard (2026-10-03)
 
 The OBD chip transmits at the bitrate of the protocol it is told to use. A

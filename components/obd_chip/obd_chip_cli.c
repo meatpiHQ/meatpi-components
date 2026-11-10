@@ -117,6 +117,16 @@ static void print_status(void)
                    (unsigned long)st.memory_off,
                    (unsigned long)st.app_resets,
                    (unsigned long)st.pp_restores);
+    cmdline_printf("memory:  switches refused %lu (ATM0 not acknowledged), "
+                   "bus requests held %lu%s\n",
+                   (unsigned long)st.memory_refused,
+                   (unsigned long)st.requests_held,
+                   st.switch_owed ? ", a switch is OWED" : "");
+    cmdline_printf("store:   protocol %s (read at the start), saves not "
+                   "needed %lu\n",
+                   (st.stored_protocol[0] != '\0') ? st.stored_protocol
+                                                   : "not known",
+                   (unsigned long)st.protocol_kept);
 
     if (fw.running)
     {

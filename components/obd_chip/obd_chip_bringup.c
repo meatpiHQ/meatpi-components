@@ -517,6 +517,17 @@ esp_err_t obd_bringup_run(int *active_baud)
     bare_probe("ATE0\r", resp, sizeof(resp), 1000);
     chip_provision();
 
+    /* the stored protocol (2026-11-10): the chip came out of its reset on
+       it and nothing of this boot has named a protocol yet (the identity
+       and configuration reads above do not), so `ATDPN` here reads the
+       store, the only way the chip shows it. One read per bring-up, no
+       write: obd_chip_protocol_save() then knows whether a save is needed
+       and whether an `ATSP` of an earlier boot, its answer lost, was
+       taken. */
+    resp[0] = '\0';
+    obd_cmd_stored_note(bare_probe("ATDPN\r", resp, sizeof(resp), 1000)
+                            ? resp : NULL);
+
     /* the memory function off (issue #1023, bench 2026-11-01): it is ON
        after every reset (the vendor's pin strap) and then writes every
        protocol switch a request answers on into the chip's EEPROM-backed
@@ -547,7 +558,11 @@ esp_err_t obd_bringup_run(int *active_baud)
         return err;
     }
 
-    ESP_LOGI(TAG, "started: chip '%s' at %d baud (ready=%d, memory %s)", resp,
-             *active_baud, obd_pin_ready(), mem_off ? "off" : "on");
+    char stored[OBD_STORED_LEN];
+
+    obd_cmd_stored_text(stored, sizeof(stored));
+    ESP_LOGI(TAG, "started: chip '%s' at %d baud (ready=%d, memory %s, "
+                  "stored protocol %s)", resp, *active_baud, obd_pin_ready(),
+             mem_off ? "off" : "on", (stored[0] != '\0') ? stored : "not read");
     return ESP_OK;
 }

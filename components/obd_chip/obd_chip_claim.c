@@ -187,6 +187,16 @@ esp_err_t obd_chip_txn_begin(TickType_t timeout)
     return ESP_OK;
 }
 
+bool obd_core_txn_owned(void)
+{
+    bool owned;
+
+    portENTER_CRITICAL(&s_claim_lock);
+    owned = (s_txn_task != NULL && s_txn_task == xTaskGetCurrentTaskHandle());
+    portEXIT_CRITICAL(&s_claim_lock);
+    return owned;
+}
+
 void obd_chip_txn_end(void)
 {
     portENTER_CRITICAL(&s_claim_lock);

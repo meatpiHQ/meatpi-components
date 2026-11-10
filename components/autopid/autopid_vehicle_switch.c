@@ -339,7 +339,10 @@ ap_veh_result_t autopid_vehicle_seen(const ap_veh_seen_t *seen)
 
 /** The chip learns the base protocol once: a REAL ATSP through the
  *  driver's save path, only when the car's record says the chip holds
- *  something else, at most once per boot (the driver enforces it). */
+ *  something else, at most once per boot (the driver enforces it). Since
+ *  2026-11-10 the driver reads the chip's store back at every bring-up and
+ *  sends nothing when the chip holds the protocol already: ESP_OK then
+ *  means "the chip holds it", written now or before. */
 static void learn_chip_protocol(const char *key, const char *proto)
 {
     bool need = false;
@@ -380,7 +383,9 @@ static void learn_chip_protocol(const char *key, const char *proto)
 
         ap_veh_unlock();
         (void)ap_veh_persist();
-        ESP_LOGI(TAG, "vehicle %s: chip base protocol saved (ATSP%s)", key,
+        /* written, or already in the chip's store (the driver read it back
+           at the bring-up and says which, 2026-11-10) */
+        ESP_LOGI(TAG, "vehicle %s: the chip holds base protocol %s", key,
                  proto);
     }
     else if (err == ESP_ERR_INVALID_STATE)

@@ -140,6 +140,17 @@ esp_err_t obd_chip_get_stats(obd_chip_stats_t *out)
     out->app_resets = fs.app_resets;
     out->hidden_bytes = fs.hidden_bytes;
     out->pp_restores = fs.pp_restores;
+
+    obd_cmd_memory_t mem;
+
+    obd_cmd_memory_stats(&mem);
+    out->memory_refused = mem.refused;
+    out->requests_held = mem.held;
+    out->switch_owed = mem.owed;
+    out->protocol_kept = obd_cmd_protocol_kept();
+    _Static_assert(sizeof(out->stored_protocol) == OBD_STORED_LEN,
+                   "obd_chip_stats_t.stored_protocol holds the chip's words");
+    obd_cmd_stored_text(out->stored_protocol, sizeof(out->stored_protocol));
     obd_uart_get_stats(&out->tx_bytes, &out->rx_overflows,
                        &out->rx_buffered);
     return ESP_OK;
@@ -302,6 +313,7 @@ static esp_err_t bringup_run(void)
     {
         s_started = true;
         s_settings_gen++; /* a fresh chip: every holder's prelude is stale */
+        obd_cmd_memory_reset(); /* and no switch is owed from before it */
     }
 
     return err;

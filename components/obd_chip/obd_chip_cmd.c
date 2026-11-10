@@ -55,13 +55,82 @@ static QueueHandle_t s_q;
 static obd_resp_acc_t s_acc EXT_RAM_BSS_ATTR; /* one in-flight transaction */
 
 /* obd_chip_protocol_save(): real ATSP writes this boot (stats
-   `protocol_saves`); the driver allows ONE per boot */
+   `protocol_saves`); the driver allows ONE attempt per boot, and none when
+   the chip holds the protocol already (2026-11-10) */
 static uint32_t s_protocol_saves;
+static uint32_t s_protocol_kept;   /* saves not needed: the chip held it  */
+static bool     s_save_attempted;  /* an ATSP went out this boot          */
+static bool     s_stored_known;    /* s_stored_proto is the chip's store  */
+static char     s_stored_proto;    /* '0'..'9', 'A'..'C'                  */
+static char     s_stored_text[OBD_STORED_LEN]; /* in the chip's words     */
+
+/* The request path's memory protection (2026-11-10, obd_chip_request below).
+   A switch the engine refused is OWED: the chip is still on the protocol of
+   whoever used it before, so bus requests are held until a switch has gone
+   through. Written under the transaction hold; read without it (a flag). */
+static volatile bool s_switch_owed;
+static bool     s_refusal_logged; /* the W line of this stretch went out */
+static uint32_t s_memory_refused; /* switches not sent: ATM0 not acknowledged */
+static uint32_t s_requests_held;  /* bus requests not sent while one is owed */
 
 uint32_t obd_cmd_protocol_saves(void)
 {
     return s_protocol_saves;
 }
+
+void obd_cmd_memory_stats(obd_cmd_memory_t *out)
+{
+    out->refused = s_memory_refused;
+    out->held = s_requests_held;
+    out->owed = s_switch_owed;
+}
+
+void obd_cmd_memory_reset(void)
+{
+    s_switch_owed = false;
+}
+
+uint32_t obd_cmd_protocol_kept(void)
+{
+    return s_protocol_kept;
+}
+
+void obd_cmd_stored_text(char *out, size_t out_len)
+{
+    snprintf(out, out_len, "%s", s_stored_text);
+}
+
+void obd_cmd_stored_note(const char *dpn)
+{
+    char proto = '\0';
+    size_t n = 0;
+
+    s_stored_known = obd_parse_dpn(dpn, &proto, NULL);
+    s_stored_proto = proto;
+
+    /* the chip's own words for the stats, the STN / vendor forms too */
+    for (const char *p = dpn; p != NULL && *p != '\0' && *p != '\r' &&
+                              *p != '\n' && n < sizeof(s_stored_text) - 1; p++)
+    {
+        unsigned char c = (unsigned char)*p;
+
+        /* printable, and safe inside the JSON string of the stats route */
+        s_stored_text[n++] = (c < 0x20 || c >= 0x7F || c == '"' || c == '\\')
+                                 ? ' ' : (char)c;
+    }
+
+    s_stored_text[n] = '\0';
+}
+
+#ifdef OBD_CHIP_HOST_TEST
+void obd_cmd_test_new_boot(void)
+{
+    s_save_attempted = false;
+    s_stored_known = false;
+    s_stored_proto = '\0';
+    s_stored_text[0] = '\0';
+}
+#endif
 
 esp_err_t obd_cmd_engine_init(void)
 {
@@ -237,7 +306,7 @@ static esp_err_t request_run(const char *cmd, char *resp, size_t resp_len,
     return ESP_OK;
 }
 
-/**
+/*
  * The chip's memory function is ON after every reset (the vendor's pin
  * strap; no non-volatile switch exists): with it on, a protocol switch that
  * a request then answers on is written to the chip's non-volatile protocol
@@ -247,21 +316,101 @@ static esp_err_t request_run(const char *cmd, char *resp, size_t resp_len,
  * did. So every protocol switch on this path gets its own `ATM0` first,
  * whatever reset happened in between (the bring-up's, a nap's, an app's
  * `ATZ`, the chip's own brown-out). One word, one `OK`, about 1 ms.
+ *
+ * Fail closed (2026-11-10): the switch goes out only when the chip answered
+ * that `ATM0` with `OK` and nothing else. A `?` (bytes of an app's
+ * unfinished line sat in the chip's line buffer and merged with the word),
+ * any other text, or no prompt inside the caller's budget, and the switch
+ * is not sent; the caller gets the error. Before, the switch went out
+ * regardless, with the memory function in whatever state the chip had it
+ * (the host reproduction: test_request.c).
  */
-static void memory_off_first(TickType_t timeout)
+
+/** A word or an answer on one log line: what is not printable as a space. */
+static void one_line(const char *in, char *out, size_t out_len)
 {
-    char resp[32];
+    size_t n = 0;
+
+    for (; in != NULL && in[n] != '\0' && n < out_len - 1; n++)
+    {
+        unsigned char c = (unsigned char)in[n];
+
+        out[n] = (c < 0x20 || c >= 0x7F) ? ' ' : (char)c;
+    }
+
+    out[n] = '\0';
+}
+
+/** `ATM0`, acknowledged. Anything else: the switch @p cmd is refused, owed
+ *  from now on, and every holder is told its prelude is due again. */
+static esp_err_t memory_off_first(const char *cmd, TickType_t timeout)
+{
+    char resp[32] = "";
     esp_err_t err = request_run("ATM0", resp, sizeof(resp), timeout, true);
 
-    if (err == ESP_OK && strstr(resp, "OK") != NULL)
+    if (err == ESP_OK && obd_parse_is_ok(resp))
     {
         obd_core_memory_off_note();
+
+        if (s_refusal_logged)
+        {
+            s_refusal_logged = false;
+            ESP_LOGI(TAG, "ATM0 acknowledged again: protocol switches go out");
+        }
+
+        return ESP_OK;
+    }
+
+    char said[16];
+    char word[16];
+    char why[48];
+
+    one_line(resp, said, sizeof(said));
+    one_line(cmd, word, sizeof(word));
+
+    if (err == ESP_OK)
+    {
+        snprintf(why, sizeof(why), "the chip answered '%s'", said);
     }
     else
     {
-        ESP_LOGD(TAG, "ATM0 ahead of the protocol switch: %s ('%.12s')",
-                 esp_err_to_name(err), (err == ESP_OK) ? resp : "");
+        snprintf(why, sizeof(why), "no answer, %s", esp_err_to_name(err));
     }
+
+    s_memory_refused++;
+    s_switch_owed = true;
+    obd_chip_settings_changed();
+
+    if (!s_refusal_logged)
+    {
+        /* the transition once at W, the repeats at D (standard §10) */
+        s_refusal_logged = true;
+        ESP_LOGW(TAG, "ATM0 not acknowledged (%s): '%s' not sent, bus "
+                      "requests wait for a protocol switch", why, word);
+    }
+    else
+    {
+        ESP_LOGD(TAG, "ATM0 not acknowledged (%s): '%s' not sent", why, word);
+    }
+
+    return (err == ESP_OK) ? ESP_ERR_INVALID_RESPONSE : err;
+}
+
+/** The chip took a word: the last line of its answer is `OK` (an echo ahead
+ *  of it is an app's ATE1 after its reset, not a refusal). */
+static bool answer_ends_ok(const char *resp)
+{
+    const char *last = resp;
+
+    for (const char *p = resp; *p != '\0'; p++)
+    {
+        if ((*p == '\r' || *p == '\n') && p[1] != '\0')
+        {
+            last = p + 1;
+        }
+    }
+
+    return obd_parse_is_ok(last);
 }
 
 esp_err_t obd_chip_request(const char *cmd, char *resp, size_t resp_len,
@@ -269,7 +418,26 @@ esp_err_t obd_chip_request(const char *cmd, char *resp, size_t resp_len,
 {
     if (!obd_parse_sets_protocol(cmd))
     {
+        if (s_switch_owed && resp != NULL && resp_len > 0 &&
+            obd_parse_is_bus_request(cmd))
+        {
+            /* a switch was refused and none went through since: this would
+               go out on the protocol, and at the bit rate, of whoever used
+               the chip before. The generation moves again so a holder that
+               did not see the refusal sends its prelude, switch included. */
+            resp[0] = '\0';
+            s_requests_held++;
+            obd_chip_settings_changed();
+            ESP_LOGD(TAG, "'%.12s' held: a protocol switch is owed", cmd);
+            return ESP_ERR_NOT_FINISHED;
+        }
+
         return request_run(cmd, resp, resp_len, timeout, true);
+    }
+
+    if (resp == NULL || resp_len == 0)
+    {
+        return ESP_ERR_INVALID_ARG;
     }
 
     /* the bring-up gate first, as a plain request would (the hold below
@@ -281,12 +449,32 @@ esp_err_t obd_chip_request(const char *cmd, char *resp, size_t resp_len,
 
     /* the pair inside one hold, so no other requester lands between the
        ATM0 and the switch; a caller inside its own transaction keeps it
-       (begin() refuses a nested one, and its end() is not ours to call) */
-    bool own_txn = (obd_chip_txn_begin(timeout) == ESP_OK);
+       (its end() is not ours to call). No hold, no pair: neither word
+       goes out. */
+    bool own_txn = !obd_core_txn_owned();
+    esp_err_t err = own_txn ? obd_chip_txn_begin(timeout) : ESP_OK;
 
-    memory_off_first(timeout);
+    if (err != ESP_OK)
+    {
+        resp[0] = '\0';
+        return err;
+    }
 
-    esp_err_t err = request_run(cmd, resp, resp_len, timeout, true);
+    err = memory_off_first(cmd, timeout);
+
+    if (err == ESP_OK)
+    {
+        err = request_run(cmd, resp, resp_len, timeout, true);
+
+        if (err == ESP_OK && answer_ends_ok(resp))
+        {
+            s_switch_owed = false; /* on a protocol somebody asked for */
+        }
+    }
+    else
+    {
+        resp[0] = '\0'; /* a refused switch leaves no stale answer behind */
+    }
 
     if (own_txn)
     {
@@ -305,38 +493,74 @@ esp_err_t obd_chip_protocol_save(char proto)
         return ESP_ERR_INVALID_ARG;     /* never ATSP0 (auto) or junk     */
     }
 
-    /* the ONE unguarded command path besides boot provisioning: at most
-       one real ATSP per boot, whatever the caller does (EEPROM budget) */
-    if (s_protocol_saves >= 1)
-    {
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    char cmd[8];
-    char resp[64];
-
-    snprintf(cmd, sizeof(cmd), "ATSP%c", p);
-
-    esp_err_t err = request_run(cmd, resp, sizeof(resp),
-                                pdMS_TO_TICKS(2000), false);
+    /* the ONE unguarded command path besides boot provisioning. The check,
+       the mark and the word are one step under the hold, so two callers
+       cannot both pass the check (2026-11-10). */
+    bool own_txn = !obd_core_txn_owned();
+    esp_err_t err = own_txn ? obd_chip_txn_begin(pdMS_TO_TICKS(2000)) : ESP_OK;
 
     if (err != ESP_OK)
     {
-        ESP_LOGW(TAG, "%s (protocol save) failed: %s", cmd,
-                 esp_err_to_name(err));
         return err;
     }
 
-    if (strstr(resp, "OK") == NULL)
+    char cmd[8];
+    char resp[64] = "";
+
+    snprintf(cmd, sizeof(cmd), "ATSP%c", p);
+
+    if (s_stored_known && s_stored_proto == p)
     {
-        ESP_LOGW(TAG, "%s (protocol save) not accepted: '%.16s'", cmd, resp);
-        return ESP_FAIL;
+        /* read back at the bring-up, or acknowledged this boot: the chip
+           holds it, nothing to write */
+        s_protocol_kept++;
+        ESP_LOGI(TAG, "%s not sent: the chip's store holds %c already ('%s')",
+                 cmd, p, s_stored_text);
+    }
+    else if (s_save_attempted)
+    {
+        err = ESP_ERR_INVALID_STATE; /* one attempt per boot (EEPROM budget) */
+    }
+    else
+    {
+        /* marked BEFORE the word goes out: the chip acts on it and then
+           answers, so a lost answer is no proof that nothing was written.
+           What the store holds is unknown from here until the chip
+           acknowledges, or the next bring-up reads it back. */
+        s_save_attempted = true;
+        s_stored_known = false;
+        s_stored_text[0] = '\0';
+        err = request_run(cmd, resp, sizeof(resp), pdMS_TO_TICKS(2000), false);
+
+        if (err != ESP_OK)
+        {
+            ESP_LOGW(TAG, "%s (protocol save) not answered: %s; the next "
+                          "start reads what the chip holds", cmd,
+                     esp_err_to_name(err));
+        }
+        else if (!answer_ends_ok(resp))
+        {
+            ESP_LOGW(TAG, "%s (protocol save) not accepted: '%.16s'", cmd,
+                     resp);
+            err = ESP_FAIL;
+        }
+        else
+        {
+            s_protocol_saves++;
+            s_stored_known = true;
+            s_stored_proto = p;
+            snprintf(s_stored_text, sizeof(s_stored_text), "%c", p);
+            ESP_LOGI(TAG, "%s saved to the chip's EEPROM (base protocol "
+                          "learned once this boot)", cmd);
+        }
     }
 
-    s_protocol_saves++;
-    ESP_LOGI(TAG, "%s saved to the chip's EEPROM (base protocol learned "
-                  "once this boot)", cmd);
-    return ESP_OK;
+    if (own_txn)
+    {
+        obd_chip_txn_end();
+    }
+
+    return err;
 }
 
 esp_err_t obd_chip_get_version(char *buf, size_t buf_len, TickType_t timeout)

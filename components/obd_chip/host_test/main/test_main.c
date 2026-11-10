@@ -1,6 +1,7 @@
 /**
  * @file test_main.c
- * @brief Host test entry point for the obd_chip pure parsing/framing logic.
+ * @brief Host test entry point for the obd_chip pure parsing/framing logic
+ *        and (test_request.c) the request engine against a fake chip.
  */
 #include "unity.h"
 
@@ -27,6 +28,23 @@ void test_stslcs_ignores_garbage(void);
 void test_stslcs_midline_gt_is_not_the_prompt(void);
 void test_sleep_word_ack(void);
 void test_ppsw_parse(void);
+void test_request_switch_goes_out_behind_acknowledged_m0(void);
+void test_request_switch_not_sent_when_m0_answers_what(void);
+void test_request_switch_not_sent_when_m0_times_out(void);
+void test_request_m0_must_be_ok_and_nothing_else(void);
+void test_request_bus_requests_held_while_a_switch_is_owed(void);
+void test_request_owed_switch_ends_with_the_echo_on(void);
+void test_request_switch_inside_the_callers_transaction(void);
+void test_request_no_hold_no_switch(void);
+void test_request_bringup_clears_what_is_owed(void);
+void test_bus_request_classification(void);
+void test_save_lost_answer_is_not_written_twice(void);
+void test_save_refused_word_waits_for_the_next_start(void);
+void test_save_not_sent_when_the_chip_holds_it(void);
+void test_save_writes_once_when_the_chip_holds_another(void);
+void test_save_blocked_by_a_monitor_spends_nothing(void);
+void test_save_refuses_what_is_not_a_protocol(void);
+void test_dpn_parse(void);
 
 void app_main(void)
 {
@@ -54,5 +72,22 @@ void app_main(void)
     RUN_TEST(test_stslcs_midline_gt_is_not_the_prompt);
     RUN_TEST(test_sleep_word_ack);
     RUN_TEST(test_ppsw_parse);
+    RUN_TEST(test_request_switch_goes_out_behind_acknowledged_m0);
+    RUN_TEST(test_request_switch_not_sent_when_m0_answers_what);
+    RUN_TEST(test_request_switch_not_sent_when_m0_times_out);
+    RUN_TEST(test_request_m0_must_be_ok_and_nothing_else);
+    RUN_TEST(test_request_bus_requests_held_while_a_switch_is_owed);
+    RUN_TEST(test_request_owed_switch_ends_with_the_echo_on);
+    RUN_TEST(test_request_switch_inside_the_callers_transaction);
+    RUN_TEST(test_request_no_hold_no_switch);
+    RUN_TEST(test_request_bringup_clears_what_is_owed);
+    RUN_TEST(test_bus_request_classification);
+    RUN_TEST(test_save_lost_answer_is_not_written_twice);
+    RUN_TEST(test_save_refused_word_waits_for_the_next_start);
+    RUN_TEST(test_save_not_sent_when_the_chip_holds_it);
+    RUN_TEST(test_save_writes_once_when_the_chip_holds_another);
+    RUN_TEST(test_save_blocked_by_a_monitor_spends_nothing);
+    RUN_TEST(test_save_refuses_what_is_not_a_protocol);
+    RUN_TEST(test_dpn_parse);
     UNITY_END();
 }

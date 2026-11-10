@@ -89,9 +89,9 @@ zero-copy only with numbers.
 | `obd_chip_send(data,len)` | Serialized raw TX (a 4 KB VT payload is one call); rejected during EXCLUSIVE. |
 | `obd_chip_get_stats()` / `obd_chip_get_subscribers()` / `obd_chip_register_http()` | Observability (2026-09-08): wire + fan-out counters (`rx_bytes/chunks/max_chunk`, `rx_overflows`, `rx_buffered`, `tx_bytes`, claim, client idle) and per-subscriber `dropped/queued/depth`, served as `GET /api/obd_chip` (`obd_chip_http.c`, hand-formatted JSON). The first hop of any "missed frames" investigation: compare with `/api/bridges` and `/api/sockets`. |
 | `obd_chip_client_touch()` / `obd_chip_client_idle_ms()` | The external-client activity clock (2026-09-08): the bridge glue's `obd` endpoint touches it on every app write (TCP/BLE/USB/WS), autopid reads the idle time and yields the chip while an app drives it (legacy `DEV_AUTOPID_ELM327_APP_BIT` parity, 10 s). NOT touched by `obd_chip_send` itself - autopid's own monitor sends go through that and would pause autopid against itself. `UINT32_MAX` = no client ever wrote. |
-| `obd_chip_settings_generation()` / `obd_chip_settings_changed()` | The chip's run-time settings generation (2026-10-28): a number that moves at every bring-up (boot, a reflash's fresh start, a recovery) and when a holder that changed the chip's volatile settings (echo, headers, protocol, timeouts, filters) says so at the end of its transaction (the CAN self-test's `ATD` + `ATE0`). AutoPID's baseline memory compares it before every poll and re-sends its prelude when it moved (bench 2026-10-28: the chip echoed after a self-test and AutoPID's memory did not know). Any holder that keeps chip state should do the same. |
-| `obd_chip_request(cmd,resp,len,timeout)` | One transaction: claims COMMAND, collects to the `>` prompt, strips echo+prompt. Refuses monitor-class cmds (`ESP_ERR_NOT_SUPPORTED`). |
-| `obd_chip_protocol_save(proto)` | (2026-10-01) ONE real `ATSP<proto>` per boot on the request path, bypassing the EEPROM guard: the chip learns its base protocol once after a vehicle detection. Caller: autopid's detection job only. `'1'..'9'`/`'A'..'C'` else `ESP_ERR_INVALID_ARG`; a second call this boot `ESP_ERR_INVALID_STATE`; no `OK` = `ESP_FAIL`. Counted in `protocol_saves`. See "Protocol save" below. |
+| `obd_chip_settings_generation()` / `obd_chip_settings_changed()` | The chip's run-time settings generation (2026-10-28): a number that moves at every bring-up (boot, a reflash's fresh start, a recovery) and when a holder that changed the chip's volatile settings (echo, headers, protocol, timeouts, filters) says so at the end of its transaction (the CAN self-test's `ATD` + `ATE0`), and since 2026-11-10 when the request engine refused a protocol switch or held a bus request back behind one. AutoPID's baseline memory compares it before every poll and re-sends its prelude when it moved (bench 2026-10-28: the chip echoed after a self-test and AutoPID's memory did not know). Any holder that keeps chip state should do the same. |
+| `obd_chip_request(cmd,resp,len,timeout)` | One transaction: claims COMMAND, collects to the `>` prompt, strips echo+prompt. Refuses monitor-class cmds (`ESP_ERR_NOT_SUPPORTED`). A protocol switch goes out only behind an `ATM0` the chip acknowledged (2026-11-10, "Fail closed" below): otherwise it is not sent (`ESP_ERR_INVALID_RESPONSE`, or the `ATM0`'s own error), and bus requests are held back (`ESP_ERR_NOT_FINISHED`) until a switch has gone through. |
+| `obd_chip_protocol_save(proto)` | (2026-10-01) ONE real `ATSP<proto>` per boot on the request path, bypassing the EEPROM guard: the chip learns its base protocol once after a vehicle detection. Caller: autopid's detection job only. `'1'..'9'`/`'A'..'C'` else `ESP_ERR_INVALID_ARG`; a second `ATSP` this boot `ESP_ERR_INVALID_STATE` (counted when it goes out, 2026-11-10); no `OK` = `ESP_FAIL`. Nothing is sent, and `ESP_OK` returned, when the chip's store, read back at the bring-up, holds the protocol already (`protocol_kept`). Counted in `protocol_saves`. See "Protocol save" below. |
 | `obd_chip_claim/release(type,timeout)` | COMMAND / MONITOR / EXCLUSIVE arbitration. |
 | `obd_chip_is_monitor_cmd(cmd)` | Table-driven monitor-class test (pure). |
 | `obd_chip_monitor_stop()` | The stop byte: **SPACE, never CR** (CR = repeat-last-command → can re-enter ATMA). |
@@ -532,7 +532,10 @@ subscribe and transaction API for the CAN self-test.
   UART timeout inert; `-ProvisionLeg`: a hidden settings change provisions
   nothing, a control switched on provisions the controls off and leaves
   the thresholds alone).
-- **Host (`host_test/`, 23 tests):** pure framing, prompt splits at every
+- **Host (`host_test/`, 40 tests):** since 2026-11-10 also the production
+  request engine, claim model and fan-out against a fake chip that stands
+  in for the UART (`test_request.c`: the words on the wire, "Fail closed"
+  and "Read back first" below); pure framing, prompt splits at every
   chunk boundary, echo strip, post-prompt bytes not consumed, noise
   interleave, **meatpi's real 36-line proprietary-PID log replayed at chunk
   sizes 1…4096**, overflow flagging, error/monitor classification, fw-file
@@ -620,11 +623,56 @@ driver re-sends it at the three places that between them cover every reset:
   change (the 700-line rule); `obd_chip.c` keeps the lifecycle, the
   bring-up task and the stats.
 
+#### Fail closed (2026-11-10)
+
+Until this date the request engine sent its `ATM0` and then the switch
+whatever the chip had answered: an `ATM0` the chip did not take left the
+memory function as it was, ON after any reset the driver did not see, and
+the switch went out and was memorised. Reproduced on a product image
+(6.0.0-beta.9, `test.ps1 attpstore`, the refused `ATM0` leg): two bytes
+without a CR left in the chip's line buffer through a bridge (an app's
+unfinished word), the driver's `ATM0` read by the chip as `XXATM0` and
+answered `?`, the switch sent regardless, the request answered, the store
+read 7 where it had held 6.
+
+Now `obd_chip_request()` sends the switch only when the chip answered that
+`ATM0` with `OK` and nothing else (`obd_parse_is_ok`: `NOT OK`, `STOPPED`,
+a banner, an empty answer and `?` are not it):
+
+- **refused**: anything else, or no prompt inside the caller's budget, and
+  the switch is not sent. The caller gets `ESP_ERR_INVALID_RESPONSE` (the
+  chip answered something else) or the `ATM0`'s own error (`ESP_ERR_TIMEOUT`
+  on silence) and an empty answer. One W line at the first refusal, D after
+  it, one I line when the chip acknowledges again.
+- **no hold, no pair**: when the transaction hold cannot be taken (a monitor
+  session, a busy chip) neither word goes out. A caller inside its own
+  transaction keeps it (`obd_core_txn_owned()`).
+- **owed**: most callers send a chain one element at a time and do not look
+  at the switch element's result (AutoPID's chains, the scans, the UDS tool's
+  set-up). After a refused switch the chip is still on the protocol, and the
+  bit rate, of whoever used it before, so until a switch has gone through
+  (`OK` as the last line of its answer) the engine holds back every word
+  that would transmit on the vehicle bus (`obd_parse_is_bus_request()`,
+  pure, `obd_chip_class.c`: hex data, a bare CR, `ATFI` / `ATSI`, `ATRTR`,
+  `STPX`, `VTFullyRequestCk`) with `ESP_ERR_NOT_FINISHED`. Words that only
+  set or read the chip pass. A fresh bring-up clears it.
+- **the holders hear of it**: a refusal and every held request move the
+  settings generation, so AutoPID sends its prelude again at its next row,
+  switch and `ATM0` included, and polling resumes by itself once the chip
+  acknowledges.
+
+Not covered by this change: the bridge path still sends an app's own switch
+without an `ATM0` ahead of it (the hidden one behind the app's reset is its
+protection), and `obd_chip_protocol_save()` is as before.
+
 `obd_chip_protocol_save()` saves with or without the switch. Counted in
 `obd_chip_stats_t.memory_off` (the acknowledged `ATM0` words, all three
-places), `.app_resets` (reset words intercepted), `.hidden_bytes` and
-`.pp_restores` (the PP 0F read-back above), on `GET /api/obd_chip` under
-`eeprom_guard`, printed by the `obd_chip` console command. Host tests: `test_protocol_switch_classification`,
+places), `.app_resets` (reset words intercepted), `.hidden_bytes`,
+`.pp_restores` (the PP 0F read-back above), `.memory_refused` (switches not
+sent), `.requests_held` and `.switch_owed`, on `GET /api/obd_chip` under
+`eeprom_guard`, printed by the `obd_chip` console command (`eeprom:` and
+`memory:`). Host tests: `test_request_*` (the fake chip),
+`test_bus_request_classification`, `test_protocol_switch_classification`,
 `test_reset_word_classification`; bench: `test.ps1 attpstore` in the
 firmware repo (the engine's switch and the bring-up's `ATM0` read back
 through an `ATZ`, the app's reset answered once and fast with nothing
@@ -650,6 +698,50 @@ ELM app had the chip, and a mixed-protocol profile's per-PID `ATSP7` keeps
 being rewritten to `ATTP7` by the guard (host test: the MEB-style chain).
 Counted in `obd_chip_stats_t.protocol_saves` and `GET /api/obd_chip`
 `eeprom_guard.protocol_saves` (0 or 1 per boot); logged at I on success.
+
+#### Read back first, one `ATSP` per boot (2026-11-10)
+
+Two holes in the rules above, both closed:
+
+- **The limit counted acknowledged saves.** The chip acts on `ATSP` and
+  then answers; when the answer was lost (the 2 s budget ran out on a busy
+  chip, a late prompt of an earlier word filled the window) the write may
+  have happened, the count stayed at 0 and the car's record was not
+  updated, so the next detection of that boot sent a second real `ATSP`,
+  and so did every later one for as long as answers went missing (host
+  reproduction: `test_save_lost_answer_is_not_written_twice`, two writes
+  on the driver before the change). The one `ATSP` of a boot is marked
+  when it goes OUT, under the transaction hold that makes the check, the
+  mark and the word one step; a second call returns `ESP_ERR_INVALID_STATE`
+  whatever the first one's answer was. A call that could not take the chip
+  (a monitor session) spends nothing.
+- **The driver did not know what the chip held.** The caller compares the
+  car's record, so a new car on a protocol the chip already stored got a
+  write that changed nothing (every detection on a device with an empty
+  vehicle store). The bring-up now reads the store: `ATDPN` right after the
+  chip's reset, before anything of the boot names a protocol, is the stored
+  protocol in the chip's own words (`6`; `A6` = 6 with the chip's automatic
+  flag; `34 [ST]` for an STN preset), one read per start, no write.
+  `obd_parse_dpn()` (pure, `obd_chip_class.c`) turns it into the ELM number.
+  When the chip holds the asked protocol, automatic flag or not,
+  `obd_chip_protocol_save()` sends nothing and returns `ESP_OK`
+  (`protocol_kept`), and the caller records the protocol as saved.
+
+Together they answer the question a lost answer leaves open: the same boot
+does not write again, and the next boot's read says whether the write was
+taken. If it was, the next detection records it without a word on the wire;
+if not, that boot gets its one attempt. From the moment an `ATSP` goes out
+until the chip acknowledges it the stored protocol counts as not known (`""`
+in the stats); an acknowledged save sets it to the saved number. The store
+is not read back inside the boot that wrote it: only a reset shows it, and
+the next bring-up is that reset.
+
+`GET /api/obd_chip` `eeprom_guard.stored_protocol` and `.protocol_kept`, the
+console's `store:` line, and the bring-up's line (`started: chip ... memory
+off, stored protocol A6`). Host tests: the six `test_save_*` and
+`test_dpn_parse`; bench: `test.ps1 attpstore` compares the bring-up's read
+with what a reset shows over the bridge, before and after its planned
+restart.
 
 ## Transaction hold (2026-09-16)
 

@@ -258,6 +258,25 @@ and C are not judged: `allow`.
   out at 500 and the truck's adapter was bus-off 19 to 55 ms after its first
   error, the chip left on protocol 6 for every poll that followed
   (`eu_truck_e2e_bench.py --only x5`).
+- **The detection's profile probe asks too** (2026-11-10). The probe that
+  confirms a car by the profile named in the Quick Setup
+  (`autopid_scan_probe.c`, added 2026-10-26) sent the prelude of the
+  profile's protocol and the profile's chains without asking. The job's own
+  verdict did not cover them: with the setting on Automatic it rules on the
+  search, and the profile names its own protocol. Bench: the bus at 250
+  kbit/s with traffic, nothing standard answering (a J1939 truck as the chip
+  sees it), a detect body with a profile on protocol 6: 865 error frames in
+  0.18 s, the adapter bus-off, no refusal counted, and the job said "no ECU
+  response (ignition on?)". The probe now asks `ap_guard_chain_ok()` for the
+  prelude (a prelude names its protocol, `ATTP<p>`, and is judged like a
+  chain), for the profile's init and for each request's own init. Without
+  the first two nothing of the profile is sent; a request whose init sets a
+  protocol the bus does not run is passed over with its init. A job that
+  found nothing else then hands on the guard's sentence (`the profile sets
+  protocol 6 (500 kbit/s) and the vehicle bus runs at 250 kbit/s: not
+  sent`), which the wizard shows. Bench: leg `c5` of
+  `tools/testbench/can/can_autobaud_bench.py` (0 error frames, `refused`
+  +1); host: `test_guard_the_profile_probes_chains`.
 - **A reset inside a chain** (`ATZ`, `ATD`, `ATWS`; 2026-10-05). The chip
   comes back as `A<n>`: automatic, starting from the protocol STORED in it
   (the last vehicle detected), and its first request went out on that one

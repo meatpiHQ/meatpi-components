@@ -372,11 +372,63 @@ void test_guard_reset_in_a_chain(void)
     TEST_ASSERT_EQUAL_CHAR('\0', last);
 }
 
+void test_guard_the_profile_probes_chains(void)
+{
+    /* the detection job's profile probe asks the guard for the prelude of
+       the profile's protocol as it is (2026-11-10): a prelude names its
+       protocol (ATTP<p>) and is judged like any chain of the tables. Bench:
+       a car profile on protocol 6 named in the Quick Setup on a 250 kbit/s
+       bus that answers nothing standard put 865 error frames on that bus
+       in 0.18 s; the probe had not asked. */
+    char refused = 'x';
+    char s[176];
+
+    TEST_ASSERT_FALSE(ap_guard_chain_allowed(&LIVE_250,
+                                             ap_veh_prelude_for('6'), NULL,
+                                             &refused));
+    TEST_ASSERT_EQUAL_CHAR('6', refused);
+    TEST_ASSERT_FALSE(ap_guard_chain_allowed(&LIVE_250,
+                                             ap_veh_prelude_for('7'), NULL,
+                                             &refused));
+    TEST_ASSERT_EQUAL_CHAR('7', refused);
+    TEST_ASSERT_FALSE(ap_guard_chain_allowed(&UNREADABLE,
+                                             ap_veh_prelude_for('6'), NULL,
+                                             NULL));
+
+    /* the bus's own protocols, a silent bus (a gatewayed port answers only
+       when asked), K-line and J1850 (other pins): sent as before */
+    TEST_ASSERT_TRUE(ap_guard_chain_allowed(&LIVE_250, ap_veh_prelude_for('8'),
+                                            NULL, NULL));
+    TEST_ASSERT_TRUE(ap_guard_chain_allowed(&LIVE_250, ap_veh_prelude_for('9'),
+                                            NULL, NULL));
+    TEST_ASSERT_TRUE(ap_guard_chain_allowed(&LIVE_500, ap_veh_prelude_for('6'),
+                                            NULL, NULL));
+    TEST_ASSERT_TRUE(ap_guard_chain_allowed(&SILENT, ap_veh_prelude_for('6'),
+                                            NULL, NULL));
+    TEST_ASSERT_TRUE(ap_guard_chain_allowed(&LIVE_250, ap_veh_prelude_for('3'),
+                                            NULL, NULL));
+    TEST_ASSERT_TRUE(ap_guard_chain_allowed(&LIVE_250, ap_veh_prelude_for('1'),
+                                            NULL, NULL));
+
+    /* a request's own init of the published MEB profile on that bus */
+    TEST_ASSERT_FALSE(ap_guard_chain_allowed(
+        &LIVE_250, "ATSP7;ATCP17;ATSHFC007B;ATFCSH17FC007B;ATCRA17FE007B;",
+        NULL, &refused));
+    TEST_ASSERT_EQUAL_CHAR('7', refused);
+
+    /* the sentence the job hands on in place of "no ECU response" */
+    (void)ap_guard_chain_reason(&LIVE_250, '6', "the profile", s, sizeof(s));
+    TEST_ASSERT_EQUAL_STRING("the profile sets protocol 6 (500 kbit/s) and "
+                             "the vehicle bus runs at 250 kbit/s: not sent",
+                             s);
+}
+
 void run_bus_guard_tests(void)
 {
     RUN_TEST(test_guard_reset_in_a_chain);
     RUN_TEST(test_guard_cmd_proto);
     RUN_TEST(test_guard_chain_of_the_tables);
+    RUN_TEST(test_guard_the_profile_probes_chains);
     RUN_TEST(test_guard_a_verdict_covers_one_protocol);
     RUN_TEST(test_guard_proto_bitrates);
     RUN_TEST(test_guard_silent_or_unknown_bus_changes_nothing);

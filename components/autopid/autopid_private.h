@@ -815,9 +815,11 @@ const ap_scan_probe_t *ap_scan_probe(void);
 /** Scan task: the prelude for the probe's protocol, the init chain, then
  *  the requests until one answers positively. True = confirmed: @p seen
  *  carries the responders (bitmap 0), the protocol, the dialect obd2 and
- *  confirmed_by profile; @p answered the request that did. */
+ *  confirmed_by profile; @p answered the request that did. The bus guard is
+ *  asked for every protocol the profile sets, like a row's (2026-11-10);
+ *  @p refused = it kept something of the profile off the bus. */
 bool ap_scan_probe_run(char *resp, size_t resp_len, ap_veh_seen_t *seen,
-                       char *answered, size_t answered_cap);
+                       char *answered, size_t answered_cap, bool *refused);
 #endif /* AUTOPID_HOST_TEST */
 #include "autopid_dialect.h" /* OBD dialects: requests, parsers, addressing */
 #include "autopid_j1939.h"   /* J1939 rows: grammar, classes, the std table */

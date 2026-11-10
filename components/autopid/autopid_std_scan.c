@@ -409,12 +409,14 @@ static void scan_task(void *arg)
     const ap_scan_probe_t *probe = ap_scan_probe();
     char answered[AP_PROBE_CMD_LEN] = "";
     bool by_profile = false;
+    bool probe_refused = false;     /* the bus guard kept the profile back */
 
     if (!contact && probe->armed && probe->n_cmds > 0)
     {
         s_scan_phase = PHASE_PROBE;
         by_profile = ap_scan_probe_run(s_resp, sizeof(s_resp), &seen,
-                                       answered, sizeof(answered));
+                                       answered, sizeof(answered),
+                                       &probe_refused);
 
         if (by_profile)
         {
@@ -519,6 +521,13 @@ static void scan_task(void *arg)
         snprintf(s_scan_err, sizeof(s_scan_err),
                  "the vehicle bus runs at %u kbit/s; OBD is asked at 250 or "
                  "500, so nothing was sent", (unsigned)s_no_way_kbps);
+    }
+    else if (!any_response && probe_refused)
+    {
+        /* nothing standard answered and the profile's own requests were not
+           sent: the guard's sentence says why (the protocol the profile
+           sets, the bit rate the bus runs), not "ignition on?" */
+        ap_guard_last_reason(s_scan_err, sizeof(s_scan_err));
     }
     else if (!any_response)
     {

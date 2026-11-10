@@ -140,8 +140,26 @@ static int cmd_service(const char *cmd)
     return (int)v;
 }
 
+/** May this chain of the profile go to the chip? Asked as a row's chains
+ *  are (ap_guard_chain_ok): every protocol it sets must be the one the
+ *  vehicle bus runs. A refusal is counted and worded by the guard. */
+static bool chain_ok(const char *chain, bool *refused)
+{
+    if (ap_guard_chain_ok(chain, "the profile", true, NULL))
+    {
+        return true;
+    }
+
+    if (refused != NULL)
+    {
+        *refused = true;
+    }
+
+    return false;
+}
+
 bool ap_scan_probe_run(char *resp, size_t resp_len, ap_veh_seen_t *seen,
-                       char *answered, size_t answered_cap)
+                       char *answered, size_t answered_cap, bool *refused)
 {
     /* scan task only: eight reassembled replies are too big for its stack */
     static ap_resp_ecu_t ecus[AP_RESP_ECUS_MAX] EXT_RAM_BSS_ATTR;
@@ -153,7 +171,26 @@ bool ap_scan_probe_run(char *resp, size_t resp_len, ap_veh_seen_t *seen,
         answered[0] = '\0';
     }
 
+    if (refused != NULL)
+    {
+        *refused = false;
+    }
+
     if (!p->armed || p->n_cmds == 0 || resp == NULL || seen == NULL)
+    {
+        return false;
+    }
+
+    /* the bus guard first (2026-11-10). The job's own verdict is about the
+       protocol autopid pins; the profile names its own, and the probe sent
+       it as written: a car profile chosen in the Quick Setup on a vehicle
+       whose bus runs at another bit rate and answers nothing standard (a
+       J1939 truck at 250 kbit/s, a profile on protocol 6) put its requests
+       on that bus at 500 kbit/s (bench: 865 error frames in 0.18 s, the
+       adapter bus-off). The prelude names the profile's protocol and is
+       judged like a chain; without it nothing of the profile is sent. */
+    if (!chain_ok(ap_veh_prelude_for(proto), refused) ||
+        (p->init[0] != '\0' && !chain_ok(p->init, refused)))
     {
         return false;
     }
@@ -181,9 +218,15 @@ bool ap_scan_probe_run(char *resp, size_t resp_len, ap_veh_seen_t *seen,
         }
 
         /* a request's own init (a profile that addresses one ECU per
-           request: ATSH / ATCRA per row) goes out before it */
+           request: ATSH / ATCRA per row) goes out before it; when it sets
+           a protocol the bus does not run, neither it nor the request does */
         if (p->cmd_inits[i][0] != '\0')
         {
+            if (!chain_ok(p->cmd_inits[i], refused))
+            {
+                continue;
+            }
+
             send_init_chain(p->cmd_inits[i], resp, resp_len, &hint);
         }
 

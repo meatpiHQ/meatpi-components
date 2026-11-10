@@ -7,7 +7,7 @@ store's `autopid_vehicle_index.c` + `autopid_vehicle_codec.c` with
 `test_vehicle_index.c`, compiled with `AUTOPID_HOST_TEST`: no chip, no
 filesystem). Run via `.\test.ps1 host autopid`.
 
-## What is covered (151 tests, 2026-11-10)
+## What is covered (152 tests, 2026-11-10)
 
 | Case | What it proves |
 |---|---|
@@ -74,6 +74,7 @@ filesystem). Run via `.\test.ps1 host autopid`.
 | bounds: the rule | no bounds keeps everything; on the bound kept; the tolerance is 1e-6 of the bound (1e-6 at least) both ways; a J1939 not-available raw drops; a standard row clamps both ways; NaN never reaches the cache |
 | bounds: the exact literal | a percent row's full scale is the ratio `B2*100/255` (`[B2:B3]*25700/65535`, shifted `B3*100/255`), RPM / offset / fuel-trim / unranged rows keep the decimal, a range below zero is the signed span `[S2:S3]*0.25`; the ratio decodes exactly through the real parser |
 | bounds: the whole table | every ranged SAE row decoded at 0x00 / 0xFF / 0x7F / 0x80 through the real parser lands inside its own range (135 rows) |
+| bus guard: the profile probe's chains (2026-11-10) | the prelude of the profile's protocol is judged like a chain (it names `ATTP<p>`): protocol 6 or 7 on a live 250 kbit/s bus and on an unreadable one is refused; the bus's own protocols, a silent bus, K-line and J1850 go out; a published MEB request's init on that bus is refused; the sentence reads `the profile sets protocol 6 (500 kbit/s) and the vehicle bus runs at 250 kbit/s: not sent` (bench: 865 error frames in 0.18 s before the probe asked) |
 
 ## Expected result
 

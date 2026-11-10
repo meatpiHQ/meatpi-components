@@ -271,6 +271,9 @@ const ap_config_t *ap_core_config(void);
    lock, scheduler state and poller wake-up through these */
 void ap_core_lock(void);
 void ap_core_unlock(void);
+/* the tables were replaced since the last call (taken once, under the
+   core's lock, by the poller): the row indexes mean other rows now */
+bool ap_core_tables_new(void);
 ap_sched_t *ap_core_sched(void);
 void ap_core_wake(void);
 esp_err_t ap_core_group_json(cJSON *arr);   /* append group states       */

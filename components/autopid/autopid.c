@@ -68,6 +68,13 @@ static StaticSemaphore_t s_lock_buf;   /* internal: FreeRTOS object */
 
 static bool s_started;
 
+/* the tables were replaced (arm_scheduler): the chip runner remembers the
+   row it sent last by its INDEX, which names another row now. Set and taken
+   under s_lock; the poller takes it with the row it picks and forgets what
+   it sent (bench 2026-11-10: a table of one row put in the place of a table
+   of one row never got its own init: 0 answered polls until a restart) */
+static bool s_tables_new;
+
 /* enabled: seeded by on_apply (ap_core_set_enabled), cleared by
  * autopid_stop(), runtime-mutated, so it lives here; the boot-applied
  * knobs live in autopid_settings.c */
@@ -111,6 +118,7 @@ static void arm_scheduler(void)
 {
     ap_sched_reset(&s_sched, &s_cfg, esp_timer_get_time());
     ap_runner_j1939_reset(); /* row indexes changed: publish afresh */
+    s_tables_new = true;     /* ... and the chip rows send their inits again */
     s_stats.params_loaded = s_cfg.n_params;
     s_stats.pids_loaded = s_cfg.n_pids;
     s_stats.filters_loaded = s_cfg.n_filters;
@@ -271,6 +279,14 @@ void ap_core_lock(void)
 void ap_core_unlock(void)
 {
     xSemaphoreGive(s_lock);
+}
+
+bool ap_core_tables_new(void)
+{
+    bool fresh = s_tables_new;
+
+    s_tables_new = false;
+    return fresh;
 }
 
 ap_sched_t *ap_core_sched(void)

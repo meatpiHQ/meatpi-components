@@ -524,6 +524,21 @@ the flip leg of `tools/testbench/obd/profile_protocol_bench.py` in the
 firmware repo (a detection run with only the profile's rows live reads the
 VIN).
 
+**New tables start from their own inits (2026-11-10).** The runner knows
+"the row I sent last" by its INDEX, and a reload of the tables
+(`autopid_reload_config()`: `PUT /api/autopid/config`, a car switch, a DBC
+import) reset the scheduler and the J1939 rows but not that memory. The row
+that landed on the index polled last went out without its own init, on
+whatever the old row had set. A table of several rows healed at its next
+row; a table of ONE row never did. Bench: one row on `ATSP6` (`222AB6` to
+the gateway, header `710`) put in the place of one row on `ATSP7`: 0 polls
+answered of 12, no value, until a restart or a chip job. The reload now
+leaves a mark (`ap_core_tables_new()`, set and taken under the core's lock)
+which the poller takes with the first row it picks from the new tables, and
+it forgets what it sent (`ap_runner_reset()`): the baseline goes back when
+the old rows moved the chip, then the type's init and the row's. Bench: the
+swap leg of `profile_protocol_bench.py`.
+
 **Contact.** The chip's own protocol search (`ATTP0`) asks `0100`: it
 cannot find a `uds` car, and it needs 9.3 s to say `UNABLE TO CONNECT`. So
 first contact (`autopid_contact.c`) and the detection job look for the car

@@ -245,6 +245,9 @@ static void poller_task(void *arg)
         ap_filter_t flt_copy;
         ap_param_t *params_copy = s_params_copy;
         bool is_pid = false, is_filter = false;
+        /* taken with the row, under the same lock: this pick is from the
+           new tables, and what the runner remembers is about the old ones */
+        bool tables_new = ap_core_tables_new();
 
         if (i >= 0 && due <= now && i < cfg->n_pids)
         {
@@ -262,6 +265,15 @@ static void poller_task(void *arg)
         }
 
         ap_core_unlock();
+
+        if (tables_new)
+        {
+            /* the tables were replaced: the runner knows the row it sent
+               last by its index, which names another row now. Its type init
+               and its own init are due again (the baseline goes back first
+               when the old rows moved the chip) */
+            ap_runner_reset();
+        }
 
         if (chip_i < 0)
         {

@@ -7,7 +7,7 @@ store's `autopid_vehicle_index.c` + `autopid_vehicle_codec.c` with
 `test_vehicle_index.c`, compiled with `AUTOPID_HOST_TEST`: no chip, no
 filesystem). Run via `.\test.ps1 host autopid`.
 
-## What is covered (149 tests, 2026-11-10)
+## What is covered (150 tests, 2026-11-10)
 
 | Case | What it proves |
 |---|---|
@@ -50,6 +50,7 @@ filesystem). Run via `.\test.ps1 host autopid`.
 | vehicle: first-pass import | the first-pass vehicle.json reads back (import once into the store); empty doc, garbage / array / no version / version 2 rejected, bad VIN or protocol dropped |
 | vehicle: ATSP in a profile chain | `ap_init_sanitize` turns `ATSP7` / `atsp 7` / `ATM1` inside an init chain into `ATTP7` / `ATM0`; the std prelude passes untouched (the chip's base protocol is learned only through `obd_chip_protocol_save`) |
 | vehicle: what the chip may learn (2026-11-10) | `ap_veh_chip_learns`: a protocol a standard request answered on (`6`, `7`, `3`, `a`) is saved; the protocol of a car confirmed by its profile's own request is not (bench: the probe named 7, the `ATSP6` row answered, `ATSP7` was written); no protocol, `0`, two characters or junk are not |
+| vehicle: when ATDPN names the search's result (2026-11-10) | `ap_veh_dpn_is_search`: only in search mode and while no chain of the tables pinned a protocol (a row's `ATSP0` pins nothing); a row's `ATSP7`, `ATSP6` or `ATSPA` means `ATDPN` names the row's pin (bench: three identities asked on 7 beside a car on 6, none answered); with a protocol in effect there is no search to read |
 | store: faces (2026-10-26) | `ap_vidx_face_add` / `ap_vidx_find_face`: another ECU-set hash known to be this car ("Same car as..." in the list, a merge) matches like the fingerprint, with a VIN on the contact (the adoption loop) or without; not the own fingerprint, not twice, hex only, four at most with the oldest going; the file carries `faces` and `confirmed_by` (`obd` / `profile`), a file without them reads as no faces, confirmed by a standard request (test_vehicle_index.c) |
 | store: the responder union (2026-10-26) | `ap_veh_ecus_union`: the same id OR-s the bitmaps, a new id is appended while there is room, a full set keeps what it has; three 0100 replies of a car that drops a responder now and then give the ready car's fingerprint (the identification asks three times) |
 | store: the subset rule relaxed (2026-10-26) | a reply the main ECU dropped out of is still the same car: every ECU of the smaller set in the larger one with the same bitmap, the lowest id no longer required on both sides; a differing bitmap on a shared ECU is still another car |

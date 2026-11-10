@@ -370,6 +370,14 @@ bool ap_veh_chip_learns(const char *protocol, uint8_t confirmed_by)
     return confirmed_by == AP_VEH_BY_OBD;
 }
 
+bool ap_veh_dpn_is_search(char in_effect, char tables_pin)
+{
+    /* the search put the chip where it is: nobody pinned a protocol,
+       neither the prelude nor a chain of the tables since it went out (a
+       chain that asks for the search itself, `ATSP0`, pins nothing) */
+    return in_effect == '0' && (tables_pin == '\0' || tables_pin == '0');
+}
+
 const char *ap_veh_prelude_for(char proto)
 {
     /* CAN protocols: headers ON (2026-10-24, issue #1014): every reply is

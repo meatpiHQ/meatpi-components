@@ -541,6 +541,23 @@ this bus, `0100`, then `22F400` (0.6 s each when nobody answers).
   when it is moved between an OBD-II car and a WWH van (bench: values 12 to
   16 s after boot, both directions).
 - A pinned `std_protocol` is never left: both dialects are asked on it.
+- An answered poll while NO protocol is in effect (no car current, or the
+  stored one stayed silent) is read two ways (2026-11-10). When no chain of
+  the tables pinned a protocol, the chip's search found the car: `ATDPN`
+  names where, and the identity requests go out there. When a row pinned
+  its own (a profile's `ATSP7`), `ATDPN` names the ROW's protocol, and the
+  identity used to be asked on it: with rows on 7 beside a car whose
+  standard requests live on 6 it read `vin (none), 0 ECUs` three times and
+  gave up for that boot (a mixed profile got through only when a try
+  happened to follow one of its `ATSP6` rows). Such a poll now starts the
+  walk instead (`contact_behind_row()`): a standard request on the row's
+  protocol first (the car's own for most profiles, and the only way to a
+  K-line or J1850 car), then on the others of this bus; the first that
+  answers is where the identity goes. A car that answers its rows and no
+  standard request anywhere gets three looks, a probe gap apart. The rule
+  is `ap_veh_dpn_is_search()` (pure, host-tested); bench: the pinned leg of
+  `profile_protocol_bench.py` (red before: no identity in 90 s; with it the
+  car is detected 6 s after the restart, on protocol 6, nothing saved).
 
 **The chip's 29-bit print.** With headers on the chip prints a 29-bit id as
 FOUR byte tokens (`18 DA F1 10 06 41 00 ..`). Until 2026-10-03 the parsers

@@ -52,6 +52,13 @@
  *                               cannot find a UDS-dialect vehicle and takes
  *                               9.3 s to say so)
  *
+ * An answered poll in search mode is read two ways (2026-11-10). When no
+ * chain of the tables pinned a protocol, the chip's search found the car and
+ * `ATDPN` names where. When a row pinned its own (a profile's `ATSP7`),
+ * `ATDPN` names the ROW's protocol: the car is then looked for with the same
+ * walk as when nothing is polled (contact_behind_row), so the identity
+ * requests go out where a standard request answers.
+ *
  * A J1939 network (phase 5) is heard, not asked: once the chip's probe found
  * nobody, the listener's sources and VIN are the sighting (j1939_contact). A
  * stored J1939 vehicle gives the listener a ten second head start, so a
@@ -70,6 +77,7 @@
 
 #include "autopid_transport.h"
 #include "autopid_private.h"
+#include "autopid_runner_private.h" /* the protocol a row left the chip on */
 
 static const char *TAG = "autopid";
 
@@ -183,7 +191,8 @@ static void identity_check(ap_dialect_t dialect, char found_proto)
     {
         seen.protocol[0] = found_proto;
     }
-    else if (protocol_in_effect() == '0' &&
+    else if (ap_veh_dpn_is_search(protocol_in_effect(),
+                                  ap_base_mem()->init_pin) &&
              ask("ATDPN", AP_AT_TIMEOUT) == ESP_OK)
     {
         /* in search mode the chip knows the protocol NOW (a poll just got
@@ -192,7 +201,9 @@ static void identity_check(ap_dialect_t dialect, char found_proto)
            after the prelude, as it was until 2026-10-03, the store never
            learned a re-detected protocol and searched again on every
            boot. Asked on every search, not only after a fallback: a
-           device with an empty store searches too. */
+           device with an empty store searches too. Not when a row of the
+           tables pinned the protocol: ATDPN names that one then, and the
+           poll's result takes the walk instead (contact_behind_row). */
         (void)ap_veh_parse_dpn(s_resp, seen.protocol);
     }
 
@@ -310,6 +321,81 @@ static void note_silence(void)
     }
 }
 
+/**
+ * A standard request on @p proto, both dialects, when the bus guard lets
+ * the chip be pinned on it (it looks again before each one: a bus asleep at
+ * boot may have woken up at another bitrate since the last look).
+ * @p sent is set once the chip was pinned.
+ * @return true when a vehicle answered and the identity check went out on
+ *         that protocol.
+ */
+static bool try_protocol(char proto, bool *sent)
+{
+    if (!ap_guard_candidate_ok(proto))
+    {
+        return false;
+    }
+
+    ap_runner_send_prelude(ap_veh_prelude_for(proto));
+    *sent = true;
+
+    bool obd2 = alive(AP_DIALECT_OBD2);
+
+    if (!obd2 && !alive(AP_DIALECT_UDS))
+    {
+        return false;
+    }
+
+    ap_dialect_t d = obd2 ? AP_DIALECT_OBD2 : AP_DIALECT_UDS;
+
+    ESP_LOGI(TAG, "contact: a vehicle answers on protocol %c (%s)", proto,
+             ap_dialect_name(d));
+    identity_check(d, proto);
+    return true;
+}
+
+/**
+ * The walk: @p first when one is named (the protocol a row of the tables
+ * pinned, which is the car's own for most profiles and the only way to a
+ * K-line or J1850 car), then the ISO 15765-4 protocols this bus allows.
+ * @return true when a vehicle answered a standard request and the identity
+ *         check went out on that protocol; false when nobody did (the
+ *         search prelude and the rows' inits are due again then).
+ */
+static bool walk_candidates(char first)
+{
+    char cand[AP_DIALECT_CAND_LEN];
+    ap_bus_t bus;
+    bool sent = false;
+
+    if (first != '\0' && try_protocol(first, &sent))
+    {
+        return true;
+    }
+
+    ap_guard_bus(&bus);
+
+    int n = ap_dialect_can_candidates(&bus, cand);
+
+    for (int i = 0; i < n; i++)
+    {
+        if (cand[i] != first && try_protocol(cand[i], &sent))
+        {
+            return true;
+        }
+    }
+
+    if (sent)
+    {
+        /* the chip sits on the last candidate: the search prelude and the
+           PID inits go out again before the next poll */
+        ap_runner_baseline_invalidate();
+        ap_runner_reset();
+    }
+
+    return false;
+}
+
 /** One round of looking for the car (see the file header). */
 static void contact_probe(void)
 {
@@ -341,51 +427,9 @@ static void contact_probe(void)
         return;
     }
 
-    /* nobody named a protocol that answers: the pinned protocols this
-       bus allows, both dialects on each. The guard looks again before
-       each one (a bus asleep at boot may have woken up at another bitrate
-       since the last look). */
-    char cand[AP_DIALECT_CAND_LEN];
-    ap_bus_t bus;
-
-    ap_guard_bus(&bus);
-
-    int n = ap_dialect_can_candidates(&bus, cand);
-    bool sent = false;
-
-    for (int i = 0; i < n; i++)
-    {
-        if (!ap_guard_candidate_ok(cand[i]))
-        {
-            continue;
-        }
-
-        ap_runner_send_prelude(ap_veh_prelude_for(cand[i]));
-        sent = true;
-
-        bool obd2 = alive(AP_DIALECT_OBD2);
-
-        if (obd2 || alive(AP_DIALECT_UDS))
-        {
-            ap_dialect_t d = obd2 ? AP_DIALECT_OBD2 : AP_DIALECT_UDS;
-
-            ESP_LOGI(TAG, "contact: a vehicle answers on protocol %c (%s)",
-                     cand[i], ap_dialect_name(d));
-            identity_check(d, cand[i]);
-            return;
-        }
-    }
-
-    if (sent)
-    {
-        /* the chip sits on the last candidate: the search prelude and the
-           PID inits go out again before the next poll */
-        ap_runner_baseline_invalidate();
-        ap_runner_reset();
-    }
-
-    /* nothing there (ignition off, nothing plugged in): look less often */
-    if (s_probe_gap_us < AP_PROBE_GAP_MAX_US)
+    /* nobody named a protocol that answers: the walk. Nothing there
+       (ignition off, nothing plugged in): look less often */
+    if (!walk_candidates('\0') && s_probe_gap_us < AP_PROBE_GAP_MAX_US)
     {
         s_probe_gap_us *= 2;
     }
@@ -394,6 +438,37 @@ static void contact_probe(void)
 static bool probe_due(void)
 {
     return esp_timer_get_time() - s_probe_last_us >= s_probe_gap_us;
+}
+
+/**
+ * An answered poll in search mode whose row pinned its own protocol (a
+ * profile's `ATSP7`): the chip sits on the ROW's protocol, so `ATDPN` would
+ * name that one and the identity requests would go out where the car's
+ * standard requests need not live (bench 2026-11-10: rows on 7, the car's
+ * OBD on 6, `vin (none), 0 ECUs` three times and no identity that boot).
+ * The car is looked for with standard requests instead: on the row's
+ * protocol first (the car's own for most profiles), then on the others of
+ * this bus. The first look follows the first such poll; a car that answers
+ * its rows and no standard request anywhere (known by its profile alone)
+ * gets AP_IDENT_TRIES looks, a probe gap apart, and is left alone after
+ * that.
+ */
+static void contact_behind_row(void)
+{
+    if (s_probe_last_us != 0 && !probe_due())
+    {
+        return;
+    }
+
+    s_probe_last_us = esp_timer_get_time();
+
+    /* read before a prelude goes out: that clears it */
+    char pin = ap_base_mem()->init_pin;
+
+    if (!walk_candidates(pin) && ++s_ident_tries >= AP_IDENT_TRIES)
+    {
+        s_ident_done = true;
+    }
 }
 
 /* ---- the listener's word (a J1939 network) --------------------------------- */
@@ -570,7 +645,20 @@ void ap_runner_poll_result(bool ok)
 
     if (ok)
     {
-        identity_check(car_dialect(), '\0');
+        char in_effect = protocol_in_effect();
+
+        if (in_effect == '0' &&
+            !ap_veh_dpn_is_search(in_effect, ap_base_mem()->init_pin))
+        {
+            /* the search did not find this answer: a row's own protocol
+               did. Where the car's standard requests live is still open */
+            contact_behind_row();
+        }
+        else
+        {
+            identity_check(car_dialect(), '\0');
+        }
+
         return;
     }
 

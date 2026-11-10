@@ -450,6 +450,29 @@ void test_veh_chip_learns_only_a_standard_answer(void)
     TEST_ASSERT_FALSE(ap_veh_chip_learns("?", AP_VEH_BY_OBD));
 }
 
+void test_veh_dpn_is_the_search_only_without_a_row_pin(void)
+{
+    /* search mode and nothing of the tables pinned a protocol: the chip's
+       current protocol is what its search found */
+    TEST_ASSERT_TRUE(ap_veh_dpn_is_search('0', '\0'));
+    /* ... and a row that asks for the search itself (ATSP0) pins nothing */
+    TEST_ASSERT_TRUE(ap_veh_dpn_is_search('0', '0'));
+
+    /* a row of the tables pinned one since the prelude (a profile's ATSP7
+       beside a car whose standard requests live on 6): ATDPN would name
+       the row's pin. Bench 2026-11-10: three identities asked on 7, none
+       answered, the car was not identified that boot. */
+    TEST_ASSERT_FALSE(ap_veh_dpn_is_search('0', '7'));
+    TEST_ASSERT_FALSE(ap_veh_dpn_is_search('0', '6'));
+    TEST_ASSERT_FALSE(ap_veh_dpn_is_search('0', 'A'));
+
+    /* a protocol in effect (the setting's or the stored car's): there is no
+       search to read, whatever the tables did */
+    TEST_ASSERT_FALSE(ap_veh_dpn_is_search('6', '\0'));
+    TEST_ASSERT_FALSE(ap_veh_dpn_is_search('7', '7'));
+    TEST_ASSERT_FALSE(ap_veh_dpn_is_search('3', '\0'));
+}
+
 /* ---- runner ------------------------------------------------------------------------ */
 
 void run_vehicle_tests(void)
@@ -466,5 +489,6 @@ void run_vehicle_tests(void)
     RUN_TEST(test_veh_legacy_doc_import);
     RUN_TEST(test_veh_init_chain_atsp_stays_ram_only);
     RUN_TEST(test_veh_chip_learns_only_a_standard_answer);
+    RUN_TEST(test_veh_dpn_is_the_search_only_without_a_row_pin);
 }
 

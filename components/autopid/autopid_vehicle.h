@@ -138,6 +138,18 @@ char ap_veh_effective_protocol(const char *setting, const char *stored,
  *  answered). False for an empty or unknown protocol too. */
 bool ap_veh_chip_learns(const char *protocol, uint8_t confirmed_by);
 
+/** After an answered poll in SEARCH mode (@p in_effect '0': neither the
+ *  setting nor the store names a protocol, or the stored one stayed silent)
+ *  the identity check asks the chip which protocol it is on (`ATDPN`) and
+ *  takes the answer for what the chip's search found. That holds only while
+ *  the search is what put it there: once a chain of the TABLES pinned a
+ *  protocol (@p tables_pin, a profile row's `ATSP7`; '\0' = none), `ATDPN`
+ *  names the row's pin, and the car's standard requests may live on another
+ *  one (2026-11-10; bench: rows on 7, the car's OBD on 6, three identities
+ *  without an answer and none that boot).
+ *  @return true when `ATDPN` names the search's result. */
+bool ap_veh_dpn_is_search(char in_effect, char tables_pin);
+
 /** The ';'-separated chip prelude for @p proto: ATS1;ATH<h>;ATST96;ATTP<p>
  *  plus the functional header + CRA clear for the CAN protocols 6..9.
  *  Headers are ON for every CAN protocol (6..9, A..C; 2026-10-24, issue

@@ -17,6 +17,7 @@ idf_component_register(
          "autopid_transport_obd.c"
          "autopid_filter.c"
          "autopid_config.c"
+         "autopid_config_file.c"
          "autopid_sched.c"
          "autopid_bus_core.c"
          "autopid_bus.c"

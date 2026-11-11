@@ -158,6 +158,7 @@ static esp_err_t autopid_get_handler(httpd_req_t *req)
             /* the rest after CAN ERRORs in a row (nobody acknowledged) */
             cJSON_AddNumberToObject(one, "parks", bs.parks[b]);
             cJSON_AddBoolToObject(one, "parked", bs.parked[b]);
+            cJSON_AddNumberToObject(one, "retry_s", bs.retry_s[b]);
         }
     }
     cJSON_AddNumberToObject(stats, "pids", st.pids_loaded);

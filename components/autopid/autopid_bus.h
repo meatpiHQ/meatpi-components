@@ -208,6 +208,7 @@ typedef struct
     uint32_t failed[AP_BUS_COUNT];
     uint32_t parks[AP_BUS_COUNT];   /* rests after CAN ERRORs (ap_bus_err_t) */
     bool     parked[AP_BUS_COUNT];  /* resting right now                    */
+    uint32_t retry_s[AP_BUS_COUNT]; /* resting: seconds to the next try     */
 } ap_bus_stats_t;
 
 void ap_bus_note(uint8_t bus, bool ok);

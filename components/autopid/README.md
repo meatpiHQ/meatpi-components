@@ -713,6 +713,11 @@ minutes at most; one W line, `stats.buses.<bus>.parked` and `.parks`). An
 answer or `NO DATA` (the frame was acknowledged) ends it. The Test route is
 not rested: it is a deliberate single try.
 
+While a bus rests, `stats.buses.<bus>.retry_s` counts the seconds to the next
+try, and the web UI marks the bus on its round strip ("MS CAN: resting, no
+answer") with what to check and that countdown: it is the only sign of a
+wrong Bus speed.
+
 Files: `autopid_bus.h`, `autopid_bus_core.c` (pure: the words, the rate, the
 chain, the allowed chains, the CAN ERROR count), `autopid_bus.c` (the chip:
 there, home, the state in `ap_base_mem_t`), `ap_sched_next_grouped` in

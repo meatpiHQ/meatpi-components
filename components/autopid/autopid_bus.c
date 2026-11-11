@@ -94,6 +94,8 @@ void ap_bus_get_stats(ap_bus_stats_t *out)
     {
         out->parks[b] = s_err[b].parks;
         out->parked[b] = ap_bus_err_parked(&s_err[b], now);
+        out->retry_s[b] = out->parked[b]
+            ? (uint32_t)((s_err[b].until_us - now + 999999) / 1000000) : 0;
     }
 }
 

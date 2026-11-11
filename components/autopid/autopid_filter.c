@@ -53,6 +53,7 @@
 
 #include "expression_parser.h"
 
+#include "autopid_bus.h"
 #include "autopid_private.h"
 
 static const char *TAG = "autopid";
@@ -127,6 +128,8 @@ bool ap_runner_run_filter(const ap_filter_t *f, const ap_param_t *params)
             return false;
         }
     }
+
+    ap_bus_leave(NULL); /* a monitor window is about the car's own bus */
 
     /* window setup (COMMAND transactions): headers ON so monitor lines
        carry the CAN id our parser matches, then hardware-filter to the

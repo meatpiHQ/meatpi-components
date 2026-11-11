@@ -52,6 +52,7 @@
 #include "expression_parser.h"
 
 #include "autopid.h"
+#include "autopid_bus.h"
 #include "autopid_private.h"
 #include "autopid_http_private.h"
 
@@ -134,6 +135,31 @@ static esp_err_t autopid_get_handler(httpd_req_t *req)
     cJSON_AddNumberToObject(stats, "passive_refused", refused);
     cJSON_AddBoolToObject(stats, "j1939_listening", ap_j1939_listening());
     cJSON_AddBoolToObject(stats, "j1939_active", j1939_active());
+
+    /* the buses the rows ask on (autopid_bus.h): where the chip is now,
+       how often it changed bus, and per bus the rows answered and not */
+    ap_bus_stats_t bs;
+    cJSON *buses = cJSON_AddObjectToObject(stats, "buses");
+
+    ap_bus_get_stats(&bs);
+    cJSON_AddStringToObject(buses, "now",
+                            ap_bus_word(AP_BUS_OF(ap_bus_now())));
+    cJSON_AddNumberToObject(buses, "changes", bs.changes);
+
+    for (uint8_t b = 0; b < AP_BUS_COUNT; b++)
+    {
+        cJSON *one = cJSON_AddObjectToObject(buses, ap_bus_word(b));
+
+        cJSON_AddNumberToObject(one, "ok", bs.ok[b]);
+        cJSON_AddNumberToObject(one, "failed", bs.failed[b]);
+
+        if (b != AP_BUS_OBD)
+        {
+            /* the rest after CAN ERRORs in a row (nobody acknowledged) */
+            cJSON_AddNumberToObject(one, "parks", bs.parks[b]);
+            cJSON_AddBoolToObject(one, "parked", bs.parked[b]);
+        }
+    }
     cJSON_AddNumberToObject(stats, "pids", st.pids_loaded);
     cJSON_AddNumberToObject(stats, "filters", st.filters_loaded);
     /* Phase 1b: ~53 ms/request measured floor; sub-floor periods are

@@ -174,7 +174,10 @@ ap_row_class_t ap_row_class(const ap_pid_t *pid)
 {
     if (pid == NULL || !pid->j1939)
     {
-        return AP_CLASS_CHIP;
+        /* a row on a bus of the chip's own (autopid_bus.h) is its own
+           class: it does not wait for the HS bus guard */
+        return (pid != NULL && pid->bus != 0) ? AP_CLASS_CHIP_BUS
+                                              : AP_CLASS_CHIP;
     }
 
     return pid->j1939_request ? AP_CLASS_BUS_TX : AP_CLASS_PASSIVE;

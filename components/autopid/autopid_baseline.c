@@ -65,6 +65,7 @@
 #include <string.h>
 
 #include "esp_log.h"
+#include "esp_timer.h"
 
 #include "obd_chip_guard.h"
 
@@ -116,6 +117,16 @@ static void prelude_out(void)
     s_mem.init_pin = '\0';     /* the chip is on the prelude's protocol */
     s_mem.moved = 0;
     s_mem.rxheader_set = false; /* its ATCRA cleared the filter */
+
+    if (s_mem.bus != 0)
+    {
+        /* every prelude pins the car's protocol: the chip is off the bus a
+           row had taken it to (autopid_bus.h) */
+        s_mem.bus = 0;
+        s_mem.bus_since_us = esp_timer_get_time();
+    }
+
+    s_mem.bus_stale = false;
 }
 
 /**

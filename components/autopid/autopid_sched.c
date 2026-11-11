@@ -33,6 +33,8 @@
 
 #include <string.h>
 
+#include "autopid_bus.h"
+
 static int entry_count(const ap_config_t *cfg)
 {
     return cfg->n_pids + cfg->n_filters;
@@ -143,7 +145,7 @@ int64_t ap_sched_period_us(const ap_sched_t *st, const ap_config_t *cfg,
     {
         period_ms = AP_BUS_TX_FLOOR_MS;
     }
-    else if (period_ms == 0 && cls != AP_CLASS_CHIP)
+    else if (period_ms == 0 && !AP_CLASS_IS_CHIP(cls))
     {
         period_ms = AP_PASSIVE_FLOOR_MS;
     }
@@ -207,6 +209,85 @@ int ap_sched_next(const ap_sched_t *st, const ap_config_t *cfg,
                   int64_t *due_us)
 {
     return ap_sched_next_of(st, cfg, AP_CLASS_ALL, due_us);
+}
+
+uint16_t ap_sched_entry_bus(const ap_config_t *cfg, int i)
+{
+    return (i < cfg->n_pids && !cfg->pids[i].j1939)
+               ? AP_BUS_KEY(cfg->pids[i].bus, cfg->pids[i].bus_rate) : 0;
+}
+
+/** How far ahead of its time a row may be asked to save a change of bus: a
+ *  quarter of its period, AP_BUS_EARLY_MAX_US at most. Rows drift apart by
+ *  what the rows before them took; asked early once, the rows of a bus are
+ *  due together from then on. */
+static int64_t early_us(const ap_sched_t *st, const ap_config_t *cfg, int i)
+{
+    int64_t early = ap_sched_period_us(st, cfg, i) / 4;
+
+    return (early > AP_BUS_EARLY_MAX_US) ? AP_BUS_EARLY_MAX_US : early;
+}
+
+int ap_sched_next_grouped(const ap_sched_t *st, const ap_config_t *cfg,
+                          unsigned classes, uint16_t bus_now,
+                          int64_t since_us, int64_t now_us, int64_t *due_us)
+{
+    int64_t due = 0;
+    int best = ap_sched_next_of(st, cfg, classes, &due);
+    bool leaving = (best >= 0 && due <= now_us &&
+                    AP_CLASS_IS_CHIP(ap_sched_entry_class(cfg, best)) &&
+                    ap_sched_entry_bus(cfg, best) != bus_now);
+    int here = -1;
+    int there = -1;
+
+    /* Home (on the car's protocol) the plain pick stands until it would
+       take the chip away: then the rows of the car's protocol that are due,
+       or nearly, and were not asked since the chip came home go first.
+       Away, every row of the other buses that is due, or nearly, is asked
+       once per excursion, the bus the chip is on first, then the next bus
+       directly; a row of the car's protocol waits for that, and no bus can
+       hold the chip because no row is asked twice before it was home. */
+    if (bus_now != 0 || leaving)
+    {
+        for (int i = 0; i < entry_count(cfg); i++)
+        {
+            ap_row_class_t cls = ap_sched_entry_class(cfg, i);
+            uint16_t bus = ap_sched_entry_bus(cfg, i);
+
+            if (!ap_sched_entry_enabled(st, cfg, i) ||
+                (classes & AP_CLASS_BIT(cls)) == 0 || !AP_CLASS_IS_CHIP(cls) ||
+                (bus_now != 0 && bus == 0) ||    /* away: not the car's rows */
+                (bus_now == 0 && bus != 0) ||    /* home: the car's rows     */
+                st->slots[i].last_run_us > since_us ||
+                st->slots[i].due_us > now_us + early_us(st, cfg, i))
+            {
+                continue;
+            }
+
+            int *slot = (bus == bus_now) ? &here : &there;
+
+            if (*slot < 0 || st->slots[i].due_us < st->slots[*slot].due_us)
+            {
+                *slot = i;
+            }
+        }
+    }
+
+    int pick = (here >= 0) ? here : there;
+
+    if (pick >= 0)
+    {
+        best = pick;
+        due = (st->slots[pick].due_us < now_us) ? st->slots[pick].due_us
+                                                : now_us; /* asked now */
+    }
+
+    if (best >= 0 && due_us != NULL)
+    {
+        *due_us = due;
+    }
+
+    return best;
 }
 
 void ap_sched_ran(ap_sched_t *st, const ap_config_t *cfg, int i,

@@ -51,6 +51,7 @@
 #include "dev_status_manager.h"
 
 #include "obd_gate.h"
+#include "autopid_bus.h"
 #include "autopid_private.h"
 #include "autopid_poller.h"
 #include "autopid_transport.h"
@@ -82,6 +83,12 @@ static volatile bool s_paused_diag;       /* a diagnostic tool holds the bus (ob
 static volatile bool s_paused_bus;        /* the bus guard: nothing may be sent */
 static QueueHandle_t s_batt_q;            /* voltage-pause events, or NULL */
 static int64_t s_last_ok_us; /* last successful ECU poll (0 = never) */
+/* THIS task left the chip on another bus (autopid_bus.h) for the rows that
+   are due there, and owes the way home. A test of a row on another bus
+   takes the chip there too, from the httpd task under the scan pause, and
+   brings it home itself: that is not ours to undo (2026-11-11: the poller
+   sent the baseline into the test's request). */
+static bool s_bus_out;
 
 /* ---- the poller task --------------------------------------------------------------- */
 
@@ -179,6 +186,21 @@ static void poller_task(void *arg)
             }
         }
 
+        if (s_bus_out && !s_paused_client &&
+            (!ap_core_enabled() || s_paused_voltage || s_scan_pause ||
+             s_paused_diag))
+        {
+            /* a row left the chip on another bus (autopid_bus.h) and
+               somebody else is about to have it (a tool, a scan, the
+               voltage pause, Automate off): home first, before the
+               acknowledge and the idle bit they wait for. Not under an
+               app's session: its own words are on the wire already, and
+               the baseline goes back when it has left */
+            dev_status_manager_clear(DEV_STATUS_BIT_AUTOPID_IDLE);
+            ap_bus_leave(NULL);
+            s_bus_out = false;
+        }
+
         obd_gate_diag_ack(diag);
 
         /* periodic DTC scan due-check: runs every iteration, incl. the
@@ -201,6 +223,10 @@ static void poller_task(void *arg)
                        !s_paused_client && !s_paused_diag;
         bool passive_ok = enabled &&
                           !(s_paused_voltage && ap_settings_pause_all());
+        /* the rows on a bus of the chip's own (autopid_bus.h) wait for the
+           same pauses, and not for the bus guard below: it listens on the
+           HS pins */
+        bool bus_ok = chip_ok;
 
         /* bus guard: before the chip is pinned to a CAN protocol the native
          * controller listens to the bus. A request at the wrong bitrate
@@ -219,6 +245,7 @@ static void poller_task(void *arg)
            over), the reading goes on */
         unsigned classes =
             (chip_ok ? AP_CLASS_BIT(AP_CLASS_CHIP) : 0u) |
+            (bus_ok ? AP_CLASS_BIT(AP_CLASS_CHIP_BUS) : 0u) |
             (passive_ok ? (AP_CLASS_BIT(AP_CLASS_PASSIVE) |
                            AP_CLASS_BIT(AP_CLASS_BUS_TX)) : 0u);
         bool bus_tx_ok = passive_ok && !s_paused_diag;
@@ -236,7 +263,9 @@ static void poller_task(void *arg)
 
         int64_t now = esp_timer_get_time();
         int64_t due = 0;
-        int i = ap_sched_next_of(sched, cfg, classes, &due);
+        /* grouped by bus: a round changes bus once per bus, not per row */
+        int i = ap_sched_next_grouped(sched, cfg, classes, ap_bus_now(),
+                                      ap_bus_since_us(), now, &due);
         int chip_i = chip_ok ? ap_sched_next_of(sched, cfg,
                                                 AP_CLASS_BIT(AP_CLASS_CHIP),
                                                 NULL)
@@ -265,6 +294,20 @@ static void poller_task(void *arg)
         }
 
         ap_core_unlock();
+
+        bool on_bus = is_pid && !pid_copy.j1939 &&
+                      pid_copy.bus != AP_BUS_OBD;
+
+        if (!on_bus && bus_ok && s_bus_out)
+        {
+            /* no row of another bus is due right now: the chip back to the
+               car's protocol at once, not when the next row of that
+               protocol comes. Whoever is next (an app, a scan, the contact
+               probe below, the wait) finds it where it always was */
+            dev_status_manager_clear(DEV_STATUS_BIT_AUTOPID_IDLE);
+            ap_bus_leave(NULL);
+            s_bus_out = false;
+        }
 
         if (tables_new)
         {
@@ -305,7 +348,7 @@ static void poller_task(void *arg)
         }
 
         bool ok = true;
-        bool passive = is_pid && ap_row_class(&pid_copy) != AP_CLASS_CHIP;
+        bool passive = is_pid && !AP_CLASS_IS_CHIP(ap_row_class(&pid_copy));
 
         if (passive)
         {
@@ -346,7 +389,11 @@ static void poller_task(void *arg)
             {
                 stats->polls_ok++;
                 s_last_ok_us = esp_timer_get_time();
-                ap_guard_proven(); /* an answer proves the bitrate */
+
+                if (!on_bus)
+                {
+                    ap_guard_proven(); /* an answer proves the bitrate */
+                }
             }
             else
             {
@@ -357,7 +404,15 @@ static void poller_task(void *arg)
 
             if (is_pid)
             {
-                /* per-boot vehicle identity + stored-protocol fallback */
+                ap_bus_note(pid_copy.bus, ok);
+                s_bus_out = (ap_bus_now() != AP_BUS_OBD);
+            }
+
+            if (is_pid && !on_bus)
+            {
+                /* per-boot vehicle identity + stored-protocol fallback:
+                   about the car's OBD protocol, so not for a row that was
+                   asked on another bus */
                 ap_runner_poll_result(ok);
             }
         }

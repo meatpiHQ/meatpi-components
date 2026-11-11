@@ -32,6 +32,8 @@
  */
 #include "autopid_private.h"
 
+#include "autopid_bus.h"
+
 #include <ctype.h>
 #include <math.h>
 #include <stdio.h>
@@ -388,6 +390,43 @@ esp_err_t ap_config_parse(const char *json, ap_config_t *cfg, char *err,
                     "chip's EEPROM (ATPP/ATSD/ATCV/STWBR)", "", cfg->n_pids);
             goto out;
         }
+
+        /* the row's bus (autopid_bus.h): the car's OBD protocol, or one of
+           the buses only the chip reaches. The field is the whole choice: a
+           row of another bus that picks a protocol itself is refused */
+        char bus_word[8] = "";
+        ap_row_bus_t bus = AP_BUS_OBD;
+
+        copy_str(bus_word, sizeof(bus_word), item, "bus");
+
+        if (!ap_bus_parse(bus_word, &bus))
+        {
+            cfg_err(err, err_len, "pid %s%d: unknown bus (obd, ms, sw or ch)",
+                    "", cfg->n_pids);
+            goto out;
+        }
+
+        /* and its speed, for a car whose bus does not run at the usual one */
+        if (!ap_bus_rate_parse((uint8_t)bus, get_num(item, "bus_kbps", 0),
+                               &pid->bus_rate))
+        {
+            cfg_err(err, err_len, "pid %s%d: bus_kbps needs a bus other than "
+                    "obd and a speed the chip can make (500 over 1 to 64, "
+                    "or that times 8/7)", "", cfg->n_pids);
+            goto out;
+        }
+
+        if (bus != AP_BUS_OBD &&
+            (pid->j1939 || !ap_bus_chain_allowed(pid->init) ||
+             !ap_bus_chain_allowed(pid->cmd)))
+        {
+            cfg_err(err, err_len, "pid %s%d: a row on another bus cannot be "
+                    "a PGN row, and its init and cmd must not pick a "
+                    "protocol or reset the chip", "", cfg->n_pids);
+            goto out;
+        }
+
+        pid->bus = (uint8_t)bus;
         copy_str(group, sizeof(group), item, "group");
         copy_str(type, sizeof(type), item, "type");
         pid->period_ms = (uint32_t)get_num(item, "period_ms", 0);

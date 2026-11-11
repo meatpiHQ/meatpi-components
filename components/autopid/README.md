@@ -82,6 +82,7 @@ Decisions log there is authoritative; the big ones:
 | `autopid_bus_guard.c` | PURE bus guard: the bitrate a chip protocol transmits at, and the verdict (`allow` / `search` / `park`) for what the native controller heard on the bus, with its one-sentence reason (see "Bus guard" below) |
 | `autopid_guard.c` | the guard's glue: asks `can_manager` what is on the bus before the chip talks (a held listen-only watch until the bitrate is proven), parks the poller, refuses the one-shot jobs, `bus_guard{}` in `GET /api/autopid` |
 | `autopid_runner.c` | the chip-facing poll and the test-a-PID one-shot: type/per-PID init transitions, ATCRA rxheader, request, parse, cross-talk guard; the bus guard's word on the protocols the tables set (`row_pins_ok()`); a one-shot (the test route, the detection, the DTC jobs) parks the poller with `ap_core_scan_pause(true)`, which since 2026-10-28 waits up to 3 s for the poller's busy window (a poll or a passive filter's monitor window, `AUTOPID_IDLE` set again) before the job's first command: the profile e2e bench's test route answered `chip busy (monitor/update)` twice when it landed in a filter window |
+| `autopid_bus.h` / `autopid_bus_core.c` / `autopid_bus.c` | the bus of a row (2026-11-11): MS, single-wire and CH CAN beside the car's OBD protocol. The pure core (host-tested): the config words, the bit rate code of `bus_kbps`, the chain that takes the chip to a bus through an AT user protocol defined in its RAM (`VTSET_CAN`, `ATTP`: no preset, no link word, both are stored by the chip), which chains of the tables such a row may carry, the CAN ERROR count that rests a bus. The chip half (the runner's third file): there, home again with the slot definitions taken back, where the chip is (`ap_base_mem_t.bus`). See "The bus of a row" |
 | `autopid_baseline.c` / `autopid_runner_private.h` | the chip baseline (out of `autopid_runner.c` 2026-10-20, 700-line rule): the prelude, the chain sender with the prelude behind a reset inside a chain (`after_reset()`), the memory the poll and the test share (`ap_base_mem()`), the borrowed-header rule (a standard row that set its own `ATSH` gives the functional header back before a row that sets none) and **the baseline back before the next row type** when a chain of the tables moved the chip (`ap_base_restore()`, issue #964, see "The baseline back" below). Since 2026-10-26 the sender tells the firmware's own chains (the prelude, the restore: the EEPROM guard alone, never an empty element) from the tables' chains (`ap_base_send_init`: the guard and the print strip of issue #1014): the strip had blanked the `ATH0` of the K-line / J1850 preludes and of the no-car prelude into an empty command; the no-car prelude is headers-on since the same day (`ap_veh_prelude_for`, the default case); since 2026-10-28 the prelude also goes out again when obd_chip's settings generation moved (`ap_base_chip_gen()` over the transport's `settings_generation`: a fresh bring-up, the CAN self-test's `ATD`), the chip is then at its defaults while the memory said otherwise |
 | `autopid_chain.c` | PURE (2026-10-20, issue #964): what a `;`-separated chain of the tables sets on the chip beyond the baseline (`ap_chain_sets()`: header, receive filter, extended addressing, flow control, protocol, print format, adaptive timing, ...; read as the chip reads it) and the chain that puts the baseline back (`ap_chain_restore()`: the prelude plus one undo command per thing the prelude does not cover, `ATCEA`, `ATFCSM0`, `ATAT1`, ...) |
 | `autopid_publish.c` | `ap_runner_publish()` = the publish half of a poll (mux, expression, the bounds, cache, events), shared by the chip runner and the J1939 runner (out of `autopid_runner.c` 2026-10-05, 700-line rule) |
@@ -627,6 +628,96 @@ Bench: `tools/testbench/obd/wwh_obd_bench.py` (`.\test.ps1 wwh`, verdict
 `WWH OBD PASS`); the vehicle is `tools/testbench/actors/pcan_wwh_ecu.py`,
 including the Sprinter VS30 of the field report (`--sprinter`).
 
+## The bus of a row: MS, single-wire and CH CAN (2026-11-11)
+
+A row asks on the car's OBD protocol (the default: pins 6 and 14, whatever
+the baseline pins) or on one of the buses of the OBD connector that only the
+OBD chip reaches. The row says which, and for a car whose bus does not run
+at the usual speed, how fast:
+
+| `bus` | Bus | Pins | Usual speed | The chip's slot |
+|---|---|---|---|---|
+| `obd` or absent | the car's OBD protocol | 6, 14 | the protocol's | - |
+| `ms` | MS CAN | 3, 11 | 125 kbit/s | B |
+| `sw` | single-wire CAN | 1 | 33.3 kbit/s | F |
+| `ch` | CH CAN | 12, 13 | 500 kbit/s | C |
+
+`bus_kbps` (a number, only with another bus than `obd`): any speed the chip
+can make, 500 kbit/s over 1 to 64, or that times 8/7 (250, 125, 100, 95.2,
+83.3, 50, 33.3 ...), within 1 %. 11-bit ids with ISO 15765-4 formatting;
+single-wire CAN in its transceiver's normal mode only (the high-voltage wake
+mode wakes every module on the car's bus: no automatic path sends it).
+
+**Nothing of it writes the chip's memory.** The chip stores a protocol
+preset (`STP nn`, `VTP 2Cn`) at every selection, with `ATM0` acknowledged or
+not, and a link word (`ATLNK..`) as well; both were taken through a
+power-off on the bench (2026-11-11, `testing/chip_word_class_bench.md` and
+`testing/chip_can_slot_bench.md` in the firmware repo). A car with rows on
+two buses changes bus at every round and cannot pay a write for it, so
+neither word is ever sent. The bus is reached through one of the chip's AT
+user protocols: `VTSET_CAN <slot>,<option>,<divisor>,<transceiver>` defines
+the slot's id length, bit rate and transceiver in the chip's RAM,
+`ATTP<slot>` chooses it (behind the driver's `ATM0`), and the one-argument
+`VTSET_CAN <slot>` takes the definition back when the chip goes home. What
+goes out for MS CAN:
+
+```
+ATS1;ATH1;ATST96;VTSET_CAN B,81,04,MS_CAN;ATTPB;ATSH7DF;ATCRA      there
+ATS1;ATH1;ATST96;ATTP6;ATSH7DF;ATCRA (the baseline) ;VTSET_CAN B   home
+```
+
+**How a round goes.** The scheduler groups the chip's rows by bus
+(`ap_sched_next_grouped`). Home, the most overdue row wins as before, until
+it would take the chip away: then the rows of the car's protocol that are
+due, or nearly, and were not asked since the chip came home go first. Away,
+every row of the other buses that is due or nearly due is asked once per
+excursion, the bus the chip is on first, then the next bus directly; then
+the chip goes home. "Nearly due" is a quarter of the row's period, 500 ms at
+most: rows drift apart by what the rows before them took, and asked early
+once they are due together from then on. So a round changes bus once per
+other bus and once to come home (4 changes for rows on all four buses,
+measured: 4.0 a round over six rounds of seven rows), and two buses at max
+rate cannot keep the chip between them.
+
+**The chip is home whenever nobody of another bus is due**: before the
+poller waits, before the contact probe, before a tool is acknowledged and
+before the idle bit a scan waits for. An app, a scan, a test or a monitor
+window finds the chip on the car's protocol with its slots as found. Not
+under an app's own session (its words are on the wire already; the baseline
+goes back when it has left).
+
+**What such a row does not get.** The baseline prelude and the type's init
+(`custom_init`, the car's `specific_init`) are about the car's protocol:
+neither is sent for it; its own `init` and `rxheader` are, on top of the
+functional header and the automatic receive filter the bus chain leaves.
+The HS bus guard has no say about it (the guard listens on pins 6 and 14):
+its rows are their own scheduling class (`AP_CLASS_CHIP_BUS`), polled while
+the guard has no verdict, they do not prove the guard's bit rate, and their
+failures do not feed the identity check or the protocol fallback.
+
+**What it must not carry.** A row of another bus whose `init` or `cmd`
+picks a protocol (`ATSP`, `ATTP`, `STP nn`, `VTP nnn`), defines a slot
+(`VTSET_CAN`, `VTCFG_`, `ATPB`), links a transceiver (`ATLNK`) or resets the
+chip (`ATZ`, `ATD`, `ATWS`) is refused when the tables are parsed and by the
+Test route: the `bus` field is the whole choice. A bit rate word behind the
+slot (`STPBR`, `VTPBR`) is RAM and allowed. A PGN row has no bus.
+
+**A bus nobody acknowledges on.** These buses have no listener, so a wrong
+speed, or a bus the car does not have, is found out by sending: the chip
+answers `CAN ERROR`, and on a live bus at another speed every such try costs
+that bus error frames. After three in a row the bus's rows rest for 30 s
+(doubled at every rest that follows without a frame getting through, ten
+minutes at most; one W line, `stats.buses.<bus>.parked` and `.parks`). An
+answer or `NO DATA` (the frame was acknowledged) ends it. The Test route is
+not rested: it is a deliberate single try.
+
+Files: `autopid_bus.h`, `autopid_bus_core.c` (pure: the words, the rate, the
+chain, the allowed chains, the CAN ERROR count), `autopid_bus.c` (the chip:
+there, home, the state in `ap_base_mem_t`), `ap_sched_next_grouped` in
+`autopid_sched.c`. Not covered yet: 29-bit ids on these buses, J1939
+formatting, listening rows, a `bus` for a filter (a monitor window is the
+car's own bus).
+
 ## Config file shape (`PUT /api/autopid/config`)
 
 ```json
@@ -635,7 +726,7 @@ including the Sprinter VS30 of the field report (`--sprinter`).
   "pids": [{
     "name": "engine", "type": "std|custom|specific", "cmd": "010C",
     "init": "ATSH7E0", "rxheader": "7E8", "group": "driving",
-    "period_ms": 0,
+    "period_ms": 0, "bus": "ms", "bus_kbps": 250,
     "parameters": [{"name": "rpm", "expression": "[B3:B4]/4",
                     "unit": "rpm", "class": "frequency",
                     "min": 0, "max": 16384}]
@@ -1169,7 +1260,7 @@ it is what found the two defects above.
 
 ## Tests
 
-`host_test/` (run: `.\test.ps1 host autopid`, 146 tests): the frame of reference of a reply (`test_frames.c`, 9 cases, 2026-10-24, issue #1014: a stored config's standard rows re-numbered to the table's expressions, a custom row and an unknown command left alone, a second pass a no-op; the chip's own prints from the bench, an extended-addressed BMW SME with a pending frame and padding, decoded as the published rows mean (`[B6:B7]/10` = 72.6 %, the i3's `[B11:B12]` shown to count the pending frame); a Hyundai Ioniq 2021 BMS reply of nine frames from a Car Scanner log (`B10/2` = 75 %, `[B19:B20]/10` = 341.9 V); a Leaf AZE0 reply with its padding kept; the MEB 29-bit print of issue #914 taken as an id by the row's filter or the protocol hint and left alone without; headers-off replies rebuilt into frames, the 28-row reply in arrival order, a missing row stopping the assembly; the lowest responder; ATH0/ATS0/ATE1 dropped from a chain and the receive filter a chain sets; the standard table's numbering); the bounds on a decoded value and the SAE rows inside their own range (`test_bounds.c`, 4 cases, 2026-10-20: the report's 100.000001646 clamped to 100 on a standard and on a custom row, the reporter's controlled values, the tolerance, a J1939 not-available raw dropped, the exact ratio and the signed span, every ranged table row decoded at 0x00 / 0xFF / 0x7F / 0x80 through the real parser inside its range); what a chain of the tables sets on the chip and the chain that puts the baseline back (`test_chain.c`, 4 cases, 2026-10-20: the BMW row of issue #964, the published i3 / Mini / e-Ulysse chains, the off and reset forms set nothing, every undo command fits `AP_RESTORE_LEN`); the detection's rows as a new car's tables, on or off (`test_scan_rows.c`, 3 cases, 2026-10-09); the J1939 rows
+`host_test/` (run: `.\test.ps1 host autopid`, 163 tests): the bus of a row (`test_bus.c`, 11 cases, 2026-11-11: the words, the speed of a bus and its chain with no stored word in it, what a row of another bus may carry, the config parse and its refusals, the rows of a bus asked together, an excursion asking every row once and coming home with two buses at max rate, the rest after CAN ERRORs, the class that keeps such rows out of the HS bus guard's hands); the frame of reference of a reply (`test_frames.c`, 9 cases, 2026-10-24, issue #1014: a stored config's standard rows re-numbered to the table's expressions, a custom row and an unknown command left alone, a second pass a no-op; the chip's own prints from the bench, an extended-addressed BMW SME with a pending frame and padding, decoded as the published rows mean (`[B6:B7]/10` = 72.6 %, the i3's `[B11:B12]` shown to count the pending frame); a Hyundai Ioniq 2021 BMS reply of nine frames from a Car Scanner log (`B10/2` = 75 %, `[B19:B20]/10` = 341.9 V); a Leaf AZE0 reply with its padding kept; the MEB 29-bit print of issue #914 taken as an id by the row's filter or the protocol hint and left alone without; headers-off replies rebuilt into frames, the 28-row reply in arrival order, a missing row stopping the assembly; the lowest responder; ATH0/ATS0/ATE1 dropped from a chain and the receive filter a chain sets; the standard table's numbering); the bounds on a decoded value and the SAE rows inside their own range (`test_bounds.c`, 4 cases, 2026-10-20: the report's 100.000001646 clamped to 100 on a standard and on a custom row, the reporter's controlled values, the tolerance, a J1939 not-available raw dropped, the exact ratio and the signed span, every ranged table row decoded at 0x00 / 0xFF / 0x7F / 0x80 through the real parser inside its range); what a chain of the tables sets on the chip and the chain that puts the baseline back (`test_chain.c`, 4 cases, 2026-10-20: the BMW row of issue #964, the published i3 / Mini / e-Ulysse chains, the off and reset forms set nothing, every undo command fits `AP_RESTORE_LEN`); the detection's rows as a new car's tables, on or off (`test_scan_rows.c`, 3 cases, 2026-10-09); the J1939 rows
 (`test_j1939_rows.c`, 10 cases: the `PGN:` grammar and its refusals, the
 config parser's typed fields and the `init` / `rxheader` refusal, the
 scheduler's class-masked pick and the 20 ms passive floor, the built-in

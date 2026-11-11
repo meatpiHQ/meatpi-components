@@ -64,6 +64,16 @@ typedef struct
                                 back before the next row type (issue #964) */
     bool     chain_cut;      /* a chain was stopped behind a reset: no
                                 verdict for the protocol in effect         */
+    uint16_t bus;            /* where the chip was taken to for a row
+                                (AP_BUS_KEY, autopid_bus.h: the bus and its
+                                bit rate): 0 = the protocol the last
+                                prelude pinned                             */
+    int64_t  bus_since_us;   /* when it came there (the scheduler groups
+                                the rows by bus)                           */
+    uint32_t bus_gen;        /* the chip's settings generation it was taken
+                                there under: a slot definition is RAM      */
+    bool     bus_stale;      /* someone else had the chip since: a row of
+                                another bus takes it there again           */
 } ap_base_mem_t;
 
 /** The chip's settings generation as the transport reports it (0 without

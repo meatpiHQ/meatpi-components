@@ -39,6 +39,8 @@ void run_bounds_tests(void);
 /* test_frames.c: the reply as the chip prints it with headers on, what the
    expressions index (issue #1014); extended addressing, the 29-bit hint */
 void run_frames_tests(void);
+/* test_bus.c: the bus of a row (MS, single-wire, CH CAN), the grouped pick */
+void run_bus_tests(void);
 
 /* ---- helpers ----------------------------------------------------------------- */
 
@@ -2080,6 +2082,7 @@ void app_main(void)
     run_chain_tests();
     run_bounds_tests();
     run_frames_tests();
+    run_bus_tests();
 
     UNITY_END();
 }

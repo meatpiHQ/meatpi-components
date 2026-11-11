@@ -18,6 +18,8 @@ idf_component_register(
          "autopid_filter.c"
          "autopid_config.c"
          "autopid_sched.c"
+         "autopid_bus_core.c"
+         "autopid_bus.c"
          "autopid_bus_guard.c"
          "autopid_dialect.c"
          "autopid_guard.c"

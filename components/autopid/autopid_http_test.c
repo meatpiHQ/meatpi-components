@@ -41,6 +41,7 @@
 #include "j1939.h"
 
 #include "autopid.h"
+#include "autopid_bus.h"
 #include "autopid_private.h"
 #include "autopid_http_private.h"
 
@@ -77,6 +78,32 @@ esp_err_t test_post_handler(httpd_req_t *req)
     const cJSON *exprs = cJSON_GetObjectItemCaseSensitive(root,
                                                           "expressions");
     const cJSON *type = cJSON_GetObjectItemCaseSensitive(root, "type");
+    const cJSON *bus_j = cJSON_GetObjectItemCaseSensitive(root, "bus");
+    const cJSON *kbps_j = cJSON_GetObjectItemCaseSensitive(root, "bus_kbps");
+    ap_row_bus_t bus = AP_BUS_OBD;
+    uint8_t bus_rate = 0;
+
+    /* "bus" and "bus_kbps": the row's bus and its speed (autopid_bus.h);
+       the shot is then a poll of a row there: no type init, and the chip
+       is home again behind it */
+    if (bus_j != NULL &&
+        (!cJSON_IsString(bus_j) || !ap_bus_parse(bus_j->valuestring, &bus)))
+    {
+        cJSON_Delete(root);
+        return ap_http_send_error(req, "400 Bad Request",
+                                  "unknown bus (obd, ms, sw or ch)");
+    }
+
+    if (!ap_bus_rate_parse((uint8_t)bus,
+                           cJSON_IsNumber(kbps_j) ? kbps_j->valuedouble : 0,
+                           &bus_rate))
+    {
+        cJSON_Delete(root);
+        return ap_http_send_error(req, "400 Bad Request",
+                                  "bus_kbps needs a bus other than obd and a "
+                                  "speed the chip can make (500 over 1 to "
+                                  "64, or that times 8/7)");
+    }
 
     if (!cJSON_IsString(cmd) || cmd->valuestring[0] == '\0' ||
         strlen(cmd->valuestring) >= AP_CMD_LEN ||
@@ -152,6 +179,17 @@ esp_err_t test_post_handler(httpd_req_t *req)
     int64_t elapsed_us = 0;
     esp_err_t err;
 
+    if (bus != AP_BUS_OBD &&
+        (is_pgn || !ap_bus_chain_allowed(cmd->valuestring) ||
+         (cJSON_IsString(init) && !ap_bus_chain_allowed(init->valuestring))))
+    {
+        cJSON_Delete(root);
+        return ap_http_send_error(req, "400 Bad Request",
+                                  "a row on another bus cannot be a PGN row, "
+                                  "and its init and cmd must not pick a "
+                                  "protocol or reset the chip");
+    }
+
     if (is_pgn)
     {
         err = ap_runner_test_j1939(pgn, pgn_sa, payload, sizeof(s_payload),
@@ -162,7 +200,10 @@ esp_err_t test_post_handler(httpd_req_t *req)
     {
         char guard_reason[176];
 
-        if (!ap_guard_job_ok(guard_reason, sizeof(guard_reason)))
+        /* the bus guard listens on the HS pins: it has no say about a
+           request on another bus's */
+        if (bus == AP_BUS_OBD &&
+            !ap_guard_job_ok(guard_reason, sizeof(guard_reason)))
         {
             cJSON_Delete(root);
             return ap_http_send_error(req, "409 Conflict", guard_reason);
@@ -178,7 +219,9 @@ esp_err_t test_post_handler(httpd_req_t *req)
         ap_core_scan_pause(true);   /* park the poller around the one-shot */
 
         err = ap_runner_test(
-            tidx, (tidx >= 0) ? ap_runner_type_init(tidx) : NULL,
+            tidx, AP_BUS_KEY(bus, bus_rate),
+            (tidx >= 0 && bus == AP_BUS_OBD) ? ap_runner_type_init(tidx)
+                                             : NULL,
             cJSON_IsString(init) ? init->valuestring : NULL,
             cJSON_IsString(rxh) ? rxh->valuestring : NULL, cmd->valuestring,
             s_raw, sizeof(s_raw), &elapsed_us, s_tr, sizeof(s_tr));
@@ -226,9 +269,18 @@ esp_err_t test_post_handler(httpd_req_t *req)
 
     if (have_payload && !is_pgn)
     {
-        ap_runner_reply_hint((tidx >= 0) ? ap_runner_type_init(tidx) : NULL,
-                             cJSON_IsString(init) ? init->valuestring : NULL,
-                             cJSON_IsString(rxh) ? rxh->valuestring : NULL);
+        if (bus != AP_BUS_OBD)
+        {
+            ap_resp_set_id29_hint(0, false); /* the slots are 11-bit */
+        }
+        else
+        {
+            ap_runner_reply_hint(
+                (tidx >= 0) ? ap_runner_type_init(tidx) : NULL,
+                cJSON_IsString(init) ? init->valuestring : NULL,
+                cJSON_IsString(rxh) ? rxh->valuestring : NULL);
+        }
+
         have_payload = (ap_resp_frames(s_raw, s_frames, sizeof(s_frames),
                                        &n) == ESP_OK);
         payload = s_frames;

@@ -70,6 +70,7 @@
 
 #include "autopid_transport.h"
 
+#include "autopid_bus.h"
 #include "autopid_private.h"
 #include "autopid_runner_private.h"
 
@@ -132,6 +133,7 @@ void ap_runner_reset(void)
     s_last_type = -1;
     s_last_pid = -1;
     ap_base_mem()->rxheader_set = false;
+    ap_base_mem()->bus_stale = true; /* a row of another bus goes there anew */
 }
 
 const char *ap_runner_type_init(int type)
@@ -231,10 +233,11 @@ static bool row_pins_ok(const char *name, int type, const char *type_init,
     return true;
 }
 
-esp_err_t ap_runner_test(int type, const char *type_init, const char *init,
-                         const char *rxheader, const char *cmd, char *raw,
-                         size_t raw_len, int64_t *elapsed_us,
-                         char *transcript, size_t transcript_len)
+esp_err_t ap_runner_test(int type, uint16_t bus, const char *type_init,
+                         const char *init, const char *rxheader,
+                         const char *cmd, char *raw, size_t raw_len,
+                         int64_t *elapsed_us, char *transcript,
+                         size_t transcript_len)
 {
     /* ONE-SHOT through the same chip choreography as a real poll
        (test-a-PID, §11): the baseline back when the tables moved the
@@ -259,6 +262,40 @@ esp_err_t ap_runner_test(int type, const char *type_init, const char *init,
 
     snprintf(cmd_s, sizeof(cmd_s), "%s", cmd);
     ap_init_sanitize(cmd_s); /* the tested cmd can be an AT command */
+
+    if (bus != 0)
+    {
+        /* a row of another bus (autopid_bus.h), as a poll of it: the chip
+           there, the row's init, the request, and home again, so the test
+           leaves the chip on the car's protocol */
+        if (!ap_bus_chain_allowed(init) || !ap_bus_chain_allowed(cmd_s))
+        {
+            ap_tr_add(&tr, '!', "not sent: a row on another bus must not "
+                             "pick a protocol or reset the chip itself");
+            return ESP_ERR_INVALID_ARG;
+        }
+
+        if (!ap_bus_row_setup(NULL, bus, -1, init, rxheader, &tr))
+        {
+            ap_tr_add(&tr, '!', "not sent: the chip did not take that bus");
+            ap_bus_leave(&tr);
+            return ESP_FAIL;
+        }
+
+        int64_t t_bus = esp_timer_get_time();
+        esp_err_t err_bus = ap_base_request_tr(cmd_s, raw, raw_len,
+                                               AP_REQ_TIMEOUT, &tr);
+
+        if (elapsed_us != NULL)
+        {
+            *elapsed_us = esp_timer_get_time() - t_bus;
+        }
+
+        ap_bus_leave(&tr);
+        return err_bus;
+    }
+
+    ap_bus_leave(&tr); /* the chip home when a row left it on another bus */
 
     if (!mem->baseline_sent || mem->chip_gen != ap_base_chip_gen())
     {
@@ -354,10 +391,100 @@ esp_err_t ap_runner_test(int type, const char *type_init, const char *init,
     return err;
 }
 
+/**
+ * The request of a row whose setup went out, its reply, the values: the
+ * same for a row of the car's OBD protocol and for one of another bus.
+ */
+static bool row_ask(const ap_pid_t *pid, const ap_param_t *params)
+{
+    ap_base_mem_t *mem = ap_base_mem();
+    static char resp[AP_RESP_MAX] EXT_RAM_BSS_ATTR; /* poller-task only */
+
+    esp_err_t err = ap_be()->request(pid->cmd, resp, sizeof(resp),
+                                     AP_REQ_TIMEOUT);
+
+    mem->moved |= ap_chain_sets(pid->cmd); /* an AT command as the cmd */
+
+    if (ap_guard_cmd_resets(pid->cmd, strlen(pid->cmd)))
+    {
+        mem->baseline_sent = false; /* the chip is on its stored protocol */
+    }
+
+    if (err != ESP_OK)
+    {
+        ESP_LOGD(TAG, "%s: request failed (%s)", pid->name,
+                 esp_err_to_name(err));
+        return false;
+    }
+
+    if (pid->bus != AP_BUS_OBD)
+    {
+        ap_bus_reply(pid->bus, resp); /* CAN ERROR in a row rests the bus */
+    }
+
+    uint8_t payload[AP_PAYLOAD_MAX];
+    size_t payload_len = 0;
+
+    if (pid->bus != AP_BUS_OBD)
+    {
+        ap_resp_set_id29_hint(0, false); /* the slots are 11-bit */
+    }
+    else
+    {
+        ap_runner_reply_hint(s_type_init[pid->type], pid->init,
+                             pid->rxheader);
+    }
+
+    if (ap_resp_to_payload(resp, payload, sizeof(payload), &payload_len)
+            != ESP_OK)
+    {
+        ESP_LOGD(TAG, "%s: no payload in response", pid->name);
+        return false;
+    }
+
+    /* cross-talk guard: another chip master's response (WS-OBD bridge,
+       CLI) can land in our request window, never cache it (Phase 1b) */
+    if (!ap_payload_matches_cmd(pid->cmd, payload, payload_len))
+    {
+        ESP_LOGD(TAG, "%s: response echo mismatch (cross-talk?)",
+                 pid->name);
+        return false;
+    }
+
+    /* the bytes the row's expressions index: the reply as the chip
+       printed it, headers on (the legacy frame of reference, the published
+       profiles'; 2026-10-24, issue #1014). Poller-task only. */
+    static uint8_t s_frames[AP_FRAMES_MAX] EXT_RAM_BSS_ATTR;
+    size_t n_frames = 0;
+
+    if (ap_resp_frames(resp, s_frames, sizeof(s_frames), &n_frames) != ESP_OK)
+    {
+        ESP_LOGD(TAG, "%s: no frames in response", pid->name);
+        return false;
+    }
+
+    return ap_runner_publish(pid, params, s_frames, n_frames,
+                             esp_timer_get_time());
+}
+
 bool ap_runner_run(const ap_pid_t *pid, int pid_index,
                    const ap_param_t *params)
 {
     ap_base_mem_t *mem = ap_base_mem();
+
+    if (pid->bus != AP_BUS_OBD)
+    {
+        /* a row on a bus of the chip's own (autopid_bus.h): the chip there,
+           then the row's own init. Neither the baseline nor the type's init
+           (both are about the car's protocol) nor the HS bus guard are its
+           business */
+        return ap_bus_row_setup(pid->name,
+                                AP_BUS_KEY(pid->bus, pid->bus_rate),
+                                pid_index, pid->init, pid->rxheader, NULL) &&
+               row_ask(pid, params);
+    }
+
+    ap_bus_leave(NULL); /* a row of the car's protocol: the chip home first */
 
     if (!ap_runner_baseline_ensure())
     {
@@ -454,58 +581,5 @@ bool ap_runner_run(const ap_pid_t *pid, int pid_index,
 
     mem->init_pin = pin_after;
 
-    static char resp[AP_RESP_MAX] EXT_RAM_BSS_ATTR; /* poller-task only */
-
-    esp_err_t err = ap_be()->request(pid->cmd, resp, sizeof(resp),
-                                     AP_REQ_TIMEOUT);
-
-    mem->moved |= ap_chain_sets(pid->cmd); /* an AT command as the cmd */
-
-    if (ap_guard_cmd_resets(pid->cmd, strlen(pid->cmd)))
-    {
-        mem->baseline_sent = false; /* the chip is on its stored protocol */
-    }
-
-    if (err != ESP_OK)
-    {
-        ESP_LOGD(TAG, "%s: request failed (%s)", pid->name,
-                 esp_err_to_name(err));
-        return false;
-    }
-
-    uint8_t payload[AP_PAYLOAD_MAX];
-    size_t payload_len = 0;
-
-    ap_runner_reply_hint(s_type_init[pid->type], pid->init, pid->rxheader);
-
-    if (ap_resp_to_payload(resp, payload, sizeof(payload), &payload_len)
-            != ESP_OK)
-    {
-        ESP_LOGD(TAG, "%s: no payload in response", pid->name);
-        return false;
-    }
-
-    /* cross-talk guard: another chip master's response (WS-OBD bridge,
-       CLI) can land in our request window, never cache it (Phase 1b) */
-    if (!ap_payload_matches_cmd(pid->cmd, payload, payload_len))
-    {
-        ESP_LOGD(TAG, "%s: response echo mismatch (cross-talk?)",
-                 pid->name);
-        return false;
-    }
-
-    /* the bytes the row's expressions index: the reply as the chip
-       printed it, headers on (the legacy frame of reference, the published
-       profiles'; 2026-10-24, issue #1014). Poller-task only. */
-    static uint8_t s_frames[AP_FRAMES_MAX] EXT_RAM_BSS_ATTR;
-    size_t n_frames = 0;
-
-    if (ap_resp_frames(resp, s_frames, sizeof(s_frames), &n_frames) != ESP_OK)
-    {
-        ESP_LOGD(TAG, "%s: no frames in response", pid->name);
-        return false;
-    }
-
-    return ap_runner_publish(pid, params, s_frames, n_frames,
-                             esp_timer_get_time());
+    return row_ask(pid, params);
 }

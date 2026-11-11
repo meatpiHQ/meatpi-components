@@ -112,6 +112,10 @@ typedef struct
     bool          j1939_request;          /* '?': sent on request (phase 6) */
     int16_t       j1939_sa;               /* pinned source, -1 = the pick   */
     uint32_t      pgn;
+    uint8_t       bus;                    /* ap_row_bus_t (autopid_bus.h):
+                                             0 = the car's OBD protocol     */
+    uint8_t       bus_rate;               /* that bus's bit rate code, 0 =
+                                             its own (ap_bus_rate_parse)    */
 } ap_pid_t;
 
 /** The scheduling class of a row (autopid_j1939.h has the words). */
@@ -121,12 +125,19 @@ typedef enum
     AP_CLASS_PASSIVE,      /* a PGN row: read from the listener's store    */
     AP_CLASS_BUS_TX,       /* a PGN row with '?': a request on the native
                               bus (phase 6; read like passive until then)  */
+    AP_CLASS_CHIP_BUS,     /* a request through the chip on a bus of its own
+                              (MS, single-wire, CH CAN: autopid_bus.h); the
+                              HS bus guard has no say about it             */
 } ap_row_class_t;
 
 #define AP_CLASS_BIT(c)   (1u << (c))
 #define AP_CLASS_ALL      (AP_CLASS_BIT(AP_CLASS_CHIP) | \
                            AP_CLASS_BIT(AP_CLASS_PASSIVE) | \
-                           AP_CLASS_BIT(AP_CLASS_BUS_TX))
+                           AP_CLASS_BIT(AP_CLASS_BUS_TX) | \
+                           AP_CLASS_BIT(AP_CLASS_CHIP_BUS))
+
+/** Is this the class of a row the chip asks (on any bus)? */
+#define AP_CLASS_IS_CHIP(c) ((c) == AP_CLASS_CHIP || (c) == AP_CLASS_CHIP_BUS)
 
 typedef struct
 {
@@ -377,11 +388,15 @@ bool ap_runner_run_filter(const ap_filter_t *f, const ap_param_t *params);
  *  per exchange, "> cmd" then "< reply", so the UI can show what went
  *  out and what came back (2026-09-16). ESP_ERR_NOT_ALLOWED = a chain of
  *  the row sets a protocol the bus guard refuses on this bus: nothing of
- *  the row was sent (ap_guard_last_reason() says why). */
-esp_err_t ap_runner_test(int type, const char *type_init, const char *init,
-                         const char *rxheader, const char *cmd, char *raw,
-                         size_t raw_len, int64_t *elapsed_us,
-                         char *transcript, size_t transcript_len);
+ *  the row was sent (ap_guard_last_reason() says why). @p bus: where the
+ *  row asks (AP_BUS_KEY, autopid_bus.h; 0 = the car's OBD protocol); on
+ *  another bus the chip is taken there, asked, and taken home again, and
+ *  @p type_init is not sent. */
+esp_err_t ap_runner_test(int type, uint16_t bus, const char *type_init,
+                         const char *init, const char *rxheader,
+                         const char *cmd, char *raw, size_t raw_len,
+                         int64_t *elapsed_us, char *transcript,
+                         size_t transcript_len);
 
 /** Tell the reply parser how to read a 29-bit id for the row about to be
  *  parsed (ap_resp_set_id29_hint): the row's receive filter (@p rxheader,

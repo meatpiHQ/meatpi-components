@@ -773,10 +773,14 @@ Kept as typed there is no validator, no migration and no schema change: the
 page marks the field as long as the word is there, and an older build finds
 the setting it wrote.
 
-The words: `STP` or `VTP` with one to three hex digits and nothing else
-(`STPBR`, `VTPBR`, `STPTO` are RAM words and pass; `STPC` closes the protocol
-and is no preset) and anything that begins with `ATLNK`, read as the chip
-reads them (spaces ignored, any case). The web UI applies the same rule to
+The words: `STP` or `VTP` with one to three hex digits and nothing else, and
+anything that begins with `ATLNK`, read as the chip reads them (spaces
+ignored, any case). The words that only begin like a preset pass, each on a
+bench run and not on the datasheet's word (`testing/chip_word_class_bench.md`
+in the firmware repo): `STPBR` and `VTPBR` are RAM (2026-11-11), and
+`STPTO`, `STPO` and `STPC` (the timeout, open and close the protocol) moved
+no stored cell that can be read, across a warm start and a hardware reset
+(2026-11-12). The web UI applies the same rule to
 say why before Apply does (`storeWord()`), marks such a row (`STP53: not
 sent`) and tells what to do; under a type's init field it says that the word
 is not sent and which PIDs wait, under the table how many PIDs the device

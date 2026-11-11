@@ -40,6 +40,35 @@ Request/response only (no monitor task for unsolicited frames); GM 4x
 programming speed is not implemented. `J1850PWM`/`ISO9141`/`ISO14230` are
 chip-wired on the hardware but not built yet (`ERR_NOT_SUPPORTED`).
 
+**The VPW init, first run against a VPW node on 2026-11-11.** Until ECU
+sim v2 the bench had no J1850 node, so the channel's reply path had never
+run, and it could not have heard one: CONNECT succeeded, the write was
+accepted, and no reply came back. Two faults in the init
+(`run_vpw_init()`):
+
+- `ATD` stood behind `ATTP2`. "All to defaults" includes the protocol:
+  the chip went back to its stored one (`ATDPN` `6` on the bench) and the
+  request went out on CAN. `ATD` is first now. The request engine sends
+  its `ATM0` ahead of the `ATTP2` behind it, so the chip's memory function,
+  which `ATD` switches on again, is off for the session.
+- three ST pass filters (`STFAP 00F000,00FF00`, `00FE00`, `006C00`: replies
+  to F0, broadcast FE, "ECUs on 6C"). With any ST pass filter set the
+  MIC3624 handed on no reply at all: a functional `48 6B 10 41 00 ..` came
+  back as `NO DATA`, also with a filter for 6B added. Under CAN, where the
+  chip sat because of the first fault, the same words answer `?`. They are
+  gone. The chip receives as an ELM does (`ATAR`), and what the
+  application gets is decided by the channel's PASS / BLOCK filters in
+  software (`j2534_legacy_poll`), which is the J2534 model. `STFCP` stays,
+  to clear what an earlier session left.
+
+Bench: the app repo's `.\test.ps1 j2534vpw` (the simulator on VPW alone,
+`01 00` and `01 0C` each answered `48 6B 10 41 ..`, nothing written to the
+chip). Not checked there: physical addressing (the simulator answered no
+`6C 10 F1` request on the app path either), and the last byte of a
+delivered message, which is the J1850 CRC as the chip prints it with
+headers on (`48 6B 10 41 00 18 3F 80 03 0F`): whether a J2534 application
+expects it stripped is an open question.
+
 ISO15765 messages are laid out as SAE J2534-1 says (2026-10-19): the
 4-byte CAN id first, then the UDS payload, in both directions, and the
 pad flag on each message. The device took the bare payload before, which

@@ -187,14 +187,30 @@ static esp_err_t chip_cmd(const char *cmd, uint32_t timeout_ms)
                             pdMS_TO_TICKS(timeout_ms));
 }
 
-/* the J1850 VPW init: the nightjoker7 fork's proven GM Class 2 sequence,
- * minus the EEPROM-unsafe ATSP (ATTP keeps it in RAM; the obd_chip guard
- * would rewrite ATSP anyway). All bench-probed on the MIC3624 2026-10-19.
+/* the J1850 VPW init: the nightjoker7 fork's GM Class 2 sequence, minus the
+ * EEPROM-unsafe ATSP (ATTP keeps it in RAM; the obd_chip guard would
+ * rewrite ATSP anyway). The words were probed on the MIC3624 on 2026-10-19,
+ * when the bench had no VPW node; with one (ECU sim v2, 2026-11-11) the
+ * channel connected, took its write and never got a reply, for two reasons:
+ *
+ * - ATD stood BEHIND ATTP2. "All to defaults" includes the protocol: the
+ *   chip went back to its stored one (ATDPN 6 on the bench) and the request
+ *   went out on CAN. ATD is first now, ATTP2 right behind it. (The request
+ *   engine sends its ATM0 ahead of ATTP2, so the chip's memory function,
+ *   which ATD switches on again, is off for the session.)
+ * - three ST pass filters (STFAP 00F000 / 00FE00 / 006C00 under the mask
+ *   00FF00, "replies to F0, broadcast FE, ECUs on 6C"). With any ST pass
+ *   filter set this chip handed on no reply at all, a functional
+ *   48 6B 10 41 00 .. included, also with a filter for 6B added. They are
+ *   gone: the chip receives the way an ELM does (ATAR), and what the
+ *   application gets is decided by the channel's own PASS / BLOCK filters
+ *   (j2534_legacy_poll), which is the J2534 model. STFCP stays, to clear
+ *   what an earlier session may have left.
+ *
  * Only ATTP2 is load-bearing; the rest are best-effort. */
 static uint32_t run_vpw_init(void)
 {
     static const char *SEQ[] = {
-        "ATD",                   /* all to defaults                        */
         "ATH1",                  /* headers on: J2534 needs the 3 hdr bytes */
         "ATS0",                  /* no spaces in replies (clean parse)     */
         "ATE0",                  /* echo off (obd_chip strips it anyway)   */
@@ -205,10 +221,10 @@ static uint32_t run_vpw_init(void)
         "ATSR F0",               /* receive to the tester address F0       */
         "ATAR",                  /* auto receive                           */
         "STFCP",                 /* clear the chip's programmable filters  */
-        "STFAP 00F000,00FF00",   /* pass replies to F0 (tester)            */
-        "STFAP 00FE00,00FF00",   /* pass functional/broadcast FE           */
-        "STFAP 006C00,00FF00",   /* pass ECUs that answer on 6C            */
     };
+
+    /* all to defaults, BEFORE the protocol is chosen (best-effort) */
+    (void)chip_cmd("ATD", LEG_CMD_MS);
 
     /* ATTP2: try J1850 VPW (protocol 2), RAM-only. The one that must take. */
     if (chip_cmd("ATTP2", LEG_CMD_MS) != ESP_OK)

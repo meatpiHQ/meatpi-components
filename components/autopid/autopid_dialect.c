@@ -266,6 +266,14 @@ static uint32_t line_responder(uint32_t id, const uint8_t *bytes, int at)
         return id;
     }
 
+    if (ap_resp_proto_hint() != '\0')
+    {
+        /* a pre-CAN protocol (autopid_resp_precan.c): three header bytes
+           ahead of the answer, the third the ECU's address (four with ISO
+           14230's length byte); headers off, nobody is told apart */
+        return (at == 3 || at == 4) ? bytes[2] : UINT32_MAX;
+    }
+
     if (at == ID29_TOKENS + 1 && bytes[0] <= 0x1F)
     {
         return ((uint32_t)bytes[0] << 24) | ((uint32_t)bytes[1] << 16) |

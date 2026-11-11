@@ -176,6 +176,9 @@ static esp_err_t autopid_get_handler(httpd_req_t *req)
         }
     }
 
+    /* requests sent only to keep a K-line session from ending (the ECU ends
+       one after 5 s without a request, autopid_proto.h) */
+    cJSON_AddNumberToObject(stats, "kline_keepalives", st.kline_keepalives);
     cJSON_AddNumberToObject(stats, "pids", st.pids_loaded);
     cJSON_AddNumberToObject(stats, "filters", st.filters_loaded);
     /* Phase 1b: ~53 ms/request measured floor; sub-floor periods are
@@ -186,6 +189,41 @@ static esp_err_t autopid_get_handler(httpd_req_t *req)
     cJSON_AddNumberToObject(stats, "now_us",
                             (double)esp_timer_get_time());
 
+    return ap_http_send_json(req, o);
+}
+
+/** GET /api/autopid/protocols: the vehicle protocol table (autopid_proto.h),
+ *  for whoever names a protocol to a person or offers the choice. */
+static esp_err_t protocols_get_handler(httpd_req_t *req)
+{
+    static const char *const KINDS[] =
+    {
+        "", "j1850", "kline", "can", "j1939", "user",
+    };
+    cJSON *o = cJSON_CreateObject();
+    cJSON *list = cJSON_AddArrayToObject(o, "protocols");
+
+    for (size_t i = 0; i < ap_proto_count(); i++)
+    {
+        const ap_proto_t *p = ap_proto_at(i);
+        char id[2] = { p->id, '\0' };
+        cJSON *one = cJSON_CreateObject();
+
+        cJSON_AddStringToObject(one, "id", id);
+        cJSON_AddStringToObject(one, "name", p->name);
+        cJSON_AddStringToObject(one, "detail", p->detail);
+        cJSON_AddStringToObject(one, "kind", KINDS[p->kind]);
+        cJSON_AddStringToObject(one, "pins", p->pins);
+        cJSON_AddNumberToObject(one, "bps", p->bps);
+        cJSON_AddNumberToObject(one, "id_bits", p->id_bits);
+        cJSON_AddNumberToObject(one, "start_ms", p->start_ms);
+        cJSON_AddNumberToObject(one, "session_ms", p->session_ms);
+        cJSON_AddBoolToObject(one, "pinnable", ap_proto_pinnable(p->id));
+        cJSON_AddItemToArray(list, one);
+    }
+
+    /* what a detection tries behind the CAN protocols, in this order */
+    cJSON_AddStringToObject(o, "walk", ap_proto_walk_precan());
     return ap_http_send_json(req, o);
 }
 
@@ -450,6 +488,8 @@ esp_err_t autopid_register_http(void)
     {
         { .uri = "/api/autopid", .method = HTTP_GET,
           .handler = autopid_get_handler },
+        { .uri = "/api/autopid/protocols", .method = HTTP_GET,
+          .handler = protocols_get_handler },
         { .uri = "/api/autopid/data", .method = HTTP_GET,
           .handler = autopid_data_handler },
         { .uri = "/api/autopid/config", .method = HTTP_GET,

@@ -133,6 +133,8 @@ typedef struct
                              /* UDS Tool / J2534 "exclusive" option)   */
     bool     paused_bus;     /* the bus guard: the vehicle bus runs at */
                              /* a bitrate the protocol contradicts     */
+    uint32_t kline_keepalives; /* requests sent only to keep a K-line   */
+                             /* session from ending (2026-11-12)       */
 } autopid_stats_t;
 
 esp_err_t autopid_stats(autopid_stats_t *out);

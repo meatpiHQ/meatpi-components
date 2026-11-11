@@ -110,6 +110,8 @@ Decisions log there is authoritative; the big ones:
 | `autopid_sched.c` | PURE scheduler: due times, group inheritance/override (`ap_sched_group_set`/`_restore`, 2026-09-17), fail backoff (×4 after 3), period-0 high-fidelity round-robin, stagger; `ap_sched_next_of()` picks among the entries of given classes (the poller asks for the chip's rows only while it may use the chip), a passive row at period 0 is looked at every 20 ms |
 | `autopid_group.c` | runtime group control: `autopid_group_set`/`_restore` (name lookup under the core lock + poller wake-up over the pure scheduler calls) and the group state JSON (split out of autopid.c 2026-09-17) |
 | `autopid_resp.c` | PURE ELM text → bytes: the framing-free payload for the parsers and the guard (`ap_resp_to_payload`: headers on/off, ISO-TP single/multi, lowest-responder rule, noise/error lines, an extended address byte before the PCI, the chip's 29-bit header print `18 DA F1 xx` and a row's own 29-bit id by hint, `7F xx 78` response-pending lines dropped) and the reply as the chip prints it with headers on for the expressions (`ap_resp_frames`, 2026-10-24, issue #1014; headers-off replies rebuilt into that shape, rows in arrival order) + the cross-talk guard (`ap_payload_matches_cmd`: a second chip master's response can't be cached as ours; service 22 is compared on both identifier bytes) |
+| `autopid_proto.h` / `autopid_proto.c` | PURE (2026-11-12): the vehicle protocols the OBD chip speaks as ONE table (`ap_proto()`: the ELM number, the name, the kind of bus, the pins, the bit rate, the id width, how a reply is framed, what it costs to start the bus and how long its session lasts), the two checksums of the pre-CAN frames, the walk a detection takes behind the CAN protocols and the poller's K-line keep-alive rule. See "The pre-CAN protocols" |
+| `autopid_resp_precan.c` | PURE (2026-11-12): a K-line or J1850 reply (three header bytes or the ISO 14230 format byte, the data, a checksum) into the same per-ECU payloads a CAN reply gives, the ECU's address standing where the CAN id does; a service 09 answer that comes in several messages joined; taken only under the protocol hint (`ap_resp_set_proto_hint`) and only for lines whose checksum is right |
 | `autopid_resp_filter.c` | PURE ATMA monitor lines → frame data bytes: `ap_filter_frame` (one line carrying the wanted id) and the incremental stream collector `ap_flt_stream_*` the filter window feeds; split out of `autopid_resp.c` 2026-10-02 (700-line rule) |
 | `autopid_config.c` | PURE JSON parse/validate of the tables |
 | `autopid_config_file.c` | the tables' file, target only (split out 2026-11-11, the 700-line rule): load with the repairs of what an earlier build stored (repeated names, the standard rows' numbering, a row with a word the chip stores switched off), save (atomic), the PSRAM copy of the raw text |
@@ -136,7 +138,7 @@ Decisions log there is authoritative; the big ones:
 
 `enabled` (default **false**), `std_enabled`/`custom_enabled`/
 `specific_enabled`, `std_init`/`custom_init`/`specific_init`
-(';'-separated AT prelude per type; `specific_init` is the fallback for a current car without its own `specific_init` in the vehicle store; since 2026-11-11 a protocol preset or a link word in one of the three, `STP nn` / `VTP nnn` / `ATLNK..`, is kept as typed and never sent, and the rows of that type on the car's protocol wait while it is there; no schema change, see "No chain of the tables sends a word the chip stores"), `std_protocol` (enum `0` Automatic | `6` CAN 11-bit 500k | `7` CAN 29-bit 500k | `8` CAN 11-bit 250k | `9` CAN 29-bit 250k, default `0` since 2026-10-03 (it was a pinned `6`: a fresh device must not transmit at 500k onto a bus it has not heard); schema v7; `0` = follow the vehicle store: the detection job learns the protocol per car and the chip prelude pins the current car's protocol instead of `ATTP0`, see "Vehicle store" below; a pinned 6..9 always wins over the store), `vehicle`,
+(';'-separated AT prelude per type; `specific_init` is the fallback for a current car without its own `specific_init` in the vehicle store; since 2026-11-11 a protocol preset or a link word in one of the three, `STP nn` / `VTP nnn` / `ATLNK..`, is kept as typed and never sent, and the rows of that type on the car's protocol wait while it is there; no schema change, see "No chain of the tables sends a word the chip stores"), `std_protocol` (enum `0` Automatic | `1` SAE J1850 PWM | `2` SAE J1850 VPW | `3` ISO 9141-2 | `4` ISO 14230-4 KWP, 5 baud init | `5` ISO 14230-4 KWP, fast init | `6` CAN 11-bit 500k | `7` CAN 29-bit 500k | `8` CAN 11-bit 250k | `9` CAN 29-bit 250k, default `0` since 2026-10-03 (it was a pinned `6`: a fresh device must not transmit at 500k onto a bus it has not heard); schema v7; `1` to `5` since 2026-11-12 with no schema change, see "The pre-CAN protocols" (a build before that day does not know them: after a downgrade with one of them stored its settings manager fails the enum and puts AutoPID's settings back to their defaults); `0` = follow the vehicle store: the detection job learns the protocol per car and the chip prelude pins the current car's protocol instead of `ATTP0`, see "Vehicle store" below; a pinned 1..9 always wins over the store), `vehicle`,
 `pause_below_mv` (0 = no fixed threshold, else 1–14500 mV; resumes +0.3 V with 5 s hold; with `pause_follow_sleep` the threshold is the Power Saving sleep voltage and polling resumes at its wake voltage, sleep_manager v3, 2026-10-01),
 `pause_follow_sleep` (default **true**: legacy `disable_pid_requests`
 parity: requests pause below the sleep threshold via the battery
@@ -788,6 +790,167 @@ holds now (`stats.held`, which follows a saved setting after the restart),
 and on the dashboard which init holds which word. An app on the bridge is
 not a table of AutoPID: its words pass as before.
 
+## The pre-CAN protocols: SAE J1850, ISO 9141-2, ISO 14230-4 (2026-11-12)
+
+GitHub issue #1045 (a 2000 Toyota 4Runner and a 2005 Porsche Cayman S, both
+ISO 9141-2): an ELM app read the car through the chip, and nothing of the
+firmware's own did. Reproduced with ECU sim v2 as that car (2026-11-11, the
+red baseline of `testing/kline_accept_bench.md` in the firmware repo): the
+Test call timed out three times of three, each call started the bus anew,
+`std_protocol` refused `3`, and a reply that did arrive decoded as 15428 rpm
+where the car ran at 800. Four causes, each with its own answer:
+
+| Cause | Answer |
+|---|---|
+| A K-line bus is started by its first request (2.75 s with the 5 baud address) and the request was cut at 1.5 s; the next word then stopped the start | the chip driver gives a request that starts the bus the bus's start time, knows the session and closes one that idled out (the obd_chip README, "K-line: a started bus, a session that ends"). Nothing here decides it |
+| The firmware knew the four ISO 15765-4 protocols only | one table of all twelve the chip speaks (`autopid_proto.h`), read by the setting, the prelude, the reply layout, the detection and `GET /api/autopid/protocols` |
+| A reply was read the CAN way: the first byte an id, then ISO-TP | the reply layout below |
+| The chip keeps ONE request header across a change of protocol | every pre-CAN prelude names its protocol's own header, and so does the runner behind an init that takes the chip to such a protocol |
+
+### The table
+
+`ap_proto(id)` for `1` to `9` and `A` to `C`: the name and detail a person
+reads, the kind (`j1850`, `kline`, `can`, `j1939`, `user`), the pins of the
+OBD connector, the bit rate, the id width, how a reply is framed, and for a
+K-line protocol `start_ms` (the room a start of the bus needs: 5000 for the
+5 baud address, 3000 for the fast init; the driver gives every bus start
+5 s) and `session_ms` (4500: how long a session is taken to last without a
+request; the ECU ends it at 5000). `std_protocol` takes `1` to `9` (`ap_proto_pinnable`); the 29-bit
+rule and the pinned test of first contact and the bus guard read the table
+where they had their own lists.
+
+### The prelude and the request header
+
+`ap_veh_prelude_for()` for `1` to `5` is `ATS1;ATH1;ATST96;ATTP<n>;ATSH<hdr>`:
+headers on (they were off until this date), and the protocol's own request
+header, the one every OBD ECU on it answers (`ap_veh_precan_header()`):
+
+| Protocol | Header |
+|---|---|
+| `1` SAE J1850 PWM | `616AF1` |
+| `2` SAE J1850 VPW, `3` ISO 9141-2 | `686AF1` |
+| `4`, `5` ISO 14230-4 | `C133F1` |
+
+The chip has one header for all protocols. With the CAN prelude's `7DF`
+standing, an ISO 9141-2 bus started and every request on it read `NO DATA`,
+and an ISO 14230-4 fast init failed with `ERROR` (bench 2026-11-12, by hand
+and then through the Test route: the first build of this change answered
+the Test call with `BUS INIT: ...OK` and `NO DATA` on a unit whose own car
+is a CAN one). So the header goes out in two places:
+
+- in the prelude, for a car on such a protocol and for each try of the
+  detection (which comes from a CAN try);
+- behind an init of the tables that takes the chip to such a protocol and
+  names no header itself (`ap_veh_pin_header()`, pure; sent by
+  `ap_base_pin_header()` from the poll and from the Test route). The row of
+  the report, `ATSP3;` as its init on a unit whose car is on protocol 6, is
+  the case: its transcript now reads `ATTP3`, `ATSH686AF1`, `010C1`. An init
+  that sets a header keeps its own, and nothing is sent when the chip was on
+  that protocol already.
+
+Sent inside a live K-line session the header does not end the session. ECU
+sim v2 answers on J1850 under either header, so the two J1850 values rest
+on the standard and on an answer each.
+
+A row that pins a K-line protocol while the chip is on it already (the
+second Test call, the next round of a custom row) gets that protocol's
+prelude where the car's own baseline would go (`ap_base_restore_on()`): the
+session the row before it opened is kept. Through the car's protocol and
+back the bus was started again before every such row.
+
+### A reply with three header bytes and a checksum
+
+With headers on a pre-CAN protocol prints a message as its header, the data
+and one check byte:
+
+| Protocol | A reply to `010C` | Framing |
+|---|---|---|
+| ISO 9141-2 | `48 6B 10 41 0C 0C 80 9C` | priority, target, the ECU; the sum of all bytes before it |
+| SAE J1850 VPW | `48 6B 10 41 0C 0C 80 02` | the same header; the SAE J1850 CRC |
+| SAE J1850 PWM | `41 6B 10 41 0C 0C 80 8D` | the same, another priority byte |
+| ISO 14230-4 | `84 F1 10 41 0C 0C 80 5E` | a format byte with the data length in its low six bits (0 = a length byte follows the addresses), the tester, the ECU; the sum |
+
+`autopid_resp_precan.c` (pure) turns such lines into the per-ECU payloads a
+CAN reply gives, with the ECU's address where the CAN id stands, so
+everything behind it is the same code as on CAN: `ap_resp_to_payload()` (the
+lowest address is the row's ECU, as the lowest id is on CAN),
+`ap_resp_to_payloads()` (the detection's responder set, one bitmap per
+address), and `ap_resp_frames()`, which hands the expressions the shape a
+CAN single frame has (`04 41 0C 0C 80`), so `[B3:B4]/4` reads the engine
+speed on every protocol and the standard table's expressions and the
+published profiles' frame of reference hold. A service 09 answer that comes
+in several messages (the VIN on ISO 9141-2 and J1850: five messages of four
+characters, `49 02 01` to `49 02 05`) is joined into one payload of `49 02
+01` and the seventeen characters; ISO 14230-4 sends it in one message.
+
+It is taken only under the protocol hint (`ap_resp_set_proto_hint()`: `1` to
+`5`, set from the prelude that went out and from the protocol a row's chains
+pin, beside the 29-bit hint) and only for a line whose check byte is right
+and whose first data byte is a response (a positive one or `7F`). A CAN
+reply, the rows of a long headers-off reply and plain data are read as
+before under the hint; a headers-off pre-CAN reply (the chip after a reset)
+is read too, the ECUs then not told apart. A message with a wrong check byte
+among good ones is dropped. `BUS INIT: ...OK` in front of the first reply is
+noise to the parser.
+
+### The poller keeps a K-line session
+
+The ECU ends a session after five seconds without a request and the chip
+keeps none alive (`ATSW` and `ATWM` are taken and nothing goes out). With a
+group period over 4.5 s every round would start the bus again, 2.75 s each
+time. So the poller, when it has nothing due, asks the driver how long ago
+the bus last answered (`obd_chip_kline_idle_ms()` through the transport) and
+sends `01001` once that passes 3.5 s (`ap_proto_kline_keep()`, pure): not
+when a row is due within half a second, not while the chip is on another
+bus for a row, and once per silence (an unanswered one means the car is
+off: the session is left to end and the next row starts the bus).
+`stats.kline_keepalives` counts them.
+
+### The detection
+
+Behind the CAN protocols the bus allows, `Detect my vehicle` walks the
+K-line: `5`, `3`, `4` (`ap_proto_walk_precan()`, the cheapest start first:
+a fast init gives up in 1.0 s, a 5 baud start in 2.9 s), each with its
+prelude and `0100`. Pin 7 is no CAN bus: the bus guard has nothing to say
+there. The UDS dialect is not asked on a pre-CAN protocol. `GET
+/api/autopid/std_scan` carries `trying` (the protocol's number) while the
+job looks, so a page can say what the wait is for. SAE J1850 is not in the
+walk yet: it can be pinned (`std_protocol` `1` or `2`).
+
+On the bench (2026-11-12, ECU sim v2 as an ISO 9141-2 car alone) the job
+was through in 12 s: the four CAN protocols on a silent bus, `5` (`ERROR`
+after a second), then `3`, with the VIN from five messages and 16 supported
+PIDs. The car's protocol is saved in the chip as for a CAN car, one write
+per car (`autopid_vehicle_switch.c`, `obd_chip_protocol_save()`). ISO
+14230-4 has been through the Test route on the bench with both inits, not
+through the detection.
+
+### What it does not do yet
+
+- The chip's own search (`ATTP0`) and the idle contact probe do not find a
+  pre-CAN car: the car is found by `Detect my vehicle`, or by pinning its
+  protocol.
+- Trouble codes on a pre-CAN protocol are not laid out yet (ISO 9141-2
+  prints three codes a message and no count; the simulator's ISO 14230-4
+  prints a count byte).
+- A K-line car with rows on another bus (MS, single-wire or CH CAN), and a
+  CAN car with a row that pins a K-line protocol, start the K-line again
+  after every trip away from it.
+- A build before this date does not know `std_protocol` `1` to `5`: see
+  "Settings".
+
+### Tests
+
+Host: `test_precan.c` (6 cases) and the prelude and pinning cases of
+`test_vehicle.c`; the driver's half in obd_chip's `test_kline.c`. Bench:
+`.\test.ps1 kline` in the firmware repo (`KLINE ACCEPT PASS`: the report's
+Test call three times with one start of the bus, a call behind 6.5 s of
+silence, the same call on ISO 14230-4 with both inits and on J1850 VPW and
+PWM, `std_protocol` `3`, three rows polled with no restart of the bus, a ten
+second period kept alive, the same rows with J1850 VPW pinned, the chip's
+stored cells the same before and after; with `-Detect` the detection on the
+K-line car and the way back, two saves of the chip's stored protocol).
+
 ## Config file shape (`PUT /api/autopid/config`)
 
 ```json
@@ -1330,7 +1493,7 @@ it is what found the two defects above.
 
 ## Tests
 
-`host_test/` (run: `.\test.ps1 host autopid`, 168 tests): the words the chip stores (`test_store_words.c`, 5 cases, 2026-11-11: which words they are and which RAM words only look like them, no chain keeps one behind the sanitizing, the parser refuses a row that is on and lets a switched-off row keep it, a stored file repaired once with the clean rows left on, the rows of the car's protocol that wait while their type's init carries one, with the row on another bus, the J1939 group and the other types going on); the bus of a row (`test_bus.c`, 11 cases, 2026-11-11: the words, the speed of a bus and its chain with no stored word in it, what a row of another bus may carry, the config parse and its refusals, the rows of a bus asked together, an excursion asking every row once and coming home with two buses at max rate, the rest after CAN ERRORs, the class that keeps such rows out of the HS bus guard's hands); the frame of reference of a reply (`test_frames.c`, 9 cases, 2026-10-24, issue #1014: a stored config's standard rows re-numbered to the table's expressions, a custom row and an unknown command left alone, a second pass a no-op; the chip's own prints from the bench, an extended-addressed BMW SME with a pending frame and padding, decoded as the published rows mean (`[B6:B7]/10` = 72.6 %, the i3's `[B11:B12]` shown to count the pending frame); a Hyundai Ioniq 2021 BMS reply of nine frames from a Car Scanner log (`B10/2` = 75 %, `[B19:B20]/10` = 341.9 V); a Leaf AZE0 reply with its padding kept; the MEB 29-bit print of issue #914 taken as an id by the row's filter or the protocol hint and left alone without; headers-off replies rebuilt into frames, the 28-row reply in arrival order, a missing row stopping the assembly; the lowest responder; ATH0/ATS0/ATE1 dropped from a chain and the receive filter a chain sets; the standard table's numbering); the bounds on a decoded value and the SAE rows inside their own range (`test_bounds.c`, 4 cases, 2026-10-20: the report's 100.000001646 clamped to 100 on a standard and on a custom row, the reporter's controlled values, the tolerance, a J1939 not-available raw dropped, the exact ratio and the signed span, every ranged table row decoded at 0x00 / 0xFF / 0x7F / 0x80 through the real parser inside its range); what a chain of the tables sets on the chip and the chain that puts the baseline back (`test_chain.c`, 4 cases, 2026-10-20: the BMW row of issue #964, the published i3 / Mini / e-Ulysse chains, the off and reset forms set nothing, every undo command fits `AP_RESTORE_LEN`); the detection's rows as a new car's tables, on or off (`test_scan_rows.c`, 3 cases, 2026-10-09); the J1939 rows
+`host_test/` (run: `.\test.ps1 host autopid`, 174 tests): the pre-CAN protocols (`test_precan.c`, 6 cases, 2026-11-12: the protocol table with its kinds, its start and session times, the detection's walk and the keep-alive rule; the request header of each protocol, at the end of its prelude and behind an init that takes the chip there; GitHub issue #1045's own replies and the bench's on all five protocols decoded by the expression that reads them on CAN, read the CAN way first to show the wrong value; two ECUs told apart by their address, as a row's reply and as the detection's responder set, and a message with a wrong checksum left out; the VIN from five ISO 9141-2 messages and from one ISO 14230 message; what the protocol hint must not take: a CAN reply under it, the rows of a long headers-off reply, data whose last byte is no checksum); the words the chip stores (`test_store_words.c`, 5 cases, 2026-11-11: which words they are and which RAM words only look like them, no chain keeps one behind the sanitizing, the parser refuses a row that is on and lets a switched-off row keep it, a stored file repaired once with the clean rows left on, the rows of the car's protocol that wait while their type's init carries one, with the row on another bus, the J1939 group and the other types going on); the bus of a row (`test_bus.c`, 11 cases, 2026-11-11: the words, the speed of a bus and its chain with no stored word in it, what a row of another bus may carry, the config parse and its refusals, the rows of a bus asked together, an excursion asking every row once and coming home with two buses at max rate, the rest after CAN ERRORs, the class that keeps such rows out of the HS bus guard's hands); the frame of reference of a reply (`test_frames.c`, 9 cases, 2026-10-24, issue #1014: a stored config's standard rows re-numbered to the table's expressions, a custom row and an unknown command left alone, a second pass a no-op; the chip's own prints from the bench, an extended-addressed BMW SME with a pending frame and padding, decoded as the published rows mean (`[B6:B7]/10` = 72.6 %, the i3's `[B11:B12]` shown to count the pending frame); a Hyundai Ioniq 2021 BMS reply of nine frames from a Car Scanner log (`B10/2` = 75 %, `[B19:B20]/10` = 341.9 V); a Leaf AZE0 reply with its padding kept; the MEB 29-bit print of issue #914 taken as an id by the row's filter or the protocol hint and left alone without; headers-off replies rebuilt into frames, the 28-row reply in arrival order, a missing row stopping the assembly; the lowest responder; ATH0/ATS0/ATE1 dropped from a chain and the receive filter a chain sets; the standard table's numbering); the bounds on a decoded value and the SAE rows inside their own range (`test_bounds.c`, 4 cases, 2026-10-20: the report's 100.000001646 clamped to 100 on a standard and on a custom row, the reporter's controlled values, the tolerance, a J1939 not-available raw dropped, the exact ratio and the signed span, every ranged table row decoded at 0x00 / 0xFF / 0x7F / 0x80 through the real parser inside its range); what a chain of the tables sets on the chip and the chain that puts the baseline back (`test_chain.c`, 4 cases, 2026-10-20: the BMW row of issue #964, the published i3 / Mini / e-Ulysse chains, the off and reset forms set nothing, every undo command fits `AP_RESTORE_LEN`); the detection's rows as a new car's tables, on or off (`test_scan_rows.c`, 3 cases, 2026-10-09); the J1939 rows
 (`test_j1939_rows.c`, 10 cases: the `PGN:` grammar and its refusals, the
 config parser's typed fields and the `init` / `rxheader` refusal, the
 scheduler's class-masked pick and the 20 ms passive floor, the built-in

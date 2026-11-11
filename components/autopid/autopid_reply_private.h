@@ -73,6 +73,19 @@ esp_err_t ap_resp_frames(const char *resp, uint8_t *out, size_t out_max,
  *  0 / false = the legislated rule alone. */
 void ap_resp_set_id29_hint(uint32_t rx_id, bool proto29);
 
+/** The protocol in effect, for a reply of a pre-CAN one (SAE J1850, ISO
+ *  9141-2, ISO 14230-4: the ELM numbers 1 to 5; autopid_resp_precan.c). Its
+ *  messages carry three header bytes and a checksum instead of a CAN id and
+ *  ISO-TP, and a line of bytes cannot tell which by itself. With the hint
+ *  the three readers above return the same layout as on CAN: the data as the
+ *  payload, the ECU's address as the header, and `0L` + the data as the
+ *  frame the expressions index. Any other protocol, or '\0', = CAN reading.
+ *  Set where the id29 hint is set, and by a job behind its own prelude. */
+void ap_resp_set_proto_hint(char proto);
+
+/** The pre-CAN protocol the hint names, '\0' when it names none. */
+char ap_resp_proto_hint(void);
+
 #define AP_RESP_ECUS_MAX 8      /* 7E8..7EF: the functional-response set */
 
 typedef struct

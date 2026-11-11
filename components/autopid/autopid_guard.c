@@ -123,7 +123,7 @@ static void effective_protocol(char *proto, bool *pinned)
 {
     const char *setting = ap_core_std_protocol();
 
-    *pinned = (setting[0] >= '6' && setting[0] <= '9');
+    *pinned = ap_proto_pinnable(setting[0]);
     *proto = ap_veh_effective_protocol(setting, autopid_vehicle_protocol(),
                                        ap_runner_proto_fallback());
 }

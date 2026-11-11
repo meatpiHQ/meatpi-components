@@ -158,10 +158,22 @@ void ap_runner_reply_hint(const char *type_init, const char *init,
         id = 0;
     }
 
-    const ap_base_mem_t *mem = ap_base_mem();
-    char proto = (mem->init_pin != '\0') ? mem->init_pin : ap_base_proto();
+    char proto = ap_base_proto_now();
 
     ap_resp_set_id29_hint(id, ap_veh_proto_is_29bit(proto));
+    /* and whether it is a pre-CAN one: three header bytes and a checksum
+       where a CAN reply has its id and its ISO-TP (autopid_resp_precan.c) */
+    ap_resp_set_proto_hint(proto);
+}
+
+/** The baseline back before a row whose chains are about to go out (what
+ *  the tables moved is undone, issue #964). A row that pins a K-line
+ *  protocol the chip is on already keeps that bus: see ap_base_restore_on. */
+static bool restore_before(const char *type_init, const char *init,
+                           const char *cmd, ap_tr_t *tr)
+{
+    return ap_base_restore_on(ap_base_chains_pin(type_init, init, cmd), tr) ||
+           ap_base_restore(tr);
 }
 
 void ap_runner_reset(void)
@@ -353,7 +365,8 @@ esp_err_t ap_runner_test(int type, uint16_t bus, const char *type_init,
 
     if (mem->moved != 0)
     {
-        (void)ap_base_restore(&tr); /* as a poll of this row would */
+        /* as a poll of this row would */
+        (void)restore_before(type_init, init, cmd_s, &tr);
     }
     else if (mem->hdr_borrowed && !borrows)
     {
@@ -366,6 +379,8 @@ esp_err_t ap_runner_test(int type, uint16_t bus, const char *type_init,
                          "vehicle bus's (the bus guard)");
         return ESP_ERR_NOT_ALLOWED;
     }
+
+    char before = ap_base_proto_now();
 
     if (type_init != NULL && type_init[0] != '\0')
     {
@@ -390,6 +405,8 @@ esp_err_t ap_runner_test(int type, uint16_t bus, const char *type_init,
         mem->hdr_borrowed = true;
     }
 
+    /* an init that took the chip to a K-line or J1850 protocol: its header */
+    ap_base_pin_header(before, type_init, init, &tr);
     mem->init_pin = pin_after;
 
     bool cra_set = false;
@@ -466,6 +483,7 @@ static bool row_ask(const ap_pid_t *pid, const ap_param_t *params)
     if (pid->bus != AP_BUS_OBD)
     {
         ap_resp_set_id29_hint(0, false); /* the slots are 11-bit */
+        ap_resp_set_proto_hint('\0');    /* and CAN, whatever the car is */
     }
     else
     {
@@ -541,7 +559,8 @@ bool ap_runner_run(const ap_pid_t *pid, int pid_index,
         /* a chain of the tables moved the chip off the baseline (a custom
            row's ATSH / ATCEA / ATCRA, issue #964): the next row type
            starts from the baseline again, its own inits on top */
-        if (!ap_base_restore(NULL))
+        if (!restore_before(s_type_init[pid->type], pid->init, pid->cmd,
+                            NULL))
         {
             return false; /* no verdict for the baseline: the next pass */
         }
@@ -562,6 +581,8 @@ bool ap_runner_run(const ap_pid_t *pid, int pid_index,
         ESP_LOGD(TAG, "%s: not sent (the bus guard)", pid->name);
         return false;
     }
+
+    char before = ap_base_proto_now();
 
     /* type init once per type transition (legacy behavior kept) */
     if (pid->type != s_last_type)
@@ -617,6 +638,9 @@ bool ap_runner_run(const ap_pid_t *pid, int pid_index,
         return false;
     }
 
+    /* an init that took the chip to a K-line or J1850 protocol: its header */
+    ap_base_pin_header(before, type_due ? s_type_init[pid->type] : NULL,
+                       row_due ? pid->init : NULL, NULL);
     mem->init_pin = pin_after;
 
     return row_ask(pid, params);

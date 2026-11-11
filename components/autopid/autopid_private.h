@@ -338,6 +338,12 @@ bool ap_runner_run(const ap_pid_t *pid, int pid_index,
 bool ap_runner_publish(const ap_pid_t *pid, const ap_param_t *params,
                        const uint8_t *payload, size_t payload_len,
                        int64_t ts_us);
+/** The poller has nothing to ask for @p wait_ms and a K-line session is up:
+ *  is it time for the one short request that keeps the ECU from ending it
+ *  (ap_proto_kline_keep)? Then ap_runner_kline_keep() sends it. Poller-task
+ *  context. */
+bool ap_runner_kline_keep_due(uint32_t wait_ms);
+void ap_runner_kline_keep(void);
 void ap_runner_set_type_init(int type, const char *init);
 /** The word of the type's init that the OBD chip stores (a protocol preset,
  *  a link word; autopid_bus.h), as the chip reads it: the init is held, its
@@ -619,6 +625,7 @@ bool ap_scan_probe_run(char *resp, size_t resp_len, ap_veh_seen_t *seen,
 #endif /* AUTOPID_HOST_TEST */
 #include "autopid_dialect.h" /* OBD dialects: requests, parsers, addressing */
 #include "autopid_j1939.h"   /* J1939 rows: grammar, classes, the std table */
+#include "autopid_proto.h"   /* the vehicle protocols as one table           */
 
 #ifdef __cplusplus
 }

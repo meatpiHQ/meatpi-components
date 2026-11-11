@@ -44,6 +44,7 @@ static const ap_transport_t BE_OBD =
     .monitor_stop  = obd_chip_monitor_stop,
     .client_idle_ms = obd_chip_client_idle_ms,
     .settings_generation = obd_chip_settings_generation,
+    .kline_idle_ms = obd_chip_kline_idle_ms,
 };
 
 const ap_transport_t *ap_be(void)

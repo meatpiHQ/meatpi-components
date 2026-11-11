@@ -55,14 +55,21 @@ static const settings_field_t FIELDS[] =
     SETTINGS_STR("std_init", AP_INIT_LEN - 1, ""),
     SETTINGS_STR("custom_init", AP_INIT_LEN - 1, ""),
     SETTINGS_STR("specific_init", AP_INIT_LEN - 1, ""),
-    /* ISO 15765-4 CAN only (the MIC is a CAN chip): 6 = 11-bit 500k,
-     * 7 = 29-bit 500k, 8 = 11-bit 250k, 9 = 29-bit 250k, 0 = chip auto.
+    /* The car's OBD protocol by its ELM number (autopid_proto.h): 6 = CAN
+     * 11-bit 500k, 7 = 29-bit 500k, 8 = 11-bit 250k, 9 = 29-bit 250k,
+     * 0 = automatic (the vehicle store's, else the search).
      * An enum (meatpi 2026-09-06) so every client offers a list.
      * Default "0" since 2026-10-02 (it was "6"): a pinned protocol
      * transmits at ITS bitrate whatever the bus runs at, and on a live
      * 250k bus that drives the sending ECU to bus-off; the chip's own
-     * search does not (TASK_j1939_wwh.md, M2). A stored "6" is kept. */
-    SETTINGS_STR_ENUM("std_protocol", "0,6,7,8,9", "0"),
+     * search does not (TASK_j1939_wwh.md, M2). A stored "6" is kept.
+     * 1 to 5 since 2026-11-12: SAE J1850 PWM and VPW, ISO 9141-2, ISO
+     * 14230-4 with the 5 baud and with the fast init. The list grew and
+     * nothing stored changes its meaning, so the version stays (a bump
+     * would only make a backup of this build refused by an older one).
+     * An OLDER build does not know 1 to 5: after a downgrade with one of
+     * them stored it falls back to its defaults for this component. */
+    SETTINGS_STR_ENUM("std_protocol", "0,1,2,3,4,5,6,7,8,9", "0"),
     /* UI display label only: the name of the selected vehicle profile.
      * Persisted + returned by GET so the app can show which profile is
      * configured; intentionally NOT read in on_apply: the actual PID

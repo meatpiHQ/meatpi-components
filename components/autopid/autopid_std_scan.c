@@ -113,6 +113,8 @@ static volatile char    s_hint_proto;
 static volatile uint8_t s_hint_dialect;
 static uint16_t s_no_way_kbps;  /* scan task: the bus bitrate that left the
                                    job no protocol to ask on (0 = asked)  */
+static volatile char s_trying;  /* the protocol the job pinned last (the
+                                   status's `trying` while it looks)      */
 
 const char *autopid_std_scan_path(void)
 {
@@ -145,6 +147,13 @@ static esp_err_t scan_request(const char *cmd, TickType_t timeout)
 static void scan_send_prelude(const char *prelude)
 {
     const char *p = prelude;
+    char pin = '\0';
+
+    /* the protocol this prelude pins is the one the job is trying, and how
+       its replies read (a pre-CAN one: autopid_resp_precan.c) */
+    (void)ap_guard_chain_allowed(NULL, prelude, &pin, NULL);
+    ap_resp_set_proto_hint(pin);
+    s_trying = pin;
 
     while (*p != '\0')
     {
@@ -184,12 +193,33 @@ void ap_std_scan_hint(char proto, ap_dialect_t dialect)
     s_hint_proto = proto;
 }
 
+/** Protocol @p proto pinned: does the car answer OBD-II on it or, on a CAN
+ *  protocol, ISO 27145 (a pre-CAN bus has no such dialect)? */
+static bool scan_try(char proto, ap_dialect_t *dialect)
+{
+    scan_send_prelude(ap_veh_prelude_for(proto));
+
+    if (scan_alive(AP_DIALECT_OBD2))
+    {
+        *dialect = AP_DIALECT_OBD2;
+        return true;
+    }
+
+    if (!ap_proto_precan(proto) && scan_alive(AP_DIALECT_UDS))
+    {
+        *dialect = AP_DIALECT_UDS;
+        return true;
+    }
+
+    return false;
+}
+
 /** Which protocol and which dialect answer (see the file header).
  *  @return false when nothing did. */
 static bool scan_contact(char *proto, ap_dialect_t *dialect)
 {
     const char *setting = ap_core_std_protocol();
-    bool pinned = (setting[0] >= '6' && setting[0] <= '9');
+    bool pinned = ap_proto_pinnable(setting[0]);
     char hint = s_hint_proto;
     ap_dialect_t hint_dialect = (ap_dialect_t)s_hint_dialect;
 
@@ -210,23 +240,9 @@ static bool scan_contact(char *proto, ap_dialect_t *dialect)
 
     if (pinned)
     {
-        /* the user's protocol: both dialects on it, no search */
+        /* the user's protocol: its dialects on it, no search */
         *proto = setting[0];
-        scan_send_prelude(ap_veh_prelude_for(setting[0]));
-
-        if (scan_alive(AP_DIALECT_OBD2))
-        {
-            *dialect = AP_DIALECT_OBD2;
-            return true;
-        }
-
-        if (scan_alive(AP_DIALECT_UDS))
-        {
-            *dialect = AP_DIALECT_UDS;
-            return true;
-        }
-
-        return false;
+        return scan_try(setting[0], dialect);
     }
 
     /* nobody named a protocol: the ISO 15765-4 protocols this bus
@@ -246,23 +262,26 @@ static bool scan_contact(char *proto, ap_dialect_t *dialect)
 
     for (int i = 0; i < n; i++)
     {
-        if (!ap_guard_candidate_ok(cand[i]))
-        {
-            continue;
-        }
-
-        scan_send_prelude(ap_veh_prelude_for(cand[i]));
         *proto = cand[i];
 
-        if (scan_alive(AP_DIALECT_OBD2))
+        if (ap_guard_candidate_ok(cand[i]) && scan_try(cand[i], dialect))
         {
-            *dialect = AP_DIALECT_OBD2;
             return true;
         }
+    }
 
-        if (scan_alive(AP_DIALECT_UDS))
+    /* no CAN protocol answered: the K-line (pin 7, which no CAN bus guard
+       watches: nothing there to disturb), the cheapest start first. Each
+       try starts the bus and the chip says how it went (`BUS INIT: ...OK`
+       or `ERROR`, by 2.9 s). Not the chip's own search: it cannot say
+       where it is, and chip firmware V2.3.22 loses it behind a warm start */
+    for (const char *k = ap_proto_walk_precan(); *k != '\0'; k++)
+    {
+        *proto = *k;
+
+        if (scan_try(*k, dialect))
         {
-            *dialect = AP_DIALECT_UDS;
+            s_no_way_kbps = 0;          /* the car is not on that CAN bus */
             return true;
         }
     }
@@ -641,6 +660,15 @@ cJSON *ap_std_scan_status_json(void)
     cJSON_AddStringToObject(o, "status", NAMES[s_scan_state]);
     cJSON_AddStringToObject(o, "phase", PHASES[s_scan_phase]);
     cJSON_AddNumberToObject(o, "found", s_scan_found);
+
+    if (s_scan_state == SCAN_RUNNING && ap_proto(s_trying) != NULL)
+    {
+        /* the protocol being tried: a K-line start takes seconds, and the
+           page says what the wait is for (GET /api/autopid/protocols) */
+        char trying[2] = { s_trying, '\0' };
+
+        cJSON_AddStringToObject(o, "trying", trying);
+    }
 
     if (s_scan_err[0] != '\0')
     {

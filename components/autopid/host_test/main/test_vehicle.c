@@ -295,6 +295,10 @@ void test_veh_effective_protocol_and_prelude(void)
     /* a pinned setting wins over the store, fallback or not */
     TEST_ASSERT_EQUAL('6', ap_veh_effective_protocol("6", "9", false));
     TEST_ASSERT_EQUAL('7', ap_veh_effective_protocol("7", "", true));
+    /* the pre-CAN protocols can be pinned too (2026-11-12): ISO 9141-2 on a
+       unit whose store names a CAN car, J1850 PWM with no car at all */
+    TEST_ASSERT_EQUAL('3', ap_veh_effective_protocol("3", "6", false));
+    TEST_ASSERT_EQUAL('1', ap_veh_effective_protocol("1", "", true));
 
     /* "0": the current car's protocol, unless it went silent this boot */
     TEST_ASSERT_EQUAL('9', ap_veh_effective_protocol("0", "9", false));
@@ -309,9 +313,10 @@ void test_veh_effective_protocol_and_prelude(void)
 
     /* the legacy map for 6..9 with headers ON (2026-10-24, issue #1014:
        the replies are read as the chip prints them with the id),
-       protocol-only for the rest; K-line keeps headers off, the search
-       (no current car, the setting on "0": a Leaf running its profile)
-       has them on since 2026-10-26 (discussion #1018) */
+       protocol-only for the rest; the search (no current car, the setting
+       on "0": a Leaf running its profile) has them on since 2026-10-26
+       (discussion #1018), and K-line and J1850 since 2026-11-12 (their
+       three header bytes name the ECU, autopid_resp_precan.c) */
     TEST_ASSERT_EQUAL_STRING("ATS1;ATH1;ATST96;ATTP6;ATSH7DF;ATCRA",
                              ap_veh_prelude_for('6'));
     TEST_ASSERT_EQUAL_STRING("ATS1;ATH1;ATST96;ATTP7;ATSH18DB33F1;ATCRA",
@@ -324,8 +329,10 @@ void test_veh_effective_protocol_and_prelude(void)
                              ap_veh_prelude_for('0'));
     TEST_ASSERT_EQUAL_STRING("ATS1;ATH1;ATST96;ATTP0",
                              ap_veh_prelude_for('\0'));
-    TEST_ASSERT_EQUAL_STRING("ATS1;ATH0;ATST96;ATTP3",
+    TEST_ASSERT_EQUAL_STRING("ATS1;ATH1;ATST96;ATTP3;ATSH686AF1",
                              ap_veh_prelude_for('3'));
+    TEST_ASSERT_EQUAL_STRING("ATS1;ATH1;ATST96;ATTP2;ATSH686AF1",
+                             ap_veh_prelude_for('2'));
     TEST_ASSERT_EQUAL_STRING("ATS1;ATH1;ATST96;ATTPA",
                              ap_veh_prelude_for('A'));
 

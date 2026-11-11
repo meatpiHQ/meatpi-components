@@ -60,6 +60,11 @@ typedef struct
      *  volatile settings (the CAN self-test's ATD). The baseline memory
      *  re-sends the prelude when it moved. NULL = no such notion. */
     uint32_t  (*settings_generation)(void);
+    /** ms since the bus last answered in a live K-line session (ISO 9141-2,
+     *  ISO 14230-4; obd_chip, 2026-11-12), UINT32_MAX = no session. The ECU
+     *  ends one after 5 s without a request: the poller asks something in
+     *  time while it has nothing else to ask. NULL = no such notion. */
+    uint32_t  (*kline_idle_ms)(void);
 } ap_transport_t;
 
 /** The OBD transport (never NULL). */

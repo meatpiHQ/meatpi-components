@@ -58,6 +58,15 @@ typedef struct
 int ap_resp_collect_lines(const char *resp, ap_line_t *lines, int max,
                           bool *saw_error, long *iso_total);
 
+/** The lines of a reply on a pre-CAN protocol (autopid_resp_precan.c: the
+ *  hint of ap_resp_set_proto_hint says it is one) as one payload per ECU,
+ *  the lowest address first, laid out as a CAN ECU's answer. @return the
+ *  entries written, 0 = not such a reply (no hint, or CAN lines after all):
+ *  the caller assembles it the CAN way. Call under the lines lock. PURE.
+ *  (ap_resp_ecu_t: autopid_private.h, included ahead of this header.) */
+int ap_resp_precan_ecus(const ap_line_t *lines, int n_lines, long iso_total,
+                        ap_resp_ecu_t *out, int max_ecus);
+
 #ifdef __cplusplus
 }
 #endif

@@ -119,7 +119,7 @@ static bool setting_pinned(void)
 {
     const char *setting = ap_core_std_protocol();
 
-    return setting[0] >= '6' && setting[0] <= '9';
+    return ap_proto_pinnable(setting[0]);
 }
 
 /** True while the chip prelude pins the protocol LEARNED into the store

@@ -28,6 +28,8 @@ idf_component_register(
          "autopid_resp.c"
          "autopid_resp_lines.c"
          "autopid_resp_filter.c"
+         "autopid_resp_precan.c"
+         "autopid_proto.c"
          "autopid_std.c"
          "autopid_std_scan.c"
          "autopid_scan_walk.c"

@@ -150,11 +150,12 @@ bool ap_veh_chip_learns(const char *protocol, uint8_t confirmed_by);
  *  @return true when `ATDPN` names the search's result. */
 bool ap_veh_dpn_is_search(char in_effect, char tables_pin);
 
-/** The ';'-separated chip prelude for @p proto: ATS1;ATH<h>;ATST96;ATTP<p>
- *  plus the functional header + CRA clear for the CAN protocols 6..9.
- *  Headers are ON for every CAN protocol (6..9, A..C; 2026-10-24, issue
- *  #1014: the replies are read as the chip prints them with the id) and
- *  off for K-line / J1850 (1..5) and the auto search. */
+/** The ';'-separated chip prelude for @p proto: ATS1;ATH1;ATST96;ATTP<p>
+ *  plus the functional header + CRA clear for the CAN protocols 6..9, and
+ *  the protocol's own request header for K-line / J1850 (1..5).
+ *  Headers are ON for every protocol (CAN since 2026-10-24, issue #1014:
+ *  the replies are read as the chip prints them with the id; K-line and
+ *  J1850 since 2026-11-12, autopid_resp_precan.c) and for the auto search. */
 const char *ap_veh_prelude_for(char proto);
 
 /** 29-bit CAN protocols (7, 9, A..C). */
@@ -165,6 +166,28 @@ bool ap_veh_proto_is_29bit(char proto);
  *  9); NULL for the search and every other protocol (the caller sends the
  *  whole prelude instead). */
 const char *ap_veh_func_header(char proto);
+
+/** The chip command for the request header of a K-line or J1850 protocol,
+ *  the one every OBD ECU on it answers ("ATSH686AF1" for ISO 9141-2 and
+ *  J1850 VPW, "ATSH616AF1" for J1850 PWM, "ATSHC133F1" for ISO 14230-4; the
+ *  chip's own defaults for them); NULL for every other protocol.
+ *
+ *  The chip keeps ONE request header across a change of protocol (bench
+ *  2026-11-12, the MIC3624 V2.3.24): with the CAN prelude's `7DF` standing,
+ *  an ISO 9141-2 bus started and every request on it read `NO DATA`, and an
+ *  ISO 14230-4 fast init failed with `ERROR`; with this header behind the
+ *  protocol word both answered, and sent again inside a session it does not
+ *  end the session. (ECU sim v2 answers on J1850 under either header, so
+ *  the two J1850 values rest on the standard, and on an answer each.) */
+const char *ap_veh_precan_header(char proto);
+
+/** The header command owed behind an init of the tables that took the chip
+ *  from protocol @p before to protocol @p after ('\0' = the init names
+ *  none): ap_veh_precan_header(@p after), unless the init sets a header
+ *  itself (@p sets_header) or the chip was on that protocol already. NULL =
+ *  nothing is sent. A row with `ATSP3` as its init on a car whose own
+ *  protocol is CAN is the case (GitHub issue #1045's Test call). */
+const char *ap_veh_pin_header(char before, char after, bool sets_header);
 
 /** The first-pass document from its JSON (import only). Resets @p out
  *  and returns false on garbage / another version. */

@@ -252,6 +252,7 @@ bool ap_scan_probe_run(char *resp, size_t resp_len, ap_veh_seen_t *seen,
            (17FE007B, the battery ECU of the VW MEB cars) was read as data
            and the request passed over. */
         ap_resp_set_id29_hint(hint.rx_id, ap_veh_proto_is_29bit(hint.pin));
+        ap_resp_set_proto_hint(hint.pin); /* a pre-CAN reply has no CAN id */
 
         int n = ap_resp_to_payloads(resp, ecus, AP_RESP_ECUS_MAX);
         bool positive = false;
@@ -299,5 +300,6 @@ bool ap_scan_probe_run(char *resp, size_t resp_len, ap_veh_seen_t *seen,
 
     /* the hint was this probe's: the next reader sets its own */
     ap_resp_set_id29_hint(0, false);
+    ap_resp_set_proto_hint('\0');
     return confirmed;
 }

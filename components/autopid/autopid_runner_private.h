@@ -115,6 +115,32 @@ void ap_base_header_give_back(ap_tr_t *tr);
  *  for the baseline's protocol right now: nothing sent. */
 bool ap_base_restore(ap_tr_t *tr);
 
+/** ap_base_restore, for a row that pins @p proto itself while the chip is
+ *  on it already and @p proto is a bus that has to be STARTED (a K-line
+ *  protocol, autopid_proto.h): the baseline of THAT protocol goes out, so
+ *  the session the row before it opened is kept. Through the car's own
+ *  protocol and back the bus was started again before every such row (2.8 s
+ *  each, GitHub issue #1045). @return false = not that case, or no bus guard
+ *  verdict: nothing sent, the caller restores the car's own baseline. */
+bool ap_base_restore_on(char proto, ap_tr_t *tr);
+
+/** The protocol the chip is on: the one a chain of the tables left it on
+ *  (mem->init_pin), else the baseline's. */
+char ap_base_proto_now(void);
+
+/** The protocol the chains of a row set themselves (the last one named in
+ *  its type's init, its own init, its cmd; NULL = not due), '\0' = none. */
+char ap_base_chains_pin(const char *type_init, const char *init,
+                        const char *cmd);
+
+/** Behind the inits of a row that just went out: when they took the chip
+ *  from @p before (ap_base_proto_now() ahead of them) to a K-line or J1850
+ *  protocol and named no request header, that protocol's own goes out
+ *  (ap_veh_pin_header: the chip keeps the header of the protocol it came
+ *  from, and the bus answers `NO DATA` under the CAN one). */
+void ap_base_pin_header(char before, const char *type_init, const char *init,
+                        ap_tr_t *tr);
+
 #ifdef __cplusplus
 }
 #endif

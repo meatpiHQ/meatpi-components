@@ -93,6 +93,8 @@
    parse-after-transaction step and the chip transactions are already
    serialized, so the lock never contends in practice. */
 static ap_line_t s_lines[AP_MAX_LINES] EXT_RAM_BSS_ATTR;
+/* the ECUs of a pre-CAN reply (autopid_resp_precan.c), under the same lock */
+static ap_resp_ecu_t s_precan[AP_RESP_ECUS_MAX] EXT_RAM_BSS_ATTR;
 static SemaphoreHandle_t s_lines_lock;
 static StaticSemaphore_t s_lines_lock_buf;
 
@@ -324,7 +326,14 @@ esp_err_t ap_resp_to_payload(const char *resp, uint8_t *payload,
 
     size_t n = 0;
 
-    if (lines[0].has_header)
+    if (ap_resp_precan_ecus(lines, n_lines, iso_total, s_precan,
+                            AP_RESP_ECUS_MAX) > 0)
+    {
+        /* a pre-CAN protocol: the lowest ECU's data, as on CAN */
+        n = (s_precan[0].len < payload_max) ? s_precan[0].len : payload_max;
+        memcpy(payload, s_precan[0].payload, n);
+    }
+    else if (lines[0].has_header)
     {
         /* headers on: keep only the LOWEST responder id (legacy rule) */
         uint32_t lowest = UINT32_MAX;
@@ -450,7 +459,15 @@ esp_err_t ap_resp_frames(const char *resp, uint8_t *out, size_t out_max,
 
     size_t n = 0;
 
-    if (lines[0].has_header)
+    if (ap_resp_precan_ecus(lines, n_lines, iso_total, s_precan,
+                            AP_RESP_ECUS_MAX) > 0)
+    {
+        /* a pre-CAN protocol: the lowest ECU's data as the frame a CAN ECU
+           would have sent it in */
+        n = frames_from_payload(s_precan[0].payload, s_precan[0].len, out,
+                                out_max);
+    }
+    else if (lines[0].has_header)
     {
         /* headers on: the LOWEST responder's lines, verbatim (PCI and
            extended address bytes included), in arrival order */
@@ -520,6 +537,14 @@ int ap_resp_to_payloads(const char *resp, ap_resp_ecu_t *out,
     {
         lines_unlock();
         return saw_error ? -1 : 0;
+    }
+
+    int n_pre = ap_resp_precan_ecus(lines, n_lines, iso_total, out, max_ecus);
+
+    if (n_pre > 0)
+    {
+        lines_unlock();
+        return n_pre; /* a pre-CAN protocol: its ECUs by address */
     }
 
     if (!lines[0].has_header)

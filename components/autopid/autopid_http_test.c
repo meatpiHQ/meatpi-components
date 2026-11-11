@@ -304,6 +304,7 @@ esp_err_t test_post_handler(httpd_req_t *req)
         if (bus != AP_BUS_OBD)
         {
             ap_resp_set_id29_hint(0, false); /* the slots are 11-bit */
+            ap_resp_set_proto_hint('\0');    /* and CAN, whatever the car is */
         }
         else
         {

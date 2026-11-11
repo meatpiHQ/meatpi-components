@@ -341,6 +341,17 @@ static void poller_task(void *arg)
             int64_t wait_us = due - now;
             TickType_t ticks = pdMS_TO_TICKS((wait_us / 1000) + 1);
 
+            if (chip_ok && ap_runner_kline_keep_due((uint32_t)(wait_us / 1000)))
+            {
+                /* a K-line session ends by itself when nothing is asked for
+                   five seconds: one short request in time (a busy window,
+                   like a poll) */
+                dev_status_manager_clear(DEV_STATUS_BIT_AUTOPID_IDLE);
+                ap_runner_kline_keep();
+                stats->kline_keepalives++;
+                continue;
+            }
+
             dev_status_manager_set(DEV_STATUS_BIT_AUTOPID_IDLE);
             ulTaskNotifyTake(pdTRUE,
                              (ticks > AP_IDLE_WAIT) ? AP_IDLE_WAIT : ticks);

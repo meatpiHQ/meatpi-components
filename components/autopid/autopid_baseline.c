@@ -69,6 +69,7 @@
 
 #include "obd_chip_guard.h"
 
+#include "autopid_proto.h"
 #include "autopid_transport.h"
 
 static const char *TAG = "autopid";
@@ -149,6 +150,15 @@ static void send_prelude_clean(const char *prelude, ap_tr_t *tr)
 
     ap_base_send_chain(chain, tr);
     prelude_out();
+
+    /* how the replies behind this prelude read: a pre-CAN protocol prints
+       three header bytes and a checksum (autopid_resp_precan.c). A row sets
+       the hint again for itself; a job of the firmware's own (the identity
+       check, the contact probe) reads behind this one */
+    char pin = '\0';
+
+    (void)ap_guard_chain_allowed(NULL, prelude, &pin, NULL);
+    ap_resp_set_proto_hint(pin);
 }
 
 /**
@@ -182,7 +192,7 @@ static bool after_reset(ap_tr_t *tr)
  * type's or a row's init, a tested init): the EEPROM guard and the
  * print-format strip (ATH0 / ATS0 / ATE1 dropped, issue #1014). A chain of
  * the firmware's own (the prelude, the restore) gets the guard alone: the
- * K-line and J1850 preludes carry ATH0 on purpose (headers off), and the
+ * K-line and J1850 preludes carried ATH0 on purpose until 2026-11-12, and the
  * strip blanked it into an empty command the chip answered with `?`
  * (2026-10-26, found behind discussion #1018 on the no-car prelude, then
  * `ATS1;ATH0;ATST96;ATTP0`, sent after the current car was forgotten: the
@@ -410,4 +420,91 @@ bool ap_base_restore(ap_tr_t *tr)
 
     send_prelude_clean(ap_veh_prelude_for(proto), tr);
     return true;
+}
+
+/* A K-line session and nothing to ask for a while: one short request keeps
+   the ECU from ending it (ISO 9141-2 and ISO 14230: 5 s without a request;
+   the chip sends nothing by itself, bench 2026-11-12). Without it every row
+   of a period over 4.5 s would start the bus again, 2.8 s each time. */
+static int64_t s_last_keep_us;
+
+bool ap_runner_kline_keep_due(uint32_t wait_ms)
+{
+    uint32_t idle = (ap_be()->kline_idle_ms != NULL) ? ap_be()->kline_idle_ms()
+                                                     : UINT32_MAX;
+    uint32_t since = (s_last_keep_us == 0)
+                         ? UINT32_MAX
+                         : (uint32_t)((esp_timer_get_time() - s_last_keep_us)
+                                      / 1000);
+
+    /* not while the chip is on another bus for a row (autopid_bus.h) */
+    return s_mem.bus == 0 && ap_proto_kline_keep(idle, wait_ms, since);
+}
+
+void ap_runner_kline_keep(void)
+{
+    char resp[64];
+
+    /* mode 01 PID 00 is the one request every OBD ECU answers; the digit
+       ends the chip's wait at the first answer */
+    s_last_keep_us = esp_timer_get_time();
+    (void)ap_be()->request("01001", resp, sizeof(resp), pdMS_TO_TICKS(1500));
+}
+
+bool ap_base_restore_on(char proto, ap_tr_t *tr)
+{
+    const ap_proto_t *p = ap_proto(proto);
+
+    if (p == NULL || p->start_ms == 0 || s_mem.init_pin != proto ||
+        !ap_guard_pin_ok(proto))
+    {
+        return false;
+    }
+
+    send_prelude_clean(ap_veh_prelude_for(proto), tr);
+    s_mem.init_pin = proto; /* a protocol of the tables still, not the car's */
+    return true;
+}
+
+char ap_base_proto_now(void)
+{
+    return (s_mem.init_pin != '\0') ? s_mem.init_pin : ap_base_proto();
+}
+
+char ap_base_chains_pin(const char *type_init, const char *init,
+                        const char *cmd)
+{
+    const char *const chains[] = { type_init, init, cmd };
+    char pin = '\0';
+
+    for (size_t i = 0; i < sizeof(chains) / sizeof(chains[0]); i++)
+    {
+        char last = '\0';
+
+        if (chains[i] != NULL && chains[i][0] != '\0')
+        {
+            (void)ap_guard_chain_allowed(NULL, chains[i], &last, NULL);
+            pin = (last != '\0') ? last : pin;
+        }
+    }
+
+    return pin;
+}
+
+void ap_base_pin_header(char before, const char *type_init, const char *init,
+                        ap_tr_t *tr)
+{
+    unsigned sets = ap_chain_sets(type_init) | ap_chain_sets(init);
+    const char *hdr = ap_veh_pin_header(before,
+                                        ap_base_chains_pin(type_init, init,
+                                                           NULL),
+                                        (sets & AP_SETS_HEADER) != 0);
+
+    if (hdr != NULL)
+    {
+        char resp[64];
+
+        (void)ap_base_request_tr(hdr, resp, sizeof(resp), AP_INIT_TIMEOUT, tr);
+        s_mem.moved |= AP_SETS_HEADER; /* the baseline's is owed back */
+    }
 }

@@ -43,6 +43,8 @@
 
 #include "cJSON.h"
 
+#include "autopid_proto.h"
+
 /* ---- ATDPN ------------------------------------------------------------------ */
 
 bool ap_veh_proto_valid(char c)
@@ -340,9 +342,10 @@ char ap_veh_effective_protocol(const char *setting, const char *stored,
 {
     char s = has(setting) ? setting[0] : '0';
 
-    if (s >= '6' && s <= '9')
+    if (ap_proto_pinnable(s))
     {
-        return s;                   /* pinned by the user: wins          */
+        return s;                   /* pinned by the user: wins (1 to 5
+                                       since 2026-11-12, autopid_proto.h) */
     }
 
     if (!search_fallback && has(stored))
@@ -384,9 +387,12 @@ const char *ap_veh_prelude_for(char proto)
        read as the chip prints it with the CAN id, which is what the user
        expressions index (the legacy firmware's frame of reference, the
        published profiles'), and what tells responders and extended-address
-       bytes apart. K-line and J1850 keep headers off: their printed header
-       is three bytes and a checksum, not an id, and ap_resp_frames()
-       rebuilds the ISO-TP shape from the plain bytes instead. */
+       bytes apart. K-line and J1850 have them on too since 2026-11-12:
+       their printed header is three bytes and a checksum, not an id, and
+       autopid_resp_precan.c reads it (the ECU's address stands where the
+       CAN id does, so two ECUs that answer are told apart; headers off,
+       the chip's state after a reset, is still read). ap_resp_frames()
+       gives the expressions the ISO-TP shape either way. */
     switch (proto)
     {
         /* CAN: pin protocol + functional header + clear the CRA filter */
@@ -398,12 +404,14 @@ const char *ap_veh_prelude_for(char proto)
         case 'A': return "ATS1;ATH1;ATST96;ATTPA";
         case 'B': return "ATS1;ATH1;ATST96;ATTPB";
         case 'C': return "ATS1;ATH1;ATST96;ATTPC";
-        /* K-line / J1850: protocol only, headers off */
-        case '1': return "ATS1;ATH0;ATST96;ATTP1";
-        case '2': return "ATS1;ATH0;ATST96;ATTP2";
-        case '3': return "ATS1;ATH0;ATST96;ATTP3";
-        case '4': return "ATS1;ATH0;ATST96;ATTP4";
-        case '5': return "ATS1;ATH0;ATST96;ATTP5";
+        /* K-line / J1850: the protocol and its own request header
+           (ap_veh_precan_header: the chip keeps the header of the protocol
+           it came from) */
+        case '1': return "ATS1;ATH1;ATST96;ATTP1;ATSH616AF1";
+        case '2': return "ATS1;ATH1;ATST96;ATTP2;ATSH686AF1";
+        case '3': return "ATS1;ATH1;ATST96;ATTP3;ATSH686AF1";
+        case '4': return "ATS1;ATH1;ATST96;ATTP4;ATSHC133F1";
+        case '5': return "ATS1;ATH1;ATST96;ATTP5;ATSHC133F1";
         /* no protocol known (no current car, the setting on "0"): the
            chip's own search, headers ON like every CAN prelude: the frame
            of reference of the profiles. A car that answers no standard
@@ -418,7 +426,9 @@ const char *ap_veh_prelude_for(char proto)
 
 bool ap_veh_proto_is_29bit(char proto)
 {
-    return proto == '7' || proto == '9' || (proto >= 'A' && proto <= 'C');
+    const ap_proto_t *p = ap_proto(proto);
+
+    return p != NULL && p->id_bits == 29; /* 7, 9, A, B, C */
 }
 
 const char *ap_veh_func_header(char proto)
@@ -431,6 +441,29 @@ const char *ap_veh_func_header(char proto)
         case '9': return "ATSH18DB33F1";
         default:  return NULL;
     }
+}
+
+const char *ap_veh_precan_header(char proto)
+{
+    switch (proto)
+    {
+        case '1': return "ATSH616AF1";  /* SAE J1850 PWM                    */
+        case '2':                       /* SAE J1850 VPW                    */
+        case '3': return "ATSH686AF1";  /* ISO 9141-2                       */
+        case '4':                       /* ISO 14230-4, 5 baud init         */
+        case '5': return "ATSHC133F1";  /* ISO 14230-4, fast init           */
+        default:  return NULL;
+    }
+}
+
+const char *ap_veh_pin_header(char before, char after, bool sets_header)
+{
+    if (sets_header || after == before)
+    {
+        return NULL; /* the init's own header, or no change of protocol */
+    }
+
+    return ap_veh_precan_header(after);
 }
 
 /* ---- the first-pass vehicle.json (import only) --------------------------------- */

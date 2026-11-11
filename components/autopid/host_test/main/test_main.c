@@ -45,6 +45,9 @@ void run_bus_tests(void);
    refused in the tables, a stored file repaired, the rows that wait while
    their type's init carries one */
 void run_store_words_tests(void);
+/* test_precan.c: the pre-CAN protocols (J1850, ISO 9141-2, ISO 14230): the
+   protocol table, a reply with three header bytes and a checksum */
+void run_precan_tests(void);
 
 /* ---- helpers ----------------------------------------------------------------- */
 
@@ -2088,6 +2091,7 @@ void app_main(void)
     run_frames_tests();
     run_bus_tests();
     run_store_words_tests();
+    run_precan_tests();
 
     UNITY_END();
 }

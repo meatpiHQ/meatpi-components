@@ -170,6 +170,7 @@ zero-copy only with numbers.
 | `obd_chip_client_touch()` / `obd_chip_client_idle_ms()` | The external-client activity clock (2026-09-08): the bridge glue's `obd` endpoint touches it on every app write (TCP/BLE/USB/WS), autopid reads the idle time and yields the chip while an app drives it (legacy `DEV_AUTOPID_ELM327_APP_BIT` parity, 10 s). NOT touched by `obd_chip_send` itself - autopid's own monitor sends go through that and would pause autopid against itself. `UINT32_MAX` = no client ever wrote. |
 | `obd_chip_settings_generation()` / `obd_chip_settings_changed()` | The chip's run-time settings generation (2026-10-28): a number that moves at every bring-up (boot, a reflash's fresh start, a recovery) and when a holder that changed the chip's volatile settings (echo, headers, protocol, timeouts, filters) says so at the end of its transaction (the CAN self-test's `ATD` + `ATE0`), and since 2026-11-10 when the request engine refused a protocol switch or held a bus request back behind one. AutoPID's baseline memory compares it before every poll and re-sends its prelude when it moved (bench 2026-10-28: the chip echoed after a self-test and AutoPID's memory did not know). Any holder that keeps chip state should do the same. |
 | `obd_chip_request(cmd,resp,len,timeout)` | One transaction: claims COMMAND, collects to the `>` prompt, strips echo+prompt. Refuses monitor-class cmds (`ESP_ERR_NOT_SUPPORTED`). A protocol switch goes out only behind an `ATM0` the chip acknowledged (2026-11-10, "Fail closed" below): otherwise it is not sent (`ESP_ERR_INVALID_RESPONSE`, or the `ATM0`'s own error), and bus requests are held back (`ESP_ERR_NOT_FINISHED`) until a switch has gone through. |
+| `obd_chip_kline_idle_ms()` | (2026-11-12) how long ago the K-line bus last answered in a live session, `UINT32_MAX` when no session is up (never started, closed, or the car's protocol is not a K-line one). AutoPID's poller reads it to send one short request before the ECU ends the session. See "K-line: a started bus, a session that ends" below. |
 | `obd_chip_protocol_save(proto)` | (2026-10-01) ONE real `ATSP<proto>` per boot on the request path, bypassing the EEPROM guard: the chip learns its base protocol once after a vehicle detection. Caller: autopid's detection job only. `'1'..'9'`/`'A'..'C'` else `ESP_ERR_INVALID_ARG`; a second `ATSP` this boot `ESP_ERR_INVALID_STATE` (counted when it goes out, 2026-11-10); no `OK` = `ESP_FAIL`. Nothing is sent, and `ESP_OK` returned, when the chip's store, read back at the bring-up, holds the protocol already (`protocol_kept`). Counted in `protocol_saves`. See "Protocol save" below. |
 | `obd_chip_claim/release(type,timeout)` | COMMAND / MONITOR / EXCLUSIVE arbitration. |
 | `obd_chip_is_monitor_cmd(cmd)` | Table-driven monitor-class test (pure). |
@@ -655,10 +656,19 @@ subscribe and transaction API for the CAN self-test.
   UART timeout inert; `-ProvisionLeg`: a hidden settings change provisions
   nothing, a control switched on provisions the controls off and leaves
   the thresholds alone).
-- **Host (`host_test/`, 41 tests):** since 2026-11-10 also the production
+- **Bench (2026-11-12):** `.\test.ps1 kline` (a K-line car through the
+  firmware's own paths, ECU sim v2 as the car: `KLINE ACCEPT PASS`), the
+  row and the page in the app repo's TESTING.md.
+- **Host (`host_test/`, 48 tests):** since 2026-11-10 also the production
   request engine, claim model and fan-out against a fake chip that stands
   in for the UART (`test_request.c`: the words on the wire, "Fail closed"
-  and "Read back first" below); pure framing, prompt splits at every
+  and "Read back first" below); since 2026-11-12 a K-line ECU behind that
+  fake chip, with its late answers sent from a task (`test_kline.c`, 7
+  cases: a request that starts the bus outlives the caller's 1.5 s, one
+  that does not is still cut at it, `ERROR` when nobody is there, the
+  session's word rules, `ATPC` ahead of a request behind 4.5 s of
+  silence and none ahead of one in time, `NO DATA` in a live session left
+  alone); pure framing, prompt splits at every
   chunk boundary, echo strip, post-prompt bytes not consumed, noise
   interleave, **meatpi's real 36-line proprietary-PID log replayed at chunk
   sizes 1…4096**, overflow flagging, error/monitor classification, fw-file
@@ -874,3 +884,64 @@ requesters wait at their claim timeout, autopid's poll included). Born from the
 UDS AT transport: 7 setup commands + the request, and autopid's poll used to
 land between them (bench: 1 of 3 UDS requests survived with polling, 5 of 5
 with autopid paused). `end()` drops the hold whatever the nesting depth.
+
+## K-line: a started bus, a session that ends (2026-11-12)
+
+GitHub issue #1045 (a 2000 Toyota 4Runner and a 2005 Porsche Cayman S, both
+ISO 9141-2): the chip talked to the car through an ELM app, and the
+firmware's own paths (the Test button, the detection, the poll) never got an
+answer. A K-line bus (ISO 9141-2 and ISO 14230-4, the chip's protocols 3, 4
+and 5) is not just there like a CAN bus: it is STARTED, and the ECU ends the
+session by itself. Measured on the MIC3624 V2.3.24 against ECU sim v2 as the
+car (2026-11-12):
+
+| What | What the chip does |
+|---|---|
+| the first request behind a protocol word | starts the bus: `BUS INIT: ` within 100 ms, a dot every 600 ms, `OK` at 2.6 s and the reply at 2.75 s with the 5 baud address; `OK` at 0.5 s and the reply at 0.7 s with the fast init |
+| nobody there | `BUS INIT: ...ERROR` at 2.9 s (protocols 3 and 4) or 1.0 s (protocol 5), and again at every request |
+| any byte sent while the bus starts | the start ends: the chip answers `STOPPED` and the word that interrupted it is lost. A caller that gave up at 1.5 s and sent its next word therefore never got an answer, to either |
+| nothing asked for 4.6 s | the session is still there |
+| nothing asked for 5.0 s | the ECU has ended it. The chip does not notice: it sends the request, hears nothing and prints `NO DATA`, every time, and never starts the bus again by itself |
+| the same protocol chosen again (`ATTP3` on 3) | nothing: a live session is kept, a dead one stays dead |
+| another protocol and back, `ATPC`, `ATWS` | the next request starts the bus again (`ATSI` starts it itself) |
+| `ATSW 32`, `ATSW 92`, `ATWM 686AF10100` | `OK`, and nothing goes out on the bus between two requests: the chip keeps no session alive |
+| the request header (`ATSH`) | ONE for all protocols: the CAN one (`7DF`) stays in effect across a switch to a K-line protocol, the ISO 9141-2 bus then starts and every request reads `NO DATA`, and the ISO 14230-4 fast init fails with `ERROR`. The protocol's own header (`686AF1`, `C133F1`) behind the protocol word puts it right, and sent again inside a session it does not end the session |
+
+The request engine (`obd_chip_request()`, so every requester: AutoPID's
+poller, its Test route and detection, the trouble codes) does three things
+with that, in `obd_chip_kline.c` (pure) and `obd_chip_cmd.c`:
+
+- **A request that starts the bus gets the bus's start time.** When the
+  caller's timeout passes and the answer so far says `BUS INIT`, the wait
+  goes on to `OBD_BUS_START_MS` (5 s) from the request's start. Nothing is
+  sent into a starting bus. A request that starts none is cut at the
+  caller's timeout as before.
+- **It knows the session.** A bus start that ended in `OK` opens it, one
+  that ended in `ERROR` does not; every data line moves "the bus last
+  answered"; `ATPC`, a reset (`ATZ`, `ATWS`, `ATD`) and a switch to another
+  protocol end it, the same protocol again does not.
+- **A session that idled out is closed ahead of the next bus request.** When
+  the bus last answered more than `OBD_KLINE_IDLE_MS` (4.5 s) ago, the
+  engine sends `ATPC` inside the same hold and then the request, which
+  starts the bus again (and gets the start time). Without it the request,
+  and every one after it, read `NO DATA`. The clock is the last ANSWER, not
+  the last request, so the same rule brings back a car whose ignition went
+  off and on under a running poll: its ECU has no session any more, the
+  requests read `NO DATA`, and 4.5 s after the last answer the session is
+  closed and the next request starts the bus (bench: the rows were answered
+  again 3 s after the car was back).
+
+A `NO DATA` inside a live session is left alone: a K-line ECU answers a
+request it does not support with silence. The request header is not this
+component's business: AutoPID's preludes name it (the autopid README, "The
+pre-CAN protocols").
+
+Keeping a session alive is the requester's choice:
+`obd_chip_kline_idle_ms()` says how long ago the bus last answered
+(`UINT32_MAX` = no session), and AutoPID's poller sends one short request
+when that passes 3.5 s and nothing else is due.
+
+What shows: `GET /api/obd_chip` `kline` `{"up","idle_ms","starts","failed",
+"closed"}` (`idle_ms` -1 without a session; `starts` = bus starts that ended
+in `OK`, `failed` = in `ERROR`, `closed` = sessions the engine closed ahead
+of a request), and the `k-line:` line of the `obd_chip` command.

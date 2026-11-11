@@ -46,6 +46,13 @@ void test_save_writes_once_when_the_chip_holds_another(void);
 void test_save_blocked_by_a_monitor_spends_nothing(void);
 void test_save_refuses_what_is_not_a_protocol(void);
 void test_dpn_parse(void);
+void test_kline_text_that_means_a_bus_start(void);
+void test_kline_rule_on_the_chips_texts(void);
+void test_kline_request_that_starts_the_bus_gets_the_start_time(void);
+void test_kline_idle_session_is_closed_ahead_of_the_request(void);
+void test_kline_no_data_in_a_live_session_is_left_alone(void);
+void test_kline_another_protocol_ends_the_session_the_same_one_does_not(void);
+void test_kline_nobody_there_is_no_session(void);
 
 void app_main(void)
 {
@@ -91,5 +98,12 @@ void app_main(void)
     RUN_TEST(test_save_blocked_by_a_monitor_spends_nothing);
     RUN_TEST(test_save_refuses_what_is_not_a_protocol);
     RUN_TEST(test_dpn_parse);
+    RUN_TEST(test_kline_text_that_means_a_bus_start);
+    RUN_TEST(test_kline_rule_on_the_chips_texts);
+    RUN_TEST(test_kline_request_that_starts_the_bus_gets_the_start_time);
+    RUN_TEST(test_kline_idle_session_is_closed_ahead_of_the_request);
+    RUN_TEST(test_kline_no_data_in_a_live_session_is_left_alone);
+    RUN_TEST(test_kline_another_protocol_ends_the_session_the_same_one_does_not);
+    RUN_TEST(test_kline_nobody_there_is_no_session);
     UNITY_END();
 }

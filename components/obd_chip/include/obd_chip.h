@@ -151,6 +151,17 @@ void obd_chip_client_touch(void);
  *  no external client ever wrote. */
 uint32_t obd_chip_client_idle_ms(void);
 
+/** The K-line session of obd_chip_request() (ISO 9141-2 and ISO 14230-4,
+ *  2026-11-12): milliseconds since the bus last answered while a session is
+ *  up, UINT32_MAX when none is. The ECU ends a session after five seconds
+ *  without a request and the chip keeps none alive, so a poller that wants
+ *  to keep it asks something before this passes about four seconds. The
+ *  engine itself closes a session that idled out ahead of the next bus
+ *  request, which then starts the bus again (about 2.8 s with the 5 baud
+ *  address); a request that starts the bus is given that time whatever its
+ *  own timeout. */
+uint32_t obd_chip_kline_idle_ms(void);
+
 /** The chip's run-time settings generation (2026-10-28): a number that
  *  moves whenever the chip's volatile settings (echo, headers, protocol,
  *  timeouts, filters) are no longer what a holder last set them to: at
@@ -568,6 +579,12 @@ typedef struct
                                    own words (`6`, `A6`, `34 [ST]`), read
                                    at the bring-up or acknowledged by a
                                    save; "" = not known (2026-11-10)      */
+    bool        kline_up;       /* a K-line session is up (2026-11-12)    */
+    uint32_t    kline_idle_ms;  /* obd_chip_kline_idle_ms()               */
+    uint32_t    kline_starts;   /* bus starts that ended in `OK`          */
+    uint32_t    kline_failed;   /* ... in `ERROR`: no ECU answered        */
+    uint32_t    kline_closed;   /* sessions the engine closed ahead of a
+                                   request because they had idled out    */
 } obd_chip_stats_t;
 
 typedef struct

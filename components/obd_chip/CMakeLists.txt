@@ -10,6 +10,7 @@ idf_component_register(
          "obd_chip_cmd.c"
          "obd_chip_parse.c"
          "obd_chip_class.c"
+         "obd_chip_kline.c"
          "obd_chip_fw_version.c"
          "obd_chip_stslcs.c"
          "obd_chip_settings.c"

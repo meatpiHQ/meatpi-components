@@ -134,6 +134,59 @@ bool obd_parse_is_bus_request(const char *cmd);
  *  (obd_chip_class.c). */
 bool obd_parse_dpn(const char *resp, char *proto, bool *automatic);
 
+/* ---- the K-line session (obd_chip_kline.c, pure, host-tested) ---------------
+ * ISO 9141-2 and ISO 14230-4 (protocols 3, 4, 5): the bus is started by the
+ * first request (`BUS INIT: ...OK`, 2.6 s with the 5 baud address, bench
+ * 2026-11-12) and the ECU ends the session after five seconds without a
+ * request. The chip keeps none alive and does not notice one that ended. */
+
+/** How long a session is taken to last without a request: ISO 9141-2's
+ *  P3max is 5 s (measured: alive after 4.6 s, gone after 5.0 s). */
+#define OBD_KLINE_IDLE_MS 4500
+
+/** What a request that starts the bus is given at least: the chip prints
+ *  `OK` or `ERROR` by 2.9 s and the reply 150 ms behind it. */
+#define OBD_BUS_START_MS  5000
+
+typedef struct
+{
+    bool     up;        /**< a bus start ended in `OK`, nothing ended it since */
+    char     proto;     /**< the protocol it came up on ('\0' = none named)   */
+    char     selected;  /**< what the engine's last protocol word named       */
+    int64_t  last_us;   /**< when the bus last answered                       */
+    uint32_t starts;    /**< bus starts that ended in `OK`                    */
+    uint32_t failed;    /**< ... in `ERROR` (nobody there)                    */
+    uint32_t closed;    /**< sessions closed ahead of a request: idled out    */
+} obd_kline_t;
+
+/** The answer so far (no prompt yet) says the chip is starting a K-line
+ *  bus: `BUS INIT` in it. Any byte sent now ends the start with `STOPPED`,
+ *  so the request waits for the chip's own verdict. */
+bool obd_parse_bus_starting(const char *text, size_t len);
+
+/** The chip was reset: no session, no protocol named (the counters stay). */
+void obd_kline_reset(obd_kline_t *k);
+
+/** A word about to go out: `ATPC` and the reset words end the session, a
+ *  switch to another protocol does, the same protocol again does not. */
+void obd_kline_word(obd_kline_t *k, const char *cmd);
+
+/** The answer to a bus request: `BUS INIT: ...OK` is a session that came
+ *  up, `...ERROR` one that did not, data in a live session moves its
+ *  clock. `NO DATA` changes nothing (an unsupported request is answered
+ *  with silence on a K-line). */
+void obd_kline_reply(obd_kline_t *k, const char *cmd, const char *resp,
+                     int64_t now_us);
+
+/** @p cmd is a bus request and the session cannot be alive any more: the
+ *  bus last answered longer ago than OBD_KLINE_IDLE_MS. The engine sends
+ *  `ATPC` first, so the request starts the bus. Not for `ATSI` / `ATFI`. */
+bool obd_kline_stale(const obd_kline_t *k, const char *cmd, int64_t now_us);
+
+/** Milliseconds since the bus last answered in a live session; UINT32_MAX
+ *  when no session is up. */
+uint32_t obd_kline_idle_ms(const obd_kline_t *k, int64_t now_us);
+
 /* ---- STSLCS sleep-config (obd_chip_stslcs.c, pure, host-testable) -----------
  * Ported from legacy main/obd.c: the sscanf patterns are the accepted
  * chip-output grammar. */
@@ -385,10 +438,16 @@ void obd_cmd_stored_note(const char *dpn);
 uint32_t obd_cmd_protocol_kept(void);
 void     obd_cmd_stored_text(char *out, size_t out_len);
 
+/** The engine's K-line session and its counters (obd_chip_kline.c), a copy. */
+void obd_cmd_kline_stats(obd_kline_t *out);
+
 #ifdef OBD_CHIP_HOST_TEST
 /** Host tests only (standard §3): the per-boot state of the save as a
  *  restart leaves it. */
 void obd_cmd_test_new_boot(void);
+/** Host tests only: the K-line session as it is @p ms later with nothing
+ *  asked meanwhile. */
+void obd_cmd_test_kline_age(uint32_t ms);
 #endif
 
 /* fw update helper (obd_chip_fw.c): VTVERS with update-mode semantics */

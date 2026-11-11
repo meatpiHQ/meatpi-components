@@ -37,6 +37,7 @@
 
 #include "esp_attr.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/task.h"
 
 #include "obd_gate.h"
@@ -73,6 +74,28 @@ static bool     s_refusal_logged; /* the W line of this stretch went out */
 static uint32_t s_memory_refused; /* switches not sent: ATM0 not acknowledged */
 static uint32_t s_requests_held;  /* bus requests not sent while one is owed */
 
+/* The K-line session (obd_chip_kline.c, 2026-11-12): whether a bus start
+   ended in `OK` and when the bus last answered. Kept around every request of
+   the engine; a flag and a clock, written without the transaction hold. */
+static obd_kline_t s_kline;
+
+void obd_cmd_kline_stats(obd_kline_t *out)
+{
+    *out = s_kline;
+}
+
+uint32_t obd_chip_kline_idle_ms(void)
+{
+    return obd_kline_idle_ms(&s_kline, esp_timer_get_time());
+}
+
+#ifdef OBD_CHIP_HOST_TEST
+void obd_cmd_test_kline_age(uint32_t ms)
+{
+    s_kline.last_us -= (int64_t)ms * 1000;
+}
+#endif
+
 uint32_t obd_cmd_protocol_saves(void)
 {
     return s_protocol_saves;
@@ -88,6 +111,7 @@ void obd_cmd_memory_stats(obd_cmd_memory_t *out)
 void obd_cmd_memory_reset(void)
 {
     s_switch_owed = false;
+    obd_kline_reset(&s_kline); /* a fresh chip has no session either */
 }
 
 uint32_t obd_cmd_protocol_kept(void)
@@ -274,11 +298,27 @@ static esp_err_t request_run(const char *cmd, char *resp, size_t resp_len,
     }
 
     /* collect until the prompt or the caller's deadline */
-    TickType_t deadline = xTaskGetTickCount() + timeout;
+    TickType_t start = xTaskGetTickCount();
+    TickType_t deadline = start + timeout;
+    TickType_t bus_start = start + pdMS_TO_TICKS(OBD_BUS_START_MS);
 
     while (!s_acc.done)
     {
         TickType_t now = xTaskGetTickCount();
+
+        if (now >= deadline && deadline < bus_start &&
+            obd_parse_bus_starting(s_acc.buf, s_acc.len))
+        {
+            /* the chip is starting a K-line bus (`BUS INIT: ` is all it has
+               said): its `OK` or `ERROR` comes by itself by 2.9 s. Leaving
+               now would have the next word end the start (`STOPPED`) and be
+               lost with it; a request that starts the bus gets the bus's
+               start time, whatever the caller's own (issue #1045) */
+            ESP_LOGD(TAG, "request '%.8s': the bus is starting, waiting on",
+                     cmd);
+            deadline = bus_start;
+            continue;
+        }
 
         if (now >= deadline)
         {
@@ -413,6 +453,59 @@ static bool answer_ends_ok(const char *resp)
     return obd_parse_is_ok(last);
 }
 
+/**
+ * A word that is no protocol switch, with the K-line session's rule around
+ * it (obd_chip_kline.c). A bus request that comes later than a session can
+ * last finds the ECU gone, and the chip prints `NO DATA` for it from then
+ * on without starting the bus again (bench 2026-11-12). So the engine closes
+ * the protocol first (`ATPC`, RAM): the request then starts the bus, and the
+ * wait above gives it the time. The pair goes out inside one hold, like the
+ * `ATM0` and its switch.
+ */
+static esp_err_t request_in_session(const char *cmd, char *resp,
+                                    size_t resp_len, TickType_t timeout)
+{
+    bool own_txn = false;
+
+    if (resp != NULL && resp_len > 0 &&
+        obd_kline_stale(&s_kline, cmd, esp_timer_get_time()))
+    {
+        own_txn = !obd_core_txn_owned();
+
+        if (own_txn && obd_chip_txn_begin(timeout) != ESP_OK)
+        {
+            own_txn = false; /* no hold, no pair: the request alone, as before */
+        }
+        else
+        {
+            char ack[32] = "";
+
+            (void)request_run("ATPC", ack, sizeof(ack), pdMS_TO_TICKS(1000),
+                              true);
+            obd_kline_word(&s_kline, "ATPC");
+            s_kline.closed++;
+            ESP_LOGD(TAG, "the K-line session idled out: closed ahead of "
+                          "'%.8s', which starts the bus again", cmd);
+        }
+    }
+
+    obd_kline_word(&s_kline, cmd);
+
+    esp_err_t err = request_run(cmd, resp, resp_len, timeout, true);
+
+    if (err == ESP_OK)
+    {
+        obd_kline_reply(&s_kline, cmd, resp, esp_timer_get_time());
+    }
+
+    if (own_txn)
+    {
+        obd_chip_txn_end();
+    }
+
+    return err;
+}
+
 esp_err_t obd_chip_request(const char *cmd, char *resp, size_t resp_len,
                            TickType_t timeout)
 {
@@ -432,7 +525,7 @@ esp_err_t obd_chip_request(const char *cmd, char *resp, size_t resp_len,
             return ESP_ERR_NOT_FINISHED;
         }
 
-        return request_run(cmd, resp, resp_len, timeout, true);
+        return request_in_session(cmd, resp, resp_len, timeout);
     }
 
     if (resp == NULL || resp_len == 0)
@@ -469,6 +562,7 @@ esp_err_t obd_chip_request(const char *cmd, char *resp, size_t resp_len,
         if (err == ESP_OK && answer_ends_ok(resp))
         {
             s_switch_owed = false; /* on a protocol somebody asked for */
+            obd_kline_word(&s_kline, cmd); /* another protocol ends a session */
         }
     }
     else

@@ -60,6 +60,11 @@ static void chip_reset(void)
     s_sp_silent = false;
 }
 
+void test_fake_chip_reset(void) /* for test_kline.c */
+{
+    chip_reset();
+}
+
 /** Forget what went over the wire so far (the next assertion's window). */
 static void wire_clear(void)
 {
@@ -74,8 +79,19 @@ static void chip_pending(const char *junk)
     memcpy(s_line, junk, s_line_len);
 }
 
+/* test_kline.c puts a K-line ECU behind the same fake chip: a word it
+   takes (true) gets @p reply, NULL = nothing for now */
+bool (*test_chip_hook)(const char *line, const char **reply);
+
 static const char *chip_answer(const char *line)
 {
+    const char *hooked = NULL;
+
+    if (test_chip_hook != NULL && test_chip_hook(line, &hooked))
+    {
+        return hooked;
+    }
+
     if (strcmp(line, "ATM0") == 0)
     {
         return s_m0_reply;

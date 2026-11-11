@@ -62,7 +62,7 @@ static esp_err_t obd_chip_get_handler(httpd_req_t *req)
     obd_chip_sub_stats_t subs[OC_HTTP_SUBS];
     obd_wire_note_t wire[2];
     char wire_json[200];
-    char body[1600];
+    char body[1728];
     size_t n = 0;
     size_t w = 0;
 
@@ -96,6 +96,8 @@ static esp_err_t obd_chip_get_handler(httpd_req_t *req)
                           "\"pp_restores\":%lu,\"memory_refused\":%lu,"
                           "\"requests_held\":%lu,\"switch_owed\":%s,"
                           "\"protocol_kept\":%lu,\"stored_protocol\":\"%s\"},"
+                          "\"kline\":{\"up\":%s,\"idle_ms\":%ld,"
+                          "\"starts\":%lu,\"failed\":%lu,\"closed\":%lu},"
                           "\"uart\":{\"rx_bytes\":%lu,\"rx_chunks\":%lu,"
                           "\"rx_max_chunk\":%u,\"rx_overflows\":%lu,"
                           "\"rx_fifo_peak\":%u,\"rx_handovers\":%lu,"
@@ -122,6 +124,11 @@ static esp_err_t obd_chip_get_handler(httpd_req_t *req)
                           (unsigned long)st.requests_held,
                           st.switch_owed ? "true" : "false",
                           (unsigned long)st.protocol_kept, st.stored_protocol,
+                          st.kline_up ? "true" : "false",
+                          st.kline_up ? (long)st.kline_idle_ms : -1L,
+                          (unsigned long)st.kline_starts,
+                          (unsigned long)st.kline_failed,
+                          (unsigned long)st.kline_closed,
                           (unsigned long)st.rx_bytes,
                           (unsigned long)st.rx_chunks,
                           (unsigned)st.rx_max_chunk,

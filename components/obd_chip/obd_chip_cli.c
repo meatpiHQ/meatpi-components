@@ -122,6 +122,12 @@ static void print_status(void)
                    (unsigned long)st.memory_refused,
                    (unsigned long)st.requests_held,
                    st.switch_owed ? ", a switch is OWED" : "");
+    cmdline_printf("k-line:  session %s, bus starts %lu ok / %lu failed, "
+                   "idled out and closed %lu\n",
+                   st.kline_up ? "up" : "none",
+                   (unsigned long)st.kline_starts,
+                   (unsigned long)st.kline_failed,
+                   (unsigned long)st.kline_closed);
     cmdline_printf("store:   protocol %s (read at the start), saves not "
                    "needed %lu\n",
                    (st.stored_protocol[0] != '\0') ? st.stored_protocol

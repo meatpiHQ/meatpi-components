@@ -148,6 +148,15 @@ esp_err_t obd_chip_get_stats(obd_chip_stats_t *out)
     out->requests_held = mem.held;
     out->switch_owed = mem.owed;
     out->protocol_kept = obd_cmd_protocol_kept();
+
+    obd_kline_t kline;
+
+    obd_cmd_kline_stats(&kline);
+    out->kline_up = kline.up;
+    out->kline_idle_ms = obd_chip_kline_idle_ms();
+    out->kline_starts = kline.starts;
+    out->kline_failed = kline.failed;
+    out->kline_closed = kline.closed;
     _Static_assert(sizeof(out->stored_protocol) == OBD_STORED_LEN,
                    "obd_chip_stats_t.stored_protocol holds the chip's words");
     obd_cmd_stored_text(out->stored_protocol, sizeof(out->stored_protocol));

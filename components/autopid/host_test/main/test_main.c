@@ -41,6 +41,10 @@ void run_bounds_tests(void);
 void run_frames_tests(void);
 /* test_bus.c: the bus of a row (MS, single-wire, CH CAN), the grouped pick */
 void run_bus_tests(void);
+/* test_store_words.c: the words the chip stores (a preset, a link word):
+   refused in the tables, a stored file repaired, the rows that wait while
+   their type's init carries one */
+void run_store_words_tests(void);
 
 /* ---- helpers ----------------------------------------------------------------- */
 
@@ -2083,6 +2087,7 @@ void app_main(void)
     run_bounds_tests();
     run_frames_tests();
     run_bus_tests();
+    run_store_words_tests();
 
     UNITY_END();
 }

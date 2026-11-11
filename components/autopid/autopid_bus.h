@@ -122,6 +122,41 @@ size_t ap_bus_chain(uint16_t key, char *out, size_t cap);
  *  row's `bus` field and nothing else. NULL / "" = true. */
 bool ap_bus_chain_allowed(const char *chain);
 
+/* ---- what the OBD chip stores (pure, autopid_bus_core.c) -------------------
+ * A protocol preset (`STP nn`, `VTP nnn`) and a link word (`ATLNK..`) are
+ * written to the chip's memory every time the chip takes them, with `ATM0`
+ * acknowledged or not (bench 2026-11-11, testing/chip_word_class_bench.md
+ * and chip_can_slot_bench.md in the firmware repo). An init is sent again at
+ * every change of row type or row, so one such word in the tables is a write
+ * per poll round. Since 2026-11-11 no chain of the tables sends one, and what
+ * the user wrote is kept for the page to explain (Ali: "keep STP53 and
+ * simply not send it"):
+ * - the tables refuse it in a row that is switched on when they are saved
+ *   (the Test route and the vehicle store's routes as well); a row that is
+ *   switched off may keep it, so a file an earlier build stored loads: the
+ *   loader switches such a row off once and says so (ap_config_repair_store);
+ * - a type's init in the settings keeps it as typed. It is not sent, and
+ *   the rows that would go out behind that init, without the bus the word
+ *   was meant to choose, wait until it is taken out (ap_sched_t.type_held,
+ *   set by ap_runner_set_type_init; `stats.held` says so). The rows of that
+ *   type on another bus never see the type's init and go on;
+ * - whatever still reaches the sender is dropped there (ap_init_sanitize).
+ * The way to another bus is the row's `bus`. An app on the bridge is not a
+ * table of AutoPID: its words pass as before. */
+
+/** The first word of a ';'-separated chain that the chip stores. @p word
+ *  (may be NULL) gets it as the chip reads it: no spaces, upper case. */
+bool ap_chain_store_word(const char *chain, char *word, size_t cap);
+
+/** Drop those words from a chain in place. @return how many. */
+int ap_chain_strip_store(char *chain);
+
+/** A config text in which a row that is switched on carries such a word in
+ *  its `cmd` or `init` -> the text with those rows switched off (malloc'd,
+ *  caller frees) and their count; NULL and 0 when there is none or the text
+ *  does not parse (the parser then says what is wrong). */
+char *ap_config_repair_store(const char *json, int *switched_off);
+
 /** Where scheduler entry @p i asks (AP_BUS_KEY; a filter and a PGN row: 0,
  *  the car's OBD protocol). */
 uint16_t ap_sched_entry_bus(const ap_config_t *cfg, int i);

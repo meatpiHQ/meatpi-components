@@ -190,6 +190,9 @@ typedef struct
     int32_t group_period_override[AP_MAX_GROUPS]; /* <0 = none             */
     /* per-type enables from settings knobs */
     bool    type_enabled[3];
+    /* the type's init carries a word the OBD chip stores (autopid_bus.h):
+       its rows on the car's protocol are not asked while it does */
+    bool    type_held[3];
 } ap_sched_t;
 
 #define AP_SCHED_BACKOFF_STREAK 3  /* fails before backing off             */
@@ -248,7 +251,8 @@ void ap_sched_group_restore(ap_sched_t *st, const ap_config_t *cfg, int g);
 void ap_sched_ran(ap_sched_t *st, const ap_config_t *cfg, int i,
                   int64_t now_us, bool ok);
 
-/** True when entry @p i is enabled (entry + group + type gates). */
+/** True when entry @p i is enabled (entry + group + type gates, and not a
+ *  row of the car's protocol behind a held type init). */
 bool ap_sched_entry_enabled(const ap_sched_t *st, const ap_config_t *cfg,
                             int i);
 
@@ -307,6 +311,7 @@ uint32_t ap_core_min_event_interval_ms(void);
 /* on_apply -> runtime state owned by autopid.c */
 void ap_core_set_enabled(bool enabled);
 void ap_core_set_type_enabled(int type, bool enabled);
+void ap_core_set_type_held(int type, bool held); /* ap_sched_t.type_held */
 
 /* event_manager glue (autopid_events.c: Phase 3) */
 void ap_events_register(void);              /* sources/action/values     */
@@ -334,6 +339,13 @@ bool ap_runner_publish(const ap_pid_t *pid, const ap_param_t *params,
                        const uint8_t *payload, size_t payload_len,
                        int64_t ts_us);
 void ap_runner_set_type_init(int type, const char *init);
+/** The word of the type's init that the OBD chip stores (a protocol preset,
+ *  a link word; autopid_bus.h), as the chip reads it: the init is held, its
+ *  rows on the car's protocol are not asked. "" = not held. */
+const char *ap_runner_type_held(int type);
+/** The setting a type's init comes from (`std_init`, `custom_init`,
+ *  `specific_init`), for a message. */
+const char *ap_runner_type_init_name(int type);
 void ap_runner_reset(void);        /* replay inits on the next poll     */
 /** After an external ELM app had the chip: re-send the protocol prelude
  *  (spaces on, headers off, timeout, protocol, header, mask) and replay

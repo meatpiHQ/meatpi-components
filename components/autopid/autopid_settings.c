@@ -43,6 +43,15 @@ static const settings_field_t FIELDS[] =
     SETTINGS_BOOL("std_enabled", true),
     SETTINGS_BOOL("custom_enabled", true),
     SETTINGS_BOOL("specific_enabled", true),
+    /* A type init may hold a protocol preset or a link word (`STP nn`,
+     * `VTP nnn`, `ATLNK..`: the OBD chip stores those every time it takes
+     * them, autopid_bus.h), typed here or stored by an earlier build that
+     * sent it. It is kept as typed and never sent, and the rows behind it
+     * wait (ap_runner_set_type_init; Ali 2026-11-11: "keep STP53 and simply
+     * not send it"). It is NOT refused by a validator: validation runs at
+     * boot too, where a refusal throws every setting of the component back
+     * to its default, and taking the word out in a migration would lose it
+     * for a downgrade and leave the page nothing to explain. */
     SETTINGS_STR("std_init", AP_INIT_LEN - 1, ""),
     SETTINGS_STR("custom_init", AP_INIT_LEN - 1, ""),
     SETTINGS_STR("specific_init", AP_INIT_LEN - 1, ""),

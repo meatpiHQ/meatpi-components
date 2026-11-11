@@ -24,6 +24,7 @@ idf_component_register(
          "test_bounds.c"
          "test_frames.c"
          "test_bus.c"
+         "test_store_words.c"
          "${comp_dir}/autopid_sched.c"
          "${comp_dir}/autopid_bus_core.c"
          "${comp_dir}/autopid_scan_rows.c"

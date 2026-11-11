@@ -238,6 +238,27 @@ static bool preset_number(const char *s)
     return n >= 1 && n <= 3 && s[n] == '\0';
 }
 
+/** Is one command (squeezed) a word the chip writes to its memory when it
+ *  takes it? A protocol preset (`STP 53`, `VTP 2C3`) and a link word
+ *  (`ATLNKMS PB`). STPBR / VTPBR / STPBRR (a bit rate behind the slot, RAM),
+ *  STPTO and friends are not presets: `STP` and `VTP` count only with a
+ *  preset number, hex digits and nothing else behind them. `STPC` closes
+ *  the protocol (the chip reads `STP C` as the same word). */
+static bool cmd_stores(const char *s)
+{
+    if (starts(s, "ATLNK"))
+    {
+        return true;
+    }
+
+    if (strcmp(s, "STPC") == 0)
+    {
+        return false;
+    }
+
+    return (starts(s, "STP") || starts(s, "VTP")) && preset_number(s + 3);
+}
+
 /** Does one command pick a protocol, define a slot, link a transceiver or
  *  reset the chip? */
 static bool cmd_moves_bus(const char *cmd, size_t len)
@@ -256,14 +277,150 @@ static bool cmd_moves_bus(const char *cmd, size_t len)
     }
 
     /* ATTPD..F, the STN and vendor presets, the slot and link words, the
-       ELM form of a slot's options (`ATPB xx yy`). STPBR / VTPBR / STPBRR
-       (a bit rate behind the slot, RAM) and STPTO and friends are not
-       protocol choices: `STP` and `VTP` count only as a preset number,
-       hex digits and nothing else behind them */
-    return starts(s, "ATSP") || starts(s, "ATTP") ||
-           ((starts(s, "STP") || starts(s, "VTP")) && preset_number(s + 3)) ||
-           starts(s, "VTSET_CAN") || starts(s, "VTCFG_") ||
-           starts(s, "ATLNK") || starts(s, "ATPB");
+       ELM form of a slot's options (`ATPB xx yy`), and the word that closes
+       the protocol */
+    return starts(s, "ATSP") || starts(s, "ATTP") || cmd_stores(s) ||
+           strcmp(s, "STPC") == 0 ||
+           starts(s, "VTSET_CAN") || starts(s, "VTCFG_") || starts(s, "ATPB");
+}
+
+bool ap_chain_store_word(const char *chain, char *word, size_t cap)
+{
+    if (chain == NULL)
+    {
+        return false;
+    }
+
+    const char *start = chain;
+
+    for (const char *p = chain;; p++)
+    {
+        if (*p == ';' || *p == '\0')
+        {
+            char s[40];
+
+            if (squeeze(start, (size_t)(p - start), s, sizeof(s)) > 0 &&
+                cmd_stores(s))
+            {
+                if (word != NULL && cap > 0)
+                {
+                    snprintf(word, cap, "%s", s);
+                }
+
+                return true;
+            }
+
+            if (*p == '\0')
+            {
+                break;
+            }
+
+            start = p + 1;
+        }
+    }
+
+    return false;
+}
+
+int ap_chain_strip_store(char *chain)
+{
+    int dropped = 0;
+
+    if (chain == NULL)
+    {
+        return 0;
+    }
+
+    char *w = chain;
+    const char *p = chain;
+
+    while (*p != '\0')
+    {
+        const char *e = p;
+
+        while (*e != '\0' && *e != ';')
+        {
+            e++;
+        }
+
+        size_t len = (size_t)(e - p);
+        bool had_sep = (*e == ';');
+        char s[40];
+
+        if (squeeze(p, len, s, sizeof(s)) > 0 && cmd_stores(s))
+        {
+            dropped++;
+
+            /* the element goes with the separator after it; the last one,
+               without a separator, takes the one before it */
+            if (!had_sep && w > chain && w[-1] == ';')
+            {
+                w--;
+            }
+        }
+        else
+        {
+            memmove(w, p, len);
+            w += len;
+
+            if (had_sep)
+            {
+                *w++ = ';';
+            }
+        }
+
+        p = had_sep ? e + 1 : e;
+    }
+
+    *w = '\0';
+    return dropped;
+}
+
+static bool item_stores(const cJSON *obj, const char *key)
+{
+    const cJSON *v = cJSON_GetObjectItemCaseSensitive(obj, key);
+
+    return cJSON_IsString(v) && v->valuestring != NULL &&
+           ap_chain_store_word(v->valuestring, NULL, 0);
+}
+
+char *ap_config_repair_store(const char *json, int *switched_off)
+{
+    cJSON *root = cJSON_Parse(json);
+    char *out = NULL;
+    int n = 0;
+
+    *switched_off = 0;
+
+    if (root == NULL)
+    {
+        return NULL; /* not ours to judge: the parser says what is wrong */
+    }
+
+    cJSON *pid = NULL;
+
+    cJSON_ArrayForEach(pid, cJSON_GetObjectItemCaseSensitive(root, "pids"))
+    {
+        /* as the parser reads it: anything but `false` is a row that is on */
+        if (cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(pid, "enabled")) ||
+            !(item_stores(pid, "cmd") || item_stores(pid, "init")))
+        {
+            continue;
+        }
+
+        cJSON_DeleteItemFromObjectCaseSensitive(pid, "enabled");
+        cJSON_AddFalseToObject(pid, "enabled");
+        n++;
+    }
+
+    if (n > 0)
+    {
+        out = cJSON_PrintUnformatted(root);
+    }
+
+    cJSON_Delete(root);
+    *switched_off = (out != NULL) ? n : 0;
+    return out;
 }
 
 bool ap_bus_chain_allowed(const char *chain)

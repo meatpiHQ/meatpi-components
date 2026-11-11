@@ -55,8 +55,15 @@
 
 #include "obd_chip_guard.h"
 
+#include "autopid_bus.h"
 #include "autopid_private.h"
 #include "autopid_http_private.h"
+
+/* an init with a word the chip stores (autopid_bus.h): refused like the
+   tables refuse it, a car's init is sent at every change of row type */
+#define STORE_WORD_REFUSAL \
+    "init: a protocol preset or a link word (STP, VTP, ATLNK) is stored by " \
+    "the OBD chip every time it is sent; choose the Bus of the rows instead"
 
 #define VEH_URI_PREFIX "/api/autopid/vehicles/"
 #define VEH_BODY_MAX   512
@@ -252,6 +259,13 @@ static bool arm_probe(const char *json, const char **bad)
         return false;
     }
 
+    if (ap_chain_store_word(probe.init, NULL, 0))
+    {
+        cJSON_Delete(root);
+        *bad = STORE_WORD_REFUSAL;
+        return false;
+    }
+
     const cJSON *cmds = cJSON_GetObjectItemCaseSensitive(root, "cmds");
     const cJSON *c = NULL;
 
@@ -291,6 +305,14 @@ static bool arm_probe(const char *json, const char **bad)
             cJSON_Delete(root);
             *bad = "cmds: a request's init is a string of 95 chars max "
                    "that does not write the chip's EEPROM";
+            return false;
+        }
+
+        if (cJSON_IsString(init) &&
+            ap_chain_store_word(init->valuestring, NULL, 0))
+        {
+            cJSON_Delete(root);
+            *bad = STORE_WORD_REFUSAL;
             return false;
         }
 
@@ -586,6 +608,13 @@ esp_err_t vehicles_put_handler(httpd_req_t *req)
         return ap_http_send_error(req, "400 Bad Request",
                                   "specific_init would write the chip's "
                                   "EEPROM (ATPP/ATSD/ATCV/STWBR)");
+    }
+
+    if (init != NULL && ap_chain_store_word(init, NULL, 0))
+    {
+        cJSON_Delete(root);
+        return ap_http_send_error(req, "400 Bad Request",
+                                  STORE_WORD_REFUSAL);
     }
 
     esp_err_t err = autopid_vehicle_update(key, name, profile, init);

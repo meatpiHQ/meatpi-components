@@ -95,6 +95,12 @@ void ap_init_sanitize(char *str)
            every init (ATH0 / ATS0 / ATE1): the poller reads the chip with
            headers and spaces on (2026-10-24, issue #1014) */
         (void)ap_chain_strip_print(str);
+
+        /* and the words the chip stores every time it takes them (a
+           protocol preset, a link word; autopid_bus.h, 2026-11-11): the
+           tables refuse them where they are saved, this is the last stop
+           before the wire for whatever was stored earlier */
+        (void)ap_chain_strip_store(str);
     }
 }
 
@@ -288,6 +294,15 @@ esp_err_t ap_config_parse(const char *json, ap_config_t *cfg, char *err,
             goto out;
         }
 
+        /* a word the chip stores every time it takes it (a protocol preset,
+           a link word; autopid_bus.h), looked for before the sanitizing
+           drops it. A row that is switched on is refused further down; one
+           that is switched off keeps it in the file for the user to fix */
+        char stored[16] = "";
+        bool cmd_given = (pid->cmd[0] != '\0');
+        bool stores = ap_chain_store_word(pid->cmd, stored, sizeof(stored)) ||
+                      ap_chain_store_word(pid->init, stored, sizeof(stored));
+
         ap_init_sanitize(pid->cmd); /* profile/custom PIDs can carry AT
                                        commands: spare the EEPROM here
                                        too, not just in init strings */
@@ -348,10 +363,20 @@ esp_err_t ap_config_parse(const char *json, ap_config_t *cfg, char *err,
                     : (strcmp(type, "specific") == 0) ? AP_PID_SPECIFIC
                                                       : AP_PID_CUSTOM;
 
-        if (pid->name[0] == '\0' || pid->cmd[0] == '\0')
+        if (pid->name[0] == '\0' || !cmd_given)
         {
             cfg_err(err, err_len, "pid %s%d: name and cmd are required",
                     "", cfg->n_pids);
+            goto out;
+        }
+
+        if (stores && pid->enabled)
+        {
+            char who[AP_NAME_LEN + sizeof(stored) + 4];
+
+            snprintf(who, sizeof(who), "%s: %s", pid->name, stored);
+            cfg_err(err, err_len, "pid %s is stored by the OBD chip; use "
+                    "the row's Bus%.0d", who, 0);
             goto out;
         }
 

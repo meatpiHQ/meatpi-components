@@ -112,7 +112,7 @@ Decisions log there is authoritative; the big ones:
 | `autopid_resp.c` | PURE ELM text → bytes: the framing-free payload for the parsers and the guard (`ap_resp_to_payload`: headers on/off, ISO-TP single/multi, lowest-responder rule, noise/error lines, an extended address byte before the PCI, the chip's 29-bit header print `18 DA F1 xx` and a row's own 29-bit id by hint, `7F xx 78` response-pending lines dropped) and the reply as the chip prints it with headers on for the expressions (`ap_resp_frames`, 2026-10-24, issue #1014; headers-off replies rebuilt into that shape, rows in arrival order) + the cross-talk guard (`ap_payload_matches_cmd`: a second chip master's response can't be cached as ours; service 22 is compared on both identifier bytes) |
 | `autopid_resp_filter.c` | PURE ATMA monitor lines → frame data bytes: `ap_filter_frame` (one line carrying the wanted id) and the incremental stream collector `ap_flt_stream_*` the filter window feeds; split out of `autopid_resp.c` 2026-10-02 (700-line rule) |
 | `autopid_config.c` | PURE JSON parse/validate of the tables |
-| `autopid_config_file.c` | the tables' file, target only (split out 2026-11-11, the 700-line rule): load with the repairs of what an earlier build stored (repeated names, the standard rows' numbering), save (atomic), the PSRAM copy of the raw text |
+| `autopid_config_file.c` | the tables' file, target only (split out 2026-11-11, the 700-line rule): load with the repairs of what an earlier build stored (repeated names, the standard rows' numbering, a row with a word the chip stores switched off), save (atomic), the PSRAM copy of the raw text |
 | `autopid_chain_private.h` / `autopid_guard_private.h` / `autopid_reply_private.h` | fragments of `autopid_private.h` (split out 2026-11-11, the 700-line rule; included by it alone, like `autopid_dtc_private.h`): what a chain of the tables sets on the chip, the bus guard's pure half, the chip's response text to bytes |
 | `autopid_cache.c` | latest-value slots (PSRAM, mutex), legacy snapshot + detail JSON, plus the **external-value table** (12 name-keyed injected samples: GPS from the ESPNetLink dongle) merged into every snapshot/get/detail |
 | `autopid_dtc_codec.c` | PURE DTC codec: 2-byte code ⇄ "P0420", 43/47/4A payload parse, 41-01 MIL/count, clear-condition matrix (`always/if_any/if_only`, mode 04 is all-or-nothing, so "clear specific" = a condition on the present set), and the report fillers (`ap_dtc_report_add`: the merged category arrays plus one item per ECU; `ap_dtc_report_src`: the lamp word of every responder) |
@@ -136,7 +136,7 @@ Decisions log there is authoritative; the big ones:
 
 `enabled` (default **false**), `std_enabled`/`custom_enabled`/
 `specific_enabled`, `std_init`/`custom_init`/`specific_init`
-(';'-separated AT prelude per type; `specific_init` is the fallback for a current car without its own `specific_init` in the vehicle store), `std_protocol` (enum `0` Automatic | `6` CAN 11-bit 500k | `7` CAN 29-bit 500k | `8` CAN 11-bit 250k | `9` CAN 29-bit 250k, default `0` since 2026-10-03 (it was a pinned `6`: a fresh device must not transmit at 500k onto a bus it has not heard); schema v7; `0` = follow the vehicle store: the detection job learns the protocol per car and the chip prelude pins the current car's protocol instead of `ATTP0`, see "Vehicle store" below; a pinned 6..9 always wins over the store), `vehicle`,
+(';'-separated AT prelude per type; `specific_init` is the fallback for a current car without its own `specific_init` in the vehicle store; since 2026-11-11 a protocol preset or a link word in one of the three, `STP nn` / `VTP nnn` / `ATLNK..`, is kept as typed and never sent, and the rows of that type on the car's protocol wait while it is there; no schema change, see "No chain of the tables sends a word the chip stores"), `std_protocol` (enum `0` Automatic | `6` CAN 11-bit 500k | `7` CAN 29-bit 500k | `8` CAN 11-bit 250k | `9` CAN 29-bit 250k, default `0` since 2026-10-03 (it was a pinned `6`: a fresh device must not transmit at 500k onto a bus it has not heard); schema v7; `0` = follow the vehicle store: the detection job learns the protocol per car and the chip prelude pins the current car's protocol instead of `ATTP0`, see "Vehicle store" below; a pinned 6..9 always wins over the store), `vehicle`,
 `pause_below_mv` (0 = no fixed threshold, else 1–14500 mV; resumes +0.3 V with 5 s hold; with `pause_follow_sleep` the threshold is the Power Saving sleep voltage and polling resumes at its wake voltage, sleep_manager v3, 2026-10-01),
 `pause_follow_sleep` (default **true**: legacy `disable_pid_requests`
 parity: requests pause below the sleep threshold via the battery
@@ -718,12 +718,71 @@ try, and the web UI marks the bus on its round strip ("MS CAN: resting, no
 answer") with what to check and that countdown: it is the only sign of a
 wrong Bus speed.
 
+**The voltage pause covers these rows too.** A request on a sleeping body bus
+can wake its modules, more readily than one on the car's own bus. The rows of
+another bus are gated by the same pauses as every chip row (the voltage
+pause, which follows the sleep voltage by default, an app's session, a
+tool's hold, a scan); only the HS bus guard is not theirs. Paused, nothing is
+asked on any bus and the chip is home (bench: the simulator counts no request
+while the supply is under the threshold).
+
 Files: `autopid_bus.h`, `autopid_bus_core.c` (pure: the words, the rate, the
-chain, the allowed chains, the CAN ERROR count), `autopid_bus.c` (the chip:
-there, home, the state in `ap_base_mem_t`), `ap_sched_next_grouped` in
-`autopid_sched.c`. Not covered yet: 29-bit ids on these buses, J1939
-formatting, listening rows, a `bus` for a filter (a monitor window is the
-car's own bus).
+chain, the allowed chains, the CAN ERROR count, the words the chip stores),
+`autopid_bus.c` (the chip: there, home, the state in `ap_base_mem_t`),
+`ap_sched_next_grouped` in `autopid_sched.c`. Not covered yet: 29-bit ids on
+these buses, J1939 formatting, listening rows, a `bus` for a filter (a
+monitor window is the car's own bus).
+
+### No chain of the tables sends a word the chip stores (2026-11-11)
+
+A protocol preset (`STP nn`, `VTP nnn`) and a link word (`ATLNK..`) are
+written to the chip's memory every time the chip takes them, with `ATM0`
+acknowledged or not (the two benches named above). An init is sent again at
+every change of row type or row, so one such word in a row of the car's
+protocol was a write of the chip's store per poll round. Until this date such
+a row passed (the driver's guard knows `ATSP`, `ATM1` and the words with no
+RAM twin, and an app's words are the app's own). Since then, for everything
+AutoPID sends from a table:
+
+| Where | What happens |
+|---|---|
+| `PUT /api/autopid/config`, a row that is switched on | 400, `pid <name>: STP53 is stored by the OBD chip; use the row's Bus` |
+| the same row with `"enabled": false` | accepted and kept as written: the word is not sent, the row is not asked |
+| `POST /api/autopid/test` | 400 with the word, on any bus (a test would be one write per click) |
+| `std_init`, `custom_init`, `specific_init` (settings), typed now or stored by an earlier build | accepted and kept as typed. The word is never sent, and the rows of that type on the car's protocol are not asked while it is there (`ap_sched_t.type_held`, set by `ap_runner_set_type_init()`, one W line). `stats.held` names the setting and the word, e.g. `{"custom_init":"STP53"}`. The rows of the type on another bus, which never see the type's init, and the J1939 rows go on |
+| `POST /api/autopid/test` of a row of such a type on the car's protocol | 409 with the setting, the word and the way out |
+| a car's own init, the detection's profile probe (`/api/autopid/vehicles/..`) | 400 |
+| a table file an earlier build stored | loaded: each such row is switched off once, the file rewritten, one W line (`ap_config_repair_store`, beside the two older repairs of the loader) |
+| anything that still reaches the sender (a car's own init an earlier build put into the vehicle store, which holds its type like a setting does) | dropped by `ap_init_sanitize()` before the wire |
+
+A stored row is switched off, not asked without its preset: it would go out
+on the car's own bus, where the module it names is not, or another one is.
+The rows behind a type's init wait for the same reason (`STP53;ATSH726` is a
+header meant for MS CAN).
+
+**Why a type's init is kept and not refused or cleaned (Ali, 2026-11-11:
+"keep STP53 and simply not send it").** The first form of this change
+refused the word in the settings validator and took a stored one out in a
+migration (schema v9). Validation runs at boot too, where a refusal throws
+every setting of the component back to its default, so the migration was
+needed only to get past the validator. It cost three things: the page had
+nothing left to explain (the word was gone, and the rows went out on the
+car's own bus with the rest of the init), a downgrade could not get the
+user's setup back, and a backup of the new build was refused by an older one.
+Kept as typed there is no validator, no migration and no schema change: the
+page marks the field as long as the word is there, and an older build finds
+the setting it wrote.
+
+The words: `STP` or `VTP` with one to three hex digits and nothing else
+(`STPBR`, `VTPBR`, `STPTO` are RAM words and pass; `STPC` closes the protocol
+and is no preset) and anything that begins with `ATLNK`, read as the chip
+reads them (spaces ignored, any case). The web UI applies the same rule to
+say why before Apply does (`storeWord()`), marks such a row (`STP53: not
+sent`) and tells what to do; under a type's init field it says that the word
+is not sent and which PIDs wait, under the table how many PIDs the device
+holds now (`stats.held`, which follows a saved setting after the restart),
+and on the dashboard which init holds which word. An app on the bridge is
+not a table of AutoPID: its words pass as before.
 
 ## Config file shape (`PUT /api/autopid/config`)
 
@@ -1267,7 +1326,7 @@ it is what found the two defects above.
 
 ## Tests
 
-`host_test/` (run: `.\test.ps1 host autopid`, 163 tests): the bus of a row (`test_bus.c`, 11 cases, 2026-11-11: the words, the speed of a bus and its chain with no stored word in it, what a row of another bus may carry, the config parse and its refusals, the rows of a bus asked together, an excursion asking every row once and coming home with two buses at max rate, the rest after CAN ERRORs, the class that keeps such rows out of the HS bus guard's hands); the frame of reference of a reply (`test_frames.c`, 9 cases, 2026-10-24, issue #1014: a stored config's standard rows re-numbered to the table's expressions, a custom row and an unknown command left alone, a second pass a no-op; the chip's own prints from the bench, an extended-addressed BMW SME with a pending frame and padding, decoded as the published rows mean (`[B6:B7]/10` = 72.6 %, the i3's `[B11:B12]` shown to count the pending frame); a Hyundai Ioniq 2021 BMS reply of nine frames from a Car Scanner log (`B10/2` = 75 %, `[B19:B20]/10` = 341.9 V); a Leaf AZE0 reply with its padding kept; the MEB 29-bit print of issue #914 taken as an id by the row's filter or the protocol hint and left alone without; headers-off replies rebuilt into frames, the 28-row reply in arrival order, a missing row stopping the assembly; the lowest responder; ATH0/ATS0/ATE1 dropped from a chain and the receive filter a chain sets; the standard table's numbering); the bounds on a decoded value and the SAE rows inside their own range (`test_bounds.c`, 4 cases, 2026-10-20: the report's 100.000001646 clamped to 100 on a standard and on a custom row, the reporter's controlled values, the tolerance, a J1939 not-available raw dropped, the exact ratio and the signed span, every ranged table row decoded at 0x00 / 0xFF / 0x7F / 0x80 through the real parser inside its range); what a chain of the tables sets on the chip and the chain that puts the baseline back (`test_chain.c`, 4 cases, 2026-10-20: the BMW row of issue #964, the published i3 / Mini / e-Ulysse chains, the off and reset forms set nothing, every undo command fits `AP_RESTORE_LEN`); the detection's rows as a new car's tables, on or off (`test_scan_rows.c`, 3 cases, 2026-10-09); the J1939 rows
+`host_test/` (run: `.\test.ps1 host autopid`, 168 tests): the words the chip stores (`test_store_words.c`, 5 cases, 2026-11-11: which words they are and which RAM words only look like them, no chain keeps one behind the sanitizing, the parser refuses a row that is on and lets a switched-off row keep it, a stored file repaired once with the clean rows left on, the rows of the car's protocol that wait while their type's init carries one, with the row on another bus, the J1939 group and the other types going on); the bus of a row (`test_bus.c`, 11 cases, 2026-11-11: the words, the speed of a bus and its chain with no stored word in it, what a row of another bus may carry, the config parse and its refusals, the rows of a bus asked together, an excursion asking every row once and coming home with two buses at max rate, the rest after CAN ERRORs, the class that keeps such rows out of the HS bus guard's hands); the frame of reference of a reply (`test_frames.c`, 9 cases, 2026-10-24, issue #1014: a stored config's standard rows re-numbered to the table's expressions, a custom row and an unknown command left alone, a second pass a no-op; the chip's own prints from the bench, an extended-addressed BMW SME with a pending frame and padding, decoded as the published rows mean (`[B6:B7]/10` = 72.6 %, the i3's `[B11:B12]` shown to count the pending frame); a Hyundai Ioniq 2021 BMS reply of nine frames from a Car Scanner log (`B10/2` = 75 %, `[B19:B20]/10` = 341.9 V); a Leaf AZE0 reply with its padding kept; the MEB 29-bit print of issue #914 taken as an id by the row's filter or the protocol hint and left alone without; headers-off replies rebuilt into frames, the 28-row reply in arrival order, a missing row stopping the assembly; the lowest responder; ATH0/ATS0/ATE1 dropped from a chain and the receive filter a chain sets; the standard table's numbering); the bounds on a decoded value and the SAE rows inside their own range (`test_bounds.c`, 4 cases, 2026-10-20: the report's 100.000001646 clamped to 100 on a standard and on a custom row, the reporter's controlled values, the tolerance, a J1939 not-available raw dropped, the exact ratio and the signed span, every ranged table row decoded at 0x00 / 0xFF / 0x7F / 0x80 through the real parser inside its range); what a chain of the tables sets on the chip and the chain that puts the baseline back (`test_chain.c`, 4 cases, 2026-10-20: the BMW row of issue #964, the published i3 / Mini / e-Ulysse chains, the off and reset forms set nothing, every undo command fits `AP_RESTORE_LEN`); the detection's rows as a new car's tables, on or off (`test_scan_rows.c`, 3 cases, 2026-10-09); the J1939 rows
 (`test_j1939_rows.c`, 10 cases: the `PGN:` grammar and its refusals, the
 config parser's typed fields and the `init` / `rxheader` refusal, the
 scheduler's class-masked pick and the 20 ms passive floor, the built-in

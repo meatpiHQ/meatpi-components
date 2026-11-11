@@ -204,6 +204,29 @@ esp_err_t autopid_config_load(ap_config_t *cfg)
         (void)filesystem_write(AP_CONFIG_PATH, buf, got);
     }
 
+    /* a row with a protocol preset or a link word in its init or cmd,
+       stored by a build before 2026-11-11: the OBD chip writes those to its
+       memory every time it takes them, so the tables refuse them now. The
+       row is switched off, not the tables emptied; the UI's PUT of what it
+       reads back goes through, and switching the row on again is refused
+       with the reason */
+    int switched_off = 0;
+
+    fixed = ap_config_repair_store(buf, &switched_off);
+
+    if (fixed != NULL)
+    {
+        ESP_LOGW(TAG, "config file: %d row%s with a protocol preset or a link "
+                      "word (STP, VTP, ATLNK: the OBD chip stores those every "
+                      "time they are sent) switched off and the file "
+                      "rewritten. Choose the row's Bus instead",
+                 switched_off, switched_off == 1 ? "" : "s");
+        free(buf);
+        buf = fixed;
+        got = strlen(buf);
+        (void)filesystem_write(AP_CONFIG_PATH, buf, got);
+    }
+
     char perr[96] = "";
 
     err = ap_config_parse(buf, cfg, perr, sizeof(perr));

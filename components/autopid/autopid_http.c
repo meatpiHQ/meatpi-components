@@ -161,6 +161,21 @@ static esp_err_t autopid_get_handler(httpd_req_t *req)
             cJSON_AddNumberToObject(one, "retry_s", bs.retry_s[b]);
         }
     }
+
+    /* a type's init with a word the OBD chip stores (autopid_bus.h): the
+       setting and the word. The init is not sent, and the rows of that type
+       on the car's protocol are not asked while it is there. {} = none */
+    cJSON *held = cJSON_AddObjectToObject(stats, "held");
+
+    for (int t = 0; t < 3; t++)
+    {
+        if (ap_runner_type_held(t)[0] != '\0')
+        {
+            cJSON_AddStringToObject(held, ap_runner_type_init_name(t),
+                                    ap_runner_type_held(t));
+        }
+    }
+
     cJSON_AddNumberToObject(stats, "pids", st.pids_loaded);
     cJSON_AddNumberToObject(stats, "filters", st.filters_loaded);
     /* Phase 1b: ~53 ms/request measured floor; sub-floor periods are

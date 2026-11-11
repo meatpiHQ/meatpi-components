@@ -87,17 +87,55 @@ static int  s_last_pid = -1;
 static const char *const TYPE_INIT_NAME[3] = { "std_init", "custom_init",
                                                "specific_init" };
 
+/* the word of a type's init that the OBD chip stores, "" = none */
+static char s_type_held[3][16];
+
 void ap_runner_set_type_init(int type, const char *init)
 {
     if (type >= 0 && type < 3)
     {
         snprintf(s_type_init[type], sizeof(s_type_init[type]), "%s",
                  (init != NULL) ? init : "");
+
+        /* a protocol preset or a link word (autopid_bus.h) in a type's
+           init: typed into the setting, or stored by an earlier build that
+           sent it (a car's own init in the vehicle store as well). The
+           setting keeps it as typed, so the page can say what is wrong and
+           a downgrade finds it again; it is never sent (the sanitizing
+           below drops it), and the rows that would go out behind this init,
+           without the bus the word was meant to choose, wait until it is
+           taken out: a header meant for MS CAN is not asked on the car's
+           own bus. The rows of the type on another bus do not use the
+           type's init and go on */
+        s_type_held[type][0] = '\0';
+        (void)ap_chain_store_word(s_type_init[type], s_type_held[type],
+                                  sizeof(s_type_held[type]));
+        ap_core_set_type_held(type, s_type_held[type][0] != '\0');
+
+        if (s_type_held[type][0] != '\0')
+        {
+            ESP_LOGW(TAG, "%s holds %s, which the OBD chip stores every time "
+                          "it is sent: it is not sent, and the rows of that "
+                          "type on the car's protocol are not asked. Take it "
+                          "out of the init and choose the Bus of the rows",
+                     TYPE_INIT_NAME[type], s_type_held[type]);
+        }
+
         /* as a row's init: no EEPROM write, and the print-format commands
            the poller cannot live with dropped (the old `std_init` advice
            ended in ATH0) */
         ap_init_sanitize(s_type_init[type]);
     }
+}
+
+const char *ap_runner_type_held(int type)
+{
+    return (type >= 0 && type < 3) ? s_type_held[type] : "";
+}
+
+const char *ap_runner_type_init_name(int type)
+{
+    return (type >= 0 && type < 3) ? TYPE_INIT_NAME[type] : "";
 }
 
 void ap_runner_reply_hint(const char *type_init, const char *init,

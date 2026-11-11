@@ -97,9 +97,23 @@ bool ap_sched_entry_enabled(const ap_sched_t *st, const ap_config_t *cfg,
         return false;
     }
 
-    if (i < cfg->n_pids && !st->type_enabled[cfg->pids[i].type])
+    if (i < cfg->n_pids)
     {
-        return false;
+        const ap_pid_t *pid = &cfg->pids[i];
+
+        if (!st->type_enabled[pid->type])
+        {
+            return false;
+        }
+
+        /* the type's init carries a word the OBD chip stores (autopid_bus.h):
+           the rows that are sent behind that init wait until it is taken
+           out. A row of another bus and a J1939 row never see the type's
+           init and go on */
+        if (st->type_held[pid->type] && ap_row_class(pid) == AP_CLASS_CHIP)
+        {
+            return false;
+        }
     }
 
     return true;

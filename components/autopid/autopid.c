@@ -112,6 +112,13 @@ void ap_core_set_type_enabled(int type, bool enabled)
     s_sched.type_enabled[type] = enabled;
 }
 
+void ap_core_set_type_held(int type, bool held)
+{
+    /* the runner's verdict on the type's init (ap_runner_set_type_init): a
+       plain flag write like the knob above, read by the scheduler */
+    s_sched.type_held[type] = held;
+}
+
 /* ---- config (re)load: CALLER context, never the poller -------------------------- */
 
 static void arm_scheduler(void)
@@ -139,13 +146,17 @@ esp_err_t autopid_reload_config(void)
 
     xSemaphoreTake(s_lock, portMAX_DELAY);
 
-    /* preserve the type_enabled knobs (settings-owned) */
+    /* preserve the type_enabled knobs (settings-owned) and the holds (the
+       runner's: a type init with a word the chip stores) */
     bool types[3];
+    bool held[3];
 
     memcpy(types, s_sched.type_enabled, sizeof(types));
+    memcpy(held, s_sched.type_held, sizeof(held));
     s_cfg = s_staging;
     arm_scheduler();
     memcpy(s_sched.type_enabled, types, sizeof(types));
+    memcpy(s_sched.type_held, held, sizeof(held));
     ap_cache_clear();
     ap_events_reset(); /* slot indices changed with the tables */
     xSemaphoreGive(s_lock);

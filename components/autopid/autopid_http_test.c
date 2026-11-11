@@ -179,6 +179,38 @@ esp_err_t test_post_handler(httpd_req_t *req)
     int64_t elapsed_us = 0;
     esp_err_t err;
 
+    /* a word the chip stores (a protocol preset, a link word): a test would
+       be one write of its memory per click, on any bus */
+    char stored[16];
+
+    if (ap_chain_store_word(cmd->valuestring, stored, sizeof(stored)) ||
+        (cJSON_IsString(init) &&
+         ap_chain_store_word(init->valuestring, stored, sizeof(stored))))
+    {
+        char msg[112];
+
+        snprintf(msg, sizeof(msg), "%s is stored by the OBD chip every time "
+                 "it is sent; choose the row's Bus instead", stored);
+        cJSON_Delete(root);
+        return ap_http_send_error(req, "400 Bad Request", msg);
+    }
+
+    /* the type's own init holds such a word: the poller does not ask the
+       rows of that type on the car's protocol (the header that follows the
+       word was meant for another bus), and a test of one is no different */
+    if (!is_pgn && bus == AP_BUS_OBD && ap_runner_type_held(tidx)[0] != '\0')
+    {
+        char msg[192];
+
+        snprintf(msg, sizeof(msg), "%s holds %s, which the OBD chip stores "
+                 "every time it is sent: PIDs of this type on the car's OBD "
+                 "protocol are not asked. Take it out of the init, or choose "
+                 "the PID's Bus", ap_runner_type_init_name(tidx),
+                 ap_runner_type_held(tidx));
+        cJSON_Delete(root);
+        return ap_http_send_error(req, "409 Conflict", msg);
+    }
+
     if (bus != AP_BUS_OBD &&
         (is_pgn || !ap_bus_chain_allowed(cmd->valuestring) ||
          (cJSON_IsString(init) && !ap_bus_chain_allowed(init->valuestring))))

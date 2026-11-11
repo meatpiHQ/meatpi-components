@@ -35,6 +35,8 @@
  */
 #include "autopid_private.h"
 
+#include "autopid_bus.h" /* the words the chip stores: never sent from here */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -98,7 +100,14 @@ static void send_chain(const char *chain, char *resp, size_t len)
         {
             memcpy(one, p, n);
             one[n] = '\0';
-            (void)probe_request(one, resp, len, AP_PROBE_AT_TIMEOUT);
+
+            /* never a word the chip stores (a protocol preset, a link
+               word): the route that arms the probe refuses one, this is
+               the last stop before the wire */
+            if (!ap_chain_store_word(one, NULL, 0))
+            {
+                (void)probe_request(one, resp, len, AP_PROBE_AT_TIMEOUT);
+            }
         }
 
         p += n + ((sep != NULL) ? 1 : 0);

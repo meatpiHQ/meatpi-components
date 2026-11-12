@@ -5,10 +5,11 @@
  *        autopid_resp_precan.c).
  *
  * The replies are the chip's own prints: GitHub issue #1045 (a 2000 Toyota
- * 4Runner on ISO 9141-2: `48 6B 10 41 0C 0A D3 ED`, `48 6B 11 41 05 7E 88`)
- * and the bench (the MIC3624 V2.3.24 against ECU sim v2, 2026-11-11 and
- * 2026-11-12). Read the CAN way, the engine speed of the bench's car came
- * out as 15428 where it was 800.
+ * 4Runner on ISO 9141-2: `48 6B 10 41 0C 0A D3 ED`; a 2005 Porsche Cayman S,
+ * its engine ECU at address 0x11: `48 6B 11 41 0C 0A 96 B1`, `48 6B 11 41 05
+ * 7E 88`, and `41 0C 0A 9A` with headers off) and the bench (the MIC3624
+ * V2.3.24 against ECU sim v2, 2026-11-11 to 2026-11-13). Read the CAN way,
+ * the engine speed of the bench's car came out as 15428 where it was 800.
  */
 #include <string.h>
 
@@ -224,10 +225,20 @@ void test_precan_reply_decodes_as_on_can(void)
     n = frames("BUS INIT: ...OK\r48 6B 10 41 0C 0C 80 9C \r\r", f, sizeof(f));
     TEST_ASSERT_EQUAL_DOUBLE(800.0, eval(RPM, f, n));
 
-    /* the 4Runner of issue #1045: 692.75 rpm, 86 degrees */
+    /* the cars of issue #1045. The 4Runner: 692.75 rpm */
     n = frames("48 6B 10 41 0C 0A D3 ED \r", f, sizeof(f));
     TEST_ASSERT_EQUAL_DOUBLE(692.75, eval(RPM, f, n));
+
+    /* the Cayman S, its engine ECU at address 0x11: 677.5 rpm and 86
+       degrees; then what its chip printed with headers off, where the
+       checksum is gone too */
+    n = frames("48 6B 11 41 0C 0A 96 B1 \r", f, sizeof(f));
+    TEST_ASSERT_EQUAL_DOUBLE(677.5, eval(RPM, f, n));
     n = frames("48 6B 11 41 05 7E 88 \r", f, sizeof(f));
+    TEST_ASSERT_EQUAL_DOUBLE(86.0, eval("B3-40", f, n));
+    n = frames("41 0C 0A 9A \r", f, sizeof(f));
+    TEST_ASSERT_EQUAL_DOUBLE(678.5, eval(RPM, f, n));
+    n = frames("41 05 7E \r", f, sizeof(f));
     TEST_ASSERT_EQUAL_DOUBLE(86.0, eval("B3-40", f, n));
 
     /* headers off (the chip after a reset): the same bytes for the row */
@@ -353,11 +364,23 @@ void test_precan_vin_in_five_messages(void)
                                            "49 02 05 30 30 30 31 \r", vin));
     TEST_ASSERT_EQUAL_STRING(SIM_VIN, vin);
 
-    /* ISO 14230 sends it in one message, as a CAN ECU does (the bench) */
+    /* ISO 14230 in one message, the way a CAN ECU sends it (ECU sim v2
+       until 2026-11-13) */
     ap_resp_set_proto_hint('4');
     TEST_ASSERT_TRUE(ap_veh_parse_vin_0902(
         "94 F1 10 49 02 01 31 57 43 41 4E 30 46 57 30 50 30 30 30 30 30 30 31 "
         "D9 \r", vin));
+    TEST_ASSERT_EQUAL_STRING(SIM_VIN, vin);
+
+    /* and as the standard has it for a car: seven data bytes a message,
+       five messages (ISO 14230-4; ECU sim v2 since 2026-11-13) */
+    vin[0] = '\0';
+    TEST_ASSERT_TRUE(ap_veh_parse_vin_0902(
+        "87 F1 10 49 02 01 00 00 00 31 05 \r"
+        "87 F1 10 49 02 02 57 43 41 4E FE \r"
+        "87 F1 10 49 02 03 30 46 57 30 D3 \r"
+        "87 F1 10 49 02 04 50 30 30 30 B7 \r"
+        "87 F1 10 49 02 05 30 30 30 31 99 \r", vin));
     TEST_ASSERT_EQUAL_STRING(SIM_VIN, vin);
 
     ap_resp_set_proto_hint('\0');

@@ -844,6 +844,44 @@ written once per submit, not once per edit). The stored name typed back
 unstages the rename; Discard on the unsaved-changes dialog drops it
 (`store.clear()`). Probe: `tools/webui_preview/probe_car_name.mjs`.
 
+## Fault codes and the info bubble (2026-11-12)
+
+The device's fault codes (`GET /api/faults`: `boot_errors`, `internal_ram_low`,
+the logger's, and since 2026-11-12 the OBD chip's four) show in two places:
+a red chip `N faults` in the header's connection pill (`#cp-faults`, from
+`/api/status` `health.faults`; a click opens System Monitor) and the card
+"Fault codes" on System Monitor (`PAGES.sysmon`): a table with the code, the
+device's detail, the count and the first and last time seen, and `Clear
+fault codes` behind a confirm (`POST /api/faults/clear`, every code).
+
+The table stays that lean on purpose (Ali, 2026-11-12, on a mock-up that put
+a title, a paragraph and a severity on every row: "has too much information, I
+prefer simple and clean design, if we want to add additional info add a
+bubble"). What a code means is one click away instead: `faultCode()` puts a
+small round button (`infoBtn()`, class `ibtn`) beside a code that has an
+entry in `FAULT_INFO` (a title and two or three plain sentences: what
+happened, what to do), and none beside a code the UI has no words for.
+
+`infoBtn(label, title, text)` is the UI's info bubble, for any place that
+needs more words than a row should carry:
+
+- the bubble (`.ibubble`) is fixed to the viewport and appended to the
+  body, so a table's scroll box (`.scroll`) cannot clip it; it opens under
+  the button, or above it when there is no room, and is never wider than the
+  screen
+- one bubble at a time; the button again, another button, a click
+  elsewhere, Escape, a scroll, a resize or a page change closes it
+  (`closeBubble()`); a click inside does not, so its text can be selected
+- the button carries `aria-label` and `aria-expanded`, the bubble
+  `role="tooltip"`
+
+A page that repaints on a timer must not repaint a card that holds such a
+button while its data is unchanged: System Monitor refreshes every 2 s and
+paints the fault card only when the fault list changed (`faultSig`), or an
+open bubble would lose its button under the reader.
+
+Probe: `tools/webui_preview/probe_faults.mjs` (`FAULTS PROBE PASS`).
+
 ## The new-car bar (2026-10-26)
 
 Ali set a device up on the simulator (two standard PIDs chosen), took it to
@@ -1203,7 +1241,7 @@ go through the header Submit like every setting) · UDS Tool · J2534 ·
 **File Manager** (2026-09-07: storage cards, breadcrumb + deep links,
 filter/sort, multi-select delete, drag-and-drop upload with progress, text
 preview, in-use marking; chunk `web/files.js`) · Logs · System Monitor
-(tasks/CPU/heap/temp) · All Settings
+(tasks/CPU/heap/temp, the device fault codes) · All Settings
 (every component).
 
 ## Connections card (Settings page: the bridge builder)

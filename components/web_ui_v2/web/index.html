@@ -503,6 +503,19 @@ input[type="range"]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 4px var
 .banner.crit svg{color:var(--danger)}.banner.warn svg{color:var(--warning)}
 .banner.info{background:var(--primary-tint);border:1px solid color-mix(in srgb,var(--primary) 25%,transparent);color:var(--text-2)}
 .banner.info svg{color:var(--primary)}
+/* info bubble (2026-11-12, Ali: keep a table simple, "if we want to add
+   additional info add a bubble"): a small button beside a value, the
+   explanation in a bubble on demand. Fixed to the viewport, so that a table's
+   scroll box cannot clip it. */
+.ibtn{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;flex:none;padding:0;border:none;border-radius:50%;
+  background:transparent;color:var(--text-3);cursor:pointer;vertical-align:middle}
+.ibtn:hover,.ibtn[aria-expanded="true"]{background:var(--surface-3);color:var(--primary)}
+.ibtn svg{width:15px;height:15px}
+.ibubble{position:fixed;z-index:60;width:320px;max-width:calc(100vw - 16px);box-sizing:border-box;padding:12px 14px;
+  background:var(--surface);border:1px solid var(--border-strong);border-radius:10px;box-shadow:var(--shadow-lg);
+  font-family:var(--ui);font-size:12.5px;font-weight:400;line-height:1.5;color:var(--text-2);text-align:left;white-space:normal}
+.ibubble b{display:block;margin-bottom:4px;font-size:13px;color:var(--text)}
+.ibubble p{margin:0}
 
 /* terminal / console */
 .term{background:var(--term-bg);border:1px solid var(--border);border-radius:12px;overflow:hidden;box-shadow:var(--shadow)}
@@ -1481,6 +1494,34 @@ function applyBar(){return h("span",{style:"display:none"});}
 function loading(){return h("div",{class:"loading"},h("div",{class:"spinner"}));}
 function banner(kind,icon,...body){return h("div",{class:"banner "+kind},ic(icon),h("div",{},...body));}
 function note(kind,txt){return h("div",{class:"note "+(kind||"")},ic(kind==="warn"?"alert":"info"),h("span",{},...(Array.isArray(txt)?txt:[txt])));}
+/* info bubble (2026-11-12): infoBtn(label,title,text) is a small button that
+   opens a bubble with a title and a paragraph, under the button or above it
+   when there is no room. One bubble at a time; the button again, a click
+   elsewhere, Escape, a scroll, a resize or a page change closes it. */
+let bubbleOff=null;
+function closeBubble(){if(bubbleOff){const off=bubbleOff;bubbleOff=null;off();}}
+function infoBtn(label,title,text){
+  const b=h("button",{type:"button",class:"ibtn","aria-label":label,"aria-expanded":"false",onclick:e=>{
+    e.stopPropagation();
+    const wasOpen=b.getAttribute("aria-expanded")==="true";closeBubble();if(wasOpen)return;
+    const box=h("div",{class:"ibubble",role:"tooltip"},h("b",{},title),h("p",{},text));
+    document.body.append(box);
+    const r=b.getBoundingClientRect(),w=box.offsetWidth,ht=box.offsetHeight;
+    const below=r.bottom+8+ht<=window.innerHeight-8||r.top-8-ht<8;
+    box.style.left=Math.max(8,Math.min(r.left-6,window.innerWidth-w-8))+"px";
+    box.style.top=(below?r.bottom+8:r.top-8-ht)+"px";
+    b.setAttribute("aria-expanded","true");
+    const onDoc=ev=>{if(!box.contains(ev.target)&&!b.contains(ev.target))closeBubble();};
+    const onKey=ev=>{if(ev.key==="Escape"){closeBubble();b.focus();}};
+    document.addEventListener("click",onDoc,true);document.addEventListener("keydown",onKey,true);
+    window.addEventListener("resize",closeBubble);window.addEventListener("scroll",closeBubble,true);
+    bubbleOff=()=>{box.remove();b.setAttribute("aria-expanded","false");
+      document.removeEventListener("click",onDoc,true);document.removeEventListener("keydown",onKey,true);
+      window.removeEventListener("resize",closeBubble);window.removeEventListener("scroll",closeBubble,true);};
+  }},ic("info"));
+  return b;
+}
+window.addEventListener("hashchange",closeBubble);
 function rangeRow(label,{min,max,step,value,unit,scale},onchange){
   const val=h("span",{class:"rangeval"},(value*(scale||1)).toFixed(step<1?1:0)+" "+unit);
   const r=h("input",{type:"range",min,max,step,value,oninput:e=>{val.textContent=(Number(e.target.value)*(scale||1)).toFixed(step<1?1:0)+" "+unit;},onchange:e=>onchange(Number(e.target.value))});
@@ -6189,6 +6230,28 @@ PAGES.logs=async(view)=>{
 };
 
 /* ---- System Monitor (tasks / CPU / heap / temperature) ---- */
+/* What a fault code means, for the bubble beside it in the table (2026-11-12).
+   A title and two or three plain sentences: what happened, and what to do.
+   The table itself stays the code and its detail (Ali: simple and clean). A
+   code without an entry here has no bubble. */
+const FAULT_INFO={
+  obd_chip_silent:["The OBD chip did not answer","When WiCAN started, the OBD chip answered nothing and WiCAN reset it as a last resort. The detail says whether the chip came back. If it stayed silent, vehicle data and apps do not work: unplug WiCAN for ten seconds, and contact support if the fault returns."],
+  obd_chip_damaged:["The OBD chip lost its stored identity","The chip still works, but it lost what it stores about itself (its name, its version, its serial number). WiCAN uses it as it is. Contact support and include the chip configuration from System > Maintenance."],
+  obd_chip_woke:["The OBD chip woke up during sleep","The chip was asleep and woke up again while WiCAN slept. WiCAN put it back to sleep. Once is harmless; a growing count means the chip has lost its sleep setting and WiCAN draws more from the car's battery while parked."],
+  obd_chip_no_sleep:["The OBD chip would not sleep","WiCAN could not put the OBD chip to sleep and restarted itself to try again. While this lasts WiCAN draws more from the car's battery when parked. Contact support if it keeps coming back."],
+  boot_errors:["Errors during start-up","A part of WiCAN logged an error while it started. The detail says how many lines. Worth sending with a support request, together with the log of a start that shows them."],
+  registry_headroom:["An internal table is nearly full","One of the firmware's fixed tables has two entries or fewer left. The detail names it. Nothing is lost yet; report it so that the table can be made larger."],
+  boot_flash_budget:["Many flash erases during start-up","WiCAN erased more of its flash memory than expected while starting. Once after an update is normal; at every start it wears the memory. Report it with the detail."],
+  flash_churn:["The flash memory is written all the time","Flash erases kept rising for ten minutes in a row. Logging to the internal storage does this by design; anything else is worth a report."],
+  flash_jobs_refused:["A save did not happen: memory was low","WiCAN could not run its flash worker for want of internal memory, so a settings save, a file write or an update step was refused. Restart WiCAN and repeat the action; report it if it comes back."],
+  internal_ram_low:["Internal memory ran low","Free internal memory fell under the safe limit. In that state Bluetooth or the web page can stop answering. Restart WiCAN, and report which features were in use."],
+  logger_file_corrupt:["A log file was damaged","The Logger found a damaged file on the SD card, set it aside and went on in a new one. The detail names the file. Usually the card was pulled or the power was lost in the middle of a write."],
+  logger_storage_error:["The Logger cannot write to the SD card","The Logger could not open a file on the card and now tries again every 10 seconds. Check that the card is in and not full; format it from the Logger page if it stays like this."],
+};
+function faultCode(code){
+  const info=FAULT_INFO[code];
+  return info?h("span",{class:"rowflex",style:"gap:2px"},chip(code,"crit"),infoBtn("What "+code+" means",info[0],info[1])):chip(code,"crit");
+}
 PAGES.sysmon=async(view)=>{
   const p=page(view,null,"System Monitor","Live tasks, CPU load, heap and die temperature");
   p.classList.add("wide");
@@ -6198,6 +6261,7 @@ PAGES.sysmon=async(view)=>{
   const taskEl=h("div",{});
   p.append(tilesEl,faultsEl,heapEl,taskEl);
   let prev=null;
+  let faultSig=null; /* the fault list as last painted */
   async function refresh(){
     const[st,tk,fl]=await Promise.all([tryGet("/api/status"),tryGet("/api/status/tasks"),tryGet("/api/faults")]);
     if(!st||!tk||!tk.tasks)return;
@@ -6206,11 +6270,16 @@ PAGES.sysmon=async(view)=>{
        the field stays visible here */
     const faults=(fl&&fl.faults)||[];
     const ftime=t=>t>0?new Date(t*1000).toLocaleString():"-";
+    /* painted only when the list changed (2026-11-12): the page refreshes
+       every 2 s, and a repaint would take the button of an open info bubble
+       away under the reader */
+    const fsig=JSON.stringify(faults);
+    if(fsig!==faultSig){faultSig=fsig;closeBubble();
     faultsEl.replaceChildren(section("Fault codes",
       "structural problems latch here and survive reboots until cleared, like DTCs in a car",
       ...(faults.length===0?[h("div",{class:"help"},"No fault codes, device healthy.")]:[
         dataTable([
-          {label:"Code",get:r=>chip(r.code,"crit"),mono:true},
+          {label:"Code",get:r=>faultCode(r.code),mono:true},
           {label:"Detail",key:"detail"},
           {label:"Count",key:"count",align:"right",mono:true},
           {label:"First seen",get:r=>ftime(r.first_time),mono:true},
@@ -6220,7 +6289,7 @@ PAGES.sysmon=async(view)=>{
           if(!await confirmModal(faults.length+" latched fault code(s) will be erased from NVS. Investigate before clearing: this is the only record.","Clear faults"))return;
           try{await api("/api/faults/clear",{method:"POST"});toast("Fault codes cleared","ok");refresh();}
           catch(e){toast("Clear failed","err");}
-        }},"Clear fault codes"))])));
+        }},"Clear fault codes"))])));}
     const map=new Map(tk.tasks.map(x=>[x.name,x.runtime_us]));
     let rows=tk.tasks.map(x=>({...x,cpu:null}));
     let busy=null;

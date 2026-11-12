@@ -400,6 +400,33 @@ void test_vtvers_versions_and_unknown_answers(void)
     TEST_ASSERT_EQUAL(OBD_VTVERS_UNKNOWN, obd_fw_vtvers_class("xxERR", 4));
 }
 
+void test_question_alone_is_the_loaders_answer(void)
+{
+    /* a chip in its download mode answers every word with `?` (bench
+       2026-11-12, a chip firmware update cut by a restart): with its line
+       ends and its prompt, or as the extract hands it over */
+    static const char BARE[] = "?";
+    static const char RAW[] = "?\r\r>";
+    static const char NUL_IN_IT[] = { '?', '\0', '\r' };
+
+    TEST_ASSERT_TRUE(obd_fw_answer_is_question(BARE, sizeof(BARE) - 1));
+    TEST_ASSERT_TRUE(obd_fw_answer_is_question(RAW, sizeof(RAW) - 1));
+    TEST_ASSERT_TRUE(obd_fw_answer_is_question(NUL_IN_IT, sizeof(NUL_IN_IT)));
+
+    /* a chip that runs its application answers the reset word with its
+       banner, a word with OK, a damaged one with its error text */
+    TEST_ASSERT_FALSE(obd_fw_answer_is_question("ELM327 v2.3", 11));
+    TEST_ASSERT_FALSE(obd_fw_answer_is_question("OK", 2));
+    TEST_ASSERT_FALSE(obd_fw_answer_is_question("?ERR82", 6));
+    TEST_ASSERT_FALSE(obd_fw_answer_is_question("STOPPED", 7));
+
+    /* no answer at all is not the loader's answer */
+    TEST_ASSERT_FALSE(obd_fw_answer_is_question("", 0));
+    TEST_ASSERT_FALSE(obd_fw_answer_is_question("?", 0));
+    TEST_ASSERT_FALSE(obd_fw_answer_is_question("\r\r>", 3));
+    TEST_ASSERT_FALSE(obd_fw_answer_is_question(NULL, 4));
+}
+
 void test_fw_image_records_are_counted_by_line(void)
 {
     static const char IMG[] = "A1\nB2\nFFF1\n";

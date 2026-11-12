@@ -357,6 +357,7 @@ esp_err_t obd_bringup_run(int *active_baud)
        reset. */
     const bool down = (settled == OBD_SETTLE_DOWN);
     bool reset_done = false;
+    bool loader = false; /* the chip is in its download mode */
 
     obd_uart_set_baud(OBD_CHIP_BAUD);
 
@@ -467,7 +468,25 @@ esp_err_t obd_bringup_run(int *active_baud)
            (see chip_soft_reset). */
         reset_done = chip_soft_reset(resp, sizeof(resp));
 
-        if (!reset_done)
+        /* a chip in its download mode (2026-11-12): a firmware update that
+           was cut short leaves the chip in its loader, which answers every
+           word with `?` and holds READY not ready. Named, where two lines
+           about an open session and a READY that never came said nothing
+           of it. Writing the firmware again is the way back: the start-up
+           check does that by itself, the user's update otherwise. */
+        loader = !reset_done && !obd_pin_ready() &&
+                 obd_fw_answer_is_question(resp, s_probe_len);
+
+        if (loader)
+        {
+            ESP_LOGW(TAG, "the chip is in its download mode (it answers '?' to "
+                     "every word, READY not ready): a chip firmware update was "
+                     "cut short; writing the firmware again brings it back (%s)",
+                     obd_settings_config()->auto_update
+                         ? "the start-up check does that now"
+                         : "System > Maintenance, or obd_chip update");
+        }
+        else if (!reset_done)
         {
             ESP_LOGE(TAG, "the chip answers but confirms no reset by command: "
                      "used as it is, a session of the run before may still "
@@ -577,14 +596,15 @@ esp_err_t obd_bringup_run(int *active_baud)
     /* legacy: wait for the READY pin (LOW = ready) before declaring the
        chip up. Legacy forced a reset pulse when it never came; this chip
        has answered every word above, so it gets none (issue #1023) and is
-       used as it is. */
-    for (int i = 0; !obd_pin_ready() && i < 10; i++)
+       used as it is. A chip in its download mode is not waited for: its
+       READY comes with its firmware, and the line above has said so. */
+    for (int i = 0; !loader && !obd_pin_ready() && i < 10; i++)
     {
         ESP_LOGW(TAG, "chip not ready...");
         vTaskDelay(pdMS_TO_TICKS(200));
     }
 
-    if (!obd_pin_ready())
+    if (!loader && !obd_pin_ready())
     {
         ESP_LOGE(TAG, "the chip answers but READY reads not ready after 2 s: "
                  "used as it is (no reset pulse for a chip that answers)");

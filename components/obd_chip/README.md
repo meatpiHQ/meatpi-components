@@ -849,6 +849,26 @@ bring-up; the next boot or wake looks again):
 | `VTVERS` | the bring-up, for the version and the PowerEn check | once, 1.5 s | no answer: the version stays unknown, the PowerEn check is skipped, the bring-up goes on |
 | `VTVERS` | the start-up firmware check, once per boot | 5 s at the speed the UART runs at, then at the other | silent at both: not flashing. Bytes without a prompt: the download-mode entry is tried (a chip stuck in its download mode) |
 
+When a fault of the chip still leads to a rewrite of its firmware, and when not (the
+start-up check, once per boot, with `auto_update` on; the user's update follows the same
+rows): a chip that answers nothing is not flashed; a chip that runs with a damaged store is
+never rewritten; a chip in its download mode is, because writing the firmware again is the
+only way back; a chip that sends bytes without a prompt gets the download-mode word, and
+firmware only if it accepts it.
+
+A chip in its download mode (a chip firmware update that was cut short: the chip's loader
+answers every word with `?` and holds READY not ready) is named by the bring-up since
+2026-11-12: one W line, `the chip is in its download mode (it answers '?' to every word,
+READY not ready): a chip firmware update was cut short; writing the firmware again brings
+it back (...)`, with who does that in the brackets (`the start-up check does that now`, or
+`System > Maintenance, or obd_chip update` with `auto_update` off). Until then that boot
+printed two E lines that said nothing of it (`the chip answers but confirms no reset by
+command ... a session of the run before may still be open` and `the chip answers but READY
+reads not ready after 2 s`) and waited 2 s for a READY that comes only with the firmware.
+The mark is the reset word answered with `?` alone while READY reads not ready
+(`obd_fw_answer_is_question()`, pure, host-tested); every other chip that confirms no
+reset by command keeps the E line.
+
 `GET /api/obd_chip` `reset`: `pulses` (sent since boot: 0 on a healthy chip) and `refused`
 (asked for and not given: 0 as well), and for the last bring-up `wake_ms` (how long behind
 the sleep pin READY settled: about 300 on an awake chip, 800 to 1000 at a wake),

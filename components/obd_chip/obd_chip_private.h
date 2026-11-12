@@ -269,6 +269,13 @@ typedef enum
 
 obd_vtvers_t obd_fw_vtvers_class(const char *resp, size_t len);
 
+/** The chip's answer is `?` and nothing else (line ends, blanks and the
+ *  prompt aside). To the reset word that is the mark of a chip in its
+ *  download mode: its loader, left behind by a firmware update that was cut
+ *  short, knows no AT word and answers every one so. @p len: the answer's
+ *  length (0 = no answer: false). Pure, host-tested. */
+bool obd_fw_answer_is_question(const char *resp, size_t len);
+
 /** True when the last update run streamed an image and finalized it (the
  *  chip restarted: the caller brings it up again). */
 bool obd_fw_last_flashed(void);

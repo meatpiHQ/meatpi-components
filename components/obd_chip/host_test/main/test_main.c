@@ -68,6 +68,7 @@ void test_fault_a_silent_chip_is_latched_however_it_ended(void);
 void test_fault_codes_and_details_fit_the_fault_store(void);
 void test_vtvers_a_damaged_store_is_not_a_chip_to_recover(void);
 void test_vtvers_versions_and_unknown_answers(void);
+void test_question_alone_is_the_loaders_answer(void);
 void test_fw_image_records_are_counted_by_line(void);
 
 void app_main(void)
@@ -136,6 +137,7 @@ void app_main(void)
     RUN_TEST(test_fault_codes_and_details_fit_the_fault_store);
     RUN_TEST(test_vtvers_a_damaged_store_is_not_a_chip_to_recover);
     RUN_TEST(test_vtvers_versions_and_unknown_answers);
+    RUN_TEST(test_question_alone_is_the_loaders_answer);
     RUN_TEST(test_fw_image_records_are_counted_by_line);
     UNITY_END();
 }

@@ -249,3 +249,29 @@ obd_vtvers_t obd_fw_vtvers_class(const char *resp, size_t len)
 
     return OBD_VTVERS_UNKNOWN;
 }
+
+bool obd_fw_answer_is_question(const char *resp, size_t len)
+{
+    bool question = false;
+
+    if (resp == NULL)
+    {
+        return false;
+    }
+
+    for (size_t i = 0; i < len; i++)
+    {
+        const char c = resp[i];
+
+        if (c == '?')
+        {
+            question = true;
+        }
+        else if (c != '\r' && c != '\n' && c != ' ' && c != '>' && c != '\0')
+        {
+            return false; /* a banner, an OK, an error text: another answer */
+        }
+    }
+
+    return question;
+}

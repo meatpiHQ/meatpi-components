@@ -317,6 +317,13 @@ and C are not judged: `allow`.
   log line per change of mind, and the banner on the Automate dashboard.
 - A protocol learned by the search is stored for the car (the identity check
   asks `ATDPN` before the prelude resets the search).
+- **Who else is on the CAN pins** (2026-11-13). The standing picture cannot
+  say: with the native node enabled it acknowledges the chip's own requests
+  and reads them as frames (`bus live at 500 kbit/s` on a car with no CAN at
+  all). `ap_guard_others_on_can()` asks with the chip quiet: 300 ms of the
+  running node's counters, or a look of the listening node with the chip's
+  echo waited out. First contact asks it before it tries SAE J1850 and the
+  K-line by itself.
 
 Bench: `tools/testbench/can/can_autobaud_bench.py` legs c0..c3 (the PCAN
 adapter counts the error frames on the wire: zero while parked, zero with the
@@ -931,28 +938,87 @@ off: the session is left to end and the next row starts the bus).
 
 ### The detection
 
-Behind the CAN protocols the bus allows, `Detect my vehicle` walks the
-K-line: `5`, `3`, `4` (`ap_proto_walk_precan()`, the cheapest start first:
-a fast init gives up in 1.0 s, a 5 baud start in 2.9 s), each with its
-prelude and `0100`. Pin 7 is no CAN bus: the bus guard has nothing to say
-there. The UDS dialect is not asked on a pre-CAN protocol. `GET
-/api/autopid/std_scan` carries `trying` (the protocol's number) while the
-job looks, so a page can say what the wait is for. SAE J1850 is not in the
-walk yet: it can be pinned (`std_protocol` `1` or `2`).
+Behind the CAN protocols the bus allows, `Detect my vehicle` walks SAE
+J1850 and the K-line: `2`, `1`, `5`, `3`, `4` (`ap_proto_walk_precan()`,
+the cheapest first: a J1850 bus has no start and says `NO DATA` after the
+reply wait, 0.67 s on VPW and 0.62 s on PWM; a fast init gives up in 1.0 s,
+a 5 baud start in 2.8 s; 7.9 s when nobody is there), each with its prelude
+and `0100`. These are other pins than the CAN bus: the bus guard has
+nothing to say there. The UDS dialect is not asked on a pre-CAN protocol.
+`GET /api/autopid/std_scan` carries `trying` (the protocol's number) while
+the job looks, so a page can say what the wait is for. SAE J1850 joined the
+walk on 2026-11-13; until then the job tried `6`, `7`, `5`, `3`, `4` on a
+J1850 VPW car and said "no ECU response". A try on one of the five is not
+answered by a car on another (bench, the same day): a VPW car is silent to
+PWM and the reverse, an ISO 9141-2 ECU refuses the ISO 14230 5 baud start
+by its key bytes and the reverse, a fast init fails on a 5 baud ECU.
 
 On the bench (2026-11-12, ECU sim v2 as an ISO 9141-2 car alone) the job
 was through in 12 s: the four CAN protocols on a silent bus, `5` (`ERROR`
 after a second), then `3`, with the VIN from five messages and 16 supported
 PIDs. The car's protocol is saved in the chip as for a CAN car, one write
-per car (`autopid_vehicle_switch.c`, `obd_chip_protocol_save()`). ISO
-14230-4 has been through the Test route on the bench with both inits, not
-through the detection.
+per car (`autopid_vehicle_switch.c`, `obd_chip_protocol_save()`). On
+2026-11-13 the job found a J1850 VPW car in 7 s (tried 6, 7, 2) and an ISO
+14230-4 car with the fast init in 10 s (tried 6, 7, 2, 1, 5). ISO 14230-4
+with the 5 baud init and SAE J1850 PWM have been through the Test route,
+not through the detection.
+
+### First contact finds a pre-CAN car (2026-11-13)
+
+The walk that looks for whoever is there (`walk_candidates()` in
+`autopid_contact.c`: no protocol is named, or the named one stayed silent
+for three polls) ended behind the CAN protocols. A unit plugged into a
+K-line or J1850 car polled the protocol of the car it knew, gave it up for
+the chip's own search and never found the car: on the bench 172 failed
+polls in 150 s on an ISO 9141-2 car, the K-line never started (the chip's
+search does not get to the K-line between two polls, the next request
+stops it). Now the walk goes on behind the CAN candidates with the pre-CAN
+protocols in the detection's order, `0100` on each, and the identity check
+runs on the one that answers. The store decides as for any contact: the
+car's record takes the protocol (the car it knew, or a switch to a stored
+one: no write of the chip), or the detection job stores the new car with
+the protocol as its hint.
+
+It does so only when nobody else talks on the CAN pins
+(`ap_dialect_precan_candidates()`, pure; `ap_guard_others_on_can()`): a
+vehicle with traffic there is a CAN vehicle (a car that needs its profile,
+a truck), and its other pins are left alone. The question is asked behind
+the CAN tries, with the chip quiet, and not answered from the bus guard's
+standing picture. With the unit's own CAN node enabled that node
+acknowledges the chip's requests, and two of them read as "bus live at 500
+kbit/s" on a car with no CAN at all: the first build of this change was red
+on exactly that, the K-line not tried once. So with the node running by its
+settings, what it hears in 300 ms of the chip's silence decides; with a
+node that only listens, a look at the bus decides, the echo of the chip's
+own unanswered requests waited out. Not behind an answered row
+(`contact_behind_row()`): that car is where its rows are.
+
+The cadence is the probe's: every 10 s, doubling to 80 s while nothing
+answers. A round with nobody there costs about 11 s of the chip (3 s of CAN
+tries, 7.9 s of pre-CAN ones) and three K-line starts that fail. The
+voltage pause holds it back like every other request (`pause_follow_sleep`:
+below the sleep voltage a parked car is not asked).
+
+On the bench (2026-11-13, `.\test.ps1 precan` in the firmware repo): an ISO
+9141-2 car found 20 s after the boot (three silent polls on the stored CAN
+protocol, the CAN walk, then `2`, `1`, `5` and `3`), the rows answered from
+then on; a J1850 VPW car that turned up in a boot that had found nobody,
+found by the next round; the unit's own CAN car found again 12 s after its
+boot. No protocol save in any of it. Run with the unit's own CAN node on
+and off (`--can off`: a unit from the factory), the two ways the question
+about the CAN pins is asked; a CAN vehicle with traffic and no answer to a
+standard request got its 27 requests on CAN in 40 s and no K-line start.
+With `-Detect`: a car the store did not know, a J1850 VPW one, was found
+and stored 10 s after the unit was back, by a detection nobody asked for
+(one save of the chip's protocol), and `Detect my vehicle` found an ISO
+14230-4 car on protocol 5 in 10 s (tried 6, 7, 2, 1, 5), its VIN from five
+messages.
 
 ### What it does not do yet
 
-- The chip's own search (`ATTP0`) and the idle contact probe do not find a
-  pre-CAN car: the car is found by `Detect my vehicle`, or by pinning its
-  protocol.
+- The chip's own search (`ATTP0`) is not what finds a pre-CAN car: polls
+  under it stay unanswered until the walk has found the car (within the
+  probe's gap), and the baseline pins its protocol from then on.
 - The trouble code scan on a pre-CAN car is the OBD one (`01 01`, `03`,
   `07`, the freeze frame, the clear with `04`). The UDS path (`dtc_protocol`
   `uds`, and the fallback of `auto` behind a silent scan) addresses a CAN
@@ -1246,6 +1312,11 @@ check ran): the prelude, `0902`, `0100` (headers on), then
 - an ELM app holding the chip: the poller is not polling, so the check
   waits for the yield to end (case M).
 
+Where no protocol is named, or the named one stays silent, the probe
+walks the CAN protocols of this bus and, with nobody else on the CAN pins,
+SAE J1850 and the K-line (2026-11-13: "First contact finds a pre-CAN
+car").
+
 **The switch** (automatic from first contact, by the detection job, or by
 hand through `POST /api/autopid/vehicles/<key>/activate`; one code path,
 `ap_veh_switch_files()`): (1) snapshot the live `config.json` into the
@@ -1520,7 +1591,7 @@ it is what found the two defects above.
 
 ## Tests
 
-`host_test/` (run: `.\test.ps1 host autopid`, 175 tests): the pre-CAN protocols (`test_precan.c`, 7 cases, 2026-11-12: the protocol table with its kinds, its start and session times, the detection's walk and the keep-alive rule; the request header of each protocol, at the end of its prelude and behind an init that takes the chip there; GitHub issue #1045's own replies (the 4Runner's, and the Cayman S's with its ECU at 0x11 and with headers off) and the bench's on all five protocols decoded by the expression that reads them on CAN, read the CAN way first to show the wrong value; two ECUs told apart by their address, as a row's reply and as the detection's responder set, and a message with a wrong checksum left out; the VIN from five ISO 9141-2 messages, from five ISO 14230 messages and from one long ISO 14230 message; trouble codes in several messages of three, the bench's own lines: five and seven stored and four pending joined into the CAN layout and read by the DTC codec, one message with an unused place, no code at all, headers off, two ECUs with their messages mixed, a refusal behind a list, more codes than a payload holds, J1850 VPW, ISO 14230 with seven data bytes a message and with one long message that carries a count; what the protocol hint must not take: a CAN reply under it, the rows of a long headers-off reply, data whose last byte is no checksum); the words the chip stores (`test_store_words.c`, 5 cases, 2026-11-11: which words they are and which RAM words only look like them, no chain keeps one behind the sanitizing, the parser refuses a row that is on and lets a switched-off row keep it, a stored file repaired once with the clean rows left on, the rows of the car's protocol that wait while their type's init carries one, with the row on another bus, the J1939 group and the other types going on); the bus of a row (`test_bus.c`, 11 cases, 2026-11-11: the words, the speed of a bus and its chain with no stored word in it, what a row of another bus may carry, the config parse and its refusals, the rows of a bus asked together, an excursion asking every row once and coming home with two buses at max rate, the rest after CAN ERRORs, the class that keeps such rows out of the HS bus guard's hands); the frame of reference of a reply (`test_frames.c`, 9 cases, 2026-10-24, issue #1014: a stored config's standard rows re-numbered to the table's expressions, a custom row and an unknown command left alone, a second pass a no-op; the chip's own prints from the bench, an extended-addressed BMW SME with a pending frame and padding, decoded as the published rows mean (`[B6:B7]/10` = 72.6 %, the i3's `[B11:B12]` shown to count the pending frame); a Hyundai Ioniq 2021 BMS reply of nine frames from a Car Scanner log (`B10/2` = 75 %, `[B19:B20]/10` = 341.9 V); a Leaf AZE0 reply with its padding kept; the MEB 29-bit print of issue #914 taken as an id by the row's filter or the protocol hint and left alone without; headers-off replies rebuilt into frames, the 28-row reply in arrival order, a missing row stopping the assembly; the lowest responder; ATH0/ATS0/ATE1 dropped from a chain and the receive filter a chain sets; the standard table's numbering); the bounds on a decoded value and the SAE rows inside their own range (`test_bounds.c`, 4 cases, 2026-10-20: the report's 100.000001646 clamped to 100 on a standard and on a custom row, the reporter's controlled values, the tolerance, a J1939 not-available raw dropped, the exact ratio and the signed span, every ranged table row decoded at 0x00 / 0xFF / 0x7F / 0x80 through the real parser inside its range); what a chain of the tables sets on the chip and the chain that puts the baseline back (`test_chain.c`, 4 cases, 2026-10-20: the BMW row of issue #964, the published i3 / Mini / e-Ulysse chains, the off and reset forms set nothing, every undo command fits `AP_RESTORE_LEN`); the detection's rows as a new car's tables, on or off (`test_scan_rows.c`, 3 cases, 2026-10-09); the J1939 rows
+`host_test/` (run: `.\test.ps1 host autopid`, 176 tests): what first contact tries by itself behind the CAN candidates (`test_dialect_precan_candidates`, 2026-11-13: SAE J1850 and the K-line when nobody else is on the CAN pins, nothing when somebody talks there); the pre-CAN protocols (`test_precan.c`, 7 cases, 2026-11-12: the protocol table with its kinds, its start and session times, the walk in its order of cost (`21534`, every entry a pre-CAN protocol) and the keep-alive rule; the request header of each protocol, at the end of its prelude and behind an init that takes the chip there; GitHub issue #1045's own replies (the 4Runner's, and the Cayman S's with its ECU at 0x11 and with headers off) and the bench's on all five protocols decoded by the expression that reads them on CAN, read the CAN way first to show the wrong value; two ECUs told apart by their address, as a row's reply and as the detection's responder set, and a message with a wrong checksum left out; the VIN from five ISO 9141-2 messages, from five ISO 14230 messages and from one long ISO 14230 message; trouble codes in several messages of three, the bench's own lines: five and seven stored and four pending joined into the CAN layout and read by the DTC codec, one message with an unused place, no code at all, headers off, two ECUs with their messages mixed, a refusal behind a list, more codes than a payload holds, J1850 VPW, ISO 14230 with seven data bytes a message and with one long message that carries a count; what the protocol hint must not take: a CAN reply under it, the rows of a long headers-off reply, data whose last byte is no checksum); the words the chip stores (`test_store_words.c`, 5 cases, 2026-11-11: which words they are and which RAM words only look like them, no chain keeps one behind the sanitizing, the parser refuses a row that is on and lets a switched-off row keep it, a stored file repaired once with the clean rows left on, the rows of the car's protocol that wait while their type's init carries one, with the row on another bus, the J1939 group and the other types going on); the bus of a row (`test_bus.c`, 11 cases, 2026-11-11: the words, the speed of a bus and its chain with no stored word in it, what a row of another bus may carry, the config parse and its refusals, the rows of a bus asked together, an excursion asking every row once and coming home with two buses at max rate, the rest after CAN ERRORs, the class that keeps such rows out of the HS bus guard's hands); the frame of reference of a reply (`test_frames.c`, 9 cases, 2026-10-24, issue #1014: a stored config's standard rows re-numbered to the table's expressions, a custom row and an unknown command left alone, a second pass a no-op; the chip's own prints from the bench, an extended-addressed BMW SME with a pending frame and padding, decoded as the published rows mean (`[B6:B7]/10` = 72.6 %, the i3's `[B11:B12]` shown to count the pending frame); a Hyundai Ioniq 2021 BMS reply of nine frames from a Car Scanner log (`B10/2` = 75 %, `[B19:B20]/10` = 341.9 V); a Leaf AZE0 reply with its padding kept; the MEB 29-bit print of issue #914 taken as an id by the row's filter or the protocol hint and left alone without; headers-off replies rebuilt into frames, the 28-row reply in arrival order, a missing row stopping the assembly; the lowest responder; ATH0/ATS0/ATE1 dropped from a chain and the receive filter a chain sets; the standard table's numbering); the bounds on a decoded value and the SAE rows inside their own range (`test_bounds.c`, 4 cases, 2026-10-20: the report's 100.000001646 clamped to 100 on a standard and on a custom row, the reporter's controlled values, the tolerance, a J1939 not-available raw dropped, the exact ratio and the signed span, every ranged table row decoded at 0x00 / 0xFF / 0x7F / 0x80 through the real parser inside its range); what a chain of the tables sets on the chip and the chain that puts the baseline back (`test_chain.c`, 4 cases, 2026-10-20: the BMW row of issue #964, the published i3 / Mini / e-Ulysse chains, the off and reset forms set nothing, every undo command fits `AP_RESTORE_LEN`); the detection's rows as a new car's tables, on or off (`test_scan_rows.c`, 3 cases, 2026-10-09); the J1939 rows
 (`test_j1939_rows.c`, 10 cases: the `PGN:` grammar and its refusals, the
 config parser's typed fields and the `init` / `rxheader` refusal, the
 scheduler's class-masked pick and the 20 ms passive floor, the built-in

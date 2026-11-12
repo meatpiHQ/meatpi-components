@@ -50,7 +50,9 @@
  *                               `22F400` on each (ap_dialect_can_candidates
  *                               has the reasons: the chip's own search
  *                               cannot find a UDS-dialect vehicle and takes
- *                               9.3 s to say so)
+ *                               9.3 s to say so); then, with nobody else on
+ *                               the CAN pins, SAE J1850 and the K-line with
+ *                               `0100` (ap_dialect_precan_candidates)
  *
  * An answered poll in search mode is read two ways (2026-11-10). When no
  * chain of the tables pinned a protocol, the chip's search found the car and
@@ -117,9 +119,7 @@ static char protocol_in_effect(void)
 
 static bool setting_pinned(void)
 {
-    const char *setting = ap_core_std_protocol();
-
-    return ap_proto_pinnable(setting[0]);
+    return ap_proto_pinnable(ap_core_std_protocol()[0]);
 }
 
 /** True while the chip prelude pins the protocol LEARNED into the store
@@ -322,10 +322,10 @@ static void note_silence(void)
 }
 
 /**
- * A standard request on @p proto, both dialects, when the bus guard lets
- * the chip be pinned on it (it looks again before each one: a bus asleep at
- * boot may have woken up at another bitrate since the last look).
- * @p sent is set once the chip was pinned.
+ * A standard request on @p proto (both dialects on CAN; ISO 27145 does not
+ * live on a K-line or J1850 bus), when the bus guard lets the chip be pinned
+ * on it (it looks again before each one: a bus asleep at boot may have woken
+ * up at another bitrate since the last look). @p sent: the chip was pinned.
  * @return true when a vehicle answered and the identity check went out on
  *         that protocol.
  */
@@ -341,7 +341,7 @@ static bool try_protocol(char proto, bool *sent)
 
     bool obd2 = alive(AP_DIALECT_OBD2);
 
-    if (!obd2 && !alive(AP_DIALECT_UDS))
+    if (!obd2 && (ap_proto_precan(proto) || !alive(AP_DIALECT_UDS)))
     {
         return false;
     }
@@ -356,13 +356,14 @@ static bool try_protocol(char proto, bool *sent)
 
 /**
  * The walk: @p first when one is named (the protocol a row of the tables
- * pinned, which is the car's own for most profiles and the only way to a
- * K-line or J1850 car), then the ISO 15765-4 protocols this bus allows.
+ * pinned, the car's own for most profiles), then the ISO 15765-4 protocols
+ * this bus allows, then with @p precan (nobody answers anything: the car
+ * may be a K-line or J1850 one) the pre-CAN ones when the CAN pins are quiet.
  * @return true when a vehicle answered a standard request and the identity
  *         check went out on that protocol; false when nobody did (the
  *         search prelude and the rows' inits are due again then).
  */
-static bool walk_candidates(char first)
+static bool walk_candidates(char first, bool precan)
 {
     char cand[AP_DIALECT_CAND_LEN];
     ap_bus_t bus;
@@ -380,6 +381,17 @@ static bool walk_candidates(char first)
     for (int i = 0; i < n; i++)
     {
         if (cand[i] != first && try_protocol(cand[i], &sent))
+        {
+            return true;
+        }
+    }
+
+    /* nobody on CAN, and the chip is quiet: who talks there now is the car */
+    for (const char *k = precan
+             ? ap_dialect_precan_candidates(ap_guard_others_on_can()) : "";
+         *k != '\0'; k++)
+    {
+        if (*k != first && try_protocol(*k, &sent))
         {
             return true;
         }
@@ -429,7 +441,7 @@ static void contact_probe(void)
 
     /* nobody named a protocol that answers: the walk. Nothing there
        (ignition off, nothing plugged in): look less often */
-    if (!walk_candidates('\0') && s_probe_gap_us < AP_PROBE_GAP_MAX_US)
+    if (!walk_candidates('\0', true) && s_probe_gap_us < AP_PROBE_GAP_MAX_US)
     {
         s_probe_gap_us *= 2;
     }
@@ -465,7 +477,8 @@ static void contact_behind_row(void)
     /* read before a prelude goes out: that clears it */
     char pin = ap_base_mem()->init_pin;
 
-    if (!walk_candidates(pin) && ++s_ident_tries >= AP_IDENT_TRIES)
+    /* a row is answered: the car is where its rows are, not on other pins */
+    if (!walk_candidates(pin, false) && ++s_ident_tries >= AP_IDENT_TRIES)
     {
         s_ident_done = true;
     }

@@ -105,10 +105,14 @@ bool ap_proto_kline(char id);
  *  OBD-II protocols, 1 to 9. */
 bool ap_proto_pinnable(char id);
 
-/** The pre-CAN protocols a detection tries, in this order, when no CAN
- *  protocol answered: the cheapest start first. The K-line today (the fast
- *  init gives up in 1.0 s, a 5 baud start in 2.9 s; ISO 9141-2 before the
- *  rarer ISO 14230 5 baud). SAE J1850 joins the walk with its own bench. */
+/** The pre-CAN protocols tried, in this order, when no CAN protocol
+ *  answered: the cheapest first. SAE J1850 has no start of the bus and
+ *  says `NO DATA` after the reply wait (VPW 0.67 s, PWM 0.62 s); the
+ *  K-line's fast init gives up in 1.0 s, a 5 baud start in 2.8 s (ISO
+ *  9141-2 before the rarer ISO 14230 5 baud). 7.9 s when nobody is there
+ *  (bench 2026-11-13). A try on one of them is not answered by a car on
+ *  another: VPW and PWM do not hear each other, and the key bytes of the
+ *  5 baud start tell ISO 9141-2 from ISO 14230. */
 const char *ap_proto_walk_precan(void);
 
 /** A K-line session that is asked nothing for this long gets one short

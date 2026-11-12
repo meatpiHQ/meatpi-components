@@ -113,7 +113,7 @@ bool ap_proto_pinnable(char id)
 
 const char *ap_proto_walk_precan(void)
 {
-    return "534";
+    return "21534";
 }
 
 bool ap_proto_kline_keep(uint32_t idle_ms, uint32_t wait_ms,

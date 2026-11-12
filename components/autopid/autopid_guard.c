@@ -70,6 +70,8 @@ static const char *TAG = "autopid";
                                                   young                     */
 #define AP_GUARD_SETTLE_STEP_MS 100            /* between two looks         */
 #define AP_GUARD_SETTLE_LOOKS   8              /* ... at most this many     */
+#define AP_GUARD_QUIET_MS       300            /* the chip quiet this long:
+                                                  what comes is not ours    */
 
 static SemaphoreHandle_t s_lock;       /* poller vs the jobs' tasks         */
 static StaticSemaphore_t s_lock_buf;   /* internal: FreeRTOS object         */
@@ -501,6 +503,45 @@ bool ap_guard_candidate_ok(char proto)
 
     xSemaphoreGive(s_lock);
     return ok;
+}
+
+bool ap_guard_others_on_can(void)
+{
+    can_manager_status_t a, b;
+
+    if (can_manager_status(&a) == ESP_OK && a.running)
+    {
+        /* the native node runs by its own settings and acknowledges what it
+           hears, the chip's requests too: on a car with no CAN at all two of
+           them read as "bus live at 500 kbit/s" (bench 2026-11-13, a K-line
+           car). What it hears while the chip is quiet is somebody else's */
+        vTaskDelay(pdMS_TO_TICKS(AP_GUARD_QUIET_MS));
+
+        return can_manager_status(&b) == ESP_OK &&
+               (b.stats.rx_count != a.stats.rx_count ||
+                b.stats.rx_bad != a.stats.rx_bad);
+    }
+
+    if (s_lock == NULL)
+    {
+        return false;
+    }
+
+    /* a node that only listens never takes the chip's unanswered requests
+       for frames: a look now says who is there, their echo waited out */
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    probe_now();
+
+    if (s_bus.kind == AP_BUS_UNREADABLE && s_chip_sent)
+    {
+        settle_own_echo();
+    }
+
+    bool others = (s_bus.kind == AP_BUS_LIVE ||
+                   s_bus.kind == AP_BUS_UNREADABLE);
+
+    xSemaphoreGive(s_lock);
+    return others;
 }
 
 void ap_guard_rearm(void)

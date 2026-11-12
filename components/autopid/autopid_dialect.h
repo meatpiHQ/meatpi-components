@@ -168,6 +168,26 @@ bool ap_dialect_init_sets_header(const char *init);
 int ap_dialect_can_candidates(const ap_bus_t *bus,
                               char out[AP_DIALECT_CAND_LEN]);
 
+/**
+ * The pre-CAN protocols first contact tries BY ITSELF once no CAN candidate
+ * answered (ap_proto_walk_precan()), or "" when it must not. The K-line and
+ * SAE J1850 are other pins, where no bus guard watches and nothing can be
+ * disturbed; the question is only whether such a car can be there:
+ *
+ *   nobody else on the CAN pins   the walk  a K-line or J1850 car has
+ *                                           nothing on pins 6 and 14 (and
+ *                                           so has a CAN car that sleeps)
+ *   somebody talks there          ""        a CAN vehicle (a car that
+ *                                           needs its profile, a truck):
+ *                                           its other pins are left alone
+ *
+ * @p others_on_can is ap_guard_others_on_can(), asked while the chip is
+ * quiet: the unit's own CAN node acknowledges the chip's requests, which is
+ * no traffic of the car's. "Detect my vehicle" is asked for and walks them
+ * whatever the CAN pins carry.
+ */
+const char *ap_dialect_precan_candidates(bool others_on_can);
+
 #ifndef AUTOPID_HOST_TEST
 /* ---- target half ---------------------------------------------------------- */
 
@@ -210,6 +230,9 @@ void ap_guard_bus(ap_bus_t *out);
 /** May one request go out on the pinned CAN protocol @p proto now? Looks
  *  at the bus again unless its bitrate is already known. */
 bool ap_guard_candidate_ok(char proto);
+/** Is anybody ELSE talking on the CAN pins right now? For a caller that has
+ *  the chip and keeps it quiet meanwhile (about a third of a second). */
+bool ap_guard_others_on_can(void);
 #endif /* !AUTOPID_HOST_TEST */
 
 /** The walk's rows as a config.json document (a new car's tables:

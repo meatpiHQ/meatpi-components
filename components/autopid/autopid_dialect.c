@@ -611,3 +611,8 @@ int ap_dialect_can_candidates(const ap_bus_t *bus,
     out[n] = '\0';
     return n;
 }
+
+const char *ap_dialect_precan_candidates(bool others_on_can)
+{
+    return others_on_can ? "" : ap_proto_walk_precan();
+}

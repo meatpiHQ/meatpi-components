@@ -102,9 +102,15 @@ void test_precan_protocol_table(void)
     TEST_ASSERT_TRUE(ap_veh_proto_is_29bit('B'));
     TEST_ASSERT_FALSE(ap_veh_proto_is_29bit('3'));
 
-    /* the detection's walk behind the CAN protocols: K-line, cheapest
-       start first */
-    TEST_ASSERT_EQUAL_STRING("534", ap_proto_walk_precan());
+    /* the walk behind the CAN protocols, the cheapest first: SAE J1850 (no
+       start of the bus, 0.7 s to say nobody is there), the K-line's fast
+       init (1.0 s), then its two 5 baud starts (2.8 s each) */
+    TEST_ASSERT_EQUAL_STRING("21534", ap_proto_walk_precan());
+
+    for (const char *k = ap_proto_walk_precan(); *k != '\0'; k++)
+    {
+        TEST_ASSERT_TRUE(ap_proto_precan(*k));
+    }
 
     /* the poller's one short request that keeps a K-line session: when the
        bus has not answered for 3.5 s, nothing else is due soon, and it did

@@ -520,6 +520,21 @@ void test_dialect_can_candidates(void)
     TEST_ASSERT_EQUAL(0, ap_dialect_can_candidates(&SILENT, NULL));
 }
 
+/* What first contact tries by itself behind the CAN candidates: SAE J1850
+ * and the K-line, when the car may be one of those. Until 2026-11-13 the
+ * walk ended behind CAN, and a unit plugged into a K-line car never found it
+ * (bench: 172 failed polls in 150 s, the K-line never started). */
+void test_dialect_precan_candidates(void)
+{
+    /* nobody else on the CAN pins: such a car has nothing there */
+    TEST_ASSERT_EQUAL_STRING("21534", ap_dialect_precan_candidates(false));
+    TEST_ASSERT_EQUAL_STRING(ap_proto_walk_precan(),
+                             ap_dialect_precan_candidates(false));
+
+    /* somebody talks there: a CAN vehicle, its other pins are left alone */
+    TEST_ASSERT_EQUAL_STRING("", ap_dialect_precan_candidates(true));
+}
+
 void run_dialect_tests(void)
 {
     RUN_TEST(test_dialect_names);
@@ -535,4 +550,5 @@ void run_dialect_tests(void)
     RUN_TEST(test_dialect_addressing);
     RUN_TEST(test_dialect_init_sets_header);
     RUN_TEST(test_dialect_can_candidates);
+    RUN_TEST(test_dialect_precan_candidates);
 }

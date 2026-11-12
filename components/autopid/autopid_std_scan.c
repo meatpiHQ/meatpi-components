@@ -270,11 +270,12 @@ static bool scan_contact(char *proto, ap_dialect_t *dialect)
         }
     }
 
-    /* no CAN protocol answered: the K-line (pin 7, which no CAN bus guard
-       watches: nothing there to disturb), the cheapest start first. Each
-       try starts the bus and the chip says how it went (`BUS INIT: ...OK`
-       or `ERROR`, by 2.9 s). Not the chip's own search: it cannot say
-       where it is, and chip firmware V2.3.22 loses it behind a warm start */
+    /* no CAN protocol answered: SAE J1850 and the K-line (other pins, which
+       no CAN bus guard watches: nothing there to disturb), the cheapest
+       first. A K-line try starts the bus and the chip says how it went
+       (`BUS INIT: ...OK` or `ERROR`, by 2.9 s). Not the chip's own search: it
+       cannot say where it is, and chip firmware V2.3.22 loses it behind a
+       warm start */
     for (const char *k = ap_proto_walk_precan(); *k != '\0'; k++)
     {
         *proto = *k;

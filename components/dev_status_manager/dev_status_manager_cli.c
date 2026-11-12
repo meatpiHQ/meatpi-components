@@ -28,6 +28,7 @@
  *        compositions only, like the *_register_http pattern).
  */
 #include "esp_attr.h"
+#include <stdio.h>
 #include <string.h>
 
 #include "esp_app_desc.h"
@@ -109,8 +110,14 @@ static int cmd_faults(int argc, char **argv)
 
     for (int i = 0; i < n; i++)
     {
-        cmdline_printf("%-22s x%-4lu %s\n", faults[i].code,
-                       (unsigned long)faults[i].count, faults[i].detail);
+        /* a count at its cap reads "x10+": that many or more */
+        char count[16];
+
+        snprintf(count, sizeof(count), "x%lu%s",
+                 (unsigned long)faults[i].count,
+                 dev_status_manager_fault_capped(&faults[i]) ? "+" : "");
+        cmdline_printf("%-22s %-5s %s\n", faults[i].code, count,
+                       faults[i].detail);
     }
 
     cmdline_printf("%d fault code(s): clear with `faults -c`\nOK\n", n);

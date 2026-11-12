@@ -123,6 +123,30 @@ bench weeks later.
   NVS write on first occurrence of a code + at most one count-update per
   code per boot (recurrences count in RAM). This feature must never
   become the wear bug it guards against.
+- The count stops at 10 (`DEV_STATUS_FAULT_COUNT_MAX`, 2026-11-12, Ali: "cap
+  recurring faults at a certain number, there is no point to keep
+  incrementing"). A fault that came back at every boot cost one write of
+  the store per boot for as long as the device lived (184 bytes in 10 flash
+  writes, a sector erase about every 21 boots); a count says nothing more
+  once it is large. The occurrence that brings the count to 10 is the last
+  one written. Behind it a recurrence changes the record in RAM only: its
+  detail and last time are served until the next restart and not stored, so
+  after a restart a capped code reads the detail and time of its tenth
+  occurrence until it occurs again. `dev_status_manager_fault_capped()`
+  says "this many or more": `"capped"` on `GET /api/faults`, `x10+` in the
+  `faults` command, `10+` in the web UI, `(count 10+)` in the E line. A
+  larger count stored by an earlier build is kept as it is. The rule is
+  `dsm_fault_count_step()` in `dev_status_fault_count.c` (pure, 8 host
+  tests); the record and the two limits are in `dev_status_fault.h` (plain
+  types, read by the host tests).
+  Measured on a device (2026-11-12, a test image with a route that raises a
+  code on request, a restart between two raises, the flash counters of
+  `/api/status` read around each): the first ten boots wrote 9 to 12 times,
+  180 to 220 bytes each, and the count went 1 to 10; boots 11, 12 and 13
+  wrote nothing, the count stayed 10 with `capped` true, the record read
+  back after each restart was the tenth boot's, and the route served that
+  boot's own detail and time. A second raise in the same boot wrote nothing
+  in any of the thirteen.
 - Raise: `dev_status_manager_fault_raise(code, detail)` from any task.
 - Clear one: `dev_status_manager_fault_clear(code)` (2026-10-10): the boot
   that follows a partition table migration drops `boot_errors`, latched

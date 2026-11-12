@@ -5,6 +5,7 @@ idf_component_register(
          "dev_status_manager_fmt.c"
          "dev_status_manager_cli.c"
          "dev_status_faults.c"
+         "dev_status_fault_count.c"
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "."
     # app_update: running partition + app descriptor (only the .c uses it);

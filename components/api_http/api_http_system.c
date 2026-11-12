@@ -344,6 +344,9 @@ static esp_err_t faults_handler(httpd_req_t *req)
         cJSON_AddStringToObject(f, "code", faults[i].code);
         cJSON_AddStringToObject(f, "detail", faults[i].detail);
         cJSON_AddNumberToObject(f, "count", faults[i].count);
+        /* the count stops at its cap: `capped` = that many or more */
+        cJSON_AddBoolToObject(f, "capped",
+                              dev_status_manager_fault_capped(&faults[i]));
         cJSON_AddNumberToObject(f, "first_time", faults[i].first_time);
         cJSON_AddNumberToObject(f, "last_time", faults[i].last_time);
         cJSON_AddItemToArray(arr, f);

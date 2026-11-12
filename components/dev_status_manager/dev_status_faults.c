@@ -33,9 +33,13 @@
  * Wear discipline (this feature must never become the wear bug it
  * guards against): NVS (wear-leveled), one blob, written only on the
  * FIRST occurrence of a code and at most ONE count-update per code per
- * boot. Recurrences within a boot count in RAM only.
+ * boot. Recurrences within a boot count in RAM only. A count stops at
+ * DEV_STATUS_FAULT_COUNT_MAX (2026-11-12) and the writes stop with it: a
+ * fault that comes back at every boot no longer costs a write per boot
+ * for good (dev_status_fault_count.c, pure, has the rule).
  */
 #include "dev_status_manager.h"
+#include "dev_status_manager_private.h"
 
 #include <string.h>
 #include <time.h>
@@ -180,7 +184,14 @@ esp_err_t dev_status_manager_fault_raise(const char *code,
         is_new = true;
     }
 
-    f->count++;
+    /* wear discipline: persist new codes, at most one count-update per
+       code per boot, and none once the count is full (it stops there) */
+    int idx = (int)(f - s_faults);
+    bool persist = dsm_fault_count_step(
+        &f->count, is_new, (s_persisted_this_boot & (1u << idx)) != 0);
+
+    /* the latest time and detail, in RAM at least: a full count writes
+       neither, so they hold until the next restart */
     f->last_time = (uint32_t)time(NULL);
 
     if (detail != NULL) /* keep the LATEST detail */
@@ -189,22 +200,19 @@ esp_err_t dev_status_manager_fault_raise(const char *code,
         f->detail[sizeof(f->detail) - 1] = '\0';
     }
 
-    /* wear discipline: persist new codes, and at most one count-update
-       per code per boot */
-    int idx = (int)(f - s_faults);
-    bool persist = is_new ||
-                   (s_persisted_this_boot & (1u << idx)) == 0;
-
     if (persist)
     {
         s_persisted_this_boot |= (1u << idx);
         faults_save();
     }
 
+    unsigned long count = (unsigned long)f->count;
+    bool capped = dev_status_manager_fault_capped(f);
+
     xSemaphoreGive(s_fault_lock);
 
-    ESP_LOGE(TAG, "FAULT %s: %s (count %lu)", code,
-             (detail != NULL) ? detail : "", (unsigned long)f->count);
+    ESP_LOGE(TAG, "FAULT %s: %s (count %lu%s)", code,
+             (detail != NULL) ? detail : "", count, capped ? "+" : "");
     return ESP_OK;
 }
 

@@ -45,6 +45,7 @@
 #include "dev_status_usb.h"
 #include "dev_status_sd.h"
 #include "dev_status_vehicle.h"
+#include "dev_status_fault.h"
 #include "freertos/event_groups.h"
 
 #ifdef __cplusplus
@@ -225,18 +226,10 @@ esp_err_t dev_status_manager_flash(dev_status_flash_t *out);
  * are LATCHED to NVS and survive reboots/power cycles until MANUALLY
  * cleared: `faults -c` on the CLI or POST /api/faults/clear. Raise is
  * wear-disciplined: one NVS write on first occurrence, at most one
- * count-update per code per boot; recurrences count in RAM. */
-
-#define DEV_STATUS_FAULT_MAX 16
-
-typedef struct
-{
-    char     code[24];   /* stable identifier, e.g. "cmdline_table_full" */
-    char     detail[48]; /* latest human-readable context                */
-    uint32_t count;      /* total occurrences since last clear           */
-    uint32_t first_time; /* unix seconds (0 = clock not set yet)         */
-    uint32_t last_time;
-} dev_status_fault_t;
+ * count-update per code per boot; recurrences count in RAM. A count stops
+ * at DEV_STATUS_FAULT_COUNT_MAX and the writes stop with it (2026-11-12).
+ * The record, the two limits and dev_status_manager_fault_capped() are in
+ * dev_status_fault.h (plain types, read by the host tests too). */
 
 /** Latch (or re-count) a fault code. Safe from any task context. */
 esp_err_t dev_status_manager_fault_raise(const char *code,

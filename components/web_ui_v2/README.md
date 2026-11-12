@@ -852,7 +852,9 @@ a red chip `N faults` in the header's connection pill (`#cp-faults`, from
 `/api/status` `health.faults`; a click opens System Monitor) and the card
 "Fault codes" on System Monitor (`PAGES.sysmon`): a table with the code, the
 device's detail, the count and the first and last time seen, and `Clear
-fault codes` behind a confirm (`POST /api/faults/clear`, every code).
+fault codes` behind a confirm (`POST /api/faults/clear`, every code). The
+device stops counting a code, and writing it to the flash, at 10
+(`capped` on the route): the Count cell then reads `10+`.
 
 The table stays that lean on purpose (Ali, 2026-11-12, on a mock-up that put
 a title, a paragraph and a severity on every row: "has too much information, I

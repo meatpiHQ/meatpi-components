@@ -64,6 +64,13 @@ static void print_status(void)
     {
         cmdline_printf("version: - (update running)\n");
     }
+    else if (st.store_damaged)
+    {
+        cmdline_printf("version: - (the chip prints an error for it)\n");
+        cmdline_printf("warning: the chip's stored identity is damaged (a reset "
+                       "inside its own store housekeeping, issue #1023): it "
+                       "is used as it is and never rewritten\n");
+    }
     else if (st.ready &&
              obd_chip_get_version(ver, sizeof(ver), pdMS_TO_TICKS(3000)) ==
                  ESP_OK)
@@ -128,6 +135,13 @@ static void print_status(void)
                    (unsigned long)st.kline_starts,
                    (unsigned long)st.kline_failed,
                    (unsigned long)st.kline_closed);
+    cmdline_printf("reset:   pulses %lu, refused %lu; last "
+                   "bring-up: READY %s %lu ms behind the sleep pin, %s\n",
+                   (unsigned long)st.reset_pulses,
+                   (unsigned long)st.reset_refused,
+                   st.wake_ready ? "ready" : "not ready",
+                   (unsigned long)st.wake_ms,
+                   st.wake_pulsed ? "a reset pulse" : "no reset pulse");
     cmdline_printf("store:   protocol %s (read at the start), saves not "
                    "needed %lu\n",
                    (st.stored_protocol[0] != '\0') ? st.stored_protocol

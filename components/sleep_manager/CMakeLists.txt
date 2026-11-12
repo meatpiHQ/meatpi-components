@@ -2,6 +2,8 @@ idf_component_register(
     SRCS "sleep_manager.c"
          "sleep_manager_settings.c"
          "sleep_manager_policy.c"
+         "sleep_manager_chip.c"
+         "sleep_manager_nap.c"
          "sleep_manager_events.c"
          "sleep_manager_http.c"
          "sleep_manager_cli.c"

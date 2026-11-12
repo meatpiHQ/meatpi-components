@@ -32,7 +32,8 @@
  *   3. VTDLDT<line>      -> OK           (one vendor hex record per line)
  *   4. line "FFF1..."    -> end marker: stop sending records
  *   5. VTDLED            -> OK           (finalize; retried 3x, 2 s settle)
- *   6. hardware reset pulse (GPIO41), rewake, re-probe
+ *   6. the chip restarts itself; re-probe. A reset pulse (GPIO41) only for
+ *      a chip that then answers at neither speed (2026-11-12, issue #1023)
  *
  * Update responses DO end with the '>' prompt (bench-verified 2026-07-03):
  * collect until '>' (that is the chip's "ready for the next command" signal)
@@ -321,22 +322,6 @@ esp_err_t obd_chip_get_fw_version_raw(char *buf, size_t buf_len)
     return fw_command("VTVERS\r", buf, buf_len, FW_TIMEOUT_MS);
 }
 
-/** Records in an image: the progress denominator (one pass over ~490 KB). */
-static uint32_t fw_count_records(const char *buf, size_t len)
-{
-    uint32_t n = 0;
-
-    for (size_t i = 0; i < len; i++)
-    {
-        if (buf[i] == '\n')
-        {
-            n++;
-        }
-    }
-
-    return n;
-}
-
 /**
  * Step 1: identity + version gate. Probes VTVERS at the baud the UART runs
  * at, then at the other one. Writes @p resp (the answer, prompt or not),
@@ -457,7 +442,7 @@ static esp_err_t fw_update_run(const char *fw_buf, size_t fw_len,
 
     const int baud_found = obd_uart_get_baud();
 
-    status_begin(src, fw_count_records(fw_buf, fw_len));
+    status_begin(src, obd_fw_count_records(fw_buf, fw_len));
 
     /* 1. identity + version gate. Legacy semantics: '?' means the chip is
        not in its normal state (typically stuck in download mode after an
@@ -510,6 +495,15 @@ static esp_err_t fw_update_run(const char *fw_buf, size_t fw_len,
 
         ESP_LOGI(TAG, "chip firmware %s is older than %s: updating", chip_ver,
                  ver);
+    }
+    else if (prompt && obd_bringup_store_damaged())
+    {
+        /* not a chip in its download mode: its application runs and its
+           identity block is erased (issue #1023). A rewrite repairs nothing
+           and, started from the bring-up, used to repeat for ever. */
+        ESP_LOGW(TAG, "the chip's stored identity is damaged: not rewritten "
+                 "(%s), a rewrite does not repair it", src);
+        return status_end(ESP_ERR_INVALID_VERSION, false);
     }
     else if (prompt)
     {
@@ -597,10 +591,13 @@ static esp_err_t fw_update_run(const char *fw_buf, size_t fw_len,
         err = ESP_ERR_INVALID_RESPONSE; /* file had no FFF1 end marker */
     }
 
-    /* 6. hardware reset + settle, regardless of outcome. The chip boots at
-       its stored power-on baud; the caller brings it up again. */
+    /* 6. settle, regardless of outcome. The chip restarts itself behind
+       VTDLED; the reset pulse legacy sent here whatever the chip did goes
+       out only to a chip that answers at neither speed
+       (obd_bringup_reset_if_silent). The chip boots at its stored power-on
+       baud; the caller brings it up again. */
     vTaskDelay(pdMS_TO_TICKS(2000));
-    obd_pin_reset_pulse();
+    obd_bringup_reset_if_silent();
     obd_uart_flush_input();
     vTaskDelay(pdMS_TO_TICKS(2000));
 

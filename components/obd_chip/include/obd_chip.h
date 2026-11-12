@@ -284,28 +284,38 @@ esp_err_t obd_chip_monitor_stop(void);
  *  the chip's `OK` as the verdict (READY follows a second or two later; the
  *  first nap's check is the ground truth), one W line when the chip does
  *  not take it; then the sleep pin (pulldown + hold, survives resets). Wake
- *  (false): the release sequence. The nap's re-sleep calls this 1.5 s after
- *  its reset pulse, the chip's boot time. */
+ *  (false): the release sequence. The nap's re-sleep calls this behind
+ *  obd_chip_soft_reset(). */
 esp_err_t obd_chip_sleep(bool sleep);
 
 /** Leave the chip asleep from a boot that never initialised this component
- *  (the composition root's crash park). Pins only, no init needed. A chip
- *  that is asleep already (READY high: the boot follows a sleep and the
- *  sleep pin's hold is still on) is left asleep, its sleep pin never driven
- *  high. A chip that is awake (a power-on, or the run before had it up) is
- *  hardware-reset first, so that a session or a monitor left open is closed
- *  and the sleep pin is obeyed, then put to sleep with the hold: about
- *  0.6 s. Either way the next normal boot finds it asleep and wakes it as
- *  after any sleep. */
+ *  (the composition root's crash park). No init needed. A chip that is
+ *  asleep already (READY high: the boot follows a sleep and the sleep
+ *  pin's hold is still on) is left asleep, its sleep pin never driven high.
+ *  A chip that is awake (a power-on, or the run before had it up) is put
+ *  to sleep as a sleep entry does it: a stop byte for a monitor left open
+ *  (it ignores the sleep pin), the sleep word `STSLEEP0` on a UART this
+ *  call sets up, then the sleep pin with the hold: about 1 s. No reset
+ *  pulse since 2026-11-12 (issue #1023: an awake chip gets none). Either
+ *  way the next normal boot finds it asleep and wakes it as after any
+ *  sleep. */
 esp_err_t obd_chip_park(void);
 
-/** Hardware reset pulse (RESET low 5 ms). A chip mid-monitor (ATMA)
- *  IGNORES the sleep pin and refuses the sleep word: the nap's re-sleep
- *  pulses first (legacy's re-sleep sent a soft `ATZ`, its READY read
- *  awake, then `STSLEEP0`, then the pin), waits the chip's boot and calls
- *  obd_chip_sleep(true); without the reset every retry fails and the loop
- *  ends in a recovery reboot (sleep matrix `elm_monitor`, 2026-07-21). */
-esp_err_t obd_chip_hard_reset(void);
+/** Reset the chip by command: a throw-away word (it ends a monitor or a
+ *  half line), then the warm start `ATWS`, whose answer must carry the
+ *  banner; twice at most. ESP_OK = the chip is fresh (its echo off again,
+ *  the settings generation moved); ESP_ERR_INVALID_RESPONSE = not
+ *  confirmed; ESP_ERR_INVALID_STATE = the chip never came up. The nap's
+ *  re-sleep calls it first: a chip mid-monitor (ATMA) IGNORES the sleep pin
+ *  and refuses the sleep word, and without a reset every retry fails and
+ *  the loop ends in a recovery reboot (sleep matrix `elm_monitor`,
+ *  2026-07-21). Until 2026-11-12 that was obd_chip_hard_reset(), a pulse on
+ *  the reset line. A chip that answers gets no pulse any more (a reset inside
+ *  a boot of the chip can destroy its store, issue #1023) and the line is
+ *  in no API at all: inside the component it is the bring-up's last resort
+ *  for a chip silent at both UART speeds. Legacy's re-sleep sent a soft
+ *  `ATZ` here too. */
+esp_err_t obd_chip_soft_reset(void);
 
 /** READY status pin level (chip-driven). See README: on the current bench
  *  the pin reads low while the chip is demonstrably awake, treat the AT
@@ -585,6 +595,23 @@ typedef struct
     uint32_t    kline_failed;   /* ... in `ERROR`: no ECU answered        */
     uint32_t    kline_closed;   /* sessions the engine closed ahead of a
                                    request because they had idled out    */
+    uint32_t    reset_pulses;   /* reset pulses sent since boot (2026-11-12,
+                                   issue #1023): the last resort, a chip
+                                   silent at both UART speeds; 0 on a
+                                   healthy one                           */
+    uint32_t    reset_refused;  /* ... asked for and refused: READY kept
+                                   changing, or the chip was not silent  */
+    uint32_t    wake_ms;        /* the last bring-up: READY settled this
+                                   long behind the sleep pin (about 300 on
+                                   an awake chip, 800 to 1000 at a wake) */
+    bool        wake_ready;     /* ... as ready                          */
+    bool        wake_pulsed;    /* the last bring-up took the last resort,
+                                   a reset pulse: the chip answered at
+                                   neither UART speed; false on a healthy
+                                   chip                                  */
+    bool        store_damaged;  /* the chip runs but its version reads as
+                                   an error: its stored identity is
+                                   erased; never rewritten               */
 } obd_chip_stats_t;
 
 typedef struct

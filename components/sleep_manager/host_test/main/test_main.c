@@ -10,12 +10,14 @@
  *        the device first, the sleep delay or the floor, and in how
  *        many seconds, through the one word a status read unpacks; and
  *        the hold (same day): ten more minutes on request, on both
- *        deadlines.
- *        Expected output: 23 Tests 0 Failures 0 Ignored.
+ *        deadlines. The OBD chip through the naps is test_chip_watch.c.
+ *        Expected output: 32 Tests 0 Failures 0 Ignored.
  */
 #include "unity.h"
 
 #include "sleep_manager_private.h"
+
+void sm_chip_watch_tests(void); /* test_chip_watch.c: the OBD chip in the naps */
 
 /* the legacy pair: sleep 13.1 V, wake 13.2 V, 1 s hold, 3 min delay */
 static sm_cfg_t s_cfg;
@@ -687,5 +689,6 @@ void app_main(void)
     RUN_TEST(test_activity_holds_within_the_cap);
     RUN_TEST(test_activity_only_what_counts);
     RUN_TEST(test_activity_clock_wrap_safe);
+    sm_chip_watch_tests(); /* test_chip_watch.c */
     UNITY_END();
 }

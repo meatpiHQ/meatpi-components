@@ -62,7 +62,7 @@ static esp_err_t obd_chip_get_handler(httpd_req_t *req)
     obd_chip_sub_stats_t subs[OC_HTTP_SUBS];
     obd_wire_note_t wire[2];
     char wire_json[200];
-    char body[1728];
+    char body[1984];
     size_t n = 0;
     size_t w = 0;
 
@@ -105,10 +105,14 @@ static esp_err_t obd_chip_get_handler(httpd_req_t *req)
                           "\"rx_buffered\":%lu,\"tx_bytes\":%lu},"
                           "\"fw\":{\"builtin\":\"%s\",\"current\":\"%s\","
                           "\"chip\":\"%s\",\"outdated\":%s,"
+                          "\"damaged\":%s,"
                           "\"update\":{\"running\":%s,\"lines\":%lu,"
                           "\"total\":%lu,\"source\":\"%s\",\"done\":%s,"
                           "\"last\":\"%s\"}},"
                           "\"bringup\":{\"wire\":[%s]},"
+                          "\"reset\":{\"pulses\":%lu,\"refused\":%lu,"
+                          "\"wake_ms\":%lu,\"wake_ready\":%s,"
+                          "\"wake_pulsed\":%s},"
                           "\"subscribers\":[",
                           st.ready ? "true" : "false", st.claim,
                           (unsigned long)st.client_idle_ms,
@@ -144,11 +148,17 @@ static esp_err_t obd_chip_get_handler(httpd_req_t *req)
                           obd_fw_version_is_outdated(
                               fw.chip, obd_chip_builtin_fw_version())
                               ? "true" : "false",
+                          st.store_damaged ? "true" : "false",
                           fw.running ? "true" : "false",
                           (unsigned long)fw.lines, (unsigned long)fw.total,
                           fw.source, fw.done_once ? "true" : "false",
                           fw.done_once ? esp_err_to_name(fw.last_err) : "",
-                          wire_json);
+                          wire_json,
+                          (unsigned long)st.reset_pulses,
+                          (unsigned long)st.reset_refused,
+                          (unsigned long)st.wake_ms,
+                          st.wake_ready ? "true" : "false",
+                          st.wake_pulsed ? "true" : "false");
 
     for (size_t i = 0; i < n_subs && n < sizeof(body) - 96; i++)
     {

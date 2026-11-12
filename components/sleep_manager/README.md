@@ -12,8 +12,20 @@ wake-by-reboot, not resume-in-place (every manager restarts clean).
 SLEEPING = repeated **light sleep** with a 2 s timer wake; voltage is
 still sampled between naps and each nap verifies the OBD chip stayed
 asleep (≤6 re-sleeps, then an INTERNAL_RECOVERY reboot; a re-sleep is the
-reset pulse, the chip's 1.5 s boot, then `obd_chip_sleep(true)`: the
-`STSLEEP0` word and the pin, since 2026-11-07). Optional
+reset by command (`obd_chip_soft_reset()`; until 2026-11-12 a pulse on the reset line,
+which an awake chip no longer gets: issue #1023, obd_chip's README), the chip's 1.5 s boot
+when that reset was not confirmed, then `obd_chip_sleep(true)`: the
+`STSLEEP0` word and the pin, since 2026-11-07). Two device fault codes come
+out of that check since 2026-11-12 (dev_status_manager's store: latched
+until cleared by hand; before, a RAM counter and a W line that the wake's
+reboot threw away): `obd_chip_woke` when a nap finds the chip awake after an
+earlier nap of the same sleep had found it asleep (its sleep pin is low: it
+has no business waking), and `obd_chip_no_sleep` when six re-sleeps in a row
+failed, ahead of the recovery reboot. A chip that is awake at the first nap,
+before it ever slept (the entry's sleep word was refused: an app left a
+monitor open), is put back without a fault. The verdicts are pure
+(`sleep_manager_chip.c`, host-tested); the check and the re-sleep live in
+`sleep_manager_nap.c` with the board's low-power state. Optional
 periodic check-in reboot (`periodic_wakeup` + `wakeup_interval_min`),
 gated below 11.9 V so a dying battery is never drained for telemetry.
 
@@ -210,7 +222,10 @@ voltage" resumes polling at this wake voltage (one pair rules both).
 ## Footprint
 
 PSRAM: 4 KB task stack. Internal: FreeRTOS objects only. Host tests:
-`host_test/` (23 tests: the pure ladder incl. clock wrap, the wake hold
+`host_test/` (32 tests; six of them on the OBD chip through the naps,
+`test_chip_watch.c`, 2026-11-12: asleep all night, awake before it ever
+slept, a wake after sleeping flagged once per wake, the give-up behind six
+re-sleeps; the rest: the pure ladder incl. clock wrap, the wake hold
 following `wake_delay_ms`, the critical floor tracker, the v3 threshold
 resolver, the v2 -> v3 and v3 -> v4 migration values, and since
 2026-10-06 the countdown: nothing on a healthy battery or once asleep,

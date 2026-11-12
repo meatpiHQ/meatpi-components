@@ -23,10 +23,11 @@
 /**
  * @file sleep_manager.c
  * @brief Lifecycle and the state task: policy at 1 Hz, entry sequence,
- *        the light-sleep nap loop with OBD-asleep verification, the
- *        boot-loop guard, and wake-by-reboot (see
- *        include/sleep_manager.h for the model). Settings live in
- *        sleep_manager_settings.c (standard §4.1).
+ *        the light-sleep nap loop, the boot-loop guard, and
+ *        wake-by-reboot (see include/sleep_manager.h for the model).
+ *        Settings live in sleep_manager_settings.c (standard §4.1); the
+ *        board's low-power state and the OBD-asleep verification after
+ *        every nap in sleep_manager_nap.c.
  */
 #include <string.h>
 
@@ -48,10 +49,6 @@
 #include "sleep_manager_private.h"
 
 static const char *TAG = "sleep_manager";
-
-/* WiCAN Pro power pins (legacy hw_config.h) */
-#define SM_CAN_STDBY_GPIO CONFIG_WICAN_SLEEP_CAN_STDBY_GPIO
-#define SM_USB_PWR_GPIO   CONFIG_WICAN_SLEEP_USB_PWR_GPIO
 
 static sm_policy_t s_policy;
 static sm_critical_t s_crit;  /* the critical battery floor tracker */
@@ -114,22 +111,6 @@ static const char *state_name(sleep_manager_state_t st)
     }
 }
 
-void sleep_manager_board_down(void)
-{
-    /* CAN transceiver to standby */
-    gpio_set_direction(SM_CAN_STDBY_GPIO, GPIO_MODE_OUTPUT);
-    gpio_set_level(SM_CAN_STDBY_GPIO, 1);
-
-    (void)obd_chip_sleep(true);
-
-    /* keep the USB power rail off through the naps (legacy) */
-    gpio_set_direction(SM_USB_PWR_GPIO, GPIO_MODE_OUTPUT_OD);
-    gpio_set_level(SM_USB_PWR_GPIO, 0);
-    gpio_sleep_set_pull_mode(SM_USB_PWR_GPIO, GPIO_PULLDOWN_ONLY);
-    gpio_pulldown_en(SM_USB_PWR_GPIO);
-    gpio_hold_en(SM_USB_PWR_GPIO);
-}
-
 /* A chip firmware update owns the chip's wire for about 90 s (3557 records);
  * the sleep entry pulls the chip's sleep pin, and a half-written image
  * strands the chip in its bootloader (issue #1023, 2026-10-28). Bounded:
@@ -177,45 +158,14 @@ static void enter_sleep_sequence(float volts)
     vTaskDelay(pdMS_TO_TICKS(1000));
 }
 
-/* one 2 s light-sleep nap + OBD-still-asleep verification */
+/* one 2 s light-sleep nap + OBD-still-asleep verification (the check, the
+ * re-sleep and its fault codes: sleep_manager_nap.c) */
 static void nap_and_verify(void)
 {
     esp_sleep_enable_timer_wakeup(SM_NAP_US);
     esp_light_sleep_start();
     s_status.naps++;
-
-    static uint8_t s_resleeps;
-
-    if (obd_chip_status_ok()) /* chip reports READY = it woke up */
-    {
-        s_status.chip_resleeps++;
-
-        if (s_resleeps < SM_RESLEEP_MAX)
-        {
-            s_resleeps++;
-            ESP_LOGW(TAG, "OBD chip awake during sleep; re-sleeping "
-                     "(%u/%u)", s_resleeps, SM_RESLEEP_MAX);
-            /* the reset pulse FIRST: a chip mid-monitor (ATMA) ignores
-             * the sleep pin and the sleep word (`elm_monitor`, 2026-07-21;
-             * legacy's re-sleep: a soft ATZ, STSLEEP0, the pin); then the
-             * chip's boot time, so the word finds it listening (2026-11-07) */
-            (void)obd_chip_hard_reset();
-            vTaskDelay(pdMS_TO_TICKS(SM_RESLEEP_BOOT_MS));
-            (void)obd_chip_sleep(true);
-            vTaskDelay(pdMS_TO_TICKS(100));
-        }
-        else
-        {
-            ESP_LOGE(TAG, "OBD chip will not sleep; recovery reboot");
-            restart_tracker_restart(
-                RESTART_TRACKER_PLANNED_REASON_INTERNAL_RECOVERY,
-                RESTART_TRACKER_SOURCE_SLEEP_MODE, 0);
-        }
-    }
-    else
-    {
-        s_resleeps = 0;
-    }
+    sm_nap_verify_chip(s_status.naps, &s_status.chip_resleeps);
 }
 
 /* The planned reason is what the next boot reports (restart history, the web

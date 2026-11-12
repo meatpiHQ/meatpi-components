@@ -24,9 +24,10 @@
  * @file obd_chip_bringup.c
  * @brief The chip's boot sequence on the bare UART (before the RX task
  *        exists): wake, reset, baud negotiation, the legacy provisioning
- *        (sleep control, power-on baud, the power-pin switch). Split out
- *        of obd_chip.c 2026-10-03 (700-line rule); obd_chip.c keeps the
- *        bring-up task and its gate.
+ *        (power-on baud, the power-pin switch; the sleep control's is in
+ *        obd_chip_provision.c since 2026-11-12). Split out of obd_chip.c
+ *        2026-10-03 (700-line rule); obd_chip.c keeps the bring-up task
+ *        and its gate.
  */
 #include "obd_chip.h"
 
@@ -39,6 +40,7 @@
 #include "freertos/task.h"
 
 #include "obd_chip_private.h"
+#include "obd_chip_reset_line.h" /* this file alone: the last resort below */
 
 static const char *TAG = "obd_chip"; /* one TAG per component (§10) */
 
@@ -60,6 +62,22 @@ static size_t  s_probe_head_len;
  * 115200; baud 0 = not tried or answered at once) */
 static obd_wire_note_t s_wire[2];
 
+/* what this bring-up met at the wake and in the chip's identity (issue #1023) */
+static obd_bringup_note_t s_note;
+
+/* the length of the last bare probe's answer: it can hold a NUL */
+static size_t s_probe_len;
+
+void obd_bringup_note(obd_bringup_note_t *out)
+{
+    *out = s_note;
+}
+
+bool obd_bringup_store_damaged(void)
+{
+    return s_note.store_damaged;
+}
+
 size_t obd_chip_bringup_wire(obd_wire_note_t *out, size_t max)
 {
     size_t n = 0;
@@ -75,13 +93,14 @@ size_t obd_chip_bringup_wire(obd_wire_note_t *out, size_t max)
     return n;
 }
 
-/** One request->response on the bare UART (RX task not running yet). */
-static bool bare_probe(const char *cmd, char *resp, size_t resp_len,
-                       uint32_t timeout_ms)
+/** One request->response on the bare UART (no RX task reads the wire: the
+ *  bring-up, or a holder of the exclusive claim). Not reentrant. */
+bool obd_bare_probe(const char *cmd, char *resp, size_t resp_len,
+                    uint32_t timeout_ms)
 {
     /* static: the accumulator's 4 KB response buffer was over half the
        8 KB main-task stack at boot (2026-07-22 stack audit). Safe as a
-       static: bare_probe is boot-provisioning only, before the RX
+       static: obd_bare_probe is boot-provisioning only, before the RX
        task exists, single-threaded by construction. */
     static obd_resp_acc_t acc EXT_RAM_BSS_ATTR;
     uint8_t buf[OBD_CHIP_CHUNK_SIZE];
@@ -91,6 +110,7 @@ static bool bare_probe(const char *cmd, char *resp, size_t resp_len,
     obd_parse_reset(&acc);
     s_probe_rx = 0;
     s_probe_head_len = 0;
+    s_probe_len = 0;
 
     TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(timeout_ms);
 
@@ -113,7 +133,7 @@ static bool bare_probe(const char *cmd, char *resp, size_t resp_len,
 
     if (acc.done)
     {
-        obd_parse_extract(&acc, cmd, resp, resp_len);
+        s_probe_len = obd_parse_extract(&acc, cmd, resp, resp_len);
         return true;
     }
 
@@ -154,139 +174,6 @@ static void wire_note(const char *what, int baud)
 }
 
 /**
- * Boot chip provisioning (legacy main/obd.c obd_init, meatpi 2026-07-04:
- * "follow legacy init"): read STSLCS; ensure sleep control is NATIVE
- * (ATPP 0E) and every autonomous control OFF (the ESP32 owns the sleep
- * policy); keep the chip from waking itself on bus activity while the
- * ESP32 sleeps (ATPP 0F SV 95: the Activity Monitor options with bit 6
- * off). Any change ends in ATZ + re-bring-up. Runs on the bare UART, echo
- * already off. Log-and-degrade.
- *
- * Until 2026-11-07 the block also wrote the voltage thresholds and the
- * UART timeout from the obd_chip settings (STSLVLW, STSLVLS, STSLUIT) and
- * re-provisioned when the stored values differed from them. The sleep
- * triggers bench (the app repo's testing/sleeptrig.md) proved those values
- * inert while the controls are off, so they are neither compared nor
- * written any more: fewer EEPROM writes, and a settings number nobody sees
- * (the UI never shows them) no longer costs a provisioning. Whatever the
- * chip holds there stays as it is.
- */
-static void chip_provision(void)
-{
-    static char resp[1024] EXT_RAM_BSS_ATTR; /* STSLCS is multi-line */
-    obd_stslcs_t st;
-    bool reset_needed = false;
-    bool pp0f_written = false;
-
-    if (!bare_probe("STSLCS\r", resp, sizeof(resp), 1500))
-    {
-        ESP_LOGW(TAG, "STSLCS: no answer; skipping chip provisioning");
-        return;
-    }
-
-    obd_stslcs_parse(resp, &st);
-
-    if (strcmp(st.ctrl_mode, "ELM327") == 0)
-    {
-        /* legacy: sleep control must be Native (the ESP is the master) */
-        ESP_LOGI(TAG, "chip sleep control ELM327 -> Native");
-        bare_probe("ATPP 0E SV 7A\r", resp, sizeof(resp), 1000);
-        bare_probe("ATPP 0E ON\r", resp, sizeof(resp), 1000);
-        reset_needed = true;
-    }
-
-    if (obd_stslcs_needs_provision(&st))
-    {
-        ESP_LOGI(TAG, "provisioning sleep config: a control is on (uart "
-                 "sleep %d wake %d, voltage sleep %d wake %d); all four off",
-                 st.uart_sleep.en, st.uart_wake.en, st.vl_sleep.en,
-                 st.vl_wake.en);
-        /* byte-exact legacy strings, including the odd casing/space */
-        bare_probe("STSLVl off,off\r", resp, sizeof(resp), 1000);
-        bare_probe("STSLU off, off\r", resp, sizeof(resp), 1000);
-        vTaskDelay(pdMS_TO_TICKS(10));
-        pp0f_written = true;
-
-        /* PP 0F = the Activity Monitor options (MIC DS PP area, default
-           D5): 95 clears bit 6, "allow wake from Low Power on a shift from
-           no activity to activity", so the chip cannot wake itself on bus
-           traffic while the ESP32 sleeps (legacy obd_init and its
-           elm327_disable_wake_commands). Not the baud: the 2 M power-on
-           baud is STWBR's, at the 115200 fallback above. A chip firmware
-           rewrite keeps the PP area (bench 2026-11-02). */
-        bare_probe("ATPP 0F SV 95\r", resp, sizeof(resp), 1000);
-        bare_probe("ATPP 0F ON\r", resp, sizeof(resp), 1000);
-        vTaskDelay(pdMS_TO_TICKS(10));
-        reset_needed = true;
-    }
-
-    /* PP 0F guarded by its own read-back (Ali, 2026-11-02): the compare
-       above sees STSLCS, which does not report the Activity Monitor
-       options, so a chip image or a tool that put PP 0F back to the
-       vendor's D5 (the chip waking itself on bus activity while the ESP32
-       sleeps) would stay that way. ATPPS is the one read the chip offers;
-       the pair goes out only when the value or its enable differs (the
-       boot-path change guard of the standard's section 11). An intact chip
-       costs one read of 12 lines and no write; a chip firmware rewrite
-       keeps the PP area (bench 2026-11-02), so the write is for the image
-       or tool that does not. */
-    if (!pp0f_written)
-    {
-        uint8_t pp0f = 0;
-        bool pp0f_on = false;
-
-        if (!bare_probe("ATPPS\r", resp, sizeof(resp), 1500))
-        {
-            ESP_LOGW(TAG, "ATPPS: no answer; PP 0F not checked");
-        }
-        else if (!obd_parse_pp(resp, 0x0F, &pp0f, &pp0f_on))
-        {
-            ESP_LOGW(TAG, "ATPPS: no PP 0F in the answer ('%.24s'); not "
-                          "checked", resp);
-        }
-        else if (pp0f != 0x95 || !pp0f_on)
-        {
-            ESP_LOGW(TAG, "PP 0F reads %02X %s (expected 95 on): restoring",
-                     pp0f, pp0f_on ? "on" : "off");
-            bare_probe("ATPP 0F SV 95\r", resp, sizeof(resp), 1000);
-            bare_probe("ATPP 0F ON\r", resp, sizeof(resp), 1000);
-            vTaskDelay(pdMS_TO_TICKS(10));
-            obd_core_pp_restore_note();
-            reset_needed = true;
-        }
-    }
-
-    if (reset_needed)
-    {
-        /* ATZ reboots the chip at its (possibly new) default baud with
-           echo back on: re-run the tail of the bring-up */
-        obd_uart_write((const uint8_t *)"ATZ\r", 4);
-        vTaskDelay(pdMS_TO_TICKS(1500));
-        obd_uart_set_baud(OBD_CHIP_BAUD);
-        obd_uart_write((const uint8_t *)"\r", 1);
-        vTaskDelay(pdMS_TO_TICKS(100));
-        obd_uart_flush_input();
-
-        if (!bare_probe("ATE0\r", resp, sizeof(resp), 1500))
-        {
-            obd_uart_set_baud(115200); /* chip kept its old default */
-            obd_uart_write((const uint8_t *)"\r", 1);
-            vTaskDelay(pdMS_TO_TICKS(100));
-            obd_uart_flush_input();
-
-            if (bare_probe("ATE0\r", resp, sizeof(resp), 1500))
-            {
-                ESP_LOGW(TAG, "chip at 115200 after provisioning ATZ");
-            }
-            else
-            {
-                ESP_LOGE(TAG, "chip unresponsive after provisioning ATZ");
-            }
-        }
-    }
-}
-
-/**
  * Reset an awake chip by command, and make sure it happened.
  *
  * Until 2026-10-03 this was one `ATZ` whose prompt was taken as proof. On a
@@ -301,7 +188,10 @@ static void chip_provision(void)
  *
  * So: one throw-away command first (whatever is in front of it ends with
  * it, as a `?`), then the reset word, and the answer must carry the banner.
- * Twice; the caller pulses the reset pin when that fails.
+ * Twice. Until 2026-11-12 the caller pulsed the reset pin when that failed;
+ * a chip that reads ready gets no pulse any more (issue #1023): the caller
+ * looks for it at the other UART speed and tries again there, and the pin
+ * is left for a chip that answers at neither.
  *
  * The word is `ATWS` since 2026-11-02 (what 4.x sent in place of every
  * `ATZ`): every RAM setting gone, the baud kept, without the LED test,
@@ -309,7 +199,7 @@ static void chip_provision(void)
  * ahead of its `ATZ` banner (5 of 16 tries on the bench, a NUL among them:
  * the "soft reset not confirmed" of every third software restart since
  * 2026-10-19, and a reset pulse plus 1.5 s on top of a chip that had reset
- * fine). The extract behind bare_probe skips such bytes now as well.
+ * fine). The extract behind obd_bare_probe skips such bytes now as well.
  *
  * It is NOT the complete reset it was taken for: on the MIC3624 the warm
  * start leaves an established CAN session standing (2026-11-09: `ATDP`
@@ -321,23 +211,32 @@ static void chip_provision(void)
  * the session ends, the protocol number and the stored protocol stay as
  * they are (`ATDPN` reads the same before and after), and the next request
  * opens it again in the usual 350 ms. Not acknowledged = not confirmed:
- * the second try, then the caller's reset pin, which does end a session.
+ * the second try; the caller says so when that fails too.
  */
 static bool chip_soft_reset(char *resp, size_t resp_len)
 {
     for (int attempt = 0; attempt < 2; attempt++)
     {
-        (void)bare_probe("ATI\r", resp, resp_len, 500);
+        (void)obd_bare_probe("ATI\r", resp, resp_len, 500);
 
-        if (!bare_probe("ATWS\r", resp, resp_len, 2500) ||
+        const size_t heard = s_probe_rx;
+
+        if (!obd_bare_probe("ATWS\r", resp, resp_len, 2500) ||
             strstr(resp, "ELM") == NULL)
         {
+            if (heard + s_probe_rx == 0)
+            {
+                /* not one byte to two words: the chip is not at this
+                   speed, and a second try would say the same 3 s later */
+                return false;
+            }
+
             continue;
         }
 
         resp[0] = '\0';
 
-        if (bare_probe("ATPC\r", resp, resp_len, 1000) &&
+        if (obd_bare_probe("ATPC\r", resp, resp_len, 1000) &&
             strstr(resp, "OK") != NULL)
         {
             return true;
@@ -350,6 +249,66 @@ static bool chip_soft_reset(char *resp, size_t resp_len)
     return false;
 }
 
+/** Look for the chip on the wire: the fixed baud first, then its power-on
+ *  default, @p tries at each. True and @p active_baud when it answered; the
+ *  bring-up's wire notes for each speed it did not answer at. */
+static bool chip_find(int tries, int *active_baud, char *resp, size_t resp_len)
+{
+    const int try_bauds[2] = { OBD_CHIP_BAUD, OBD_CHIP_FALLBACK_BAUD };
+
+    for (size_t b = 0; b < 2; b++)
+    {
+        obd_uart_set_baud(try_bauds[b]);
+
+        for (int attempt = 0; attempt < tries; attempt++)
+        {
+            /* lone CR clears any stale/monitor state (stop byte is space,
+               but on a fresh boot CR-flush is what the legacy flow does) */
+            obd_uart_write((const uint8_t *)"\r", 1);
+            vTaskDelay(pdMS_TO_TICKS(100));
+
+            if (obd_bare_probe("ATI\r", resp, resp_len, 1500))
+            {
+                *active_baud = try_bauds[b];
+                return true;
+            }
+        }
+
+        wire_note("ATI", try_bauds[b]); /* the last try at this baud */
+    }
+
+    return false;
+}
+
+void obd_bringup_reset_if_silent(void)
+{
+    /* Behind a chip firmware update. The chip restarts itself behind
+       `VTDLED`; until 2026-11-12 a pulse on the reset line followed 2 s
+       later whatever the chip did (legacy). A chip that answers gets none
+       any more (issue #1023): the bring-up behind the update warm-starts
+       it. Only one that answers at neither speed is left to the line, as
+       the last resort. */
+    const int first = obd_uart_get_baud();
+    const int other = (first == OBD_CHIP_BAUD) ? OBD_CHIP_FALLBACK_BAUD
+                                               : OBD_CHIP_BAUD;
+    char resp[32];
+    bool answers = obd_bare_probe("ATI\r", resp, sizeof(resp), 1500);
+
+    if (!answers)
+    {
+        obd_uart_set_baud(other);
+        answers = obd_bare_probe("ATI\r", resp, sizeof(resp), 1500);
+        obd_uart_set_baud(first);
+    }
+
+    if (!answers)
+    {
+        ESP_LOGW(TAG, "chip silent at %d and %d baud behind the update; "
+                 "hardware reset, the last resort", first, other);
+        (void)obd_pin_reset_pulse(!answers);
+    }
+}
+
 /** The full wake/reset/negotiate/provision sequence: the pre-2026-07-26
  *  synchronous obd_chip_start() body, run by the bring-up task in
  *  obd_chip.c. @p active_baud: the baud the chip answers at (written as the
@@ -359,56 +318,110 @@ esp_err_t obd_bringup_run(int *active_baud)
     char resp[64];
 
     memset(s_wire, 0, sizeof(s_wire)); /* this round's verdicts only */
+    memset(&s_note, 0, sizeof(s_note));
     obd_pin_wake();
-    vTaskDelay(pdMS_TO_TICKS(300));
 
-    /* legacy elm327_hardreset_chip: hardware reset ONLY when the READY
-       pin says asleep/stuck (HIGH); an awake chip gets a soft ATZ */
+    /* NO RESET INSIDE THE CHIP'S OWN BOOT (issue #1023, 2026-11-12). Behind
+       the sleep pin a sleeping chip shows READY at about 113 ms, restarts
+       itself at about 235 ms and is ready for good at about 500 ms, or at
+       about 680 ms when it has its store to tidy, which it does in the
+       first boot behind every 264 store writes. Until this change the
+       bring-up waited a fixed 300 ms, read "not ready" inside that boot and
+       pulsed the reset line, 63 to 69 ms into the boot: where the tidying
+       starts. A reset inside the tidying destroys the chip's store (two
+       bench chips; both field signatures). Now it waits until READY has
+       been ready without a break for OBD_READY_STEADY_MS, longer than the
+       120 ms a waking chip reads ready before it restarts itself, and then
+       takes the warm start, as after a power-on. A chip that was awake all
+       along (a power-on, a settings save) settles in those 300 ms, as
+       before. */
+    uint32_t waited = 0;
+    obd_settle_verdict_t settled = obd_pin_settle(OBD_WAKE_SETTLE_MS, &waited);
+
+    s_note.wake_ms = waited;
+    s_note.wake_ready = (settled == OBD_SETTLE_READY);
+
+    /* THE RESET LINE IS THE LAST RESORT (2026-11-12, Ali: "the pin reset
+       should not be allowed unless as a last resort"). Legacy pulsed it
+       whenever READY read asleep and sent a soft `ATZ` to an awake chip; v6
+       also pulsed an awake chip whose warm start it could not confirm. Now
+       nothing here pulses on what READY says. A chip that reads ready is
+       reset by command. Whatever READY says, the chip is then asked on the
+       wire at both speeds, and only one that answers at neither gets the
+       pulse, once, with READY at rest: a chip asleep that the sleep pin
+       cannot wake (its PowerEn function off; bench 2026-11-07: nothing else
+       wakes it), one an app left at a third UART speed until its next
+       reset, one that hangs. A chip that answers although READY reads
+       asleep, or behind a READY line that never held still, is reset by
+       command further down. reset_done says the chip went through a
+       reset. */
+    const bool down = (settled == OBD_SETTLE_DOWN);
+    bool reset_done = false;
+
     obd_uart_set_baud(OBD_CHIP_BAUD);
 
-    if (obd_pin_ready())
+    if (settled == OBD_SETTLE_READY)
     {
-        ESP_LOGI(TAG, "chip awake; warm start (ATWS) instead of hardware reset");
-
-        if (!chip_soft_reset(resp, sizeof(resp)))
+        if (waited > OBD_READY_STEADY_MS + 100)
         {
-            ESP_LOGW(TAG, "soft reset not confirmed; hardware reset");
-            obd_pin_reset_pulse();
-            vTaskDelay(pdMS_TO_TICKS(1500));
+            ESP_LOGI(TAG, "chip woke: READY steady %lu ms behind the sleep pin",
+                     (unsigned long)waited);
+        }
+
+        ESP_LOGI(TAG, "chip awake; warm start (ATWS) instead of hardware reset");
+        reset_done = chip_soft_reset(resp, sizeof(resp));
+
+        if (!reset_done)
+        {
+            ESP_LOGW(TAG, "soft reset not confirmed at %d baud; looking for "
+                     "the chip (no reset pulse: it reads ready)", OBD_CHIP_BAUD);
         }
     }
     else
     {
-        ESP_LOGW(TAG, "chip not ready; hardware reset");
-        obd_pin_reset_pulse();
-        vTaskDelay(pdMS_TO_TICKS(1500)); /* chip boot time after reset */
+        /* asleep or stuck, or a READY line that never held still (a chip
+           that restarts over and over, one in the middle of a boot): asked
+           on the wire first, like any other. One word ahead, so that the
+           lone CR of the look repeats it and not what the run before sent
+           last. */
+        ESP_LOGW(TAG, "chip not ready (READY %s, %lu ms behind the sleep pin); "
+                 "asking it on the wire before any reset",
+                 down ? "stayed high" : "kept changing", (unsigned long)waited);
+        (void)obd_bare_probe("ATI\r", resp, sizeof(resp), 500);
     }
 
-    /* baud negotiation: the fixed baud first, then the chip's power-on default */
-    const int try_bauds[2] = { OBD_CHIP_BAUD, OBD_CHIP_FALLBACK_BAUD };
-    bool alive = false;
+    /* baud negotiation: the fixed baud first, then the chip's power-on
+       default. A chip whose READY already says asleep gets one try at each
+       speed ahead of the last resort and the full walk behind it; a chip
+       that reads ready the other way round. */
+    bool alive = chip_find(down ? 1 : OBD_INIT_RETRIES, active_baud, resp,
+                           sizeof(resp));
 
-    for (size_t b = 0; b < 2 && !alive; b++)
+    if (!alive)
     {
-        obd_uart_set_baud(try_bauds[b]);
+        /* the last resort, and the only reset pulse a bring-up can send.
+           Noted for the fault code obd_chip_silent, however it ends. */
+        s_note.silent = true;
 
-        for (int attempt = 0; attempt < OBD_INIT_RETRIES && !alive; attempt++)
+        if (down)
         {
-            /* lone CR clears any stale/monitor state (stop byte is space,
-               but on a fresh boot CR-flush is what the legacy flow does) */
-            obd_uart_write((const uint8_t *)"\r", 1);
-            vTaskDelay(pdMS_TO_TICKS(100));
-
-            alive = bare_probe("ATI\r", resp, sizeof(resp), 1500);
-        }
-
-        if (alive)
-        {
-            *active_baud = try_bauds[b];
+            ESP_LOGW(TAG, "chip not ready; hardware reset, the last resort "
+                     "(READY stayed high, no answer at %d or %d baud)",
+                     OBD_CHIP_BAUD, OBD_CHIP_FALLBACK_BAUD);
         }
         else
         {
-            wire_note("ATI", try_bauds[b]); /* the last try at this baud */
+            ESP_LOGW(TAG, "chip silent at %d and %d baud; hardware reset, the "
+                     "last resort", OBD_CHIP_BAUD, OBD_CHIP_FALLBACK_BAUD);
+        }
+
+        if (obd_pin_reset_pulse(!alive))
+        {
+            s_note.wake_pulsed = true;
+            reset_done = true;
+            vTaskDelay(pdMS_TO_TICKS(1500)); /* chip boot time after reset */
+            alive = chip_find(down ? OBD_INIT_RETRIES : 1, active_baud, resp,
+                              sizeof(resp));
         }
     }
 
@@ -429,12 +442,12 @@ esp_err_t obd_bringup_run(int *active_baud)
         vTaskDelay(pdMS_TO_TICKS(100));
         obd_uart_set_baud(OBD_CHIP_BAUD);
 
-        if (bare_probe("ATI\r", resp, sizeof(resp), 1500))
+        if (obd_bare_probe("ATI\r", resp, sizeof(resp), 1500))
         {
             *active_baud = OBD_CHIP_BAUD;
             /* legacy: persist the negotiated baud as the chip's
                power-on default (next boot answers at OBD_CHIP_BAUD) */
-            bare_probe("STWBR\r", resp, sizeof(resp), 1500);
+            obd_bare_probe("STWBR\r", resp, sizeof(resp), 1500);
         }
         else
         {
@@ -445,17 +458,56 @@ esp_err_t obd_bringup_run(int *active_baud)
         }
     }
 
+    if (!reset_done)
+    {
+        /* found, and not reset yet: it sat at the other speed, or it
+           answers although READY read asleep or never held still. By
+           command again, where the reset pin used to do it; a session the
+           run before left open on the vehicle's bus must not outlive this
+           (see chip_soft_reset). */
+        reset_done = chip_soft_reset(resp, sizeof(resp));
+
+        if (!reset_done)
+        {
+            ESP_LOGE(TAG, "the chip answers but confirms no reset by command: "
+                     "used as it is, a session of the run before may still "
+                     "be open (no reset pulse for a chip that answers)");
+        }
+    }
+
     /* legacy elm327_powerpin_commands: fw >= V2.3.22 must run with the
        power-pin switch config at 10 (low sleeps, high wakes; v4.52p:
        V2.3.22 or V2.3.24; until 2026-10-28 only a .22 chip got the check).
        The version is kept for GET /api/obd_chip on the way. A wrong value
        is the one EEPROM write of this path: the write acknowledged, left
        OBD_PPSW_SETTLE_MS to settle (legacy's 100 + 500 ms) and read back
-       BEFORE the reset pulse (2026-11-07; until then the pulse came 0 ms
-       after the OK). An unreadable value is left alone: no blind write. */
-    bool have_ver = bare_probe("VTVERS\r", resp, sizeof(resp), 1500);
+       BEFORE the reset (2026-11-07; until then a reset pulse came 0 ms
+       after the OK). The reset is an `ATZ` since 2026-11-12: legacy pulsed
+       the reset pin here, and a chip that answers gets no pulse any more
+       (issue #1023). Should the chip take the new value only at a boot of
+       its own, it does at its next wake. An unreadable value is left
+       alone: no blind write. */
+    bool have_ver = obd_bare_probe("VTVERS\r", resp, sizeof(resp), 1500);
+    obd_vtvers_t ver = have_ver ? obd_fw_vtvers_class(resp, s_probe_len)
+                                : OBD_VTVERS_UNKNOWN;
 
-    if (have_ver)
+    if (ver == OBD_VTVERS_DAMAGED)
+    {
+        /* the chip runs (it answered ATI) but prints its own error where
+           its version was: its identity block is erased, the mark of a
+           reset inside its store housekeeping (issue #1023). Nothing here
+           repairs that, a firmware rewrite included (13 rewrites on the
+           bench changed nothing), so the chip is used as it is and never
+           rewritten; its PowerEn setting, lost with the block, is put back
+           below. */
+        s_note.store_damaged = true;
+        obd_chip_version_note("ERR (stored identity damaged)");
+        ESP_LOGW(TAG, "the chip runs but its version reads as an error: its "
+                 "stored identity is damaged (a reset inside its own store "
+                 "housekeeping, issue #1023); it is used as it is and its "
+                 "firmware is not rewritten");
+    }
+    else if (have_ver)
     {
         obd_chip_version_note(resp);
 
@@ -472,13 +524,13 @@ esp_err_t obd_bringup_run(int *active_baud)
         }
     }
 
-    if (have_ver && obd_fw_version_is_current(resp))
+    if (have_ver && (ver == OBD_VTVERS_DAMAGED || obd_fw_version_is_current(resp)))
     {
         uint8_t ppsw = 0;
 
         resp[0] = '\0';
 
-        if (!bare_probe("VTPPSWS\r", resp, sizeof(resp), 1500) ||
+        if (!obd_bare_probe("VTPPSWS\r", resp, sizeof(resp), 1500) ||
             !obd_parse_ppsw(resp, &ppsw))
         {
             ESP_LOGW(TAG, "PPSW unreadable ('%.12s'): left as it is", resp);
@@ -488,7 +540,7 @@ esp_err_t obd_bringup_run(int *active_baud)
             ESP_LOGW(TAG, "PPSW is %02X, setting to 10", ppsw);
             resp[0] = '\0';
 
-            if (!bare_probe("VTPPSW10\r", resp, sizeof(resp), 1500) ||
+            if (!obd_bare_probe("VTPPSW10\r", resp, sizeof(resp), 1500) ||
                 !obd_parse_is_ok(resp))
             {
                 ESP_LOGW(TAG, "VTPPSW10 not acknowledged ('%.12s'): no reset, "
@@ -499,7 +551,7 @@ esp_err_t obd_bringup_run(int *active_baud)
                 vTaskDelay(pdMS_TO_TICKS(OBD_PPSW_SETTLE_MS));
                 resp[0] = '\0';
 
-                if (bare_probe("VTPPSWS\r", resp, sizeof(resp), 1500) &&
+                if (obd_bare_probe("VTPPSWS\r", resp, sizeof(resp), 1500) &&
                     obd_parse_ppsw(resp, &ppsw) && ppsw == 0x10)
                 {
                     ESP_LOGI(TAG, "PPSW reads 10 after the write");
@@ -510,7 +562,10 @@ esp_err_t obd_bringup_run(int *active_baud)
                              resp);
                 }
 
-                obd_pin_reset_pulse(); /* legacy hard-resets after the change */
+                /* the reset behind the change, by command (the banner can
+                   carry junk bytes ahead of it: sent blind, as the
+                   provisioning's `ATZ`, with the chip's boot time) */
+                obd_uart_write((const uint8_t *)"ATZ\r", 4);
                 vTaskDelay(pdMS_TO_TICKS(1500));
                 obd_uart_write((const uint8_t *)"\r", 1);
                 vTaskDelay(pdMS_TO_TICKS(100));
@@ -520,7 +575,9 @@ esp_err_t obd_bringup_run(int *active_baud)
     }
 
     /* legacy: wait for the READY pin (LOW = ready) before declaring the
-       chip up; one forced reset if it never settles */
+       chip up. Legacy forced a reset pulse when it never came; this chip
+       has answered every word above, so it gets none (issue #1023) and is
+       used as it is. */
     for (int i = 0; !obd_pin_ready() && i < 10; i++)
     {
         ESP_LOGW(TAG, "chip not ready...");
@@ -529,15 +586,14 @@ esp_err_t obd_bringup_run(int *active_baud)
 
     if (!obd_pin_ready())
     {
-        ESP_LOGE(TAG, "chip not ready for too long; hardware reset");
-        obd_pin_reset_pulse();
-        vTaskDelay(pdMS_TO_TICKS(1500));
+        ESP_LOGE(TAG, "the chip answers but READY reads not ready after 2 s: "
+                 "used as it is (no reset pulse for a chip that answers)");
     }
 
     /* echo off first (deterministic responses), then the legacy chip
        provisioning (task §11-5 answered by meatpi: "follow legacy init") */
-    bare_probe("ATE0\r", resp, sizeof(resp), 1000);
-    chip_provision();
+    obd_bare_probe("ATE0\r", resp, sizeof(resp), 1000);
+    obd_bringup_provision();
 
     /* the stored protocol (2026-11-10): the chip came out of its reset on
        it and nothing of this boot has named a protocol yet (the identity
@@ -547,7 +603,7 @@ esp_err_t obd_bringup_run(int *active_baud)
        and whether an `ATSP` of an earlier boot, its answer lost, was
        taken. */
     resp[0] = '\0';
-    obd_cmd_stored_note(bare_probe("ATDPN\r", resp, sizeof(resp), 1000)
+    obd_cmd_stored_note(obd_bare_probe("ATDPN\r", resp, sizeof(resp), 1000)
                             ? resp : NULL);
 
     /* the memory function off (issue #1023, bench 2026-11-01): it is ON
@@ -558,7 +614,7 @@ esp_err_t obd_bringup_run(int *active_baud)
        sequence performs; the request engine repeats it ahead of every
        protocol switch (obd_chip_cmd.c), so a chip that stays silent here
        is covered at its first switch. */
-    bool mem_off = bare_probe("ATM0\r", resp, sizeof(resp), 1000) &&
+    bool mem_off = obd_bare_probe("ATM0\r", resp, sizeof(resp), 1000) &&
                    strstr(resp, "OK") != NULL;
 
     if (mem_off)
@@ -571,7 +627,7 @@ esp_err_t obd_bringup_run(int *active_baud)
                       "a protocol change until the first switch", resp);
     }
 
-    bare_probe("ATI\r", resp, sizeof(resp), 1500); /* identity for the log */
+    obd_bare_probe("ATI\r", resp, sizeof(resp), 1500); /* identity for the log */
 
     esp_err_t err = obd_uart_rx_task_start();
 

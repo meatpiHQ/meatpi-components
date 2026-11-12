@@ -138,6 +138,14 @@ bench weeks later.
   with the count, from the same 60 s watch).
   Components below dev_status in the graph raise nothing themselves
   (dependency cycles); their ESP_LOGE is caught by the boot_errors net.
+  Components above it raise their own: data_logger (`logger_file_corrupt`,
+  `logger_storage_error`) and, since 2026-11-12, the OBD chip's four:
+  obd_chip latches `obd_chip_silent` (the chip answered at neither UART
+  speed and the bring-up took its last resort, the reset line) and
+  `obd_chip_damaged` (its stored identity reads as an error); sleep_manager
+  latches `obd_chip_woke` (a nap found the chip awake after it had slept)
+  and `obd_chip_no_sleep` (six re-sleeps in a row failed). Their READMEs
+  say when exactly.
 - Read/clear: `faults` / `faults -c` CLI, `GET /api/faults`,
   `POST /api/faults/clear`. `/api/status.health` carries the live
   counters (log E/W, flash ops via CONFIG_SPI_FLASH_ENABLE_COUNTERS,

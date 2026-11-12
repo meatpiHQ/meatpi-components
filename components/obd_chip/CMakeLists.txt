@@ -5,8 +5,12 @@ idf_component_register(
          "obd_chip_probe.c"
          "obd_chip_report.c"
          "obd_chip_bringup.c"
+         "obd_chip_provision.c"
          "obd_chip_events.c"
          "obd_chip_uart.c"
+         "obd_chip_pins.c"
+         "obd_chip_settle.c"
+         "obd_chip_fault.c"
          "obd_chip_cmd.c"
          "obd_chip_parse.c"
          "obd_chip_class.c"
@@ -23,7 +27,7 @@ idf_component_register(
     # public header exposes FreeRTOS queue types only (implicit common req)
     PRIV_REQUIRES event_manager esp_driver_uart esp_driver_gpio settings_manager obd_gate
                   log_manager filesystem http_server_manager esp_http_server
-                  cmdline_manager
+                  cmdline_manager dev_status_manager
     # The packaged MIC3624 image (legacy parity, Ali 2026-07-26: a chip
     # not at a current version is auto-flashed to it after bring-up).
     # V2.3.24 since 2026-10-28 (issue #1023), the v4.52p policy: a chip at

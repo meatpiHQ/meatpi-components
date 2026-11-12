@@ -22,7 +22,8 @@
 
 /**
  * @file sleep_manager_private.h
- * @brief Internals: the PURE policy ladder (host-tested) + glue hooks.
+ * @brief Internals: the PURE policy ladder and the PURE watch on the OBD
+ *        chip through the naps (both host-tested) + glue hooks.
  */
 #pragma once
 
@@ -44,9 +45,44 @@
 #define SM_BOOT_GRACE_MS    15000u   /* meatpi: flash window on loops  */
 #define SM_NAP_US           (2u * 1000u * 1000u)
 #define SM_RESLEEP_MAX      6        /* OBD re-sleeps before recovery  */
-#define SM_RESLEEP_BOOT_MS  1500u    /* the chip's boot after the re-sleep's
-                                        pulse, then the sleep word (2026-11-07) */
+#define SM_RESLEEP_BOOT_MS  1500u    /* the chip's boot, waited when the
+                                        re-sleep's reset by command was not
+                                        confirmed, then the sleep word    */
 #define SM_AUTOPID_IDLE_MS  20000u
+
+/* ---- sleep_manager_chip.c: PURE (host-tested) ------------------------------
+ * What the naps see of the OBD chip, and which of it is a fault
+ * (2026-11-12). The two codes are latched by dev_status_manager and stay
+ * until they are cleared by hand (`faults -c`, POST /api/faults/clear). */
+
+/** The chip was asleep and a later nap found it awake, the sleep pin low. */
+#define SM_FAULT_CHIP_WOKE     "obd_chip_woke"
+/** SM_RESLEEP_MAX re-sleeps in a row failed: the recovery reboot follows. */
+#define SM_FAULT_CHIP_NO_SLEEP "obd_chip_no_sleep"
+
+typedef struct
+{
+    bool     slept;    /* a nap of this sleep found the chip asleep          */
+    uint8_t  in_a_row; /* naps in a row that found it awake                  */
+    uint32_t wakes;    /* times it was found awake AFTER it had slept        */
+} sm_chip_watch_t;
+
+typedef enum
+{
+    SM_CHIP_ASLEEP = 0, /* as it should be                                   */
+    SM_CHIP_RESLEEP,    /* awake, and not a new fault: it never slept in
+                           this sleep yet, or this wake is flagged already;
+                           put it back                                       */
+    SM_CHIP_WOKE,       /* awake after it had slept: put it back and latch
+                           SM_FAULT_CHIP_WOKE                                */
+    SM_CHIP_GIVE_UP,    /* awake behind SM_RESLEEP_MAX re-sleeps in a row:
+                           latch SM_FAULT_CHIP_NO_SLEEP, recovery reboot     */
+} sm_chip_verdict_t;
+
+void sm_chip_watch_init(sm_chip_watch_t *w);
+
+/** One nap's reading of READY, @p awake = the chip reads ready. */
+sm_chip_verdict_t sm_chip_watch_feed(sm_chip_watch_t *w, bool awake);
 
 /* ---- sleep_manager_policy.c: PURE (host-tested) -------------------------- */
 
@@ -191,6 +227,18 @@ esp_err_t sleep_settings_register(void);
 const sm_cfg_t *sleep_settings_config(void);
 bool sleep_settings_enabled(void);
 bool sleep_settings_is_configured(void); /* boot apply ran (standard §4.3) */
+
+/* ---- the naps (sleep_manager_nap.c, target only) ---------------------------- */
+
+/* WiCAN Pro power pins (legacy hw_config.h) */
+#define SM_CAN_STDBY_GPIO CONFIG_WICAN_SLEEP_CAN_STDBY_GPIO
+#define SM_USB_PWR_GPIO   CONFIG_WICAN_SLEEP_USB_PWR_GPIO
+
+/** After a nap: is the OBD chip still asleep? Re-sleeps it when it is not
+ *  (a reset by command, the sleep word, the pin), latches the fault codes
+ *  above and ends in the recovery reboot when it will not sleep. @p nap is
+ *  the nap's number (the fault's detail), @p resleeps the status counter. */
+void sm_nap_verify_chip(uint32_t nap, uint32_t *resleeps);
 
 /* ---- glue ----------------------------------------------------------------- */
 

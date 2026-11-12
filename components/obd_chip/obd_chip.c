@@ -39,6 +39,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 
+#include "dev_status_manager.h"
 #include "log_manager.h"
 
 #include "obd_chip_private.h"
@@ -161,6 +162,18 @@ esp_err_t obd_chip_get_stats(obd_chip_stats_t *out)
                    "obd_chip_stats_t.stored_protocol holds the chip's words");
     obd_cmd_stored_text(out->stored_protocol, sizeof(out->stored_protocol));
 
+    obd_pin_stats_t pins;
+    obd_bringup_note_t note;
+
+    obd_pin_get_stats(&pins);
+    obd_bringup_note(&note);
+    out->reset_pulses = pins.pulses;
+    out->reset_refused = pins.refused;
+    out->wake_ms = note.wake_ms;
+    out->wake_ready = note.wake_ready;
+    out->wake_pulsed = note.wake_pulsed;
+    out->store_damaged = note.store_damaged;
+
     obd_uart_stats_t wire;
 
     obd_uart_get_stats(&wire);
@@ -254,11 +267,42 @@ esp_err_t obd_chip_sleep(bool sleep)
     return ESP_OK;
 }
 
-esp_err_t obd_chip_hard_reset(void)
+esp_err_t obd_chip_soft_reset(void)
 {
     (void)obd_core_bringup_wait(OBD_BRINGUP_WAIT_MS);
-    obd_pin_reset_pulse();
-    return ESP_OK;
+
+    if (!s_started)
+    {
+        return ESP_ERR_INVALID_STATE; /* never came up: nothing to say to it */
+    }
+
+    char resp[48] = "";
+
+    for (int attempt = 0; attempt < OBD_SOFT_RESET_TRIES; attempt++)
+    {
+        /* a throw-away word first: whatever the chip was in the middle of
+           (a monitor, a half line) ends with it, as in the bring-up */
+        (void)obd_chip_request("ATI", resp, sizeof(resp),
+                               pdMS_TO_TICKS(OBD_SOFT_RESET_MS));
+        resp[0] = '\0';
+
+        if (obd_chip_request("ATWS", resp, sizeof(resp),
+                             pdMS_TO_TICKS(OBD_SOFT_RESET_MS)) == ESP_OK &&
+            strstr(resp, "ELM") != NULL)
+        {
+            /* a fresh chip: its echo is back on, every holder's prelude is
+               stale and no protocol switch is owed from before it */
+            (void)obd_chip_request("ATE0", resp, sizeof(resp),
+                                   pdMS_TO_TICKS(OBD_SOFT_RESET_MS));
+            s_settings_gen++;
+            obd_cmd_memory_reset();
+            ESP_LOGI(TAG, "chip reset by command (ATWS)");
+            return ESP_OK;
+        }
+    }
+
+    ESP_LOGW(TAG, "chip reset by command not confirmed ('%.16s')", resp);
+    return ESP_ERR_INVALID_RESPONSE;
 }
 
 bool obd_chip_status_ok(void)
@@ -336,6 +380,32 @@ static esp_err_t bringup_run(void)
     return err;
 }
 
+/** What this bring-up leaves behind as device fault codes (2026-11-12,
+ *  obd_chip_fault.c): a chip that answered at neither UART speed, whether
+ *  the last resort brought it back or not, and a chip whose stored identity
+ *  is damaged. Until then both were log lines and a state on GET
+ *  /api/obd_chip, gone at the next boot. Latched until cleared by hand;
+ *  dev_status_manager writes a code once and counts it once per boot. */
+static void bringup_faults(esp_err_t err)
+{
+    obd_bringup_note_t note;
+    char detail[48];
+
+    obd_bringup_note(&note);
+
+    if (obd_fault_silent(note.silent, note.wake_pulsed, err == ESP_OK, detail,
+                         sizeof(detail)))
+    {
+        (void)dev_status_manager_fault_raise(OBD_FAULT_SILENT, detail);
+    }
+
+    if (note.store_damaged)
+    {
+        (void)dev_status_manager_fault_raise(OBD_FAULT_DAMAGED,
+                                             OBD_FAULT_DAMAGED_DETAIL);
+    }
+}
+
 /** Mark bring-up finished (success OR give-up) and release the gate.
  *  Bit before flag: a gate that read the flag as active must find the
  *  bit set when it reaches the wait. */
@@ -349,9 +419,24 @@ static void bringup_task(void *arg)
 {
     (void)arg;
 
+    /* the start-up firmware check runs ONCE per boot of the device, and
+       never on a chip whose stored identity is damaged (issue #1023): such a
+       chip answers `VTVERS` with an error, the check took that for a chip
+       to recover and rewrote it, the fresh bring-up below ran the check
+       again, and so on for as long as the device was awake (13 rewrites in
+       5 minutes on the bench). A recovery from the download mode needs one
+       pass, the bring-up behind it none. */
+    static bool s_startup_checked;
+
     int64_t t0 = esp_timer_get_time();
     esp_err_t err = bringup_run();
-    bool check = obd_settings_config()->auto_update;
+    bool check = obd_settings_config()->auto_update && !s_startup_checked &&
+                 !obd_bringup_store_damaged();
+
+    if (check)
+    {
+        s_startup_checked = true;
+    }
 
     /* The start-up check's claim BEFORE the gate opens (2026-11-11). The
        check used to claim behind the DONE bit and raced the first requester
@@ -380,6 +465,8 @@ static void bringup_task(void *arg)
                  esp_err_to_name(err));
     }
 
+    bringup_faults(err);
+
     /* legacy-parity auto-update (Ali 2026-07-26): a chip below the
        accepted versions (V2.3.22, V2.3.24: the v4.52p list) is flashed
        to the packaged image, never the same version or a newer chip.
@@ -400,7 +487,7 @@ static void bringup_task(void *arg)
         }
         else if (up == ESP_OK && obd_fw_last_flashed())
         {
-            /* the chip was reflashed and hardware-reset: echo back on,
+            /* the chip was reflashed and has restarted: echo back on,
                provisioning gone, and after a recovery (issue #1023) no
                RX task at all. A fresh bring-up on a new task restores
                all of it; this task is done. */
@@ -450,6 +537,7 @@ esp_err_t obd_chip_start(void)
         esp_err_t err = bringup_run();
 
         bringup_finish();
+        bringup_faults(err);
         return err;
     }
 

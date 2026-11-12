@@ -176,7 +176,8 @@ zero-copy only with numbers.
 | `obd_chip_is_monitor_cmd(cmd)` | Table-driven monitor-class test (pure). |
 | `obd_chip_monitor_stop()` | The stop byte: **SPACE, never CR** (CR = repeat-last-command → can re-enter ATMA). |
 | `obd_chip_sleep(on)` / `obd_chip_status_ok()` | Sleep: the sleep word `STSLEEP0` first (2026-11-07, 4.x parity: see "The sleep word" below), then the sleep pin (hold survives resets); wake = the release sequence / READY pin. |
-| `obd_chip_park()` | (2026-10-05) Leave the chip asleep from a boot that never initialised this component (the firmware's crash park). Pins only. The chip meets a boot in one of two states: **awake** (a power-on, or the run before had it up), then it is hardware-reset first (a session or a monitor left open is closed, and a chip mid-monitor ignores the sleep pin) and put to sleep with the hold, about 0.6 s; or **asleep** (the boot follows a sleep and the sleep pin's hold is still on: READY reads high), then it is left asleep and its sleep pin is never driven high. Either way the next normal boot finds it asleep and wakes it as after any sleep. |
+| `obd_chip_park()` | (2026-10-05) Leave the chip asleep from a boot that never initialised this component (the firmware's crash park). The chip meets a boot in one of two states: **awake** (a power-on, or the run before had it up), then it is put to sleep as a sleep entry does it: a stop byte (a chip mid-monitor ignores the sleep pin), the sleep word `STSLEEP0` on a UART this call sets up, the sleep pin with the hold, about 1 s, and no reset pulse since 2026-11-12 (an awake chip gets none: issue #1023); or **asleep** (the boot follows a sleep and the sleep pin's hold is still on: READY reads high), then it is left asleep and its sleep pin is never driven high. Either way the next normal boot finds it asleep and wakes it as after any sleep. |
+| `obd_chip_soft_reset()` | (2026-11-12) Reset the chip by command: a throw-away `ATI` (it ends a monitor or a half line), then the warm start `ATWS`, whose answer must carry the banner; twice at most. `ESP_OK` = the chip is fresh (its echo off again, the settings generation moved), `ESP_ERR_INVALID_RESPONSE` = not confirmed, `ESP_ERR_INVALID_STATE` = the chip never came up. sleep_manager's nap calls it ahead of the sleep word for a chip that reads awake. It replaces `obd_chip_hard_reset()`, the pulse on the reset line: that line is not offered to other components any more (see "The reset line is for a chip that does not answer"). |
 | `obd_chip_get_version(...)` | `VTVERS` → e.g. `MIC3624 V2.3.24`. |
 | `obd_chip_firmware_update(fs_path)` / `obd_chip_firmware_update_builtin(rule)` | EXCLUSIVE; the verified legacy flow (below). No forced rewrite since 2026-11-01 (Ali): a chip is written only when the image's version is above the one it reports. A file's version is its NAME (`V2.3.24.txt`; `ESP_ERR_INVALID_ARG` without one); the packaged image takes the rule, `OBD_FW_RULE_STARTUP` (the bring-up: a chip on the v4.52p accept list, V2.3.22 or V2.3.24, is left alone) or `OBD_FW_RULE_NEWER` (the user's entries). |
 | `obd_chip_firmware_update_start(fs_path)` | (2026-10-28) the user's update (`OBD_FW_RULE_NEWER`) on its own task, NULL = the packaged image; `ESP_ERR_INVALID_STATE` while one runs, `ESP_ERR_INVALID_ARG` for a file whose name carries no version; a reflashed chip comes back through a fresh bring-up. The console / HTTP entry. |
@@ -200,13 +201,15 @@ convention). Consequences:
 
 - **Wire-touching APIs gate on completion** so nothing interleaves with
   the bare-UART probes: `send()`/`monitor_stop()`/`firmware_update()`
-  wait up to `OBD_BRINGUP_WAIT_MS` (20 s, past the worst hard-reset +
-  baud-walk + provisioning case) then refuse `ESP_ERR_INVALID_STATE`;
+  wait up to `OBD_BRINGUP_WAIT_MS` (25 s since 2026-11-12, past the worst
+  case: a silent chip's warm start, baud-walk, last-resort pulse and second
+  look, 18.6 s measured, plus a provisioning) then refuse
+  `ESP_ERR_INVALID_STATE`;
   `request()` waits within the CALLER's own timeout and returns
   `ESP_ERR_TIMEOUT` without touching the wire (boot-window callers like
   the autopid poller simply retry). After the DONE flip the gate is a
   zero-cost flag test. `subscribe()`/`claim()` are pure state: ungated.
-- `obd_chip_sleep(true)`/`obd_chip_hard_reset()` wait too (a sleep-entry
+- `obd_chip_sleep(true)`/`obd_chip_soft_reset()` wait too (a sleep-entry
   race mid-bring-up would strand the sequence) but then proceed
   regardless: sleeping is the stronger intent.
 - A **degraded start** (never called / refused unconfigured) leaves the
@@ -246,7 +249,9 @@ until its next request, whatever its default protocol is.
 
 `chip_soft_reset()`: one throw-away `ATI` (whatever sits in front ends with
 it), then the reset word, and the answer must carry the banner (`ELM`).
-Twice, then the reset pin as before. The word is `ATWS` since 2026-11-02
+Twice; since 2026-11-12 no reset pin behind it (a chip that reads ready gets
+no pulse: the chip is looked for at both speeds and warm-started again
+where it answers). The word is `ATWS` since 2026-11-02
 (what 4.x sent in place of every `ATZ`): taken then for the same complete
 reset (it is not, for an established CAN session: the paragraph after this
 one) without the LED test, about 40 ms instead of 1.3 s, and without the junk bytes the
@@ -281,7 +286,7 @@ the protocol number and the stored protocol stay (`ATDPN` reads the same
 before and after, so the stored-protocol read further down is untouched),
 and the next request opens the protocol again in the usual 350 ms. An
 `ATPC` that is not acknowledged counts as a reset that did not happen: the
-second try, then the reset pin. About 50 ms of bring-up. A device in a
+second try, then one E line. About 50 ms of bring-up. A device in a
 vehicle rarely meets the fault (unplugging it powers the chip off, and the
 session it kept was the right one for the car it stayed in); a bench that
 moves its bus between bitrates meets it at once.
@@ -302,6 +307,17 @@ not the command), so the driver sends `ATM0` itself: "The memory function"
 under the EEPROM guard below. `obd_chip_protocol_save()` (a real `ATSP`) is
 the one deliberate write and saves with or without the switch. The bring-up's
 `started:` line reads `memory off` since then.
+
+### The reset line and the wake (2026-11-12)
+
+The chip's reset line is in no API: `obd_chip_hard_reset()` is gone and
+`obd_chip_soft_reset()` (a reset by command) stands in its place; no HTTP route, console
+command or wire tool pulses it either. Inside the component the pulse is declared in
+`obd_chip_reset_line.h`, which the bring-up alone includes, and it is the last resort for a
+chip that answers at neither UART speed (issue #1023; see the EEPROM guard chapter). `obd_chip_stats_t` carries `reset_pulses`, `reset_refused`, `wake_ms`,
+`wake_ready`, `wake_pulsed` and `store_damaged`. The control lines live in
+`obd_chip_pins.c`, the settle logic and the rule in `obd_chip_settle.c`, the sleep
+control's provisioning in `obd_chip_provision.c`.
 
 ## Bridge-endpoint ABI (TASK_obd_chip_manager_new §2/§3.6: stable)
 
@@ -360,8 +376,9 @@ bridge_manager; production replaces it with a configured bridge.
 
 `VTVERS` (expect `MIC3624 …`) → `VTDLMIC3422` → `VTDLDT<line>` per record
 (each answered `OK`; `?` = rejected) → stop at the `FFF1…` end marker →
-`VTDLED` (2 s settle, 3 attempts) → hardware reset pulse (GPIO41 low 5 ms) →
-rewake. Vendor images are `.txt` hex-record files (~3.5 k lines / ~490 KB).
+`VTDLED` (2 s settle, 3 attempts), behind which the chip restarts itself (a
+reset pulse, GPIO41 low 5 ms, only when it then answers at neither speed:
+2026-11-12) → rewake. Vendor images are `.txt` hex-record files (~3.5 k lines / ~490 KB).
 Two sources: a `filesystem` path (`obd_chip_firmware_update`, read whole
 into PSRAM) or the **packaged image** (`obd_chip_firmware_update_builtin`,
 `EMBED_TXTFILES` of `obd_chip_manager/obd_fw/V2.3.24.txt` since 2026-10-28,
@@ -467,9 +484,10 @@ OK)`, and the first nap's READY check the ground truth, as before the word.
 A refusal (a chip mid-monitor answers `?`, a dead wire nothing, a claim a
 stuck holder still has) is one W `chip did not take STSLEEP0 (...): the pin
 alone` and the pin as before; a chip that is asleep already or never came
-up gets no word. The nap's re-sleep (sleep_manager) pulses the reset, waits
-the chip's 1.5 s boot and calls this, so the word finds the chip listening;
-the crash park stays pin-only (no driver in that boot). What the bench
+up gets no word. The nap's re-sleep (sleep_manager) resets the chip by
+command first (`obd_chip_soft_reset()`; until 2026-11-12 a reset pulse and
+the chip's 1.5 s boot) and calls this, so the word finds the chip listening;
+the crash park sends the word itself, blind, on a UART it sets up. What the bench
 taught about the PowerEn switch the same day: `VT PPSW xy` is x = the
 WAKE trigger, y = the SLEEP trigger (0 low level, 1 high level, 2 rising,
 3 falling, F none): `10` = high wakes, low sleeps; `0F` = a LOW level wakes
@@ -569,10 +587,11 @@ trigger a reprovision-every-boot loop (`obd_parse_feed`, host-tested).
    switch as the chip's power-on baud; fw ≥ V2.3.22 gets the power-pin
    check (`VTPPSWS` → `VTPPSW10` when wrong; since 2026-11-07 the write
    must answer `OK`, gets 600 ms to settle (legacy's 100 + 500 ms) and is
-   read back as `10` BEFORE the reset pulse, an unreadable value is left
-   alone and a refused write gets no pulse: `obd_parse_ppsw`,
-   host-tested; until then the pulse came 0 ms after the OK); a READY-wait loop
-   (10 × 200 ms, then one forced reset) gates the bring-up; sleep parks
+   read back as `10` BEFORE the reset, an `ATZ` since 2026-11-12 (a pulse
+   until then); an unreadable value is left alone and a refused write gets
+   no reset: `obd_parse_ppsw`, host-tested; until 2026-11-07 the pulse came
+   0 ms after the OK); a READY-wait loop (10 × 200 ms, then one E line: no
+   forced reset since 2026-11-12) gates the bring-up; sleep parks
    BOTH the SLEEP and READY pins (pulldown + RTC pulldown + hold).
    UART ring buffers: legacy 18 K / 18 K, and they live in **PSRAM** in
    both firmwares, the driver allocates them with `MALLOC_CAP_DEFAULT`
@@ -706,6 +725,138 @@ a refused command in `cmd`/`init`; the UDS AT transport sends `ATTP` itself.
 Exempt by construction: boot provisioning (`bare_probe`: STSL*, `ATPP 0E/0F`,
 `STWBR`, once, behind a matching check) and the firmware update flow, which
 write the UART directly.
+
+### The reset line is the last resort (issue #1023, 2026-11-12)
+
+**The rule: the reset line is pulsed only as the last resort, for a chip that has just been
+asked at both UART speeds and answered at neither, and only with READY at rest. It is in no
+API.** A chip that talks is reset by command. Breaking the rule can destroy a chip for good.
+Do not add a second way to drive that line, do not pulse a chip that answers, do not pulse on
+what READY says alone, and do not replace a READY wait by a fixed time. (Ali, 2026-11-12:
+"the pin reset should not be allowed unless as a last resort solution, also remove it from
+API if it's in the API".)
+
+Both conditions must hold (`obd_settle_pulse_allowed`, pure, asked by the pulse function
+before every pulse):
+
+| Condition | What it means | Why |
+|---|---|---|
+| the chip is silent | the caller has just sent it a word at 2 Mbaud and at 115200 and got no prompt at either. The sleep pin is high and READY was waited for before that | everything else was tried. READY reading "asleep" alone is not enough: until this change the bring-up pulsed on it, as 4.x did |
+| READY is at rest | ready for `OBD_READY_STEADY_MS` (300 ms) or not ready for `OBD_DOWN_STEADY_MS` (1 s) without a break | no boot of the chip lasts that long, so none is running that the pulse could cut. A READY that keeps changing gets no pulse |
+
+The chips that still get it: one asleep that the sleep pin cannot wake (its PowerEn function
+off: on the bench of 2026-11-07 nothing else woke it, not a UART word, not the supply
+voltage), one an app left at a third UART speed until its next reset (`STSBR`), one that
+hangs. One pulse per bring-up at most, and one at the end of a chip update whose chip then
+answers at neither speed.
+
+Where the line is, and who can reach it:
+
+| Layer | State |
+|---|---|
+| `obd_chip.h` (other components) | no hardware reset. `obd_chip_hard_reset()` was removed; `obd_chip_soft_reset()` resets by command |
+| HTTP, the console, the wire tools, the ELM port | none of them ever pulsed the line, and none does. `GET /api/obd_chip` and the `obd_chip` command only read its counters |
+| `obd_chip_private.h` (the component's own files) | the pulse is not declared there |
+| `obd_chip_reset_line.h` | the one declaration, included by `obd_chip_pins.c` (the function, the only code that names GPIO41) and `obd_chip_bringup.c` (its two calls) |
+
+The host test `test_reset_line_has_one_driver_and_two_last_resort_calls` counts all of that
+in the sources the component builds (the count is made in `host_test/main/CMakeLists.txt`):
+another driver of the pin, a third call, another file that includes the header or a reset
+back in `obd_chip.h` fails the suite. A refused pulse is counted (`reset.refused`) and logged
+with one W line.
+
+What was measured (two units, the test firmware of the issue; the firmware repo's
+`internal/OBD_CHIP_WAKE_RESET_FINDING_2026-11-12.md`):
+
+- The chip tidies its stored settings in the first boot behind every 264 writes of its
+  store, from about 68 ms into that boot, for about 155 ms. Without store writes it never
+  does. A store write is a protocol change with an answered request while the chip's memory
+  function is on (see "The memory function" below).
+- A reset inside that tidying destroys the store. One chip lost its identity block (`VTVERS`
+  answers `ERR82`, PowerEn reads `FF`, serial and name erased) and still worked; the next hit
+  killed it. A second, fresh chip died of one pulse: no byte, no edge, READY stuck high.
+  Both field signatures of the issue.
+- Waking on the sleep pin includes a boot of the chip. READY (L = ready), in ms behind the
+  pin: `H0 L113 H231..237 L497..502`, and `L649..678` at the end when the store is tidied.
+  A reset pulse's boot: `L0 H19 L285`, or `L412..459` with the tidying.
+- Until this change the bring-up waited a fixed 300 ms behind the sleep pin, read "not
+  ready" inside that boot and pulsed the reset: 63 to 69 ms into the boot. On the second unit
+  a pulse at 298 ms did nothing and the pulse at 300 ms killed the chip. Firmware 4.x read
+  READY long after the chip's boot and sent `ATZ`.
+
+Waiting for READY keeps a pulse out of every boot that was measured. The chip's firmware is
+not ours to read, so the line is also taken away from every path that has a command for the
+same job (Ali, 2026-11-12: "if the reset pin is what drives it, let's make sure it's never
+used"). A command is run by the chip from its own main loop, never inside its own tidying.
+
+| Where | Until 2026-11-12 | Now |
+|---|---|---|
+| The bring-up behind the sleep pin (`obd_bringup_run`) | 300 ms, read READY, pulse when not ready | `obd_pin_settle()`: wait until READY has been ready without a break for `OBD_READY_STEADY_MS` (300 ms: longer than the 117 to 123 ms a waking chip reads ready before it restarts itself), at most `OBD_WAKE_SETTLE_MS`; then the warm start, as after a power-on. READY not ready for a full second, or never at rest: no pulse on that alone; the chip is asked on the wire like any other (one try at each speed when READY says asleep) |
+| The warm start not confirmed | a pulse, 1.5 s | no pulse. The chip is looked for at both speeds and warm-started again at the speed it answers at; one that still confirms no reset is used as it is, with one E line |
+| The chip silent at both speeds, whatever READY said | (the pulse above came first) | one pulse as the last resort, READY at rest, then one more look at both speeds (the full walk when READY had said asleep). A chip that answers although READY read asleep is reset by command |
+| The PowerEn repair (`VTPPSW10`) | written, read back, a pulse | written, read back, `ATZ`. Should the chip take the value only at a boot of its own, it does at its next wake |
+| "chip not ready for too long" (it answers, READY reads not ready) | a pulse | no pulse, one E line, the chip used as it is |
+| The end of a chip firmware update | a pulse 2 s behind `VTDLED`, whatever the chip did | the chip restarts itself behind `VTDLED`; a pulse only when it then answers at neither speed (`obd_bringup_reset_if_silent`) |
+| The nap's re-sleep (sleep_manager) | `obd_chip_hard_reset()`, 1.5 s, the sleep word | `obd_chip_soft_reset()`, the sleep word. The hard reset is gone from the API |
+| The crash park (`obd_chip_park`) | pulse, 500 ms, sleep pin low | no pulse: a stop byte, the sleep word, the sleep pin once READY has rested |
+| The start-up firmware check | at every bring-up; a `VTVERS` that is not a version = "a chip to recover", rewritten, and again behind the fresh bring-up, for ever | once per boot of the device; never on a chip whose `VTVERS` reads as an error while `ATI` answers (its store is damaged: a rewrite repairs nothing). The user's update refuses such a chip too (`ESP_ERR_INVALID_VERSION`) |
+| PowerEn (`VTPPSW10`) | checked only on a chip that names an accepted version | also on a chip with a damaged store, which lost it with its identity |
+
+So a healthy chip gets no reset pulse from this firmware, whatever the device does: boot,
+restart, settings save, sleep and wake, nap, park, PowerEn repair. `reset.pulses` stays 0 on
+it, and the bench stage `chipwake` and the release test hold it to that.
+
+The settle logic and the rule are pure (`obd_chip_settle.c`) and host-tested against the
+measured traces (`host_test/main/test_settle.c`: the fault itself first, then that no pulse
+is allowed at any sample of any measured boot, that READY alone never allows one, and the
+count of who can reach the line). A chip that was awake all along (a power-on,
+a settings save) settles in the 300 ms the bring-up always waited.
+
+NOT PROVEN ON A CHIP YET (both bench chips were dead when this was written): the command
+paths that took the place of a pulse, above all the nap's re-sleep of a chip mid-monitor
+(sleep matrix `elm_monitor`), the park's sleep word, the PowerEn repair by `ATZ`
+(`sleepword`) and an update's end without the pulse (`obdfw`).
+
+What a damaged chip looks like to the firmware: it answers `ATI` and OBD requests, and
+`VTVERS` with a few stray bytes and `ERR82`. The bring-up logs one W line, `GET
+/api/obd_chip` reads `fw.damaged: true` and `fw.chip: "ERR (stored identity damaged)"`, the
+`obd_chip` command prints a warning, the card on System > Maintenance shows a red banner. The
+chip is used as it is.
+
+Fault codes (2026-11-12). What a bring-up finds is latched in dev_status_manager's fault store
+(`GET /api/faults`, the `faults` command) and stays until it is cleared by hand. Until then a
+chip that answered nothing left log lines and `ready: false`, all gone at the next boot: the
+bench unit whose chip the reproduction destroyed had an empty fault list.
+
+| Code | Latched when | Detail |
+|---|---|---|
+| `obd_chip_silent` | the chip answered at neither UART speed and the bring-up took its last resort. Also when the chip came back: the reset line is not used on a healthy chip, so its use is the fact worth keeping | `silent; came back after the reset pulse`, `silent; still silent after the reset pulse`, or `silent; READY never at rest, no reset pulse` |
+| `obd_chip_damaged` | the chip runs and answers `VTVERS` with an error (the paragraph above) | `VTVERS reads an error: stored identity erased` |
+| `obd_chip_woke`, `obd_chip_no_sleep` | by sleep_manager, about the chip through the naps (its README) | - |
+
+A healthy chip latches none of the four. The wording is pure (`obd_chip_fault.c`,
+host-tested); `obd_chip.c` latches it at the end of a bring-up. dev_status_manager writes a
+code once and counts it at most once per boot.
+
+A chip that does not answer, and what is tried. Nothing here retries later in the same boot,
+and that is decided (Ali, 2026-11-12: no later retry for a chip that was silent at the
+bring-up; the next boot or wake looks again):
+
+| Word | Where | Tries | Then |
+|---|---|---|---|
+| `ATI`, `ATWS` | the bring-up's warm start (READY reads ready) | a throw-away `ATI` (0.5 s) and `ATWS` (2.5 s), twice; once when not one byte came back | the look below, no reset pulse |
+| `ATI` | the bring-up's look for the chip | 3 times at 2 Mbaud, then 3 times at 115200, 1.5 s each (once each when READY says asleep) | silent at both: the last resort (one reset pulse, READY at rest), then one more look (the full walk when READY had said asleep). Still silent: `chip not responding`, the bring-up fails, the chip is down until the next boot or wake, `obd_chip_silent` is latched |
+| `VTVERS` | the bring-up, for the version and the PowerEn check | once, 1.5 s | no answer: the version stays unknown, the PowerEn check is skipped, the bring-up goes on |
+| `VTVERS` | the start-up firmware check, once per boot | 5 s at the speed the UART runs at, then at the other | silent at both: not flashing. Bytes without a prompt: the download-mode entry is tried (a chip stuck in its download mode) |
+
+`GET /api/obd_chip` `reset`: `pulses` (sent since boot: 0 on a healthy chip) and `refused`
+(asked for and not given: 0 as well), and for the last bring-up `wake_ms` (how long behind
+the sleep pin READY settled: about 300 on an awake chip, 800 to 1000 at a wake),
+`wake_ready`, `wake_pulsed` (true only when the last resort was taken: the chip answered at
+neither speed).
+`.\test.ps1 chipwake` and the release test's step r12w assert them on a real sleep and wake;
+`chipwake` also fills the chip's store first, so that the wake it tests is the one that used
+to kill chips.
 
 ### The memory function (issue #1023, 2026-11-01)
 

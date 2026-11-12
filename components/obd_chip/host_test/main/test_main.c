@@ -53,6 +53,22 @@ void test_kline_idle_session_is_closed_ahead_of_the_request(void);
 void test_kline_no_data_in_a_live_session_is_left_alone(void);
 void test_kline_another_protocol_ends_the_session_the_same_one_does_not(void);
 void test_kline_nobody_there_is_no_session(void);
+void test_settle_never_ready_where_the_old_bringup_pulsed(void);
+void test_settle_a_wake_is_ready_behind_the_chips_boot(void);
+void test_settle_the_ready_of_a_waking_chip_is_too_short_to_pass(void);
+void test_settle_an_awake_chip_costs_the_old_300_ms(void);
+void test_pulse_only_as_the_last_resort(void);
+void test_pulse_never_allowed_inside_a_measured_boot(void);
+void test_pulse_a_silent_chip_asleep_waits_a_full_second(void);
+void test_reset_line_has_one_driver_and_two_last_resort_calls(void);
+void test_settle_a_reset_boot_is_waited_out(void);
+void test_settle_a_stuck_chip_is_down_and_a_restless_one_keeps_moving(void);
+void test_settle_a_glitch_restarts_the_count(void);
+void test_fault_a_silent_chip_is_latched_however_it_ended(void);
+void test_fault_codes_and_details_fit_the_fault_store(void);
+void test_vtvers_a_damaged_store_is_not_a_chip_to_recover(void);
+void test_vtvers_versions_and_unknown_answers(void);
+void test_fw_image_records_are_counted_by_line(void);
 
 void app_main(void)
 {
@@ -105,5 +121,21 @@ void app_main(void)
     RUN_TEST(test_kline_no_data_in_a_live_session_is_left_alone);
     RUN_TEST(test_kline_another_protocol_ends_the_session_the_same_one_does_not);
     RUN_TEST(test_kline_nobody_there_is_no_session);
+    RUN_TEST(test_settle_never_ready_where_the_old_bringup_pulsed);
+    RUN_TEST(test_settle_a_wake_is_ready_behind_the_chips_boot);
+    RUN_TEST(test_settle_the_ready_of_a_waking_chip_is_too_short_to_pass);
+    RUN_TEST(test_settle_an_awake_chip_costs_the_old_300_ms);
+    RUN_TEST(test_pulse_only_as_the_last_resort);
+    RUN_TEST(test_pulse_never_allowed_inside_a_measured_boot);
+    RUN_TEST(test_pulse_a_silent_chip_asleep_waits_a_full_second);
+    RUN_TEST(test_reset_line_has_one_driver_and_two_last_resort_calls);
+    RUN_TEST(test_settle_a_reset_boot_is_waited_out);
+    RUN_TEST(test_settle_a_stuck_chip_is_down_and_a_restless_one_keeps_moving);
+    RUN_TEST(test_settle_a_glitch_restarts_the_count);
+    RUN_TEST(test_fault_a_silent_chip_is_latched_however_it_ended);
+    RUN_TEST(test_fault_codes_and_details_fit_the_fault_store);
+    RUN_TEST(test_vtvers_a_damaged_store_is_not_a_chip_to_recover);
+    RUN_TEST(test_vtvers_versions_and_unknown_answers);
+    RUN_TEST(test_fw_image_records_are_counted_by_line);
     UNITY_END();
 }

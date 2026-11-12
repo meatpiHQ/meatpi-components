@@ -204,3 +204,48 @@ bool obd_fw_version_is_outdated(const char *vtvers, const char *image)
 
     return obd_fw_version_cmp(chip, img) < 0;
 }
+
+uint32_t obd_fw_count_records(const char *buf, size_t len)
+{
+    /* records in an image: the progress denominator (one pass over ~490 KB) */
+    uint32_t n = 0;
+
+    for (size_t i = 0; i < len; i++)
+    {
+        if (buf[i] == '\n')
+        {
+            n++;
+        }
+    }
+
+    return n;
+}
+
+obd_vtvers_t obd_fw_vtvers_class(const char *resp, size_t len)
+{
+    unsigned ver[3];
+
+    if (resp == NULL)
+    {
+        return OBD_VTVERS_UNKNOWN;
+    }
+
+    if (obd_fw_version_parse(resp, ver))
+    {
+        return OBD_VTVERS_VERSION;
+    }
+
+    /* `ERR` anywhere in the answer, searched over its whole length: a chip
+       whose identity block is erased prints a few bytes of whatever stands
+       where its name was (a NUL among them more often than not) and then
+       its own error text, `ERR82` (bench 2026-11-12, five answers) */
+    for (size_t i = 0; i + 3 <= len; i++)
+    {
+        if (resp[i] == 'E' && resp[i + 1] == 'R' && resp[i + 2] == 'R')
+        {
+            return OBD_VTVERS_DAMAGED;
+        }
+    }
+
+    return OBD_VTVERS_UNKNOWN;
+}

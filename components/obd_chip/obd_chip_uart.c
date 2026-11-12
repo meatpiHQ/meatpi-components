@@ -22,15 +22,13 @@
 
 /**
  * @file obd_chip_uart.c
- * @brief UART1 + control pins: driver install, serialized TX, the RX fan-out
- *        task, and the sleep/wake/reset pin sequences (from meatpi, the
- *        sleep hold SURVIVES resets, so waking requires the release
- *        sequence, verified on the bench 2026-07-03).
+ * @brief UART1: driver install, serialized TX, the RX fan-out task and the
+ *        baud detection. The chip's control lines (READY, the sleep pin,
+ *        the reset line) live in obd_chip_pins.c since 2026-11-12.
  */
 #include <string.h>
 
 #include "driver/gpio.h"
-#include "driver/rtc_io.h"
 #include "driver/uart.h"
 #include "esp_attr.h"
 #include "esp_log.h"
@@ -49,12 +47,6 @@ static const char *TAG = "obd_chip";
 #define OBD_UART      UART_NUM_1
 #define OBD_TX_PIN    GPIO_NUM_16
 #define OBD_RX_PIN    GPIO_NUM_15
-#define OBD_READY_PIN GPIO_NUM_7  /* chip-driven; LOW = awake/ready, HIGH =
-                                     asleep (legacy elm327_chip_get_status:
-                                     ELM327_READY==0, task §11.1 answered) */
-#define OBD_SLEEP_PIN GPIO_NUM_9  /* manager-driven; high = awake            */
-#define OBD_RESET_PIN GPIO_NUM_41 /* active-low pulse; OPEN-DRAIN output
-                                     (legacy init: never drive it high)     */
 
 /* The chip can burst (own 8 KB buffer) at 2 Mbaud: legacy sizes. The
  * driver allocates these ring buffers itself with MALLOC_CAP_DEFAULT
@@ -141,96 +133,6 @@ static StaticTask_t s_rx_tcb; /* internal: FreeRTOS object */
  * driver's ISR interaction is not PSRAM-safe territory) */
 static StackType_t s_rx_stack[4096];
 static volatile bool s_rx_running;
-
-/* ---- pins -------------------------------------------------------------------- */
-
-void obd_pins_init(void)
-{
-    /* byte-for-byte the legacy init block (meatpi) */
-    gpio_reset_pin(OBD_RESET_PIN);
-    gpio_set_direction(OBD_RESET_PIN, GPIO_MODE_OUTPUT_OD);
-    gpio_set_level(OBD_RESET_PIN, 1); /* reset is active low */
-
-    gpio_reset_pin(OBD_READY_PIN);
-    gpio_set_direction(OBD_READY_PIN, GPIO_MODE_INPUT);
-    gpio_pulldown_en(OBD_READY_PIN);
-}
-
-void obd_pin_wake(void)
-{
-    /* the sleep path parks the pin low with pulldown + gpio_hold_en + RTC
-       pulldown; holds survive resets: release everything first (meatpi) */
-    gpio_sleep_set_pull_mode(OBD_SLEEP_PIN, GPIO_FLOATING);
-    gpio_pulldown_en(OBD_SLEEP_PIN);
-    rtc_gpio_pulldown_dis(OBD_SLEEP_PIN);
-    gpio_hold_dis(OBD_SLEEP_PIN);
-    rtc_gpio_deinit(OBD_SLEEP_PIN);
-    gpio_reset_pin(OBD_SLEEP_PIN);
-    gpio_set_direction(OBD_SLEEP_PIN, GPIO_MODE_OUTPUT);
-    gpio_pulldown_en(OBD_SLEEP_PIN);
-    gpio_set_level(OBD_SLEEP_PIN, 1);
-}
-
-void obd_pin_sleep(void)
-{
-    gpio_sleep_set_pull_mode(OBD_SLEEP_PIN, GPIO_PULLDOWN_ONLY);
-    gpio_set_level(OBD_SLEEP_PIN, 0);
-    gpio_pulldown_en(OBD_SLEEP_PIN);
-    rtc_gpio_pulldown_en(OBD_SLEEP_PIN);
-    gpio_hold_en(OBD_SLEEP_PIN); /* survives resets on purpose */
-
-    /* legacy parks the READY input too (pulled low = "asleep" reading,
-       no float current during deep sleep) */
-    gpio_sleep_set_pull_mode(OBD_READY_PIN, GPIO_PULLDOWN_ONLY);
-    rtc_gpio_pulldown_en(OBD_READY_PIN);
-    gpio_pulldown_en(OBD_READY_PIN);
-    gpio_hold_en(OBD_READY_PIN);
-}
-
-void obd_pin_reset_pulse(void)
-{
-    gpio_set_level(OBD_RESET_PIN, 0);
-    vTaskDelay(pdMS_TO_TICKS(5));
-    gpio_set_level(OBD_RESET_PIN, 1);
-}
-
-esp_err_t obd_chip_park(void)
-{
-    /* Pins only: nothing else of the component exists in a boot that
-       parks. The chip meets a boot in one of two states (meatpi
-       2026-10-05): awake, after a power-on or when the run before had it
-       up; or asleep, when the boot follows a sleep and nobody woke it yet
-       (the sleep pin's hold outlives the reset on purpose). */
-    obd_pins_init();
-    vTaskDelay(pdMS_TO_TICKS(5)); /* the READY input, before it is read */
-
-    if (!obd_pin_ready())
-    {
-        /* asleep: leave it there. The sleep pin is confirmed low without
-           ever being driven high (level before direction); under the hold
-           of the sleep before, none of this even reaches the pad. */
-        gpio_set_level(OBD_SLEEP_PIN, 0);
-        gpio_set_direction(OBD_SLEEP_PIN, GPIO_MODE_OUTPUT);
-        obd_pin_sleep();
-        return ESP_OK;
-    }
-
-    /* awake, maybe mid-session or mid-monitor, and then it ignores the
-       sleep pin: hardware reset first, as sleep_manager's re-sleep does */
-    obd_pin_wake(); /* hold off, the sleep pin an output, high */
-    vTaskDelay(pdMS_TO_TICKS(50));
-    obd_pin_reset_pulse();
-    vTaskDelay(pdMS_TO_TICKS(500));
-    obd_pin_sleep();
-    return ESP_OK;
-}
-
-bool obd_pin_ready(void)
-{
-    /* ACTIVE LOW: legacy elm327_chip_get_status() maps level directly
-       onto {ELM327_READY = 0, ELM327_SLEEP = 1} */
-    return gpio_get_level(OBD_READY_PIN) == 0;
-}
 
 /* ---- UART --------------------------------------------------------------------- */
 

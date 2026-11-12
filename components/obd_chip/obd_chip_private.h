@@ -250,14 +250,88 @@ int         obd_fw_version_cmp(const unsigned a[3], const unsigned b[3]);
 size_t      obd_fw_version_token(const char *s, char *out, size_t out_len);
 bool        obd_fw_version_is_outdated(const char *vtvers, const char *image);
 
+/** Lines in an update image (its records): the progress denominator. */
+uint32_t    obd_fw_count_records(const char *buf, size_t len);
+
+/** What a chip that answers `ATI` says to `VTVERS` (issue #1023): its
+ *  version; nothing this firmware knows (`?` from a chip without the word or
+ *  in its download mode, an empty answer); or its own error text (`ERR82`
+ *  behind a few stray bytes), which is what a chip prints whose identity
+ *  block was erased by a reset inside its store housekeeping. Such a chip
+ *  runs, and a firmware rewrite does not repair it. @p len: the answer's
+ *  length (it can hold a NUL). Pure, host-tested. */
+typedef enum
+{
+    OBD_VTVERS_VERSION = 0,
+    OBD_VTVERS_UNKNOWN,
+    OBD_VTVERS_DAMAGED,
+} obd_vtvers_t;
+
+obd_vtvers_t obd_fw_vtvers_class(const char *resp, size_t len);
+
 /** True when the last update run streamed an image and finalized it (the
- *  chip was hardware-reset: the caller brings it up again). */
+ *  chip restarted: the caller brings it up again). */
 bool obd_fw_last_flashed(void);
 
 /** True while the update JOB (obd_chip_fw_job.c) runs: the stream and the
  *  fresh bring-up after it. obd_chip_update_in_progress() folds it in so
  *  the sleep entry waits for the whole job (Ali, 2026-11-08). */
 bool obd_fw_job_running(void);
+
+/* ---- READY settled (obd_chip_settle.c, pure, host-tested; issue #1023) -------
+ * The chip tidies its store during a boot, and a reset inside that tidying
+ * destroys the store. No bring-up decides anything until READY has held one
+ * level long enough that no boot can be running, and the reset line is the
+ * last resort for a chip that answers nothing (obd_settle_pulse_allowed). */
+
+/** READY ready without a break for this long = the chip is in its main
+ *  loop. Longer than the 117 to 123 ms a waking chip reads ready BEFORE it
+ *  restarts itself (measured; 100 ms would pass there). */
+#define OBD_READY_STEADY_MS 300
+
+/** READY not ready without a break for this long = asleep or stuck, no boot
+ *  is running. A boot holds it not ready for about 265 ms, about 450 ms
+ *  with the store to tidy. */
+#define OBD_DOWN_STEADY_MS  1000
+
+/** How long the bring-up waits for READY to settle behind the sleep pin (a
+ *  wake settles at about 800 ms, at about 980 ms with the store to tidy),
+ *  and how long a reset pulse waits for it before it is refused. */
+#define OBD_WAKE_SETTLE_MS  2500
+#define OBD_PULSE_SETTLE_MS 2500
+
+typedef enum
+{
+    OBD_SETTLE_MOVING = 0, /* READY changed too recently: a boot may run     */
+    OBD_SETTLE_READY,      /* ready for OBD_READY_STEADY_MS without a break  */
+    OBD_SETTLE_DOWN,       /* not ready for OBD_DOWN_STEADY_MS without one   */
+} obd_settle_verdict_t;
+
+typedef struct
+{
+    bool    seen;     /* a sample was fed                                   */
+    bool    ready;    /* the level of the last sample                       */
+    int64_t since_us; /* when READY took that level                         */
+} obd_settle_t;
+
+void obd_settle_reset(obd_settle_t *s);
+
+/** One READY sample, @p ready at @p now_us: the verdict so far. Feed it at
+ *  least every few milliseconds; a level change restarts the count. */
+obd_settle_verdict_t obd_settle_feed(obd_settle_t *s, bool ready,
+                                     int64_t now_us);
+
+/** THE RULE OF THE RESET LINE (issue #1023; Ali, 2026-11-12: "the pin reset
+ *  should not be allowed unless as a last resort"), pure. A pulse may go
+ *  out only when both hold: @p chip_silent, the caller has just asked the
+ *  chip at both UART speeds and got no prompt at either; and READY is at
+ *  rest, ready for OBD_READY_STEADY_MS or not ready for OBD_DOWN_STEADY_MS
+ *  (no boot of the chip lasts that long). Never while READY moves, and
+ *  never for a chip that was not asked first: READY reading "asleep" is not
+ *  enough. A chip that answers is reset by command, which it runs from its
+ *  own main loop. The pulse itself is declared in obd_chip_reset_line.h,
+ *  out of reach of everything but the bring-up. */
+bool obd_settle_pulse_allowed(obd_settle_verdict_t settled, bool chip_silent);
 
 /* ---- UART layer (obd_chip_uart.c, target only) ------------------------------ */
 
@@ -284,12 +358,30 @@ void      obd_uart_get_stats(obd_uart_stats_t *out);
 esp_err_t obd_uart_rx_task_start(void);
 void      obd_uart_rx_task_stop(void);
 
-/* pins */
+/* pins (obd_chip_pins.c) */
 void obd_pins_init(void);
 void obd_pin_wake(void);       /* hold-release sequence, sleep pin high      */
 void obd_pin_sleep(void);      /* low + pulldown + hold (survives resets)     */
-void obd_pin_reset_pulse(void);/* RESET low 5 ms then high                    */
 bool obd_pin_ready(void);
+
+/** Wait until READY has settled (obd_chip_settle.c), at most @p limit_ms:
+ *  READY, DOWN, or MOVING when it never held still. @p waited_ms (may be
+ *  NULL): how long that took. Polls every 2 ms; needs the scheduler. */
+obd_settle_verdict_t obd_pin_settle(uint32_t limit_ms, uint32_t *waited_ms);
+
+/* The reset pulse is NOT declared here on purpose (obd_chip_reset_line.h,
+ * included by the bring-up alone): no other file of the component can send
+ * one, and nothing outside the component ever could since 2026-11-12. */
+
+/** The reset line since boot: pulses sent (0 on a healthy chip, whatever
+ *  the device did), and pulses asked for and refused. */
+typedef struct
+{
+    uint32_t pulses;
+    uint32_t refused;
+} obd_pin_stats_t;
+
+void obd_pin_get_stats(obd_pin_stats_t *out);
 
 /* ---- core bridges ------------------------------------------------------------ */
 
@@ -309,8 +401,13 @@ int obd_core_claim_state(void);
  * bring-up has finished (chip up OR given up) or never launched
  * (degraded start: legacy pass-through behavior); false only if it is
  * still in flight after timeout_ms. */
-#define OBD_BRINGUP_WAIT_MS 20000 /* > worst case: hard-reset path + full
-                                     2-baud x 3-retry walk + provisioning */
+#define OBD_BRINGUP_WAIT_MS 25000 /* > worst case: a chip that reads ready
+                                     and is silent (warm start, the full
+                                     2-baud x 3-retry walk, the last-resort
+                                     pulse, one more look: 18.6 s measured
+                                     2026-11-12) or one found only then,
+                                     plus its provisioning; 20 s until the
+                                     walk came ahead of the pulse */
 bool obd_core_bringup_wait(uint32_t timeout_ms);
 
 /* The sleep word (2026-11-07, 4.x parity): `STSLEEP0` ahead of the PowerEn
@@ -320,9 +417,13 @@ bool obd_core_bringup_wait(uint32_t timeout_ms);
  * is the verdict and the first nap's READY check the ground truth. */
 #define OBD_SLEEP_WORD_MS   1000
 
+/* obd_chip_soft_reset(): the budget of each of its words, and its tries. */
+#define OBD_SOFT_RESET_MS    1000
+#define OBD_SOFT_RESET_TRIES 2
+
 /* `VTPPSW10` at the bring-up (the one EEPROM write of that path): legacy's
  * 100 + 500 ms before any reset; the value is read back inside that window
- * and only then the reset pulse (2026-11-07). */
+ * and only then the reset, an `ATZ` since 2026-11-12 (2026-11-07). */
 #define OBD_PPSW_SETTLE_MS  600
 
 /** The boot sequence on the bare UART (obd_chip_bringup.c): wake, reset
@@ -330,6 +431,59 @@ bool obd_core_bringup_wait(uint32_t timeout_ms);
  *  bring-up task in obd_chip.c only. @p active_baud is written as the
  *  sequence learns it. */
 esp_err_t obd_bringup_run(int *active_baud);
+
+/** One request and its answer on the bare UART (obd_chip_bringup.c; no RX
+ *  task reads the wire: the bring-up, or a holder of the exclusive claim).
+ *  True when a prompt arrived inside @p timeout_ms; @p resp is the answer
+ *  without the echo. Not reentrant. */
+bool obd_bare_probe(const char *cmd, char *resp, size_t resp_len,
+                    uint32_t timeout_ms);
+
+/** The legacy provisioning of the chip's sleep control (obd_chip_provision.c;
+ *  the bring-up calls it on the bare UART, the echo off). */
+void obd_bringup_provision(void);
+
+/** Behind a chip firmware update (obd_chip_fw.c, under its exclusive
+ *  claim): the chip restarts itself, so it gets the reset line only when it
+ *  answers at neither UART speed. The UART is left at the speed it had. */
+void obd_bringup_reset_if_silent(void);
+
+/** What the last bring-up met (obd_chip_bringup.c; GET /api/obd_chip
+ *  `reset` and `fw.damaged`; issue #1023). */
+typedef struct
+{
+    uint32_t wake_ms;       /* READY settled this long behind the sleep pin  */
+    bool     wake_ready;    /* ... as ready (false: asleep, stuck, moving)   */
+    bool     silent;        /* the chip answered at neither UART speed: the
+                               last resort was asked for                     */
+    bool     wake_pulsed;   /* ... and the reset pulse went out (not refused
+                               for a READY that never came to rest)          */
+    bool     store_damaged; /* the chip runs, its identity reads as an error */
+} obd_bringup_note_t;
+
+void obd_bringup_note(obd_bringup_note_t *out);
+
+/* ---- fault codes (obd_chip_fault.c, pure, host-tested; 2026-11-12) -----------
+ * What a bring-up leaves behind in dev_status_manager's fault store, until
+ * it is cleared by hand (`faults -c`, POST /api/faults/clear). */
+
+/** The chip answered at neither UART speed: the last resort was taken. */
+#define OBD_FAULT_SILENT         "obd_chip_silent"
+/** The chip runs but its stored identity reads as an error (issue #1023). */
+#define OBD_FAULT_DAMAGED        "obd_chip_damaged"
+#define OBD_FAULT_DAMAGED_DETAIL "VTVERS reads an error: stored identity erased"
+
+/** The detail of OBD_FAULT_SILENT for a bring-up that found the chip
+ *  @p silent (obd_bringup_note_t), sent the reset pulse or not (@p pulsed)
+ *  and ended with the chip up or not (@p found). False = no fault: the chip
+ *  answered. @p detail holds up to 47 characters (dev_status_fault_t). */
+bool obd_fault_silent(bool silent, bool pulsed, bool found, char *detail,
+                      size_t detail_len);
+
+/** The chip of the last bring-up runs but its stored identity is damaged:
+ *  no firmware rewrite, automatic or asked for (it repairs nothing, and the
+ *  start-up check used to repeat it for ever). */
+bool obd_bringup_store_damaged(void);
 
 /* claim internals shared by request engine + fw update */
 esp_err_t obd_core_claim(int type, uint32_t timeout_ms);

@@ -51,8 +51,20 @@
  * item over them: service 09 (the VIN of an ISO 9141-2 or J1850 car comes
  * in five messages, `49 02 01 00 00 00 31`, `49 02 02 57 43 41 4E`, ..:
  * joined to `49 02 01` and the seventeen characters, as a CAN ECU sends
- * it). Trouble codes (three per message, no count) keep their own layout
- * for now: the DTC codec's turn comes with the scan on these protocols.
+ * it), and the trouble codes of services 03, 07 and 0A. ISO 15031-5 gives
+ * these protocols three codes per message, no count, an unused place as
+ * `00 00`, and as many messages as the codes need:
+ *
+ *   48 6B 10 43 03 00 04 20 01 71 9F     P0300 P0420 P0171
+ *   48 6B 10 43 01 01 04 42 00 00 4E     P0101 P0442, one place unused
+ *
+ * joined to `43 05` and the five codes, as a CAN ECU sends them. Until
+ * 2026-11-12 the first message stood alone, as for any other service: a car
+ * with more than three codes showed three (bench: five stored read as
+ * three, seven as three, four pending as three, on ISO 9141-2 and J1850
+ * VPW alike, while 01 01 counted them all). An ECU that answers the CAN way
+ * (a count, then the codes, in one long ISO 14230 message, as ECU sim v2
+ * did until 2026-11-13) is told by its even length and read as that.
  *
  * The protocol in effect is a HINT the caller sets (ap_resp_set_proto_hint),
  * as the 29-bit rule's is: a line of bytes cannot tell by itself. With the
@@ -154,6 +166,40 @@ static bool with_header(const ap_line_t *line, ap_proto_frame_t frame,
     return true;
 }
 
+/** The answer to service 03, 07 or 0A: a list of trouble codes. */
+static bool is_code_list(uint8_t sid)
+{
+    return sid == 0x43 || sid == 0x47 || sid == 0x4A;
+}
+
+/**
+ * The codes of one message of a code list, behind @p out's `4x <count>`.
+ * The standard's message has an odd length (the service and three codes, an
+ * unused place as `00 00`); an even one carries a count ahead of its codes,
+ * the CAN way. What does not fit is left out, the count says what is there.
+ */
+static size_t add_codes(const msg_t *m, uint8_t *out, size_t n, size_t cap)
+{
+    for (size_t i = ((m->n % 2) != 0) ? 1 : 2; i + 1 < m->n; i += 2)
+    {
+        if (m->data[i] == 0 && m->data[i + 1] == 0)
+        {
+            continue;
+        }
+
+        if (n + 2 > cap || out[1] == UINT8_MAX)
+        {
+            break;
+        }
+
+        out[n++] = m->data[i];
+        out[n++] = m->data[i + 1];
+        out[1]++;
+    }
+
+    return n;
+}
+
 /** The messages of ECU @p src, in arrival order, as one payload. */
 static size_t join(const msg_t *msgs, int n_msgs, uint32_t src,
                    uint8_t *out, size_t cap)
@@ -170,10 +216,21 @@ static size_t join(const msg_t *msgs, int n_msgs, uint32_t src,
             continue;
         }
 
-        if (taken == 0)
+        if (taken == 0 && is_code_list(m->data[0]) && cap >= 2)
+        {
+            out[0] = m->data[0];
+            out[1] = 0;
+            n = add_codes(m, out, 2, cap);
+        }
+        else if (taken == 0)
         {
             n = (m->n < cap) ? m->n : cap;
             memcpy(out, m->data, n);
+        }
+        else if (is_code_list(out[0]) && m->data[0] == out[0])
+        {
+            /* the next three codes of the same list */
+            n = add_codes(m, out, n, cap);
         }
         else if (out[0] == 0x49 && m->n > 3 && m->data[0] == 0x49 &&
                  m->data[1] == out[1])

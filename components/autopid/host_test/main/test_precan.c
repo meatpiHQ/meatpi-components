@@ -363,6 +363,137 @@ void test_precan_vin_in_five_messages(void)
     ap_resp_set_proto_hint('\0');
 }
 
+static int codes_of(const char *resp, uint8_t svc,
+                    char out[][AP_DTC_CODE_LEN], size_t max)
+{
+    uint8_t p[AP_PAYLOAD_MAX];
+    size_t n = payload(resp, p, sizeof(p));
+
+    return ap_dtc_parse_codes(p, n, svc, out, max);
+}
+
+/* Trouble codes: three a message on these protocols, no count, as many
+ * messages as the codes need. The lines are the bench's (ECU sim v2 with
+ * five and with seven stored codes, 2026-11-12). Until then the first
+ * message stood alone: a car with more than three codes showed three. */
+void test_precan_trouble_codes_in_several_messages(void)
+{
+    static ap_resp_ecu_t e[AP_RESP_ECUS_MAX];
+    static char many[45 * 34 + 1];
+    char c[12][AP_DTC_CODE_LEN];
+    uint8_t p[AP_PAYLOAD_MAX];
+    size_t n;
+
+    const char *five = "48 6B 10 43 03 00 04 20 01 71 9F \r"
+                       "48 6B 10 43 01 01 04 42 00 00 4E \r";
+    const uint8_t want5[] = { 0x43, 0x05, 0x03, 0x00, 0x04, 0x20, 0x01, 0x71,
+                              0x01, 0x01, 0x04, 0x42 };
+
+    /* ISO 9141-2: what a CAN ECU would have sent, the count in front */
+    ap_resp_set_proto_hint('3');
+    n = payload(five, p, sizeof(p));
+    TEST_ASSERT_EQUAL_size_t(sizeof(want5), n);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(want5, p, sizeof(want5));
+    TEST_ASSERT_TRUE(ap_payload_matches_cmd("03", p, n));
+    TEST_ASSERT_EQUAL(5, codes_of(five, 0x43, c, 12));
+    TEST_ASSERT_EQUAL_STRING("P0300", c[0]);
+    TEST_ASSERT_EQUAL_STRING("P0420", c[1]);
+    TEST_ASSERT_EQUAL_STRING("P0171", c[2]);
+    TEST_ASSERT_EQUAL_STRING("P0101", c[3]);
+    TEST_ASSERT_EQUAL_STRING("P0442", c[4]);
+
+    /* seven in three messages, a chassis and a network code among them */
+    TEST_ASSERT_EQUAL(7, codes_of("48 6B 10 43 03 00 04 20 01 71 9F \r"
+                                  "48 6B 10 43 01 01 04 42 40 35 C3 \r"
+                                  "48 6B 10 43 C1 00 00 00 00 00 C7 \r",
+                                  0x43, c, 12));
+    TEST_ASSERT_EQUAL_STRING("P0442", c[4]);
+    TEST_ASSERT_EQUAL_STRING("C0035", c[5]);
+    TEST_ASSERT_EQUAL_STRING("U0100", c[6]);
+
+    /* one message: two codes and an unused place, then no code at all */
+    n = payload("48 6B 10 43 03 00 04 20 00 00 2D \r", p, sizeof(p));
+    TEST_ASSERT_EQUAL_size_t(6, n);
+    TEST_ASSERT_EQUAL_HEX8(0x02, p[1]);
+    TEST_ASSERT_EQUAL(2, ap_dtc_parse_codes(p, n, 0x43, c, 12));
+    TEST_ASSERT_EQUAL_STRING("P0420", c[1]);
+    n = payload("48 6B 10 43 00 00 00 00 00 00 06 \r", p, sizeof(p));
+    TEST_ASSERT_EQUAL_size_t(2, n);
+    TEST_ASSERT_EQUAL_HEX8(0x00, p[1]);
+    TEST_ASSERT_EQUAL(0, ap_dtc_parse_codes(p, n, 0x43, c, 12));
+
+    /* service 07 the same way */
+    TEST_ASSERT_EQUAL(4, codes_of("48 6B 10 47 01 72 03 01 03 02 86 \r"
+                                  "48 6B 10 47 03 03 00 00 00 00 10 \r",
+                                  0x47, c, 12));
+    TEST_ASSERT_EQUAL_STRING("P0172", c[0]);
+    TEST_ASSERT_EQUAL_STRING("P0303", c[3]);
+
+    /* behind the line of the bus start, and with headers off */
+    TEST_ASSERT_EQUAL(5, codes_of("BUS INIT: ...OK\r"
+                                  "48 6B 10 43 03 00 04 20 01 71 9F \r"
+                                  "48 6B 10 43 01 01 04 42 00 00 4E \r\r",
+                                  0x43, c, 12));
+    TEST_ASSERT_EQUAL(5, codes_of("43 03 00 04 20 01 71 \r"
+                                  "43 01 01 04 42 00 00 \r", 0x43, c, 12));
+    TEST_ASSERT_EQUAL_STRING("P0442", c[4]);
+
+    /* two ECUs, their messages mixed: each keeps its own list */
+    TEST_ASSERT_EQUAL(2, ap_resp_to_payloads(
+        "48 6B 10 43 03 00 04 20 01 71 9F \r"
+        "48 6B 18 43 07 00 00 00 00 00 15 \r"
+        "48 6B 10 43 01 01 04 42 00 00 4E \r", e, AP_RESP_ECUS_MAX));
+    TEST_ASSERT_EQUAL_HEX32(0x10, e[0].header);
+    TEST_ASSERT_EQUAL_size_t(sizeof(want5), e[0].len);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(want5, e[0].payload, sizeof(want5));
+    TEST_ASSERT_EQUAL_HEX32(0x18, e[1].header);
+    TEST_ASSERT_EQUAL(1, ap_dtc_parse_codes(e[1].payload, e[1].len, 0x43, c,
+                                            12));
+    TEST_ASSERT_EQUAL_STRING("P0700", c[0]);
+
+    /* a refusal behind a list is no part of it */
+    TEST_ASSERT_EQUAL(3, codes_of("48 6B 10 43 03 00 04 20 01 71 9F \r"
+                                  "48 6B 10 7F 03 11 56 \r", 0x43, c, 12));
+
+    /* more than a payload holds: what fits, and the count says so */
+    for (int i = 0; i < 45; i++)
+    {
+        memcpy(many + i * 34, "48 6B 10 43 01 01 01 02 01 03 0F \r", 34);
+    }
+
+    many[45 * 34] = '\0';
+    n = payload(many, p, sizeof(p));
+    TEST_ASSERT_EQUAL_size_t(AP_PAYLOAD_MAX, n);
+    TEST_ASSERT_EQUAL_HEX8((AP_PAYLOAD_MAX - 2) / 2, p[1]);
+    TEST_ASSERT_EQUAL(12, ap_dtc_parse_codes(p, n, 0x43, c, 12));
+
+    /* SAE J1850 VPW: the same layout under its own checksum */
+    ap_resp_set_proto_hint('2');
+    TEST_ASSERT_EQUAL(5, codes_of("48 6B 10 43 03 00 04 20 01 71 0C \r"
+                                  "48 6B 10 43 01 01 04 42 00 00 B1 \r",
+                                  0x43, c, 12));
+    TEST_ASSERT_EQUAL_STRING("P0442", c[4]);
+
+    /* ISO 14230-4 as the standard has it: seven data bytes a message */
+    ap_resp_set_proto_hint('5');
+    n = payload("87 F1 10 43 03 00 04 20 01 71 64 \r"
+                "87 F1 10 43 01 01 04 42 00 00 13 \r", p, sizeof(p));
+    TEST_ASSERT_EQUAL_size_t(sizeof(want5), n);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(want5, p, sizeof(want5));
+
+    /* and the CAN way, one long message with the count in front (ECU sim
+       v2 until 2026-11-13; an even length says so): read as it is */
+    n = payload("8C F1 10 43 05 03 00 04 20 01 71 01 01 04 42 B6 \r", p,
+                sizeof(p));
+    TEST_ASSERT_EQUAL_size_t(sizeof(want5), n);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(want5, p, sizeof(want5));
+    n = payload("82 F1 10 43 00 C6 \r", p, sizeof(p));
+    TEST_ASSERT_EQUAL_size_t(2, n);
+    TEST_ASSERT_EQUAL(0, ap_dtc_parse_codes(p, n, 0x43, c, 12));
+
+    ap_resp_set_proto_hint('\0');
+}
+
 /* The hint is a hint: what is plainly a CAN reply is read the CAN way under
  * it, and a line that is no message with a header is read as data. */
 void test_precan_hint_does_not_take_what_is_not_its(void)
@@ -411,5 +542,6 @@ void run_precan_tests(void)
     RUN_TEST(test_precan_reply_decodes_as_on_can);
     RUN_TEST(test_precan_ecus_by_address);
     RUN_TEST(test_precan_vin_in_five_messages);
+    RUN_TEST(test_precan_trouble_codes_in_several_messages);
     RUN_TEST(test_precan_hint_does_not_take_what_is_not_its);
 }

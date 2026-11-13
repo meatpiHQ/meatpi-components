@@ -423,6 +423,13 @@ static void handle_ioctl(const j2534_transport_t *t, const j2534_hdr_t *h,
      * settings); CLEAR_* operate on our channel state */
     switch (ioctl_id)
     {
+        case J2534_IOCTL_READ_VBATT:
+        {
+            uint32_t millivolts;
+            uint32_t status = j2534_srv_read_vbatt(s_session.device_open, &millivolts);
+            ACK(status, status == J2534_STATUS_NOERROR ? &millivolts : NULL);
+            return;
+        }
         case J2534_IOCTL_CLEAR_MSG_FILTERS:   j2534_channel_clear_filters(slot); break;
         case J2534_IOCTL_CLEAR_PERIODIC_MSGS: periodic_clear_all(); break;
         default: break; /* GET/SET_CONFIG, CLEAR_*_BUFFER: ack OK */

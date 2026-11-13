@@ -70,6 +70,9 @@ void      j2534_srv_handle_frame(const j2534_transport_t *t,
  *  counted on the status, never gated (2026-10-27). */
 void j2534_srv_count_reflash_seen(void);
 
+/** READ_VBATT: rounded millivolts from the battery owner, output untouched on failure. */
+uint32_t j2534_srv_read_vbatt(bool device_open, uint32_t *out);
+
 /* ---- settings (j2534_server_settings.c) -------------------------------- */
 
 /** Boot-applied config (filled by on_apply). */

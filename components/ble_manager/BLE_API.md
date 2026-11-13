@@ -331,6 +331,10 @@ ISO15765) / WRITE_MSGS / filters / periodic messages / unsolicited
 RX_MSG. Present only while `j2534_server.enabled` is true. One tester
 across all transports: a PC tool attached over TCP makes a BLE tester's
 first frame answer `ERR_DEVICE_IN_USE`, and the other way round.
+`READ_VBATT` (IOCTL 0x03) after OPEN returns the measured battery millivolts
+as an 8-byte ACK payload (status and result), without CONNECT. The exact
+request/reply vector and unavailable-reading errors are in the wire protocol,
+section 3. No UUID, handle, framing or indication-mode changes.
 `/api/j2534` reports `transport:"ble"` during a BLE session; the
 Exclusive-bus rule (AutoPID off the bus) applies unchanged (the reflash
 gate went on 2026-10-27: every write is forwarded, `reflash_seen` counts

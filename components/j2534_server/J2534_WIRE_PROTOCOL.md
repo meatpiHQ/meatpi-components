@@ -87,7 +87,7 @@ Types 0x01..0x15 are tester to device; 0x80.. are device to tester.
 | `0x12` | `STOP_FILTER` | `filter_id u32` | none |
 | `0x13` | `START_PERIODIC` | `interval_ms u32` (clamped to >= 5), then one MSG | `u32` periodic id |
 | `0x14` | `STOP_PERIODIC` | `periodic_id u32` | none |
-| `0x15` | `IOCTL` | `ioctl_id u32` [, parameters] | none |
+| `0x15` | `IOCTL` | `ioctl_id u32` [, parameters] | `READ_VBATT`: millivolts `u32`; otherwise none |
 | `0x80` | `ACK` | device: `status u32 [, result u32]` (payload 4 or 8 bytes) | |
 | `0x81` | `RX_MSG` | device: one PASSTHRU_MSG; `seq 0`, `hdr.channel` = source channel | |
 | `0x82` | `EVENT` | reserved, never sent in v1 | |
@@ -149,6 +149,22 @@ when the filter or session table is full.
 `IOCTL` v1: `CLEAR_MSG_FILTERS (0x0A)` and `CLEAR_PERIODIC_MSGS (0x09)` act;
 `GET_CONFIG`, `SET_CONFIG`, `CLEAR_TX_BUFFER`, `CLEAR_RX_BUFFER` answer
 `NOERROR` without effect (bus timing comes from the device settings).
+
+`READ_VBATT (0x03)` is device-wide: use `hdr.channel = 0` after OPEN,
+without CONNECT. The ACK is `NOERROR u32, millivolts u32` (8 payload bytes).
+It uses the latest calibrated, averaged battery-monitor sample, rounded to the
+nearest millivolt. Before OPEN or after CLOSE it returns
+`ERR_DEVICE_NOT_CONNECTED`; no sample or an invalid reading returns `ERR_FAILED`.
+An error ACK has only its 4-byte status. Older firmware acknowledges this IOCTL
+without a result; a client must report unsupported firmware, not invent a value.
+Transport bindings are unchanged.
+
+Byte-exact example (seq 3, channel 0), a 13.890 V reading:
+
+```
+request: 35 4a 01 15 03 00 00 00 04 00 00 00 03 00 00 00
+reply:   35 4a 01 80 03 00 00 00 08 00 00 00 00 00 00 00 42 36 00 00
+```
 
 ## 4. PASSTHRU_MSG on the wire
 

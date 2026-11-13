@@ -4,9 +4,11 @@
 set(comp_dir "${CMAKE_CURRENT_LIST_DIR}/../..")
 
 idf_component_register(
-    SRCS "test_main.c"
+    SRCS "test_main.c" "test_voltage.c"
          "${comp_dir}/j2534_proto.c"
          "${comp_dir}/j2534_server_migrate.c"
+         "${comp_dir}/j2534_server_voltage.c"
     INCLUDE_DIRS "${comp_dir}/include" "${comp_dir}"
+                 "${comp_dir}/../battery_monitor/include"
     REQUIRES unity
 )

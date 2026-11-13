@@ -1,15 +1,7 @@
 /**
  * @file test_main.c
- * @brief Host tests for j2534_proto: header codec round-trip, bad-magic /
- *        short-buffer rejection, PASSTHRU_MSG round-trip + bounds, the
- *        J2534 filter-match semantics, the framer, the ACK vectors, the
- *        TCP gate, the CONNECT baud rule, the ISO15765 message layout
- *        (SAE J2534-1: [4-byte id][payload] both ways, the indications,
- *        the functional single frame) and the J1850 VPW chip-command
- *        helpers (header/payload split, ATSH, the VTFullyRequestCk builder
- *        with its checksum, reply-line decode / status / responsePending),
- *        and the settings migration (v1 -> v2 drops allow_reflash,
- *        2026-10-27). Expected output: 28 Tests 0 Failures 0 Ignored.
+ * @brief Wire codec, filters, framing, bus helpers, migration and battery voltage.
+ *        See ../README.md. Expected: 31 Tests 0 Failures 0 Ignored.
  */
 #include <string.h>
 
@@ -20,6 +12,10 @@
 
 void setUp(void) {}
 void tearDown(void) {}
+
+void test_voltage_millivolts(void);
+void test_voltage_requires_open_device(void);
+void test_voltage_unavailable_and_invalid(void);
 
 static void test_hdr_roundtrip(void)
 {
@@ -697,5 +693,8 @@ void app_main(void)
     RUN_TEST(test_legacy_pending);
     RUN_TEST(test_migrate_v1_drops_allow_reflash);
     RUN_TEST(test_migrate_v1_without_key_and_v2_untouched);
+    RUN_TEST(test_voltage_millivolts);
+    RUN_TEST(test_voltage_requires_open_device);
+    RUN_TEST(test_voltage_unavailable_and_invalid);
     UNITY_END();
 }

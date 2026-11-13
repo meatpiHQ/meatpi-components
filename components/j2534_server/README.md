@@ -15,6 +15,12 @@ protocol runs over three transports: the TCP listener in this component
 2026-09-21). Exactly one tester at a time across all of them; a second one
 is answered `ERR_DEVICE_IN_USE`.
 
+`READ_VBATT` returns the battery monitor's latest calibrated, averaged voltage,
+rounded to millivolts, without a CAN channel or bus transaction. OPEN is required.
+No sample or an invalid reading returns `ERR_FAILED` with no result. The Windows
+DLL also needs the voltage update: older DLLs return a fixed 12,000 mV locally.
+The wire version and settings schema are unchanged.
+
 The RX pump (the `j2534_rx` task) pushes what the channels received as it
 arrives: it blocks on the open channel's bus queue between frames (the
 channel queues are static for the module's life, reset at CONNECT, so a
@@ -99,6 +105,7 @@ Layout (each file under the 700-line cap):
 |---|---|
 | `include/j2534_proto.h`, `j2534_proto.c` | PURE codec + constants: header/message encode/decode, filter match, status names, the transport-agnostic framer (`j2534_frame_read`), `j2534_ack_encode`, the TCP gate predicate. Host-tested |
 | `j2534_server.c` | core: lifecycle, request dispatch (`j2534_srv_handle_frame`), periodic messages, the RX pump, status, the Exclusive-bus hold |
+| `j2534_server_voltage.c` | READ_VBATT: the battery owner and checked millivolt conversion; host-tested |
 | `j2534_server_transport.c` | the `j2534_transport_t` seam: session lock, send lock, coalesced frame writes, `j2534_server_serve_transport()`, the TCP listener + `allow_lan` gate, the legacy serial vtable adapter |
 | `j2534_channel.c/.h`, `j2534_channel_private.h` | channels: lifecycle, CAN via `can_manager`, the filter table, the bus-bitrate rule, the `reflash_seen` count (the content gate went 2026-10-27) |
 | `j2534_channel_iso.c` | the ISO15765 side (2026-10-19): one ISO-TP session per FLOW_CONTROL filter on the registered provider (`can_isotp.h`; `can_isotp_esp` in public builds), the SAE J2534-1 message layout `[4-byte id][payload]` both ways, padding per message, single frames without a session (functional addressing), the TxDone and START_OF_MESSAGE indications |
@@ -124,6 +131,7 @@ early (`usb_cdc_device.c`, `ble_j2534.c` are the two templates).
 
 ## Dependencies
 
+`battery_monitor` (started before the server; cached ADC reading),
 `can_manager`, `obd_gate` (diagnostics hold + per-conversation gate),
 `obd_chip` (J1850 VPW: the ELM/STN transactions), the ISO-TP provider slot
 (`can_isotp.h`), `settings_manager`, `log_manager`, `http_server_manager`,
@@ -163,6 +171,7 @@ every other write service. The owner's consent is `enabled` + `allow_lan`.
 | ISO-TP sessions themselves: the provider's (about 25 KB PSRAM + 1.2 KB internal each while open, `can_isotp_esp` README); each takes one of `can_manager`'s 16 subscriber slots, as does every channel's own CAN queue (32 frames) | per open session |
 | tasks `j2534` (TCP listener) + `j2534_rx` (RX pump): 4 KB stacks each | 8 KB (+ 2 TCBs internal) |
 | mutexes (send, session, channels) | internal, ~270 B |
+| READ_VBATT helper | measured compiler frame: 64 B; no heap or mutable static storage |
 
 **Never put a `j2534_msg_t` on a task stack** (three of them overflowed a
 4 KB stack and reset the device, 2026-07-07). No flash writes anywhere in
@@ -176,14 +185,18 @@ this component.
 
 ## Testing
 
-- Host: `host_test/` (26 Unity cases: codec round trips and bounds,
+- Host: `host_test/` (31 Unity cases: codec round trips and bounds,
   filter match, status names, the framer with partial / delayed /
   dropped / malformed / discarded input, the ACK vectors of
   `J2534_WIRE_PROTOCOL.md` section 7, the TCP gate predicate, the
   CONNECT baud rule, the ISO15765 layout helpers: split / join /
   indication / single frame build and parse, and the J1850 VPW chip
   helpers: header/payload split, ATSH, the VTFullyRequestCk builder +
-  checksum, reply-line decode / status / responsePending).
+  checksum, reply-line decode / status / responsePending, settings migration,
+  and READ_VBATT conversion, session and unavailable/invalid-sample cases).
+- Voltage: `.\test.ps1 j2534vbat` in the firmware checkout, the wire ACK
+  and Windows DLL at two real supply voltages, plus fake-device checks for
+  older firmware without a result and an unavailable ADC.
 - Benches (`tools/testbench/usb/`): `j2534_std_tool_bench.py` (the gate
   `.\test.ps1 j2534std`: a standard tool's byte stream through the
   installed DLL, udsoncan itself when the 32-bit Python is present ->

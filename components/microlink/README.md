@@ -21,7 +21,35 @@ Persisted product settings belong to `vpn_manager`, not this component.
   instance was freed (NULL is also accepted). On timeout it is still owned
   by the caller: retain the pointer and retry, never start a replacement.
 
-The remaining API is in [include/microlink.h](include/microlink.h).
+## API
+
+The public header is [include/microlink.h](include/microlink.h). The
+lifecycle is the four functions above; the rest, one line each:
+
+- `microlink_factory_reset()`: erase the device keys and the peer cache.
+- `microlink_get_state(client)`, `microlink_is_connected(client)`: the
+  client's state; connected means its control session is up.
+- `microlink_derp_connected(client)`, `microlink_derp_home_region(client)`:
+  the home relay connection, and the region this node is reachable at.
+- `microlink_get_vpn_ip(client)`: the tailnet address (0 before the map).
+- `microlink_get_peer_count(client)`, `microlink_get_peer_info(client, i,
+  out)`: the peer table (a slot bound: a pruned slot answers an error).
+- `microlink_get_routes(client, out, max)`: the subnet routes learned from
+  the tailnet.
+- `microlink_send(client, ip, data, len)`: one datagram to a peer.
+- `microlink_set_state_callback`, `microlink_set_peer_callback`,
+  `microlink_set_data_callback`: optional callbacks (unused on WiCAN).
+- `microlink_ip_to_str(ip, buf)`, `microlink_parse_ip(str)`,
+  `microlink_default_device_name()`, `microlink_imei_device_name()`,
+  `microlink_resolve(client, hostname)`: helpers.
+- `microlink_udp_*` (close, send, recv, set_rx_callback, get_local_port) and
+  `microlink_tcp_*` (connect, send, recv, is_connected, close): upstream's
+  socket helpers over the tunnel, built and unused on WiCAN (the firmware
+  reaches the tunnel through lwIP's own sockets and `ip4_routes`).
+
+A change of this header is noted in it: `microlink_destroy` returns
+`esp_err_t` since 2026-11-13, and `microlink_stop` may return
+`ESP_ERR_TIMEOUT` with the client still owned.
 
 ## Stalled DERP shutdown
 
@@ -78,13 +106,30 @@ own and no console commands: both belong to `vpn_manager`.
 
 ## Memory
 
-The four main stacks remain 8/14/12/7 KiB in PSRAM (net_io, derp_tx, coord,
-wg_mgr), with four internal static TCBs. The 2026-11-13 change adds no stack
-or buffer allocation. On a timed-out stop, existing resources intentionally
-stay allocated until the tasks really exit. A stop and a start of the client
-leave nothing behind (measured: the figures above; internal RAM within 300 B
-over four stops). Other client buffers and measured
-RAM costs are described in PROVENANCE and `vpn_manager/README.md`.
+Nothing is allocated while no client exists. With a client (figures of the
+bench, 2026-11-13, one peer, the home relay and one peer's region open):
+
+| What | Where | Size |
+|---|---|---|
+| task stacks: net_io 8, derp_tx 14, coord 12, wg_mgr 7 KiB | PSRAM, heap, freed by destroy | 41 KiB (configured) |
+| the four TCBs | internal, static | `4 * sizeof(StaticTask_t)` |
+| init: the client's state, queues, keys | internal heap | 8,424 B (measured, the `tailscale starting` line) |
+| start: the UDP socket, the tasks | internal heap | 380 to 528 B (measured, same line) |
+| the map reassembly buffer | PSRAM, at the first long-poll data | 512 KiB (`CONFIG_ML_JSON_BUFFER_SIZE_KB`) |
+| the H2 accumulation buffer | PSRAM, at the first long-poll frame | 64 KiB (configured) |
+| a relay connection's TLS context | PSRAM | about 52 KB each (estimated: 209,440 B over four connections left open) |
+| the WireGuard device (the peer table) | PSRAM | about 17.5 KB (measured: what stayed behind a stop before it was freed) |
+
+Stack use: the relay task ends with 9.9 to 10.1 KB of its 14 KiB never used
+(measured, its own exit line, after TLS handshakes and its own close);
+`ml_dial()` has a 96 B frame (measured, the compiler's `.su`).
+
+The 2026-11-13 changes add no stack and no buffer. On a timed-out stop,
+existing resources intentionally stay allocated until the tasks really exit.
+A stop and a start of the client leave nothing behind (measured: PSRAM free
+2,814,552 and 2,814,148 B behind the first and the fourth stop in a row,
+internal RAM within 300 B). The history of the client's RAM cost is in
+PROVENANCE and `vpn_manager/README.md`.
 
 ## Tests
 

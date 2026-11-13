@@ -59,6 +59,7 @@ static const char *TAG = "vpn_manager";
 #define VPN_BACKOFF_MAX_S  60
 
 static volatile bool s_run;
+static bool s_teardown_pending;
 static TaskHandle_t s_task;
 /* The state task's stack lives in PSRAM since 2026-11-01 (it was 6 KB of
  * internal RAM: the Tailscale path reads and writes the device keys in NVS
@@ -208,7 +209,7 @@ static void teardown(bool was_connected, bool paused)
 {
     if (vpn_settings_config()->tailscale)
     {
-        vpn_ts_down();
+        s_teardown_pending = vpn_ts_down() != ESP_OK;
     }
     else
     {
@@ -318,6 +319,26 @@ static void state_task(void *arg)
 
     while (true)
     {
+        /* A Tailscale client that could not join one of its tasks inside
+         * its stop deadline is still owned (vpn_ts_down kept it). That
+         * teardown is finished before anything else, whatever the settings
+         * and the station say by now, and no second client is brought up
+         * beside it. Each try blocks for the client's own deadline (30 s).
+         * The tunnel is down meanwhile, and the status says so. */
+        if (s_teardown_pending)
+        {
+            if (s_status.state >= VPN_STATE_CONNECTING)
+            {
+                s_status.state = s_run ? VPN_STATE_WAITING : VPN_STATE_DISABLED;
+            }
+
+            teardown(false, false);
+            if (s_teardown_pending)
+            {
+                vTaskDelay(pdMS_TO_TICKS(500));
+                continue;
+            }
+        }
         if (!s_run)
         {
             if (s_status.state >= VPN_STATE_CONNECTING)

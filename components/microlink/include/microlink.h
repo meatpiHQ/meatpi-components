@@ -138,14 +138,18 @@ esp_err_t microlink_start(microlink_t *ml);
  * @return ESP_OK on success
  *
  * Gracefully shuts down all tasks and closes connections.
+ * ESP_ERR_TIMEOUT leaves the task handles and all resources intact. Retry stop
+ * or destroy; do not start another client while the old one still owns tasks.
  */
 esp_err_t microlink_stop(microlink_t *ml);
 
 /**
  * @brief Destroy MicroLink instance and free all resources
  * @param ml Handle (NULL-safe)
+ * @return ESP_OK once freed; ESP_ERR_TIMEOUT retains the instance for a retry.
+ * The caller must keep its handle on failure.
  */
-void microlink_destroy(microlink_t *ml);
+esp_err_t microlink_destroy(microlink_t *ml);
 
 /**
  * @brief Get current connection state

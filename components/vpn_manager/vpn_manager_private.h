@@ -113,7 +113,7 @@ esp_err_t vpn_wg_set_default_route(void);
 /* ---- vpn_manager_ts.c: tailscale/microlink glue (state task ONLY) ------- */
 
 esp_err_t vpn_ts_up(const vpn_config_t *cfg);   /* init + start        */
-void      vpn_ts_down(void);                    /* stop + destroy      */
+esp_err_t vpn_ts_down(void);                    /* retain on timeout   */
 bool      vpn_ts_connected(void);
 bool      vpn_ts_failed(void);
 void      vpn_ts_status(char *ip, size_t ip_len, int *peers, bool *derp,

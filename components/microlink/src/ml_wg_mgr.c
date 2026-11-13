@@ -442,12 +442,20 @@ static void wg_netif_attach_in_tcpip(struct netif *netif) {
     }
 }
 
-/* in the tcpip thread: the device's timer gone, the netif down and off the list */
+/* in the tcpip thread: the device's timer gone, the netif down and off the
+ * list, then the device itself. WiCAN (2026-11-13): wireguardif_shutdown()
+ * only stops the timer, and nothing freed the device wireguardif_init()
+ * allocates: one device (the peer table, about 17.5 KB of PSRAM) stayed
+ * behind every stop of the client (bench 2026-11-13: 2,796,708, 2,779,324,
+ * 2,761,716, 2,744,024 B free behind four stops in a row). It goes last,
+ * off the list: netif_remove() aborts the TCP connections on the tunnel
+ * address and their resets still pass through the device's output. */
 static void wg_netif_detach_in_tcpip(struct netif *netif) {
     wireguardif_shutdown(netif);
     netif_set_link_down(netif);
     netif_set_down(netif);
     netif_remove(netif);
+    wireguardif_fini(netif);
 }
 
 static esp_err_t wg_init_interface(microlink_t *ml) {

@@ -263,7 +263,11 @@ static int do_tcp_connect(microlink_t *ml) {
     ESP_LOGI(TAG, "Connecting to %s:80...", CTRL_HOST(ml));
 
     if (ml_connect(sock, res->ai_addr, res->ai_addrlen) < 0) {
-        ESP_LOGE(TAG, "TCP connect failed: %d", errno);
+        /* WiCAN (2026-11-13): a control server that cannot be reached is
+         * an expected failure that heals by itself (the caller retries
+         * under its backoff): W, not E (standard section 10). It logged E
+         * once per attempt for as long as the server was away. */
+        ESP_LOGW(TAG, "TCP connect failed: %d", errno);
         ml_close_sock(sock);
         ml_freeaddrinfo(res);
         return -1;

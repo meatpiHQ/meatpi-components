@@ -228,6 +228,15 @@ static void cellular_stop(void)
 
 static esp_err_t vpn_start(void)
 {
+    if (s_ctx.ml != NULL)
+    {
+        esp_err_t err = microlink_destroy(s_ctx.ml);
+        if (err != ESP_OK)
+        {
+            return err;
+        }
+        s_ctx.ml = NULL;
+    }
     const char *name = s_ctx.device_name[0] ? s_ctx.device_name : NULL;
 
     /* For cellular, prefer IMEI-based name */
@@ -256,8 +265,10 @@ static esp_err_t vpn_start(void)
     esp_err_t err = microlink_start(s_ctx.ml);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "microlink_start failed: %s", esp_err_to_name(err));
-        microlink_destroy(s_ctx.ml);
-        s_ctx.ml = NULL;
+        if (microlink_destroy(s_ctx.ml) == ESP_OK)
+        {
+            s_ctx.ml = NULL;
+        }
         return err;
     }
 
@@ -280,19 +291,24 @@ static esp_err_t vpn_start(void)
     }
 
     ESP_LOGW(TAG, "VPN connection timeout (%ds)", timeout_secs);
-    microlink_stop(s_ctx.ml);
-    microlink_destroy(s_ctx.ml);
-    s_ctx.ml = NULL;
+    if (microlink_destroy(s_ctx.ml) == ESP_OK)
+    {
+        s_ctx.ml = NULL;
+    }
     return ESP_ERR_TIMEOUT;
 }
 
-static void vpn_stop(void)
+static esp_err_t vpn_stop(void)
 {
     if (s_ctx.ml) {
-        microlink_stop(s_ctx.ml);
-        microlink_destroy(s_ctx.ml);
+        esp_err_t err = microlink_destroy(s_ctx.ml);
+        if (err != ESP_OK)
+        {
+            return err;
+        }
         s_ctx.ml = NULL;
     }
+    return ESP_OK;
 }
 
 /* ============================================================================
@@ -436,7 +452,10 @@ state_loop:
                 }
 
                 /* Tear down WiFi VPN */
-                vpn_stop();
+                if (vpn_stop() != ESP_OK)
+                {
+                    break;
+                }
                 wifi_stop();
 
                 goto try_cellular;
@@ -462,7 +481,11 @@ state_loop:
                         s_ctx.on_switching(ML_NET_CELLULAR, ML_NET_WIFI, s_ctx.user_data);
                     }
 
-                    vpn_stop();
+                    if (vpn_stop() != ESP_OK)
+                    {
+                        s_ctx.state = ML_NET_SW_SWITCHING_TO_WIFI;
+                        break;
+                    }
                     cellular_stop();
 
                     s_ctx.active_transport = ML_NET_WIFI;
@@ -565,7 +588,11 @@ void ml_net_switch_deinit(void)
 {
     if (!s_ctx.initialized) return;
 
-    ml_net_switch_stop();
+    if (ml_net_switch_stop() != ESP_OK)
+    {
+        ESP_LOGW(TAG, "net switch teardown deferred: VPN tasks still running");
+        return;
+    }
 
     if (s_ctx.health_timer) {
         xTimerDelete(s_ctx.health_timer, portMAX_DELAY);
@@ -583,7 +610,7 @@ void ml_net_switch_deinit(void)
 esp_err_t ml_net_switch_start(void)
 {
     if (!s_ctx.initialized) return ESP_ERR_INVALID_STATE;
-    if (s_ctx.running) return ESP_ERR_INVALID_STATE;
+    if (s_ctx.running || s_ctx.ml != NULL) return ESP_ERR_INVALID_STATE;
 
     s_ctx.running = true;
 
@@ -599,7 +626,7 @@ esp_err_t ml_net_switch_start(void)
 
 esp_err_t ml_net_switch_stop(void)
 {
-    if (!s_ctx.running) return ESP_OK;
+    if (!s_ctx.running && s_ctx.ml == NULL) return ESP_OK;
 
     s_ctx.running = false;
 
@@ -615,7 +642,11 @@ esp_err_t ml_net_switch_stop(void)
     }
 
     /* Tear down connections */
-    vpn_stop();
+    esp_err_t err = vpn_stop();
+    if (err != ESP_OK)
+    {
+        return err;
+    }
 
     if (s_ctx.active_transport == ML_NET_WIFI) {
         wifi_stop();

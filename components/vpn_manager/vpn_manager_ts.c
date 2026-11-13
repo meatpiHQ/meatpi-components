@@ -108,18 +108,24 @@ esp_err_t vpn_ts_up(const vpn_config_t *cfg)
     return ESP_OK;
 }
 
-void vpn_ts_down(void)
+esp_err_t vpn_ts_down(void)
 {
     if (s_ml == NULL)
     {
-        return;
+        return ESP_OK;
     }
 
-    (void)microlink_stop(s_ml);
-    microlink_destroy(s_ml); /* frees ALL microlink memory */
+    esp_err_t err = microlink_destroy(s_ml);
+    if (err != ESP_OK)
+    {
+        ESP_LOGW(TAG, "tailscale shutdown pending: %s; retaining the client",
+                 esp_err_to_name(err));
+        return err;
+    }
     s_ml = NULL;
     memset(s_auth_key, 0, sizeof(s_auth_key)); /* key material */
     ESP_LOGI(TAG, "tailscale down");
+    return ESP_OK;
 }
 
 bool vpn_ts_connected(void)

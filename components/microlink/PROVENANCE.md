@@ -304,6 +304,93 @@ a peer's own address after every session lapsed, and direct upgrade).
     after 566 ms`, 0 clear-text packets, the 2026-11-03 legs unchanged,
     RAM flat at 86,523 B, zero errors/faults.
 
+24. **A task that outlives the stop is still owned** (2026-11-13, a crash
+    report on 6.0.0-beta.9 naming `ml_derp_tx`). The crash is the first two
+    points; the bench built for it found the other three:
+    - The relay task's two retry loops (`ml_derp_tx_task`: three attempts,
+      2 s apart, on a connect request and on a reconnect) never looked at
+      the stop request, so a relay that stalled while the uplink went away
+      was dialled again after `Stopping...`, one attempt of up to tens of
+      seconds each. Both loops now leave after their delay and before the
+      next dial when the stop was requested, and the task ends. A dial
+      that is already in flight is not cut short: into an uplink that just
+      went it blocks in `connect()` for about a minute (lwIP's SYN retries;
+      the 10 s `SO_SNDTIMEO` set before it does not bound a connect), so a
+      stop can still miss its deadline. The next point is what makes that
+      safe.
+    - `microlink_stop` cleared the four task handles whether its 30-second
+      join had succeeded or not. `vpn_manager` called stop and then destroy,
+      destroy calls stop again, that second stop found no handles, reported
+      the tasks joined, and destroy freed the client and the PSRAM stacks
+      under the running task; the next client's start reused its static
+      TCB. (The join of 2026-10-02 was written against exactly this, and a
+      double stop walked around it.) Now a stop that times out returns
+      `ESP_ERR_TIMEOUT` with every handle and resource kept,
+      `microlink_destroy` returns `esp_err_t` and frees nothing on a
+      failed stop, and `microlink_start` refuses a client that still owns a
+      task. The callers keep their pointer and try again: `vpn_manager`
+      (its README), and `ml_net_switch.c` for the build's sake (unused on
+      WiCAN).
+    - Nothing closed the relay connections at a stop: the task left its
+      loop and ended. A relay that was still connected when the stop came
+      (the control connection lost while the relay stays up is the sure
+      case; at an uplink loss the relay's own read error usually closes it
+      first) kept its socket and its TLS context, and so did each
+      connection to a peer's region. The relay task now closes what it
+      opened as it ends, on its own 14 KiB stack where every other TLS
+      call of those connections ran (never on the caller's: `vpn_manager`'s
+      state task has 6 KiB), and logs the stack it never used (`DERP I/O
+      task exiting (stack: N B never used)`, about 9.9 KB on the bench);
+      `microlink_stop` drains what the other tasks queued for the relay
+      after that. Measured by leaving the close out of an otherwise fixed
+      build (ELF `398666f11f3f8787`): 279,564 B of PSRAM and 4,380 B of
+      internal RAM gone over four stops, two of them behind a lost control
+      connection, with the home relay and one peer's region open.
+    - The WireGuard device was never freed. The manager task's exit
+      called `wireguardif_shutdown()`, which only stops the device's timer,
+      took the netif off lwIP's list and freed the netif; the device that
+      `wireguardif_init()` allocates (the peer table, about 17.5 KB of
+      PSRAM) stayed behind every stop of the client, whatever its reason.
+      Found once the relay was closed and the memory still fell: 2,796,708,
+      2,779,324, 2,761,716, 2,744,024 B free behind four stops in a row.
+      `wg_netif_detach_in_tcpip` now ends with `wireguardif_fini()`, after
+      `netif_remove()` (the resets of the TCP connections it aborts still
+      pass through the device's output). The same four stops then read
+      2,814,552, 2,814,508, 2,814,144, 2,814,148 B. (`esp_wireguard`, the
+      plain WireGuard path, always called both.)
+    - `do_tcp_connect` logged a control server that cannot be reached at E,
+      once per attempt for as long as the server was away. It is an
+      expected failure that heals by itself (the caller retries under its
+      backoff and says so at W): W.
+
+    Reproduced on the published beta.9 image (`c69c8478ea78bd97`) with
+    the firmware's `.\test.ps1 tspublic stop-dial`: the DUT's TCP/443
+    reset and its new dials dropped on the bench router, then a Wi-Fi trial.
+    `a task is still running 30000 ms after the stop request`, `Stopped`,
+    `Stopping...`, `Destroyed`, a new client, and some tens of seconds
+    later a LoadProhibited in `lwip_setsockopt_callback ->
+    sys_sem_signal -> xTaskRemoveFromEventList` (16:50) and in `err_tcp`
+    under `tcp_slowtmr` (17:14, MQTT off): callbacks of the old task's
+    sockets waking a wait list inside a TCB that had been handed out
+    again. In the console captures of both runs the client's own lines
+    show the rule broken: `Destroyed` with the relay task not ended, then a
+    second relay task started over the live one. The report's own
+    signature, a stack overflow flagged in `ml_derp_tx` after 945 s, was
+    not reproduced and is not claimed; no stack size was changed.
+
+    On the fix the same lines never break the rule, and a missed deadline
+    is real: at 18:09 an uplink loss caught a relay dial 0.7 s old, the dial
+    stood in `connect()` for 60.3 s, two deadlines passed (`destroy
+    deferred: a task still owns the instance` twice), the client was
+    destroyed 61.7 s after the stop was asked for and under 100 ms after the
+    relay task had ended, and the next client connected. Tests: `test_apps/`
+    holds a task across two real 30-second deadlines (stop, start refused,
+    destroy deferred, destroy after the task ends); the firmware's
+    `tspublic stop-dial` judges the rule from the console capture over a
+    stalled dial, two uplink losses and two lost control connections. The
+    records are in the firmware's `testing/microlink.md` and
+    `testing/tspublic.md`.
+
 ## Upstream layout kept
 
 `microlink.h` public API, `src/ml_*.c` (coord/derp/net_io/wg_mgr/stun/

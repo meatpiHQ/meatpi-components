@@ -608,6 +608,10 @@ void ml_derp_tx_task(void *arg) {
                     } else {
                         ESP_LOGI(TAG, "DERP connect requested, connecting from I/O task");
                     }
+                    if (xEventGroupGetBits(ml->events) & ML_EVT_SHUTDOWN_REQUEST)
+                    {
+                        break;
+                    }
                     if (ml_derp_connect(ml) == ESP_OK) {
                         connected_since_ms = ml_get_time_ms();
                         verbose_phase = true;
@@ -615,6 +619,10 @@ void ml_derp_tx_task(void *arg) {
                         break;
                     }
                     ESP_LOGD(TAG, "DERP connect attempt %d failed", attempt + 1);
+                }
+                if (xEventGroupGetBits(ml->events) & ML_EVT_SHUTDOWN_REQUEST)
+                {
+                    break;
                 }
                 if (!ml->derp.connected) {
                     derp_arm_backoff(ml, ml_get_time_ms());
@@ -633,6 +641,10 @@ void ml_derp_tx_task(void *arg) {
                         ESP_LOGD(TAG, "DERP reconnect retry %d/3 in 2s...", attempt + 1);
                         vTaskDelay(pdMS_TO_TICKS(2000));
                     }
+                    if (xEventGroupGetBits(ml->events) & ML_EVT_SHUTDOWN_REQUEST)
+                    {
+                        break;
+                    }
                     if (ml_derp_connect(ml) == ESP_OK) {
                         connected_since_ms = ml_get_time_ms();
                         verbose_phase = true;
@@ -640,6 +652,10 @@ void ml_derp_tx_task(void *arg) {
                         break;
                     }
                     ESP_LOGD(TAG, "DERP reconnect attempt %d failed", attempt + 1);
+                }
+                if (xEventGroupGetBits(ml->events) & ML_EVT_SHUTDOWN_REQUEST)
+                {
+                    break;
                 }
                 if (!ml->derp.connected) {
                     /* the relay is gone: the connect-request path owns the
@@ -731,7 +747,21 @@ void ml_derp_tx_task(void *arg) {
         vTaskDelay(pdMS_TO_TICKS(1));
     }
 
-    ESP_LOGI(TAG, "DERP I/O task exiting");
+    /* WiCAN (2026-11-13): the relay task closes what it opened, here, on
+     * its own stack: the TLS close runs where every other TLS call of
+     * these connections ran (14 KiB), never on the stack of whoever calls
+     * microlink_stop() (vpn_manager's state task has 6 KiB, in PSRAM,
+     * where an overflow is silent). Until this date nothing closed them
+     * at a stop: a relay still connected when the stop came kept its
+     * socket and its TLS context (279,564 B of PSRAM and 4,380 B of
+     * internal RAM gone over four stops with the home relay and one
+     * peer's region open, measured 2026-11-13 by leaving this call out). */
+    ml_derp_disconnect(ml);
+
+    /* a task that ends says how much of its stack it never used: the
+     * watermark goes with the task (standard section 2) */
+    ESP_LOGI(TAG, "DERP I/O task exiting (stack: %u B never used)",
+             (unsigned)uxTaskGetStackHighWaterMark(NULL));
     vTaskDelete(NULL);
 }
 
@@ -1168,7 +1198,8 @@ void ml_derp_disconnect(microlink_t *ml) {
 
     /* Drain TX queue */
     ml_derp_tx_item_t item;
-    while (xQueueReceive(ml->derp_tx_queue, &item, 0) == pdTRUE) {
+    while (ml->derp_tx_queue != NULL &&
+           xQueueReceive(ml->derp_tx_queue, &item, 0) == pdTRUE) {
         free(item.data);
     }
 

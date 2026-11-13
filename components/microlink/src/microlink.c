@@ -452,6 +452,12 @@ microlink_t *microlink_init(const microlink_config_t *config) {
 
 esp_err_t microlink_start(microlink_t *ml) {
     if (!ml) return ESP_ERR_INVALID_ARG;
+    if (ml->net_io_task != NULL || ml->derp_tx_task != NULL ||
+        ml->coord_task != NULL || ml->wg_mgr_task != NULL)
+    {
+        ESP_LOGW(TAG, "start refused: tasks are still owned by this instance");
+        return ESP_ERR_INVALID_STATE;
+    }
     if (ml->state != ML_STATE_IDLE) {
         ESP_LOGW(TAG, "Already started (state=%d)", ml->state);
         return ESP_ERR_INVALID_STATE;
@@ -607,11 +613,22 @@ esp_err_t microlink_stop(microlink_t *ml) {
      * since 2026-11-01 wg_mgr is one of them, so nothing dynamic is left
      * for the idle task to reap. */
     s_ml_tasks_joined = ml_join_static_tasks(ml);
+    if (!s_ml_tasks_joined)
+    {
+        return ESP_ERR_TIMEOUT;
+    }
 
     ml->net_io_task = NULL;
     ml->derp_tx_task = NULL;
     ml->coord_task = NULL;
     ml->wg_mgr_task = NULL;
+
+    /* The relay task closed its connections on its own stack when it left
+     * its loop (ml_derp_tx_task). What is left for this call: the frames
+     * the other tasks queued after that, and a relay task that was never
+     * created (a start that failed half way). No TLS work on the caller's
+     * stack in either case: the connections are closed already. */
+    ml_derp_disconnect(ml);
 
     /* Stop HTTP config server */
     if (ml->config_httpd) {
@@ -633,10 +650,15 @@ esp_err_t microlink_stop(microlink_t *ml) {
     return ESP_OK;
 }
 
-void microlink_destroy(microlink_t *ml) {
-    if (!ml) return;
+esp_err_t microlink_destroy(microlink_t *ml) {
+    if (!ml) return ESP_OK;
 
-    microlink_stop(ml);
+    esp_err_t err = microlink_stop(ml);
+    if (err != ESP_OK)
+    {
+        ESP_LOGW(TAG, "destroy deferred: a task still owns the instance");
+        return err;
+    }
 
     /* WiCAN: PSRAM task stacks are ours to free, safe now that
      * microlink_stop() waited for the tasks to self-delete */
@@ -679,6 +701,7 @@ void microlink_destroy(microlink_t *ml) {
 
     free(ml);
     ESP_LOGI(TAG, "Destroyed");
+    return ESP_OK;
 }
 
 /* ============================================================================

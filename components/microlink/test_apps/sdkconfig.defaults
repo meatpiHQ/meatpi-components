@@ -1,0 +1,4 @@
+# Same partition table as the main firmware; only its relative path changes.
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="../../../wican_pro_partitions_table.csv"
+# The target capture runner reads the test console at 115200 baud.
+CONFIG_ESP_CONSOLE_UART_BAUDRATE=115200

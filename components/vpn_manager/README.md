@@ -84,6 +84,49 @@ and `GET /api/vpn` list the routes. Bench: `tools/testbench/vpn/vpn_routes_bench
 receiver from the tunnel address, one to any other address from the
 station's.
 
+## Tailscale: a client that cannot stop in time (2026-11-13)
+
+A crash report on 6.0.0-beta.9 led here. With a relay that stalls and the
+uplink gone, the client's relay task dialled again after the stop request
+and was still inside that dial when the 30-second join of the client's tasks
+ran out. The stop forgot the task all the same, the second stop inside the
+destroy found nothing to wait for, the client and its PSRAM stacks were
+freed under a running task and the next client took over its static TCB.
+A network callback then woke a wait list that no longer existed. Reproduced
+twice on the published beta.9 image (`.\test.ps1 tspublic stop-dial`):
+LoadProhibited in `lwip_setsockopt_callback` and in `err_tcp` under
+`tcp_slowtmr`, some tens of seconds after the VPN had come back. The
+write-up of the client's side is `microlink/PROVENANCE.md` 24.
+
+What `vpn_manager` does about it:
+
+- `vpn_ts_down()` returns the client's verdict. On `ESP_ERR_TIMEOUT` the
+  client pointer and the auth key behind it are kept: the client still owns
+  a task.
+- The state task finishes that teardown before anything else on its lap,
+  with the VPN disabled or paused as well, and never brings up a second
+  client beside the first (`vpn_ts_up()` refuses while one exists; the
+  client's four TCBs are statics). Each try blocks for the client's own
+  deadline. Seen on the bench (2026-11-13 18:09, an uplink loss with a relay
+  dial in flight): `tailscale shutdown pending: ESP_ERR_TIMEOUT; retaining
+  the client` twice, `tailscale down` 61.7 s after the stop was asked for,
+  the next client connected.
+- The tunnel is down from the first try on, and the status says so: a state
+  of `connecting` or `connected` becomes `waiting` (or `disabled`) while the
+  teardown is pending, the `vpn.state` event went out with the first try.
+
+The bench built for this found two leaks of the client behind a stop (the
+relay connections left open when the stop found them connected, and the
+WireGuard device never freed): both are closed in `microlink`, its
+PROVENANCE 24 has the figures. A Tailscale stop and start now leaves the
+PSRAM where it was (2,814,552 and 2,814,148 B free behind the first and the
+fourth stop in a row).
+
+No settings or schema change, no stack size changed; the pending flag is one
+byte. Tests, both from the firmware checkout: `.\test.ps1 target microlink`
+(a task held across two real deadlines) and `.\test.ps1 tspublic stop-dial`
+(the network reproduction and the teardown with the relay connected).
+
 ## Tailscale: the relay, the leak and the internal-RAM floor (issue 1024, 2026-10-31)
 
 Two field reports (a crash loop with a self-park, and "DNS and connectivity

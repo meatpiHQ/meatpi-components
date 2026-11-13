@@ -3,6 +3,7 @@ set(SRCS
     "src/ml_coord.c"
     "src/ml_derp.c"
     "src/ml_derp_pool.c"
+    "src/ml_dial.c"
     "src/ml_disco_pong.c"
     "src/ml_routes.c"
     "src/ml_net_io.c"

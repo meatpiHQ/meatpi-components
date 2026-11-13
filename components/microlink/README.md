@@ -45,6 +45,14 @@ after the stop request and only after the relay task had ended, a new client
 connected, no crash). Keeping the client on a timed-out stop is what makes
 that safe.
 
+It is also what the dials no longer do. `ml_dial()` (`src/ml_dial.c`, the
+relay's dials and the control task's) is a non-blocking connect waited for in
+200 ms slices that look at the stop request first: 10 s at most, and gone
+within a slice of a stop. With it the client is destroyed 0.2 to 0.5 s after
+the stop is asked for, and the VPN is back about 15 s after a Wi-Fi blip
+instead of about 70. The kept client stays as the net under it
+(PROVENANCE item 25).
+
 Reproduced on the exact beta.9 image `c69c8478ea78bd97` with a dropped relay
 dial and a Wi-Fi trial: delayed LoadProhibited crashes in lwIP task-wakeup
 callbacks, also with MQTT disabled. The separately reported `ml_derp_tx`

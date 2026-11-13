@@ -571,6 +571,15 @@ esp_err_t ml_derp_queue_send(microlink_t *ml, const uint8_t *dest_key,
 /* ml_coord.c */
 void ml_coord_task(void *arg);
 
+/* ml_dial.c, WiCAN (2026-11-13): a TCP connect with a bound that a stop of
+ * the client cuts short. 0 when connected (the socket blocking again as it
+ * came), -1 with errno otherwise: ETIMEDOUT after @p timeout_ms, ECANCELED
+ * when the stop was asked for meanwhile, else the stack's own error. The
+ * caller closes the socket on failure. */
+struct sockaddr;
+int ml_dial(microlink_t *ml, int sock, const struct sockaddr *addr,
+            uint32_t addr_len, uint32_t timeout_ms);
+
 /* WiCAN: pick a DERP region that exists in the parsed DERPMap, the
  * configured/home region if present, else the first usable map region,
  * else the compile-time default (real Tailscale). */

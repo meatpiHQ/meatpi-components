@@ -262,12 +262,17 @@ static int do_tcp_connect(microlink_t *ml) {
 
     ESP_LOGI(TAG, "Connecting to %s:80...", CTRL_HOST(ml));
 
-    if (ml_connect(sock, res->ai_addr, res->ai_addrlen) < 0) {
+    /* WiCAN (2026-11-13): bounded, and cut short by a stop (ml_dial.c) */
+    if (ml_dial(ml, sock, res->ai_addr, res->ai_addrlen, 10000) < 0) {
         /* WiCAN (2026-11-13): a control server that cannot be reached is
          * an expected failure that heals by itself (the caller retries
          * under its backoff): W, not E (standard section 10). It logged E
          * once per attempt for as long as the server was away. */
-        ESP_LOGW(TAG, "TCP connect failed: %d", errno);
+        if (errno == ECANCELED) {
+            ESP_LOGI(TAG, "control dial cut short: the client is stopping");
+        } else {
+            ESP_LOGW(TAG, "TCP connect failed: %d", errno);
+        }
         ml_close_sock(sock);
         ml_freeaddrinfo(res);
         return -1;
@@ -327,8 +332,12 @@ static int fetch_custom_server_key(microlink_t *ml) {
     char *buf = ml_psram_malloc(2048);
     if (!buf) goto out;
 
-    if (ml_connect(sock, res->ai_addr, res->ai_addrlen) < 0) {
-        ESP_LOGE(TAG, "/key: connect failed: errno=%d", errno);
+    /* WiCAN (2026-11-13): bounded, and cut short by a stop (ml_dial.c); a
+     * server that cannot be reached is W, as in do_tcp_connect */
+    if (ml_dial(ml, sock, res->ai_addr, res->ai_addrlen, 10000) < 0) {
+        if (errno != ECANCELED) {
+            ESP_LOGW(TAG, "/key: connect failed: errno=%d", errno);
+        }
         goto out;
     }
 
@@ -387,7 +396,9 @@ static int do_noise_handshake(microlink_t *ml, ml_noise_state_t *noise) {
      * coordinators (WiCAN addition, see fetch_custom_server_key) */
     if (ml->ctrl_host[0] != '\0') {
         if (fetch_custom_server_key(ml) != 0) {
-            ESP_LOGE(TAG, "Cannot get coordinator Noise key; aborting handshake");
+            /* WiCAN (2026-11-13): W, the attempt is retried under the
+             * backoff; a key document that is wrong said so at E above */
+            ESP_LOGW(TAG, "Cannot get coordinator Noise key; aborting handshake");
             return -1;
         }
     }

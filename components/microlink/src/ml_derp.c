@@ -549,6 +549,12 @@ static void derp_arm_backoff(microlink_t *ml, uint64_t now_ms) {
              (unsigned long)(next / 1000u));
 }
 
+/* WiCAN (2026-11-13): the stop was asked for. A round of attempts ends
+ * there: no retry delay is waited out behind a dial the stop cut short. */
+static inline bool derp_stopping(microlink_t *ml) {
+    return (xEventGroupGetBits(ml->events) & ML_EVT_SHUTDOWN_REQUEST) != 0;
+}
+
 void ml_derp_tx_task(void *arg) {
     microlink_t *ml = (microlink_t *)arg;
     ESP_LOGI(TAG, "DERP I/O task started (Core %d)", xPortGetCoreID());
@@ -601,7 +607,8 @@ void ml_derp_tx_task(void *arg) {
                 loop_start >= ml->derp.retry_after_ms) {
                 xEventGroupClearBits(ml->events, ML_EVT_DERP_CONNECT_REQ);
                 /* Retry up to 3 times with 2s backoff */
-                for (int attempt = 0; attempt < 3 && !ml->derp.connected; attempt++) {
+                for (int attempt = 0;
+                     attempt < 3 && !ml->derp.connected && !derp_stopping(ml); attempt++) {
                     if (attempt > 0) {
                         ESP_LOGD(TAG, "DERP connect retry %d/3 in 2s...", attempt + 1);
                         vTaskDelay(pdMS_TO_TICKS(2000));
@@ -636,7 +643,8 @@ void ml_derp_tx_task(void *arg) {
                 verbose_phase = false;
                 /* Auto-reconnect after disconnect */
                 vTaskDelay(pdMS_TO_TICKS(1000));
-                for (int attempt = 0; attempt < 3 && !ml->derp.connected; attempt++) {
+                for (int attempt = 0;
+                     attempt < 3 && !ml->derp.connected && !derp_stopping(ml); attempt++) {
                     if (attempt > 0) {
                         ESP_LOGD(TAG, "DERP reconnect retry %d/3 in 2s...", attempt + 1);
                         vTaskDelay(pdMS_TO_TICKS(2000));
@@ -870,8 +878,15 @@ esp_err_t ml_derp_conn_open(microlink_t *ml, ml_derp_conn_t *c, uint16_t region,
     ml_setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
     ml_setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
-    if (ml_connect(sock, res->ai_addr, res->ai_addrlen) < 0) {
-        ESP_LOGW(TAG, "TCP connect failed: %d", errno);
+    /* WiCAN (2026-11-13): bounded, and cut short by a stop (ml_dial.c). The
+     * blocking connect stood for a minute into an uplink that just went,
+     * the socket's send timeout above never applied to it. */
+    if (ml_dial(ml, sock, res->ai_addr, res->ai_addrlen, DERP_CONNECT_TIMEOUT_MS) < 0) {
+        if (errno == ECANCELED) {
+            ESP_LOGI(TAG, "relay dial cut short: the client is stopping");
+        } else {
+            ESP_LOGW(TAG, "TCP connect failed: %d", errno);
+        }
         ml_close_sock(sock);
         ml_freeaddrinfo(res);
         return ESP_FAIL;

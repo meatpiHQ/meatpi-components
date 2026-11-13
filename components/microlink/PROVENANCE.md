@@ -390,6 +390,43 @@ a peer's own address after every session lapsed, and direct upgrade).
     stalled dial, two uplink losses and two lost control connections. The
     records are in the firmware's `testing/microlink.md` and
     `testing/tspublic.md`.
+25. **A dial with a bound, that a stop cuts short** (2026-11-13, behind
+    item 24). Item 24 made a stop that cannot finish safe; this is why it
+    could not finish. lwIP's blocking `connect()` ends when the SYN retries
+    end: about 18 s to a host that drops the SYN, about a minute into an
+    uplink that just went. The 10 s send timeout the relay and the control
+    task set on the socket before it never applied to the connect. In six
+    of nine uplink losses on the bench the relay task was inside such a
+    dial when the stop came: two 30 s deadlines passed, the client was kept
+    (item 24) and the VPN was back 66 to 70 s after a Wi-Fi blip, 14 to
+    17 s otherwise.
+    - `src/ml_dial.c` (new): `ml_dial()`, a non-blocking connect waited
+      for with `select()` in 200 ms slices, each of which looks at the
+      stop request first. 0 when connected (the socket blocking again),
+      `ETIMEDOUT` after the caller's bound, `ECANCELED` at a stop, else the
+      stack's own error. The caller closes the socket: lwIP lets a socket
+      in a non-blocking connect be closed (in a blocking one it does not).
+      A socket of the cellular AT backend keeps the modem's own connect.
+    - Its callers: `ml_derp_conn_open` (the home relay and each peer's
+      region, `DERP_CONNECT_TIMEOUT_MS`), `do_tcp_connect` and
+      `fetch_custom_server_key` (the control server, 10 s). A dial the stop
+      cut short says so at I (`relay dial cut short: the client is
+      stopping`), not as a failure.
+    - The relay's two retry rounds end at a stop without waiting out the
+      2 s between attempts (`derp_stopping()` in the rounds' condition).
+    - The `/key` dial's failure and the line behind it (`Cannot get
+      coordinator Noise key`) are W like `do_tcp_connect`'s: a control
+      server that cannot be reached, retried under the backoff.
+
+    On the bench (the firmware's `tspublic stop-dial`, ELF
+    `0a7885455e4ba47c`): the relay dial cut 12 and 29 ms after the stop
+    was asked for at the two uplink losses, `Destroyed` 0.5 and 0.3 s after
+    it (61.7 s before), the VPN and the relay back after 17 and 14 s; the
+    control dial cut 29 and 87 ms after the stop at the two lost control
+    connections, `Destroyed` 0.2 s after it (8.6 s before); no deadline
+    missed; a control server that drops the SYN is given up after 10 s
+    (`TCP connect failed: 116`) instead of 18; dials that connect are as
+    before (the relay 23 to 250 ms, 8.9 s behind a lifted block).
 
 ## Upstream layout kept
 

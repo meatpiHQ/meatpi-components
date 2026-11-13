@@ -110,7 +110,9 @@ What `vpn_manager` does about it:
   deadline. Seen on the bench (2026-11-13 18:09, an uplink loss with a relay
   dial in flight): `tailscale shutdown pending: ESP_ERR_TIMEOUT; retaining
   the client` twice, `tailscale down` 61.7 s after the stop was asked for,
-  the next client connected.
+  the next client connected. Since the client's dials can be cut short by a
+  stop (`microlink/PROVENANCE.md` 25) the same uplink loss ends in 0.3 to
+  0.5 s and this path is the net under it, not the usual way.
 - The tunnel is down from the first try on, and the status says so: a state
   of `connecting` or `connected` becomes `waiting` (or `disabled`) while the
   teardown is pending, the `vpn.state` event went out with the first try.

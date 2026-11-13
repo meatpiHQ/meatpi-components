@@ -18,11 +18,11 @@
 /* the bench vehicle's VIN, 1WCANWWH0TRUCK001, as the chip prints it */
 #define WWH_VIN "1WCANWWH0TRUCK001"
 
-static const ap_bus_t SILENT = { AP_BUS_SILENT, 0 };
-static const ap_bus_t LIVE_500 = { AP_BUS_LIVE, 500 };
-static const ap_bus_t LIVE_250 = { AP_BUS_LIVE, 250 };
-static const ap_bus_t LIVE_125 = { AP_BUS_LIVE, 125 };
-static const ap_bus_t UNREADABLE = { AP_BUS_UNREADABLE, 0 };
+static const ap_bus_t SILENT = { .kind = AP_BUS_SILENT };
+static const ap_bus_t LIVE_500 = { .kind = AP_BUS_LIVE, .kbps = 500 };
+static const ap_bus_t LIVE_250 = { .kind = AP_BUS_LIVE, .kbps = 250 };
+static const ap_bus_t LIVE_125 = { .kind = AP_BUS_LIVE, .kbps = 125 };
+static const ap_bus_t UNREADABLE = { .kind = AP_BUS_UNREADABLE };
 
 /* ---- names and requests ------------------------------------------------------ */
 

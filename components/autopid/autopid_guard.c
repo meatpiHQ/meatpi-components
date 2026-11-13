@@ -43,6 +43,13 @@
  * the guard is asked (the caller is the one who would make it talk), so the
  * guard waits: an echo dies, foreign traffic stays (settle_own_echo).
  *
+ * With can_manager enabled there is no listener: the unit's own node runs,
+ * and it is part of the bus. It reads the chip's requests as frames (it
+ * acknowledges them) and takes the chip's talk at the other bit rate for
+ * traffic it cannot read; its link keeps either word. So what it reports
+ * once the chip has talked is held against what is on the pins while the
+ * chip is quiet (probe_now, ap_guard_after_quiet; 2026-11-13).
+ *
  * The verdict is about the protocol autopid pins. The chains of the tables
  * (a row's init, a type's init, dtc_init, a tested row) can pin one too and
  * go to the chip as written: whoever sends one asks ap_guard_chain_ok()
@@ -70,8 +77,6 @@ static const char *TAG = "autopid";
                                                   young                     */
 #define AP_GUARD_SETTLE_STEP_MS 100            /* between two looks         */
 #define AP_GUARD_SETTLE_LOOKS   8              /* ... at most this many     */
-#define AP_GUARD_QUIET_MS       300            /* the chip quiet this long:
-                                                  what comes is not ours    */
 
 static SemaphoreHandle_t s_lock;       /* poller vs the jobs' tasks         */
 static StaticSemaphore_t s_lock_buf;   /* internal: FreeRTOS object         */
@@ -97,6 +102,10 @@ static bool     s_chip_sent;           /* the poller transmitted this boot:
                                           "unreadable" may be the echo of our
                                           own unanswered requests from here
                                           on, and is waited out             */
+static uint8_t  s_sent;                /* ... and at which CAN bit rates
+                                          (AP_SENT_*): what a node of the
+                                          unit's own that runs may have read
+                                          or failed to read of it           */
 static ap_guard_verdict_t s_verdict;
 static char     s_reason[176];
 
@@ -130,6 +139,13 @@ static void effective_protocol(char *proto, bool *pinned)
                                        ap_runner_proto_fallback());
 }
 
+/** The chip is let talk on @p proto next. Under s_lock. */
+static void chip_talks(char proto)
+{
+    s_chip_sent = true;
+    s_sent |= ap_guard_sent_mark(proto);
+}
+
 /** Listen to the bus now (up to about a second). Under s_lock. */
 static void probe_now(void)
 {
@@ -158,6 +174,19 @@ static void probe_now(void)
         }
     }
 
+    /* a node of the unit's own that runs keeps for good what it made of the
+       chip's own talk: held against the quiet (ap_guard_after_quiet). Bench
+       2026-11-13: "live at 500 kbit/s" with nobody there, final for the boot */
+    uint16_t fixed = 0;
+
+    if (ap_guard_node_runs(&fixed) && ap_guard_own_doing(&bus, s_sent))
+    {
+        ap_guard_after_quiet(&bus, s_sent, ap_guard_node_heard());
+    }
+
+    /* traffic a node fixed at ONE bit rate could not read: the sentence
+       names that bit rate and its setting, not "neither 250 nor 500" */
+    bus.node_kbps = (bus.kind == AP_BUS_UNREADABLE) ? fixed : 0;
     s_bus = bus;
     s_probe_us = esp_timer_get_time();
 }
@@ -174,6 +203,11 @@ static void probe_now(void)
  */
 static void settle_own_echo(void)
 {
+    if (ap_guard_node_runs(NULL))
+    {
+        return; /* its word was held against the quiet already (probe_now) */
+    }
+
     for (int i = 0; i < AP_GUARD_SETTLE_LOOKS; i++)
     {
         vTaskDelay(pdMS_TO_TICKS(AP_GUARD_SETTLE_STEP_MS));
@@ -299,12 +333,12 @@ bool ap_guard_poll_ok(void)
 
     bool ok = (decide_now() != AP_GUARD_PARK);
 
+    ruled_for_now(ok);
+
     if (ok)
     {
-        s_chip_sent = true; /* the caller transmits next */
+        chip_talks(s_ruled_proto); /* the caller transmits next, on it */
     }
-
-    ruled_for_now(ok);
 
     if (s_bus.kind == AP_BUS_LIVE)
     {
@@ -387,6 +421,11 @@ bool ap_guard_job_ok(char *reason, size_t cap)
     effective_protocol(&proto, &pinned);
     s_ok_proto = (v != AP_GUARD_PARK) ? proto : '\0';
 
+    if (v != AP_GUARD_PARK)
+    {
+        chip_talks(proto); /* the job transmits next */
+    }
+
     if (reason != NULL && cap > 0)
     {
         snprintf(reason, cap, "%s", s_reason);
@@ -432,8 +471,23 @@ bool ap_guard_chain_ok(const char *chain, const char *owner, bool job,
     bus = s_bus;
     xSemaphoreGive(s_lock);
 
-    if (ap_guard_chain_allowed(&bus, chain, last, &refused))
+    char set = '\0';
+
+    if (ap_guard_chain_allowed(&bus, chain, (last != NULL) ? last : &set,
+                               &refused))
     {
+        char to = (last != NULL) ? *last : set;
+
+        /* the chain leaves the chip on a protocol of its own: the request
+           behind it goes out there */
+        if (to != '\0' &&
+            (s_sent & ap_guard_sent_mark(to)) != ap_guard_sent_mark(to))
+        {
+            xSemaphoreTake(s_lock, portMAX_DELAY);
+            chip_talks(to);
+            xSemaphoreGive(s_lock);
+        }
+
         return true;
     }
 
@@ -494,7 +548,7 @@ bool ap_guard_candidate_ok(char proto)
 
     if (ok)
     {
-        s_chip_sent = true;
+        chip_talks(proto);
 
         /* the caller pins this candidate next; when a car answers on it,
            the store takes it and the baseline is restored on it */
@@ -507,19 +561,13 @@ bool ap_guard_candidate_ok(char proto)
 
 bool ap_guard_others_on_can(void)
 {
-    can_manager_status_t a, b;
-
-    if (can_manager_status(&a) == ESP_OK && a.running)
+    if (ap_guard_node_runs(NULL))
     {
         /* the native node runs by its own settings and acknowledges what it
            hears, the chip's requests too: on a car with no CAN at all two of
            them read as "bus live at 500 kbit/s" (bench 2026-11-13, a K-line
-           car). What it hears while the chip is quiet is somebody else's */
-        vTaskDelay(pdMS_TO_TICKS(AP_GUARD_QUIET_MS));
-
-        return can_manager_status(&b) == ESP_OK &&
-               (b.stats.rx_count != a.stats.rx_count ||
-                b.stats.rx_bad != a.stats.rx_bad);
+           car). What is heard while the chip is quiet is somebody else's */
+        return ap_guard_node_heard() != AP_HEARD_NOTHING;
     }
 
     if (s_lock == NULL)

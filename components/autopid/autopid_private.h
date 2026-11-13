@@ -585,6 +585,16 @@ ap_bounds_verdict_t ap_bounds_apply(double *value, float min, float max,
  *  ap_core_scan_pause). autopid.c owns the flag. */
 bool ap_core_job_acquire(void);
 void ap_core_job_release(void);
+
+/* the bus guard and a CAN node of the unit's own (autopid_guard_node.c) */
+/** Is such a node up by its settings (can_manager enabled)? Then the guard
+ *  has no listener and that node is asked. @p fixed_kbps (may be NULL): the
+ *  bit rate it is fixed at, 0 when none runs or it is on "auto". */
+bool ap_guard_node_runs(uint16_t *fixed_kbps);
+/** What is on the CAN pins while the chip is quiet for 300 ms (it is not
+ *  ours): frames that node read, noise (the RX line itself is watched; noise
+ *  stays heard for ten seconds), or nothing. Blocks for the 300 ms. */
+ap_heard_t ap_guard_node_heard(void);
 #endif
 
 #include "autopid_vehicle.h" /* vehicle identity: pure core + file owner */

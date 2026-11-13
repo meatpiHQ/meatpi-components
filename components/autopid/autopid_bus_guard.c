@@ -72,6 +72,73 @@ uint16_t ap_guard_proto_kbps(char proto)
     }
 }
 
+uint8_t ap_guard_sent_mark(char proto)
+{
+    switch (ap_guard_proto_kbps(proto))
+    {
+    case 500:
+        return AP_SENT_500;
+
+    case 250:
+        return AP_SENT_250;
+
+    default:
+        break;
+    }
+
+    /* K-line / J1850 talk on other pins; the search and the user's own CAN
+       may talk at either bit rate */
+    return (proto >= '1' && proto <= '5') ? 0 : (AP_SENT_500 | AP_SENT_250);
+}
+
+bool ap_guard_own_doing(const ap_bus_t *bus, uint8_t sent)
+{
+    if (bus == NULL)
+    {
+        return false;
+    }
+
+    if (bus->kind == AP_BUS_UNREADABLE)
+    {
+        return sent != 0; /* the chip's talk at the node's other bit rate */
+    }
+
+    if (bus->kind != AP_BUS_LIVE)
+    {
+        return false;
+    }
+
+    /* frames the node read: the chip's own only where it talked at that
+       bit rate (a bus that is live at the other one named itself) */
+    return (bus->kbps == 500 && (sent & AP_SENT_500) != 0) ||
+           (bus->kbps == 250 && (sent & AP_SENT_250) != 0);
+}
+
+bool ap_guard_heard_stands(int64_t now_us, int64_t heard_us)
+{
+    return heard_us != 0 && now_us >= heard_us &&
+           now_us - heard_us < AP_GUARD_HEARD_HOLD_US;
+}
+
+void ap_guard_after_quiet(ap_bus_t *bus, uint8_t sent, ap_heard_t heard)
+{
+    if (bus == NULL || !ap_guard_own_doing(bus, sent))
+    {
+        return; /* the picture named the bus by itself */
+    }
+
+    if (heard == AP_HEARD_NOTHING)
+    {
+        bus->kind = AP_BUS_SILENT;
+        bus->kbps = 0;
+    }
+    else if (heard == AP_HEARD_NOISE && bus->kind == AP_BUS_LIVE)
+    {
+        bus->kind = AP_BUS_UNREADABLE;
+        bus->kbps = 0;
+    }
+}
+
 ap_guard_verdict_t ap_guard_decide(const ap_bus_t *bus, char proto,
                                    bool pinned)
 {
@@ -271,7 +338,14 @@ size_t ap_guard_chain_reason(const ap_bus_t *bus, char proto,
         owner = "an init";
     }
 
-    if (bus != NULL && bus->kind == AP_BUS_UNREADABLE)
+    if (bus != NULL && bus->kind == AP_BUS_UNREADABLE && bus->node_kbps != 0)
+    {
+        n = snprintf(out, cap, "%s sets protocol %c and the vehicle bus "
+                               "carries traffic that WiCAN's CAN controller, "
+                               "set to %u kbit/s, cannot read: not sent",
+                     owner, proto, (unsigned)bus->node_kbps);
+    }
+    else if (bus != NULL && bus->kind == AP_BUS_UNREADABLE)
     {
         n = snprintf(out, cap, "%s sets protocol %c and the vehicle bus "
                                "carries traffic at a bitrate that could not "
@@ -328,7 +402,20 @@ size_t ap_guard_reason(const ap_bus_t *bus, char proto, bool pinned,
     unsigned proto_kbps = ap_guard_proto_kbps(proto);
     int n;
 
-    if (v == AP_GUARD_PARK && bus != NULL && bus->kind == AP_BUS_UNREADABLE)
+    if (v == AP_GUARD_PARK && bus != NULL &&
+        bus->kind == AP_BUS_UNREADABLE && bus->node_kbps != 0)
+    {
+        /* a node of the unit's own, fixed at one bit rate, said so: it
+           tried no other, and its setting is the way out. Until 2026-11-13
+           this read "not 250 or 500 kbit/s" on a 250 kbit/s bus */
+        n = snprintf(out, cap, "the vehicle bus carries traffic that "
+                               "WiCAN's CAN controller, set to %u kbit/s, "
+                               "cannot read: nothing is transmitted (set "
+                               "the CAN bit rate to Automatic)",
+                     (unsigned)bus->node_kbps);
+    }
+    else if (v == AP_GUARD_PARK && bus != NULL &&
+             bus->kind == AP_BUS_UNREADABLE)
     {
         n = snprintf(out, cap, "the vehicle bus carries traffic at a "
                                "bitrate that could not be read (not 250 "

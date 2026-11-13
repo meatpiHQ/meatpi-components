@@ -12,11 +12,11 @@
 
 #include "autopid_private.h"
 
-static const ap_bus_t SILENT = { AP_BUS_SILENT, 0 };
-static const ap_bus_t UNKNOWN = { AP_BUS_UNKNOWN, 0 };
-static const ap_bus_t LIVE_500 = { AP_BUS_LIVE, 500 };
-static const ap_bus_t LIVE_250 = { AP_BUS_LIVE, 250 };
-static const ap_bus_t UNREADABLE = { AP_BUS_UNREADABLE, 0 };
+static const ap_bus_t SILENT = { .kind = AP_BUS_SILENT };
+static const ap_bus_t UNKNOWN = { .kind = AP_BUS_UNKNOWN };
+static const ap_bus_t LIVE_500 = { .kind = AP_BUS_LIVE, .kbps = 500 };
+static const ap_bus_t LIVE_250 = { .kind = AP_BUS_LIVE, .kbps = 250 };
+static const ap_bus_t UNREADABLE = { .kind = AP_BUS_UNREADABLE };
 
 void test_guard_proto_bitrates(void)
 {
@@ -34,6 +34,230 @@ void test_guard_proto_bitrates(void)
     TEST_ASSERT_EQUAL_UINT16(0, ap_guard_proto_kbps('5'));
     TEST_ASSERT_EQUAL_UINT16(0, ap_guard_proto_kbps('B'));
     TEST_ASSERT_EQUAL_UINT16(0, ap_guard_proto_kbps('C'));
+}
+
+/* where the chip was let talk: the mark of a protocol */
+void test_guard_sent_marks(void)
+{
+    TEST_ASSERT_EQUAL_UINT8(AP_SENT_500, ap_guard_sent_mark('6'));
+    TEST_ASSERT_EQUAL_UINT8(AP_SENT_500, ap_guard_sent_mark('7'));
+    TEST_ASSERT_EQUAL_UINT8(AP_SENT_250, ap_guard_sent_mark('8'));
+    TEST_ASSERT_EQUAL_UINT8(AP_SENT_250, ap_guard_sent_mark('9'));
+    TEST_ASSERT_EQUAL_UINT8(AP_SENT_250, ap_guard_sent_mark('A'));
+
+    /* the chip's search and the user's own CAN may talk at either */
+    TEST_ASSERT_EQUAL_UINT8(AP_SENT_500 | AP_SENT_250,
+                            ap_guard_sent_mark('0'));
+    TEST_ASSERT_EQUAL_UINT8(AP_SENT_500 | AP_SENT_250,
+                            ap_guard_sent_mark('\0'));
+    TEST_ASSERT_EQUAL_UINT8(AP_SENT_500 | AP_SENT_250,
+                            ap_guard_sent_mark('B'));
+    TEST_ASSERT_EQUAL_UINT8(AP_SENT_500 | AP_SENT_250,
+                            ap_guard_sent_mark('C'));
+
+    /* SAE J1850 and the K-line are other pins */
+    for (char p = '1'; p <= '5'; p++)
+    {
+        TEST_ASSERT_EQUAL_UINT8(0, ap_guard_sent_mark(p));
+    }
+}
+
+/* A unit with its own CAN node on (bench 2026-11-13): the node acknowledges
+   the OBD chip's requests and reads them as frames, so a bus with nobody on
+   it read "live at 500 kbit/s" for the boot and a 250 kbit/s car that woke
+   up later was never asked; and it took the chip's talk on 250 kbit/s for
+   traffic it cannot read. Which pictures have to be held against the quiet. */
+void test_guard_a_running_nodes_picture_may_be_the_chips_own(void)
+{
+    /* the chip has not talked: what the node read named the bus */
+    TEST_ASSERT_FALSE(ap_guard_own_doing(&LIVE_500, 0));
+    TEST_ASSERT_FALSE(ap_guard_own_doing(&LIVE_250, 0));
+    TEST_ASSERT_FALSE(ap_guard_own_doing(&UNREADABLE, 0));
+
+    /* frames at the bit rate the chip talked at may be its own */
+    TEST_ASSERT_TRUE(ap_guard_own_doing(&LIVE_500, ap_guard_sent_mark('6')));
+    TEST_ASSERT_TRUE(ap_guard_own_doing(&LIVE_250, ap_guard_sent_mark('8')));
+    TEST_ASSERT_TRUE(ap_guard_own_doing(&LIVE_500, ap_guard_sent_mark('0')));
+    TEST_ASSERT_TRUE(ap_guard_own_doing(&LIVE_250, ap_guard_sent_mark('0')));
+
+    /* frames at the OTHER bit rate are not: a bus that is live there named
+       itself, and a pinned request stays off it as before */
+    TEST_ASSERT_FALSE(ap_guard_own_doing(&LIVE_500, ap_guard_sent_mark('8')));
+    TEST_ASSERT_FALSE(ap_guard_own_doing(&LIVE_250, ap_guard_sent_mark('6')));
+    TEST_ASSERT_EQUAL(AP_GUARD_PARK, ap_guard_decide(&LIVE_500, '8', true));
+
+    /* traffic the node cannot read may be the chip's talk at its other bit
+       rate, wherever it talked on CAN; not when it only used other pins */
+    TEST_ASSERT_TRUE(ap_guard_own_doing(&UNREADABLE, ap_guard_sent_mark('8')));
+    TEST_ASSERT_TRUE(ap_guard_own_doing(&UNREADABLE, ap_guard_sent_mark('6')));
+    TEST_ASSERT_FALSE(ap_guard_own_doing(&UNREADABLE,
+                                         ap_guard_sent_mark('3')));
+
+    /* nothing to explain away */
+    TEST_ASSERT_FALSE(ap_guard_own_doing(&SILENT, AP_SENT_500 | AP_SENT_250));
+    TEST_ASSERT_FALSE(ap_guard_own_doing(&UNKNOWN,
+                                         AP_SENT_500 | AP_SENT_250));
+    TEST_ASSERT_FALSE(ap_guard_own_doing(NULL, AP_SENT_500 | AP_SENT_250));
+
+    /* the walk that failed: 6 and 7 tried on a bus with nobody on it, then
+       8. The picture is the chip's own, the quiet says so, the bus is silent
+       and 8 is asked */
+    uint8_t sent = ap_guard_sent_mark('6') | ap_guard_sent_mark('7');
+
+    TEST_ASSERT_TRUE(ap_guard_own_doing(&LIVE_500, sent));
+    TEST_ASSERT_EQUAL(AP_GUARD_ALLOW, ap_guard_decide(&SILENT, '8', true));
+}
+
+/* The sentence of a park on traffic that could not be read. The guard's own
+   listener tried 250 and 500 kbit/s and says so. A CAN node of the unit's
+   own that is fixed at one bit rate tried that one alone: with the node at
+   500 on a 250 kbit/s bus the sentence said "not 250 or 500 kbit/s" (bench
+   2026-11-13). It names the node's bit rate and its setting; the verdict is
+   the same. */
+void test_guard_a_fixed_nodes_unreadable_names_its_setting(void)
+{
+    const ap_bus_t by_node = { AP_BUS_UNREADABLE, 0, 500 };
+    const ap_bus_t at_1000 = { AP_BUS_UNREADABLE, 0, 1000 };
+    const ap_bus_t live = { AP_BUS_LIVE, 250, 500 };
+    char s[176]; /* the size of the buffers that keep the sentence */
+
+    TEST_ASSERT_EQUAL(AP_GUARD_PARK, ap_guard_decide(&by_node, '6', true));
+    TEST_ASSERT_EQUAL(AP_GUARD_PARK, ap_guard_decide(&by_node, '8', true));
+    TEST_ASSERT_EQUAL(AP_GUARD_PARK, ap_guard_decide(&by_node, '0', false));
+
+    size_t n = ap_guard_reason(&by_node, '0', false, s, sizeof(s));
+
+    TEST_ASSERT_EQUAL_STRING("the vehicle bus carries traffic that WiCAN's "
+                             "CAN controller, set to 500 kbit/s, cannot "
+                             "read: nothing is transmitted (set the CAN bit "
+                             "rate to Automatic)", s);
+    TEST_ASSERT_EQUAL_UINT(strlen(s), n);
+    TEST_ASSERT_NULL(strstr(s, "not 250"));
+
+    /* whole in that buffer at the longest bit rate of the setting */
+    n = ap_guard_reason(&at_1000, '6', true, s, sizeof(s));
+    TEST_ASSERT_TRUE(n < sizeof(s) - 1);
+    TEST_ASSERT_NOT_NULL(strstr(s, "set to 1000 kbit/s"));
+    TEST_ASSERT_NOT_NULL(strstr(s, "(set the CAN bit rate to Automatic)"));
+
+    /* the listener's word, and a node on "auto" (no bit rate of its own) */
+    (void)ap_guard_reason(&UNREADABLE, '0', false, s, sizeof(s));
+    TEST_ASSERT_NOT_NULL(strstr(s, "could not be read (not 250 or 500 "
+                                   "kbit/s)"));
+    TEST_ASSERT_NULL(strstr(s, "CAN controller"));
+
+    /* a chain of the tables on such a bus */
+    (void)ap_guard_chain_reason(&by_node, '6', "the init of row Soc", s,
+                                sizeof(s));
+    TEST_ASSERT_EQUAL_STRING("the init of row Soc sets protocol 6 and the "
+                             "vehicle bus carries traffic that WiCAN's CAN "
+                             "controller, set to 500 kbit/s, cannot read: "
+                             "not sent", s);
+
+    /* only "unreadable" speaks of the node */
+    (void)ap_guard_reason(&live, '6', true, s, sizeof(s));
+    TEST_ASSERT_NULL(strstr(s, "CAN controller"));
+    TEST_ASSERT_NOT_NULL(strstr(s, "runs at 250 kbit/s"));
+
+    /* the quiet makes "unreadable" of a false "live" and names no node:
+       that is the glue's to add (it knows who runs) */
+    ap_bus_t bus = LIVE_500;
+
+    ap_guard_after_quiet(&bus, AP_SENT_500, AP_HEARD_NOISE);
+    TEST_ASSERT_EQUAL(AP_BUS_UNREADABLE, bus.kind);
+    TEST_ASSERT_EQUAL_UINT16(0, bus.node_kbps);
+}
+
+/* What the quiet makes of such a picture (bench 2026-11-13). Nothing heard:
+   silent but for us. Frames the node read with the chip quiet: somebody at
+   its bit rate, "live" stands. Noise: somebody who does not talk at the bit
+   rate of the frames read before (the chip's own), so "live" must not
+   become the boot's word: a 250 kbit/s frame fell into the quiet of a "live
+   at 500", and the chip would have talked at 500 for good. */
+void test_guard_a_picture_held_against_the_quiet(void)
+{
+    const uint8_t both = AP_SENT_500 | AP_SENT_250;
+    ap_bus_t bus;
+
+    /* "live" at a bit rate the chip talked at */
+    bus = LIVE_500;
+    ap_guard_after_quiet(&bus, AP_SENT_500, AP_HEARD_NOTHING);
+    TEST_ASSERT_EQUAL(AP_BUS_SILENT, bus.kind);
+    TEST_ASSERT_EQUAL_UINT16(0, bus.kbps);
+
+    bus = LIVE_500;
+    ap_guard_after_quiet(&bus, AP_SENT_500, AP_HEARD_FRAMES);
+    TEST_ASSERT_EQUAL(AP_BUS_LIVE, bus.kind);
+    TEST_ASSERT_EQUAL_UINT16(500, bus.kbps);
+
+    bus = LIVE_500;
+    ap_guard_after_quiet(&bus, AP_SENT_500, AP_HEARD_NOISE);
+    TEST_ASSERT_EQUAL(AP_BUS_UNREADABLE, bus.kind);
+    TEST_ASSERT_EQUAL_UINT16(0, bus.kbps);
+    TEST_ASSERT_EQUAL(AP_GUARD_PARK, ap_guard_decide(&bus, '6', true));
+    TEST_ASSERT_EQUAL(AP_GUARD_PARK, ap_guard_decide(&bus, '0', false));
+
+    /* "unreadable" once the chip talked on CAN */
+    bus = UNREADABLE;
+    ap_guard_after_quiet(&bus, both, AP_HEARD_NOTHING);
+    TEST_ASSERT_EQUAL(AP_BUS_SILENT, bus.kind);
+
+    bus = UNREADABLE;
+    ap_guard_after_quiet(&bus, both, AP_HEARD_NOISE);
+    TEST_ASSERT_EQUAL(AP_BUS_UNREADABLE, bus.kind);
+
+    bus = UNREADABLE;       /* frames: the next look reads them as live */
+    ap_guard_after_quiet(&bus, both, AP_HEARD_FRAMES);
+    TEST_ASSERT_EQUAL(AP_BUS_UNREADABLE, bus.kind);
+
+    /* a picture that is not the chip's doing stands, whatever the quiet:
+       frames at the other bit rate, anything before the chip talked */
+    bus = LIVE_250;
+    ap_guard_after_quiet(&bus, AP_SENT_500, AP_HEARD_NOTHING);
+    TEST_ASSERT_EQUAL(AP_BUS_LIVE, bus.kind);
+    TEST_ASSERT_EQUAL_UINT16(250, bus.kbps);
+
+    bus = LIVE_500;
+    ap_guard_after_quiet(&bus, 0, AP_HEARD_NOISE);
+    TEST_ASSERT_EQUAL(AP_BUS_LIVE, bus.kind);
+
+    bus = UNREADABLE;
+    ap_guard_after_quiet(&bus, 0, AP_HEARD_NOTHING);
+    TEST_ASSERT_EQUAL(AP_BUS_UNREADABLE, bus.kind);
+
+    bus = SILENT;
+    ap_guard_after_quiet(&bus, both, AP_HEARD_NOISE);
+    TEST_ASSERT_EQUAL(AP_BUS_SILENT, bus.kind);
+
+    ap_guard_after_quiet(NULL, both, AP_HEARD_NOISE);   /* no crash */
+}
+
+/* The quiet is a look of 300 ms, and sparse traffic falls between two of
+   them (bench 2026-11-13: two frames a second at 250 kbit/s, the guard
+   parked, let go, parked again, and the chip talked in between). Who was
+   heard with the chip quiet stays heard for ten seconds. */
+void test_guard_who_was_heard_stays_heard_for_a_while(void)
+{
+    const int64_t s = 1000 * 1000;
+
+    /* nobody was ever heard */
+    TEST_ASSERT_FALSE(ap_guard_heard_stands(5 * s, 0));
+    TEST_ASSERT_FALSE(ap_guard_heard_stands(0, 0));
+
+    /* heard just now, and through the ten seconds behind it */
+    TEST_ASSERT_TRUE(ap_guard_heard_stands(100 * s, 100 * s));
+    TEST_ASSERT_TRUE(ap_guard_heard_stands(100 * s + 1, 100 * s));
+    TEST_ASSERT_TRUE(ap_guard_heard_stands(109 * s, 100 * s));
+    TEST_ASSERT_TRUE(ap_guard_heard_stands(
+        100 * s + AP_GUARD_HEARD_HOLD_US - 1, 100 * s));
+
+    /* then the bus is asked again */
+    TEST_ASSERT_FALSE(ap_guard_heard_stands(
+        100 * s + AP_GUARD_HEARD_HOLD_US, 100 * s));
+    TEST_ASSERT_FALSE(ap_guard_heard_stands(200 * s, 100 * s));
+
+    /* a clock that reads earlier than the hearing explains nothing */
+    TEST_ASSERT_FALSE(ap_guard_heard_stands(99 * s, 100 * s));
 }
 
 void test_guard_silent_or_unknown_bus_changes_nothing(void)
@@ -431,6 +655,11 @@ void run_bus_guard_tests(void)
     RUN_TEST(test_guard_the_profile_probes_chains);
     RUN_TEST(test_guard_a_verdict_covers_one_protocol);
     RUN_TEST(test_guard_proto_bitrates);
+    RUN_TEST(test_guard_sent_marks);
+    RUN_TEST(test_guard_a_running_nodes_picture_may_be_the_chips_own);
+    RUN_TEST(test_guard_a_picture_held_against_the_quiet);
+    RUN_TEST(test_guard_who_was_heard_stays_heard_for_a_while);
+    RUN_TEST(test_guard_a_fixed_nodes_unreadable_names_its_setting);
     RUN_TEST(test_guard_silent_or_unknown_bus_changes_nothing);
     RUN_TEST(test_guard_live_bus_same_bitrate);
     RUN_TEST(test_guard_live_bus_other_bitrate);

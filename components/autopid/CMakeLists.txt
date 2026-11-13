@@ -24,6 +24,7 @@ idf_component_register(
          "autopid_bus_guard.c"
          "autopid_dialect.c"
          "autopid_guard.c"
+         "autopid_guard_node.c"
          "autopid_group.c"
          "autopid_resp.c"
          "autopid_resp_lines.c"

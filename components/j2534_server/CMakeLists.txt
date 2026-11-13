@@ -4,6 +4,7 @@ idf_component_register(
          "j2534_channel_iso.c"
          "j2534_channel_legacy.c"
          "j2534_server.c"
+         "j2534_server_pump.c"
          "j2534_server_voltage.c"
          "j2534_server_transport.c"
          "j2534_server_settings.c"

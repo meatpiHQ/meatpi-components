@@ -104,7 +104,8 @@ Layout (each file under the 700-line cap):
 | File | Role |
 |---|---|
 | `include/j2534_proto.h`, `j2534_proto.c` | PURE codec + constants: header/message encode/decode, filter match, status names, the transport-agnostic framer (`j2534_frame_read`), `j2534_ack_encode`, the TCP gate predicate. Host-tested |
-| `j2534_server.c` | core: lifecycle, request dispatch (`j2534_srv_handle_frame`), periodic messages, the RX pump, status, the Exclusive-bus hold |
+| `j2534_server.c` | core: lifecycle, request dispatch (`j2534_srv_handle_frame`), periodic messages, status, the Exclusive-bus hold |
+| `j2534_server_pump.c` | the RX pump (the `j2534_rx` task, its batch and scratch buffers). Out of the core on 2026-11-13: the core had grown to 743 lines, past the cap this table states; the code moved unchanged |
 | `j2534_server_voltage.c` | READ_VBATT: the battery owner and checked millivolt conversion; host-tested |
 | `j2534_server_transport.c` | the `j2534_transport_t` seam: session lock, send lock, coalesced frame writes, `j2534_server_serve_transport()`, the TCP listener + `allow_lan` gate, the legacy serial vtable adapter |
 | `j2534_channel.c/.h`, `j2534_channel_private.h` | channels: lifecycle, CAN via `can_manager`, the filter table, the bus-bitrate rule, the `reflash_seen` count (the content gate went 2026-10-27) |

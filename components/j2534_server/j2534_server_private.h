@@ -73,6 +73,15 @@ void j2534_srv_count_reflash_seen(void);
 /** READ_VBATT: rounded millivolts from the battery owner, output untouched on failure. */
 uint32_t j2534_srv_read_vbatt(bool device_open, uint32_t *out);
 
+/* ---- the RX pump (j2534_server_pump.c) --------------------------------- */
+
+/** Start the `j2534_rx` task. It runs while the core's run flag is set. */
+esp_err_t j2534_srv_pump_start(void);
+
+/** The session's channel table for the pump: J2534_MAX_CHANNELS flags, true
+ *  for a connected slot. The core writes it, the pump only reads it. */
+const bool *j2534_srv_channels_used(void);
+
 /* ---- settings (j2534_server_settings.c) -------------------------------- */
 
 /** Boot-applied config (filled by on_apply). */

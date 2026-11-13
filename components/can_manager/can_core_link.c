@@ -376,6 +376,20 @@ void can_link_service(can_core_handle_t *handle)
         link_mark(handle);
     }
 
+    /* a fixed bitrate comes back from "mismatch" when the traffic it could
+       not read stopped, and never bounces. Under the storm throttle's mask
+       (the OBD chip's own unanswered request repeats at line rate: a storm)
+       it could not hear whether it did, and it would hear nothing of the
+       next bus either: a new node, its interrupts on. Bench 2026-11-13: a
+       500 kbit/s node "listening" on a silent bus, said under 200 frames a
+       second at 250 kbit/s */
+    if (before == CAN_AB_MISMATCH && handle->ab.state == CAN_AB_LISTENING &&
+        !a.apply && can_drv_storm_masked())
+    {
+        (void)link_apply(handle, can_ab_baud(&handle->ab), true);
+        link_mark(handle);
+    }
+
     /* verdicts are logged, the candidate walk of auto is not (it can go
        on for as long as an unreadable bus is alive) */
     if (handle->ab.state != before)

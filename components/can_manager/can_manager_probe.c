@@ -23,7 +23,8 @@
 /**
  * @file can_manager_probe.c
  * @brief What is on the bus, without transmitting: the probe (bitrate /
- *        silent / unreadable), the held listen-only watch, and the sample
+ *        silent / unreadable), the held listen-only watch, the RX line
+ *        watched by itself (does anything talk at all), and the sample
  *        of identifiers heard (for whoever must tell a J1939 network from
  *        an OBD port before the native bus is enabled). Split out of
  *        can_manager.c 2026-10-03 (700-line rule); the probe and the watch
@@ -34,6 +35,7 @@
 
 #include <string.h>
 
+#include "driver/gpio.h"
 #include "esp_attr.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -45,7 +47,7 @@
 
 static const char *TAG = "can_manager";
 
-static volatile bool s_probing;         /* a temporary probe node is up     */
+static volatile bool s_probing;        /* a temporary probe node is up     */
 static volatile bool s_watching;        /* a held listen-only node is up    */
 static int64_t s_node_up_us;            /* when the node in use came up     */
 
@@ -302,6 +304,74 @@ void can_manager_last_probe(can_manager_probe_t *out, uint32_t *age_ms)
                       : (uint32_t)((esp_timer_get_time() - s_last_probe_us)
                                    / 1000);
     }
+}
+
+/* ---- does anything talk on the pins? ------------------------------------------- */
+
+static volatile bool s_line_edge;   /* internal RAM: the ISR writes it */
+static bool s_line_isr_ready;       /* the GPIO ISR service is there   */
+
+/** The first dominant edge of a watch: note it and stop (a saturated bus
+ *  would otherwise interrupt at the bit rate). */
+static void line_isr(void *arg)
+{
+    (void)arg;
+    s_line_edge = true;
+    gpio_intr_disable((gpio_num_t)CONFIG_WICAN_CAN_RX_GPIO);
+}
+
+esp_err_t can_manager_line_heard(uint32_t ms, bool *heard)
+{
+    const gpio_num_t rx = (gpio_num_t)CONFIG_WICAN_CAN_RX_GPIO;
+
+    if (heard == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    *heard = false;
+
+    if (!cm_started())
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    cm_life_take();
+
+    esp_err_t err = ESP_OK;
+
+    if (!cm_started() || (!cm_running() && !cm_probe_node_up()))
+    {
+        err = ESP_ERR_INVALID_STATE; /* no node: the pad is not an input */
+    }
+    else if (!s_line_isr_ready)
+    {
+        /* whoever else installed the service: it is there */
+        esp_err_t svc = gpio_install_isr_service(0);
+
+        s_line_isr_ready = (svc == ESP_OK || svc == ESP_ERR_INVALID_STATE);
+        err = s_line_isr_ready ? ESP_OK : ESP_FAIL;
+    }
+
+    if (err == ESP_OK && gpio_isr_handler_add(rx, line_isr, NULL) != ESP_OK)
+    {
+        err = ESP_FAIL;
+    }
+
+    if (err == ESP_OK)
+    {
+        s_line_edge = (gpio_get_level(rx) == 0); /* in a frame right now */
+        (void)gpio_set_intr_type(rx, GPIO_INTR_NEGEDGE);
+        (void)gpio_intr_enable(rx);
+        vTaskDelay(pdMS_TO_TICKS(ms));
+        (void)gpio_intr_disable(rx);
+        (void)gpio_set_intr_type(rx, GPIO_INTR_DISABLE);
+        (void)gpio_isr_handler_remove(rx);
+        *heard = s_line_edge;
+    }
+
+    cm_life_give();
+    return err;
 }
 
 /* ---- which identifiers are on the bus? ----------------------------------------- */

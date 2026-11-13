@@ -204,6 +204,25 @@ esp_err_t can_manager_watch(bool on);
  *  For status surfaces; never blocks. */
 void can_manager_last_probe(can_manager_probe_t *out, uint32_t *age_ms);
 
+/**
+ * @brief Does anything talk on the CAN pins? The RX line itself, for @p ms.
+ *
+ * Whatever the bit rate and whatever the controller makes of it: a node that
+ * listens at another bit rate counts receive errors at best, and one whose
+ * interrupts the storm throttle masked counts nothing (bench 2026-11-13: a
+ * 500 kbit/s node under 200 frames a second at 250 kbit/s, no counter moved
+ * for 9 s). One dominant edge in the window is enough, and the first one
+ * ends the watching (one interrupt a call, whatever the bus load). A node of
+ * the unit's own that transmits in that time is heard like anybody else.
+ * Blocks for @p ms. Never transmits.
+ *
+ * @param heard Out: the line went dominant in the window.
+ * @return ESP_OK; ESP_ERR_INVALID_ARG; ESP_ERR_INVALID_STATE when no node is
+ *         up (the transceiver sleeps: there is nothing to read); ESP_FAIL
+ *         when the line could not be watched.
+ */
+esp_err_t can_manager_line_heard(uint32_t ms, bool *heard);
+
 /** One identifier heard by can_manager_sample_ids(). */
 typedef struct
 {

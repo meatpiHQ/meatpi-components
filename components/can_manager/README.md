@@ -57,6 +57,16 @@ with this node "listening" at 500k). So:
   (no frame, no error: it never sees the idle time it waits for). The link
   glue therefore looks at the RX line itself when the controller has nothing
   to say; "busy" counts as mismatch evidence (`rx_deaf`).
+- A fixed bitrate never bounces, so a node whose interrupts the storm
+  throttle masked stayed deaf for good: back from `mismatch` because it
+  heard nothing more, it heard nothing of the next bus either. Coming back
+  to `listening` under the mask, the node is started again, its interrupts
+  on (2026-11-13, `can_link_service()`; at most once a span of 1 s, and a
+  storm that goes on masks the new node as it did the old). Bench: a
+  500 kbit/s node the OBD chip's own unanswered requests had masked (they
+  repeat at line rate for about 60 ms), `listening` and "silent" under 200
+  frames a second at 250 kbit/s; and a 500 kbit/s bus that woke up behind
+  it, read again within a second of that restart.
 - Transmission is gated: `can_manager_send()` returns `ESP_ERR_INVALID_STATE`
   while the node may not talk (`tx_refused`), `can_manager_tx_ready()` asks
   first.
@@ -107,6 +117,15 @@ stand for.
   pin). `can_manager_watch(true)` holds that listener so a caller can ask
   before every transmission (autopid's bus guard does, until the bitrate is
   proven).
+- Does anything talk at all? `can_manager_line_heard(ms, &heard)`
+  (2026-11-13) watches the RX line itself for `ms`: one dominant edge is
+  somebody, whatever the bit rate and whatever the controller made of it
+  (a node at another bit rate counts errors at best, a masked one nothing).
+  One GPIO interrupt a call: the first edge ends the watching. A node of
+  the unit's own that transmits in that time is heard like anybody else.
+  Needs a node up (the pad is an input then), never transmits. The caller
+  is autopid's bus guard while can_manager runs: what is on the pins while
+  the OBD chip is quiet is not the chip's.
 
 ## What is on the bus: probe, watch, id sample (`can_manager_probe.c`)
 

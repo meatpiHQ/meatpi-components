@@ -2,13 +2,17 @@
  * @file test_voltage.c
  * @brief READ_VBATT: the production helper (j2534_server_voltage.c) against
  *        a fake battery owner. Rounding, a valid zero, a closed device, no
- *        sample, and readings that are not a voltage. See ../README.md.
+ *        sample, readings that are not a voltage, and the wire protocol's
+ *        byte-exact example. See ../README.md. test_main.c runs the cases
+ *        through run_voltage_tests() (it sits at the 700-line cap).
  */
 #include <float.h>
 #include <math.h>
+#include <string.h>
 
 #include "unity.h"
 #include "battery_monitor.h"
+#include "j2534_proto.h"
 #include "j2534_server_private.h"
 
 static float s_voltage;
@@ -25,7 +29,7 @@ esp_err_t battery_monitor_voltage(float *out)
     return s_error;
 }
 
-void test_voltage_millivolts(void)
+static void test_voltage_millivolts(void)
 {
     uint32_t result = 0;
     s_error = ESP_OK;
@@ -40,7 +44,7 @@ void test_voltage_millivolts(void)
     TEST_ASSERT_EQUAL_UINT32(0, result);
 }
 
-void test_voltage_requires_open_device(void)
+static void test_voltage_requires_open_device(void)
 {
     uint32_t result = 0xDEADBEEF;
     s_reads = 0;
@@ -51,7 +55,7 @@ void test_voltage_requires_open_device(void)
     TEST_ASSERT_EQUAL_HEX32(0xDEADBEEF, result);
 }
 
-void test_voltage_unavailable_and_invalid(void)
+static void test_voltage_unavailable_and_invalid(void)
 {
     uint32_t result = 0xDEADBEEF;
     s_error = ESP_ERR_INVALID_STATE;
@@ -65,4 +69,61 @@ void test_voltage_unavailable_and_invalid(void)
         TEST_ASSERT_EQUAL(J2534_ERR_FAILED, j2534_srv_read_vbatt(true, &result));
         TEST_ASSERT_EQUAL_HEX32(0xDEADBEEF, result);
     }
+}
+
+/* The byte-exact example of J2534_WIRE_PROTOCOL.md section 3 (the standard,
+ * section 6c: a protocol document's examples are host-test vectors): the
+ * request as a tester sends it, and the reply the device's own helper and
+ * ACK encoder make of a 13.890 V reading. */
+static void test_voltage_wire_vector(void)
+{
+    static const uint8_t REQUEST[] =
+    {
+        0x35, 0x4A, 0x01, 0x15, 0x03, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00,
+        0x03, 0x00, 0x00, 0x00,
+    };
+    static const uint8_t REPLY[] =
+    {
+        0x35, 0x4A, 0x01, 0x80, 0x03, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x42, 0x36, 0x00, 0x00,
+    };
+    static const uint8_t CLOSED[] =
+    {
+        0x35, 0x4A, 0x01, 0x80, 0x03, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00,
+        0x08, 0x00, 0x00, 0x00,
+    };
+    j2534_hdr_t hdr;
+    uint8_t buf[24];
+    uint32_t millivolts = 0;
+
+    TEST_ASSERT_TRUE(j2534_hdr_decode(REQUEST, sizeof(REQUEST), &hdr));
+    TEST_ASSERT_EQUAL(J2534_MT_IOCTL, hdr.type);
+    TEST_ASSERT_EQUAL(3, hdr.seq);
+    TEST_ASSERT_EQUAL(0, hdr.channel);
+    TEST_ASSERT_EQUAL(4, hdr.length);
+    TEST_ASSERT_EQUAL(J2534_IOCTL_READ_VBATT,
+                      REQUEST[12] | (REQUEST[13] << 8) | (REQUEST[14] << 16) |
+                      ((uint32_t)REQUEST[15] << 24));
+
+    s_error = ESP_OK;
+    s_voltage = 13.89f;
+    uint32_t status = j2534_srv_read_vbatt(true, &millivolts);
+    TEST_ASSERT_EQUAL(J2534_STATUS_NOERROR, status);
+    TEST_ASSERT_EQUAL(sizeof(REPLY), j2534_ack_encode(buf, sizeof(buf), hdr.seq,
+                                                      hdr.channel, status, &millivolts));
+    TEST_ASSERT_EQUAL_MEMORY(REPLY, buf, sizeof(REPLY));
+
+    /* before OPEN and after CLOSE: the status alone, four payload bytes */
+    status = j2534_srv_read_vbatt(false, &millivolts);
+    TEST_ASSERT_EQUAL(sizeof(CLOSED), j2534_ack_encode(buf, sizeof(buf), hdr.seq,
+                                                       hdr.channel, status, NULL));
+    TEST_ASSERT_EQUAL_MEMORY(CLOSED, buf, sizeof(CLOSED));
+}
+
+void run_voltage_tests(void)
+{
+    RUN_TEST(test_voltage_millivolts);
+    RUN_TEST(test_voltage_requires_open_device);
+    RUN_TEST(test_voltage_unavailable_and_invalid);
+    RUN_TEST(test_voltage_wire_vector);
 }

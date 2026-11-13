@@ -186,7 +186,7 @@ this component.
 
 ## Testing
 
-- Host: `host_test/` (31 Unity cases: codec round trips and bounds,
+- Host: `host_test/` (32 Unity cases: codec round trips and bounds,
   filter match, status names, the framer with partial / delayed /
   dropped / malformed / discarded input, the ACK vectors of
   `J2534_WIRE_PROTOCOL.md` section 7, the TCP gate predicate, the
@@ -194,7 +194,9 @@ this component.
   indication / single frame build and parse, and the J1850 VPW chip
   helpers: header/payload split, ATSH, the VTFullyRequestCk builder +
   checksum, reply-line decode / status / responsePending, settings migration,
-  and READ_VBATT conversion, session and unavailable/invalid-sample cases).
+  and READ_VBATT conversion, session and unavailable/invalid-sample cases,
+  and the byte-exact READ_VBATT request and replies of the wire protocol's
+  section 3 as a vector).
 - Voltage: `.\test.ps1 j2534vbat` in the firmware checkout, the wire ACK
   and Windows DLL at two real supply voltages, plus fake-device checks for
   older firmware without a result and an unavailable ADC.

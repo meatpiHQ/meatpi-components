@@ -159,7 +159,9 @@ An error ACK has only its 4-byte status. Older firmware acknowledges this IOCTL
 without a result; a client must report unsupported firmware, not invent a value.
 Transport bindings are unchanged.
 
-Byte-exact example (seq 3, channel 0), a 13.890 V reading:
+Byte-exact example (seq 3, channel 0), a 13.890 V reading; a host-test vector
+(`host_test/main/test_voltage.c`), with the reply of a device that is not open
+(`35 4a 01 80 03 00 00 00 04 00 00 00 08 00 00 00`):
 
 ```
 request: 35 4a 01 15 03 00 00 00 04 00 00 00 03 00 00 00

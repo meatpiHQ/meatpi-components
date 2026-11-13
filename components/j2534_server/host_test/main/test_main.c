@@ -1,7 +1,7 @@
 /**
  * @file test_main.c
  * @brief Wire codec, filters, framing, bus helpers, migration and battery voltage.
- *        See ../README.md. Expected: 31 Tests 0 Failures 0 Ignored.
+ *        See ../README.md. Expected: 32 Tests 0 Failures 0 Ignored.
  */
 #include <string.h>
 
@@ -13,9 +13,7 @@
 void setUp(void) {}
 void tearDown(void) {}
 
-void test_voltage_millivolts(void);
-void test_voltage_requires_open_device(void);
-void test_voltage_unavailable_and_invalid(void);
+void run_voltage_tests(void);   /* test_voltage.c: its four cases */
 
 static void test_hdr_roundtrip(void)
 {
@@ -693,8 +691,6 @@ void app_main(void)
     RUN_TEST(test_legacy_pending);
     RUN_TEST(test_migrate_v1_drops_allow_reflash);
     RUN_TEST(test_migrate_v1_without_key_and_v2_untouched);
-    RUN_TEST(test_voltage_millivolts);
-    RUN_TEST(test_voltage_requires_open_device);
-    RUN_TEST(test_voltage_unavailable_and_invalid);
+    run_voltage_tests();
     UNITY_END();
 }

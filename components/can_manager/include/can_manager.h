@@ -80,9 +80,19 @@ esp_err_t can_manager_init(void);
 /** Bring the bus up per settings (no-op when disabled). §4 lifecycle. */
 esp_err_t can_manager_start(void);
 
+/** Called at the end of a start that installed the driver. One hook.
+ *  can_core_deinit has already cleared queue subscribers, so a consumer
+ *  that kept its RX queue across stop/start resubscribes here. */
+void can_manager_on_bus_up(void (*fn)(void));
+
 /** Park the bus: TWAI stopped/uninstalled, transceiver into standby.
  *  Called by main's sleep-prepare BEFORE sleep_manager's GPIO hold. */
 esp_err_t can_manager_stop(void);
+
+/** Transceiver driver on/off (its standby pin) without touching the
+ *  controller. For a script that drives the TX pin by hand after
+ *  can_manager_stop(); can_manager_start() sets it itself. */
+void can_manager_transceiver(bool active);
 
 /** The shared bus handle for the adopted elm327_* components.
  *  NULL while the bus is not running. */

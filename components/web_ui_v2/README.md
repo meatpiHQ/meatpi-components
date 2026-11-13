@@ -844,6 +844,73 @@ written once per submit, not once per edit). The stored name typed back
 unstages the rename; Discard on the unsaved-changes dialog drops it
 (`store.clear()`). Probe: `tools/webui_preview/probe_car_name.mjs`.
 
+### CAN filters on Automate > Parameters (2026-11-14)
+
+Ali: "allow users to add filters in vehicle specific and in Custom pids".
+From the mock-up he chose a separate list under the PIDs of both tabs, the
+vehicle's filters editable with more to add, the tab's switch covering its
+filters, Test for a filter, and "Search" on the list's box.
+
+A CAN filter is an entry of the tables' `filters[]` (autopid README
+"Filters"): a frame the car sends by itself, a listen time, parameters
+over the frame's data bytes. Until this date the page had no editor for
+one. `filterTable(type)` in `web/index.html` builds the list of one tab:
+
+- **Which tab.** A filter tagged `profile: true` is the vehicle's
+  (`fltKind()`): what a profile brought (`profileToPids()`) and what Add
+  CAN filter adds on Vehicle Specific. Choosing another profile replaces
+  the tab's filters, as it replaces the vehicle-specific PIDs
+  (`importProfile()`), and the staged-profile banner says so ("replace the
+  CAN filters of this tab", "are removed (this profile has none)", "custom
+  CAN filters are kept"). Every other filter is on Custom PIDs. The
+  firmware gates each kind by the tab's switch.
+- **A row.** Switch (`enabled`), Name, CAN ID, Listen (ms), the parameter
+  count with the live value, Test, remove. `name` is the page's own key on
+  a filter (the firmware has none); an empty field shows the single
+  parameter's name or the ID and drops the key. The ID shows in hex
+  (`fltHex()`: three digits or eight) and is read as the 4.x firmware's
+  page read it (`fltParse()`, its `normalizeFrameIdInputToNumber`):
+  `0x284` is hex, a plain number is decimal (`644`), letters without `0x`
+  are hex (`1DA`); 1 to 0x1FFFFFFF. The field shows the hex reading at
+  once, so a `284` meant as hex is seen as `0x11C` before Apply. A field
+  the page cannot read as an ID is marked and stored as 0, which the
+  firmware refuses on Apply. The listen time is
+  held to 50..60000. Opened: Group, Cycle (ms) with the group's rate as
+  the placeholder, and the parameter table of a PID (switch, name,
+  expression, unit, live value, remove), `Add parameter`.
+- **Kept as stored.** A row is never rewritten by being shown: a
+  parameter's `mux_expr` / `mux_val` (a DBC file's multiplexed signal, named
+  in the expression field's tooltip), `class`, `min`, `max`, and a filter in
+  a shape the page does not know go back as they came.
+- **A new filter** (`tbl.add()`): `NewFilter`, no ID yet, 1000 ms listen,
+  a 5000 ms cycle, one parameter reading `B0` under a name no row of the
+  tables has. The two figures are the 4.x firmware's: it listened for up
+  to 1.1 s, which catches a frame sent once a second (the window ends at
+  the first frame anyway), and read a parameter every 5 s when no period
+  was given.
+- **What the 4.x page had and this one does not:** Class, Min Value and
+  Max Value per parameter (kept as stored here, as for a PID's
+  parameters, which have no such fields either), a period per parameter
+  (a filter's Cycle here) and a destination per parameter (Data
+  Destinations sends the whole parameter set).
+- **Test** (`testFilter()`): `POST /api/autopid/test` with `filter` (the ID,
+  the listen time, the expressions with their mux fields). The dialog is
+  the PID's (`testModal()`, shared since this date): the exchange, the
+  frame data as the expressions count it, the values, or the reason no
+  frame came. Test without an ID asks nothing.
+- **The tools above the PID list** drive both lists: the search box
+  ("Search by name, request or parameter", a filter matched by its name,
+  its ID or a parameter's name) and Expand all / Collapse all
+  (`tbl.onSearch`, `tbl.onOpenAll`). Add CAN filter sits in the row of
+  Apply Configuration, under the list; Add PID stays under the PIDs.
+- **The explanation** is one info bubble beside the list's title
+  (`FLT_INFO`, a text per tab that names the tab's switch), not text on the
+  page.
+
+Probe: `tools/webui_preview/probe_can_filters.mjs` (61 checks); on the
+device `.\test.ps1 canfilters`, whose page leg is
+`tools/testbench/obd/can_filters_page.mjs`.
+
 ## Fault codes and the info bubble (2026-11-12)
 
 The device's fault codes (`GET /api/faults`: `boot_errors`, `internal_ram_low`,

@@ -115,6 +115,13 @@ bool ap_sched_entry_enabled(const ap_sched_t *st, const ap_config_t *cfg,
             return false;
         }
     }
+    else if (!st->type_enabled[cfg->filters[i - cfg->n_pids].type])
+    {
+        /* a filter follows the switch of its table (2026-11-14): the
+           vehicle's set `specific_enabled`, the others `custom_enabled`.
+           A window sends no init, so a held init does not concern it */
+        return false;
+    }
 
     return true;
 }

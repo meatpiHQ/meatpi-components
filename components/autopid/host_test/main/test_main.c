@@ -48,6 +48,9 @@ void run_store_words_tests(void);
 /* test_precan.c: the pre-CAN protocols (J1850, ISO 9141-2, ISO 14230): the
    protocol table, a reply with three header bytes and a checksum */
 void run_precan_tests(void);
+/* test_filter_type.c: a CAN filter follows the switch of its table, the
+   line a test of a filter shows for a captured frame */
+void run_filter_type_tests(void);
 
 /* ---- helpers ----------------------------------------------------------------- */
 
@@ -2092,6 +2095,7 @@ void app_main(void)
     run_bus_tests();
     run_store_words_tests();
     run_precan_tests();
+    run_filter_type_tests();
 
     UNITY_END();
 }

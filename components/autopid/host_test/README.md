@@ -7,7 +7,7 @@ store's `autopid_vehicle_index.c` + `autopid_vehicle_codec.c` with
 `test_vehicle_index.c`, compiled with `AUTOPID_HOST_TEST`: no chip, no
 filesystem). Run via `.\test.ps1 host autopid`.
 
-## What is covered (152 tests, 2026-11-10)
+## What is covered (186 tests, 2026-11-14)
 
 | Case | What it proves |
 |---|---|
@@ -75,10 +75,14 @@ filesystem). Run via `.\test.ps1 host autopid`.
 | bounds: the exact literal | a percent row's full scale is the ratio `B2*100/255` (`[B2:B3]*25700/65535`, shifted `B3*100/255`), RPM / offset / fuel-trim / unranged rows keep the decimal, a range below zero is the signed span `[S2:S3]*0.25`; the ratio decodes exactly through the real parser |
 | bounds: the whole table | every ranged SAE row decoded at 0x00 / 0xFF / 0x7F / 0x80 through the real parser lands inside its own range (135 rows) |
 | bus guard: the profile probe's chains (2026-11-10) | the prelude of the profile's protocol is judged like a chain (it names `ATTP<p>`): protocol 6 or 7 on a live 250 kbit/s bus and on an unreadable one is refused; the bus's own protocols, a silent bus, K-line and J1850 go out; a published MEB request's init on that bus is refused; the sentence reads `the profile sets protocol 6 (500 kbit/s) and the vehicle bus runs at 250 kbit/s: not sent` (bench: 865 error frames in 0.18 s before the probe asked) |
+| **a filter follows its table's switch (2026-11-14, `test_filter_type.c`)** | `"profile": true` on a filter parses as the vehicle's set, `false` or no tag as a custom one, a `"name"` on a filter is accepted; with `specific_enabled` off the vehicle's filter is not enabled while the custom filter and PID are, with `custom_enabled` off the opposite, the standard switch concerns no filter, a held type init holds the custom PID and not the custom filter (a window sends no init), a filter's own switch still wins |
+| a gated filter is never picked | two filters, the vehicle's switch off: six rounds of `ap_sched_next` pick the custom filter alone; both switches off: nothing to run |
+| the transcript line of a frame (`ap_flt_frame_line`) | `284 02 1E 02 1F 0B 7C 4E 20` for an 11-bit id, eight digits for a 29-bit one, the id alone for a frame without data, a byte that does not fit is left out whole, no room for the id gives an empty string; the monitor-line parser `ap_filter_frame` reads the line back to the same eight bytes |
+| the protocol a filter's window opens on (`ap_flt_window_proto`) | the legacy firmware's rule (v4.50 `send_can_filter_cmd`): on protocol 6 a 29-bit id asks for 7 and on 7 an 11-bit id for 6, on 8 and 9 likewise 9 and 8; the width that fits stays; the chip's search, the K-line and J1850 protocols, J1939 and the user's own CAN definitions are never switched |
 
 ## Expected result
 
 ```
-137 Tests 0 Failures 0 Ignored
+186 Tests 0 Failures 0 Ignored
 OK
 ```

@@ -26,7 +26,9 @@
  *        real runner path for a chip request (type init, PID init, ATCRA,
  *        request, the transcript of the exchange), or, for a J1939 group
  *        (`PGN:<hex>[@<source>][?]`, 2026-10-03), the newest message of
- *        that group in the listener's store, nothing sent. Split out of
+ *        that group in the listener's store, nothing sent, or, for a CAN
+ *        filter (`"filter"`, 2026-11-14), one monitor window for its
+ *        frame. Split out of
  *        autopid_http.c 2026-10-03 (700-line rule). The route table stays
  *        in autopid_http.c.
  */
@@ -44,6 +46,182 @@
 #include "autopid_bus.h"
 #include "autopid_private.h"
 #include "autopid_http_private.h"
+
+/** The bytes of @p data as hex with spaces ("02 1E 0B"), cut at @p cap. */
+static void hex_line(const uint8_t *data, size_t n, char *out, size_t cap)
+{
+    size_t w = 0;
+
+    out[0] = '\0';
+
+    for (size_t i = 0; i < n && w + 4 < cap; i++)
+    {
+        w += (size_t)snprintf(out + w, cap - w, "%02X%s", data[i],
+                              (i + 1 < n) ? " " : "");
+    }
+}
+
+/* test-a-filter (2026-11-14): "filter" is a CAN filter as the tables hold
+   it (frame_id, monitor_ms, parameters with their expression and, for a
+   multiplexed signal, mux_expr / mux_val). ONE monitor window, what a poll
+   of the filter opens: nothing is asked on the bus, nothing is published.
+   Every parameter is decoded from the frame it would be in a poll (the
+   first one, or the one of its page). */
+static esp_err_t test_filter(httpd_req_t *req, const cJSON *flt, char *tr,
+                             size_t tr_len)
+{
+    static ap_flt_want_t s_want[AP_PARAMS_PER] EXT_RAM_BSS_ATTR; /* httpd */
+    static char s_hex[AP_PAYLOAD_MAX * 3 + 4] EXT_RAM_BSS_ATTR;
+    const cJSON *id = cJSON_GetObjectItemCaseSensitive(flt, "frame_id");
+    const cJSON *mon = cJSON_GetObjectItemCaseSensitive(flt, "monitor_ms");
+    const cJSON *prms = cJSON_GetObjectItemCaseSensitive(flt, "parameters");
+    double monitor_ms = cJSON_IsNumber(mon) ? mon->valuedouble : 1000;
+
+    if (!cJSON_IsNumber(id) || id->valuedouble < 1 ||
+        id->valuedouble > 0x1FFFFFFF)
+    {
+        return ap_http_send_error(req, "400 Bad Request",
+                                  "filter: frame_id 1 to 0x1FFFFFFF required");
+    }
+
+    if (monitor_ms < 50 || monitor_ms > 60000)
+    {
+        return ap_http_send_error(req, "400 Bad Request",
+                                  "filter: monitor_ms 50..60000");
+    }
+
+    if (cJSON_GetArraySize(prms) > AP_PARAMS_PER)
+    {
+        return ap_http_send_error(req, "400 Bad Request",
+                                  "filter: too many parameters");
+    }
+
+    const cJSON *p = NULL;
+    uint16_t n = 0;
+    char eerr[64];
+
+    cJSON_ArrayForEach(p, prms)
+    {
+        const cJSON *e = cJSON_GetObjectItemCaseSensitive(p, "expression");
+        const cJSON *mx = cJSON_GetObjectItemCaseSensitive(p, "mux_expr");
+        const cJSON *mv = cJSON_GetObjectItemCaseSensitive(p, "mux_val");
+        bool muxed = cJSON_IsString(mx) && mx->valuestring[0] != '\0';
+
+        if (!cJSON_IsString(e) || e->valuestring[0] == '\0' ||
+            expression_parser_check(e->valuestring, NULL, eerr,
+                                    sizeof(eerr)) != ESP_OK ||
+            (muxed && expression_parser_check(mx->valuestring, NULL, eerr,
+                                              sizeof(eerr)) != ESP_OK))
+        {
+            return ap_http_send_error(req, "400 Bad Request",
+                                      "filter: bad expression in "
+                                      "parameters[]");
+        }
+
+        s_want[n].mux_expr = muxed ? mx->valuestring : NULL;
+        s_want[n].mux_val = cJSON_IsNumber(mv) ? (float)mv->valuedouble : 0;
+        s_want[n].want = true;
+        n++;
+    }
+
+    uint16_t slots = n;
+
+    if (slots == 0)
+    {
+        /* no parameter yet: the frame itself is the answer */
+        s_want[0] = (ap_flt_want_t){ NULL, 0, true };
+        slots = 1;
+    }
+
+    char guard_reason[176];
+
+    if (!ap_guard_job_ok(guard_reason, sizeof(guard_reason)))
+    {
+        return ap_http_send_error(req, "409 Conflict", guard_reason);
+    }
+
+    if (!ap_core_job_acquire()) /* vs std scan / dtc jobs / other tests */
+    {
+        return ap_http_send_error(req, "409 Conflict",
+                                  "another chip job runs");
+    }
+
+    int64_t elapsed_us = 0;
+
+    ap_core_scan_pause(true);   /* park the poller around the window */
+
+    esp_err_t err = ap_runner_test_filter((uint32_t)id->valuedouble,
+                                          (uint32_t)monitor_ms, s_want, slots,
+                                          &elapsed_us, tr, tr_len);
+
+    /* the poller stays parked until the frames are read out: its next
+       window takes the same slots (bench 2026-11-14: the second page of a
+       multiplexed message was gone by the time it was decoded) */
+    cJSON *o = cJSON_CreateObject();
+
+    cJSON_AddBoolToObject(o, "ok", err == ESP_OK);
+    cJSON_AddNumberToObject(o, "elapsed_ms", (double)elapsed_us / 1000.0);
+
+    if (err != ESP_OK)
+    {
+        cJSON_AddStringToObject(o, "error",
+                                (err == ESP_ERR_TIMEOUT)
+                                    ? "no frame with this CAN ID in the "
+                                      "listen time"
+                                : (err == ESP_ERR_INVALID_STATE)
+                                    ? "chip busy (monitor/update)"
+                                    : "the chip did not open the window");
+    }
+
+    cJSON_AddStringToObject(o, "transcript", tr);
+
+    /* the data bytes the expressions index (B0 = the first data byte): the
+       first frame the window kept */
+    for (uint16_t i = 0; err == ESP_OK && i < slots; i++)
+    {
+        size_t len = 0;
+        const uint8_t *d = ap_flt_slot(i, &len);
+
+        if (d != NULL)
+        {
+            hex_line(d, len, s_hex, sizeof(s_hex));
+            cJSON_AddStringToObject(o, "payload", s_hex);
+            break;
+        }
+    }
+
+    /* one entry per parameter, null where its frame did not come */
+    cJSON *vals = cJSON_AddArrayToObject(o, "values");
+    float volts = 0;
+    uint16_t i = 0;
+
+    (void)battery_monitor_voltage(&volts);
+
+    cJSON_ArrayForEach(p, prms)
+    {
+        const cJSON *e = cJSON_GetObjectItemCaseSensitive(p, "expression");
+        size_t len = 0;
+        const uint8_t *d = (err == ESP_OK) ? ap_flt_slot(i, &len) : NULL;
+        double value = 0;
+
+        if (d != NULL && expression_parser_eval(e->valuestring, d, len,
+                                                (double)volts,
+                                                &value) == ESP_OK)
+        {
+            cJSON_AddItemToArray(vals, cJSON_CreateNumber(value));
+        }
+        else
+        {
+            cJSON_AddItemToArray(vals, cJSON_CreateNull());
+        }
+
+        i++;
+    }
+
+    ap_core_scan_pause(false);
+    ap_core_job_release();
+    return ap_http_send_json(req, o);
+}
 
 /* test-a-PID (§11): one-shot through the REAL runner path, the ws
    console can't reproduce init/rxheader/expression handling */
@@ -82,6 +260,17 @@ esp_err_t test_post_handler(httpd_req_t *req)
     const cJSON *kbps_j = cJSON_GetObjectItemCaseSensitive(root, "bus_kbps");
     ap_row_bus_t bus = AP_BUS_OBD;
     uint8_t bus_rate = 0;
+
+    /* "filter": a CAN filter instead of a request (test_filter above) */
+    const cJSON *flt = cJSON_GetObjectItemCaseSensitive(root, "filter");
+
+    if (cJSON_IsObject(flt))
+    {
+        esp_err_t sent = test_filter(req, flt, s_tr, sizeof(s_tr));
+
+        cJSON_Delete(root);
+        return sent;
+    }
 
     /* "bus" and "bus_kbps": the row's bus and its speed (autopid_bus.h);
        the shot is then a poll of a row there: no type init, and the chip

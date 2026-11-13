@@ -138,6 +138,23 @@ bool ap_flt_stream_feed_ex(ap_flt_stream_t *st, const uint8_t *bytes,
                            uint8_t *payload, size_t payload_max,
                            size_t *out_len, size_t *consumed);
 
+/** The protocol a filter's window opens on (2026-11-14, the legacy
+ *  firmware's rule: v4.50 `send_can_filter_cmd`). The chip's receive filter
+ *  matches only ids of the width of the protocol it is on, so on @p now
+ *  (the protocol in effect: '6'..'9' are the ISO 15765-4 ones) an id of the
+ *  other width needs the sibling at the same bit rate: 6 <-> 7, 8 <-> 9.
+ *  @return that sibling, or '\0' = stay (the width fits, or @p now is none
+ *  of the four: the chip's search, a K-line or J1850 protocol, the user's
+ *  own CAN definitions). PURE. */
+char ap_flt_window_proto(char now, bool extended);
+
+/** A captured frame as one transcript line of a filter's test: the id
+ *  (three hex digits, eight for a 29-bit one) and the data bytes, as the
+ *  monitor prints a frame ("284 02 1E 0B 7C"). Bytes that do not fit
+ *  @p cap are left out whole. @return the characters written. PURE. */
+size_t ap_flt_frame_line(uint32_t frame_id, const uint8_t *data, size_t len,
+                         char *out, size_t cap);
+
 /** True when @p payload plausibly answers @p cmd: hex service commands
  *  must echo (service | 0x40) + the identifier byte. Rejects cross-talk
  *  when another chip master's response lands in our request window

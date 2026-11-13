@@ -231,3 +231,50 @@ bool ap_flt_stream_feed(ap_flt_stream_t *st, const uint8_t *bytes,
     return ap_flt_stream_feed_ex(st, bytes, len, frame_id, payload,
                                  payload_max, out_len, &consumed);
 }
+
+char ap_flt_window_proto(char now, bool extended)
+{
+    /* the ISO 15765-4 pairs: 6 / 7 at 500 kbit/s, 8 / 9 at 250, the first
+       of each with 11-bit ids, the second with 29-bit ones */
+    switch (now)
+    {
+    case '6': return extended ? '7' : '\0';
+    case '7': return extended ? '\0' : '6';
+    case '8': return extended ? '9' : '\0';
+    case '9': return extended ? '\0' : '8';
+    default:  return '\0';
+    }
+}
+
+size_t ap_flt_frame_line(uint32_t frame_id, const uint8_t *data, size_t len,
+                         char *out, size_t cap)
+{
+    static const char HEX[] = "0123456789ABCDEF";
+    int digits = (frame_id > 0x7FF) ? 8 : 3;
+    size_t w = 0;
+
+    if (out == NULL || cap < (size_t)digits + 1)
+    {
+        if (out != NULL && cap > 0)
+        {
+            out[0] = '\0';
+        }
+
+        return 0;
+    }
+
+    for (int d = digits - 1; d >= 0; d--)
+    {
+        out[w++] = HEX[(frame_id >> (4 * d)) & 0xF];
+    }
+
+    for (size_t i = 0; data != NULL && i < len && w + 4 <= cap; i++)
+    {
+        out[w++] = ' ';
+        out[w++] = HEX[data[i] >> 4];
+        out[w++] = HEX[data[i] & 0xF];
+    }
+
+    out[w] = '\0';
+    return w;
+}

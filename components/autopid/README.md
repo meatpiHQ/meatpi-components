@@ -93,11 +93,11 @@ Decisions log there is authoritative; the big ones:
 | `autopid_j1939_core.c` / `autopid_j1939.h` | PURE J1939 rows: the `PGN:<hex>[@<source>][?]` grammar, the scheduling class of a row (`chip` / `passive` / `bus_tx`), the little-endian expression of one SPN of the j1939 component's built-in table (`(B3+B4*256)*0.125`) |
 | `autopid_j1939_std.c` | the J1939 standard set: the built-in SPN table as config rows (one row per SPN), the listener's view of the vehicle for the detection job and first contact (sources as the responder set, the VIN when broadcast, the rows of the groups heard), and the same from a one second listen-only bus sample when the listener is off (`can_manager_sample_ids`) |
 | `autopid_dtc_j1939.c` | the J1939 codes in the DTC report: every controller's DM1 from the listener's store (`SPN110-0`, source address, occurrence count, the four lamps), nothing asked |
-| `autopid_http_test.c` | `POST /api/autopid/test` (split out of autopid_http.c 2026-10-03): one shot through the runner, or the listener's store for a `PGN:` command |
+| `autopid_http_test.c` | `POST /api/autopid/test` (split out of autopid_http.c 2026-10-03): one shot through the runner, or the listener's store for a `PGN:` command, or one monitor window for a CAN filter (`"filter"`, 2026-11-14, see "Filters") |
 | `autopid_contact.c` | first contact, once per boot (moved out of the runner 2026-10-03): the identity check after the first answered poll, the stored-protocol fallback, and the contact probes that look for a car the tables do not reach (see "OBD dialects") |
 | `autopid_identify.c` | who is this car, shared by first contact and the detection job: the responder set (one headers-on bitmap request) and the VIN, per dialect |
 | `autopid_dialect.c` / `autopid_dialect.h` | PURE OBD dialects (`obd2`, `uds`, `j1939`): the requests of a dialect, the data shift of its expressions, the bitmap + responder parser for every print shape of the chip (11-bit, 29-bit as four byte tokens, headers off), the per-ECU support table and the owner of a PID, the physical address of a responder, the CAN protocols a contact probe may use on a given bus |
-| `autopid_filter.c` | the ATMA filter window: MONITOR claim, header/CRA choreography, frame capture (`ap_filter_frame`, pure), retried stop |
+| `autopid_filter.c` | the ATMA filter window: MONITOR claim, header/CRA choreography, the protocol of the id's width and the chip's CAN auto formatting off for the window (2026-11-14, both as the legacy firmware had them), frame capture (`ap_filter_frame`, pure), retried stop; the same window for a poll (`ap_runner_run_filter()`) and for the test of a filter (`ap_runner_test_filter()`, nothing published) |
 | `autopid_std.c` | standard PIDs: vendored SAE table (obd2_standard_pids.h, included ONLY here), PURE bit_start to expression mapping (with the row's range: a percent row's full scale as the exact ratio `B2*100/255`, a range below zero as a signed span `[S2:S3]*0.25`, issue #1004) + bitmap parser, freeze-frame decode, the table JSON view |
 | `autopid_names.c` | PURE (2026-10-06): parameter names made unique, `ap_names_dedupe()` over a `pids` array (config rows or the scan's `supported` entries, the later repeat gets `_2`, `_3`, ...) and `ap_config_repair_names()` for a stored file; see "No parameter name twice" below |
 | `autopid_std_scan.c` | the vehicle DETECTION job (the async support scan, split out 2026-10-01): phases `protocol` (which protocol and which dialect answer: a walk over the pinned CAN protocols the bus guard allows, `0100` then `22F400` on each), `vin` (`autopid_identify.c`), `pids` (`autopid_scan_walk.c`); hands the result to the vehicle store (`autopid_vehicle_detected`), then writes `/data/autopid/std_scan.json`; started by the poller itself on an unknown car; owns `ap_std_prelude()` |
@@ -113,7 +113,7 @@ Decisions log there is authoritative; the big ones:
 | `autopid_resp.c` | PURE ELM text → bytes: the framing-free payload for the parsers and the guard (`ap_resp_to_payload`: headers on/off, ISO-TP single/multi, lowest-responder rule, noise/error lines, an extended address byte before the PCI, the chip's 29-bit header print `18 DA F1 xx` and a row's own 29-bit id by hint, `7F xx 78` response-pending lines dropped) and the reply as the chip prints it with headers on for the expressions (`ap_resp_frames`, 2026-10-24, issue #1014; headers-off replies rebuilt into that shape, rows in arrival order) + the cross-talk guard (`ap_payload_matches_cmd`: a second chip master's response can't be cached as ours; service 22 is compared on both identifier bytes) |
 | `autopid_proto.h` / `autopid_proto.c` | PURE (2026-11-12): the vehicle protocols the OBD chip speaks as ONE table (`ap_proto()`: the ELM number, the name, the kind of bus, the pins, the bit rate, the id width, how a reply is framed, what it costs to start the bus and how long its session lasts), the two checksums of the pre-CAN frames, the walk a detection takes behind the CAN protocols and the poller's K-line keep-alive rule. See "The pre-CAN protocols" |
 | `autopid_resp_precan.c` | PURE (2026-11-12): a K-line or J1850 reply (three header bytes or the ISO 14230 format byte, the data, a checksum) into the same per-ECU payloads a CAN reply gives, the ECU's address standing where the CAN id does; a service 09 answer that comes in several messages joined; taken only under the protocol hint (`ap_resp_set_proto_hint`) and only for lines whose checksum is right |
-| `autopid_resp_filter.c` | PURE ATMA monitor lines → frame data bytes: `ap_filter_frame` (one line carrying the wanted id) and the incremental stream collector `ap_flt_stream_*` the filter window feeds; split out of `autopid_resp.c` 2026-10-02 (700-line rule) |
+| `autopid_resp_filter.c` | PURE ATMA monitor lines → frame data bytes: `ap_filter_frame` (one line carrying the wanted id) and the incremental stream collector `ap_flt_stream_*` the filter window feeds; split out of `autopid_resp.c` 2026-10-02 (700-line rule); `ap_flt_frame_line()` (2026-11-14): a captured frame as the transcript line of a filter's test; `ap_flt_window_proto()` (the same day): the protocol a window opens on, the sibling of the id's width (6 / 7, 8 / 9) |
 | `autopid_config.c` | PURE JSON parse/validate of the tables |
 | `autopid_config_file.c` | the tables' file, target only (split out 2026-11-11, the 700-line rule): load with the repairs of what an earlier build stored (repeated names, the standard rows' numbering, a row with a word the chip stores switched off), save (atomic), the PSRAM copy of the raw text |
 | `autopid_chain_private.h` / `autopid_guard_private.h` / `autopid_reply_private.h` | fragments of `autopid_private.h` (split out 2026-11-11, the 700-line rule; included by it alone, like `autopid_dtc_private.h`): what a chain of the tables sets on the chip, the bus guard's pure half, the chip's response text to bytes |
@@ -138,7 +138,9 @@ Decisions log there is authoritative; the big ones:
 ## Settings (`/api/settings/autopid`, reboot-to-apply)
 
 `enabled` (default **false**), `std_enabled`/`custom_enabled`/
-`specific_enabled`, `std_init`/`custom_init`/`specific_init`
+`specific_enabled` (the last two also gate the CAN filters of their table
+since 2026-11-14: the vehicle's set and the custom ones, see "Filters"; no
+schema change), `std_init`/`custom_init`/`specific_init`
 (';'-separated AT prelude per type; `specific_init` is the fallback for a current car without its own `specific_init` in the vehicle store; since 2026-11-11 a protocol preset or a link word in one of the three, `STP nn` / `VTP nnn` / `ATLNK..`, is kept as typed and never sent, and the rows of that type on the car's protocol wait while it is there; no schema change, see "No chain of the tables sends a word the chip stores"), `std_protocol` (enum `0` Automatic | `1` SAE J1850 PWM | `2` SAE J1850 VPW | `3` ISO 9141-2 | `4` ISO 14230-4 KWP, 5 baud init | `5` ISO 14230-4 KWP, fast init | `6` CAN 11-bit 500k | `7` CAN 29-bit 500k | `8` CAN 11-bit 250k | `9` CAN 29-bit 250k, default `0` since 2026-10-03 (it was a pinned `6`: a fresh device must not transmit at 500k onto a bus it has not heard); schema v7; `1` to `5` since 2026-11-12 with no schema change, see "The pre-CAN protocols" (a build before that day does not know them: after a downgrade with one of them stored its settings manager fails the enum and puts AutoPID's settings back to their defaults); `0` = follow the vehicle store: the detection job learns the protocol per car and the chip prelude pins the current car's protocol instead of `ATTP0`, see "Vehicle store" below; a pinned 1..9 always wins over the store), `vehicle`,
 `pause_below_mv` (0 = no fixed threshold, else 1–14500 mV; resumes +0.3 V with 5 s hold; with `pause_follow_sleep` the threshold is the Power Saving sleep voltage and polling resumes at its wake voltage, sleep_manager v3, 2026-10-01),
 `pause_follow_sleep` (default **true**: legacy `disable_pid_requests`
@@ -1127,10 +1129,14 @@ K-line car and the way back, two saves of the chip's stored protocol).
                     "unit": "rpm", "class": "frequency",
                     "min": 0, "max": 16384}]
   }],
-  "filters": [{"frame_id": 666, "monitor_ms": 800,
+  "filters": [{"frame_id": 666, "monitor_ms": 800, "profile": true,
                "parameters": [{"name": "soc", "expression": "B4/2"}]}]
 }
 ```
+
+A filter's `"profile": true` puts it behind the vehicle-specific switch
+(without it the custom one gates it, see "Filters"); its `period_ms`,
+`group` and `enabled` are a PID's.
 
 **The bounds (`min` / `max`, 2026-10-20, issue #1004).** A parameter's
 range serves the dashboard (the gauge's scale) and the poller. A VW T6.1
@@ -1194,16 +1200,65 @@ The per-entry slice the poller copies per request lives in PSRAM
 
 ## Filters (ATMA windows)
 
-A scheduled filter entry opens a bounded monitor window: `ATH1` +
-`ATCRA<id>`, MONITOR claim, `ATMA`, collect until a frame with the
-filter's CAN id arrives (or `monitor_ms` expires, 50..60000, default
-1000), SPACE stop, restore receive-all (headers stay on, the CAN
-prelude's state since 2026-10-24), PID inits replayed. ONE captured frame
-updates all the filter's parameters. The
+A scheduled filter entry opens a bounded monitor window: `ATH1`, the
+protocol of the id's width when the chip is on the other one (`ATTP`),
+`ATCRA<id>` + `ATCAF0`, MONITOR claim, `ATMA`, collect until a frame with
+the filter's CAN id arrives (or `monitor_ms` expires, 50..60000, default
+1000), SPACE stop, `ATCAF1`, receive-all and the chip's own protocol
+again (headers stay on, the CAN prelude's state since 2026-10-24), PID
+inits replayed. ONE captured frame updates all the filter's parameters. The
 window **holds the chip**: other masters' requests fail fast while it
 is open, so schedule filters sparsely (period_ms seconds apart, short
 windows). Chip "<DATA ERROR"-style markers after the data bytes are
 skipped (legacy semantics; bench-observed with injected frames).
+
+**The frame as it is on the bus (2026-11-14).** Until this date the window
+monitored with the chip's CAN auto formatting on (the baseline's state,
+`ATCAF1`), which reads every frame as a diagnostic message and its first
+byte as a length: a broadcast frame `02 1E 02 1F 0B 7C 4E 20` came out as
+`02 1E 02`, so a parameter reading `[B4:B5]` had no bytes and stayed
+empty, and any other first byte got `<DATA ERROR` appended (the marker
+the parser skips; the frames of the earlier benches all started with such
+a byte, which is why they read whole). A car's frame whose first byte is
+a small counter or a gear was read whole or cut short depending on its
+value. The window now switches the formatting off for its own duration
+and on again behind it (`flt_settings_back()`; when the chip does not
+take the two commands, another master holding it, the baseline restore
+before the next row type does: `mem->moved`). Found by the bench below,
+whose frames start with `02`, `05`, `01` and `02`.
+
+**A filter follows the switch of its table (2026-11-14).** The web UI
+lists the filters on two tabs, and the tab's switch covers them: a filter
+tagged `"profile": true` (the vehicle's set: what a profile brought and
+what is added on Vehicle Specific) rests while `specific_enabled` is off,
+every other filter while `custom_enabled` is off
+(`ap_sched_entry_enabled()`, `ap_filter_t.type`). Before, a filter ran
+whatever the switches said. A held type init (a word the chip stores, see
+"No chain of the tables sends a word the chip stores") does not hold a
+filter: a window sends no init. The tag is the one the UI has written
+since 2026-10-21, so a stored table needs nothing. A filter may also
+carry `"name"`: the web UI's label for the row, not read here.
+
+**Test for a filter (2026-11-14).** `POST /api/autopid/test` with
+`{"filter": {"frame_id", "monitor_ms"?, "parameters"?: [{"expression",
+"mux_expr"?, "mux_val"?}]}}` opens ONE window for the frame, the same
+choreography as a poll of the filter, with the poller parked behind the
+job lock (`ap_runner_test_filter()`): nothing is asked on the bus and
+nothing is published. The answer: `ok`, `elapsed_ms` (from `ATMA` to the
+first frame with the id), `transcript` (the exchange, a line
+`< 284 02 1E ..` per frame a parameter took, `ap_flt_frame_line()`, and
+`! no frame with CAN ID 284 in 500 ms` when none came), `payload` (the
+data bytes of the first frame kept, as the expressions count them) and
+`values` (one per parameter, each decoded from the frame it would get in
+a poll: the first one, or the one of its multiplexer page; `null` where
+its frame did not come). A filter without parameters shows the frame.
+`ok: false` with `error` when no frame came in the listen time; 400 for a
+missing or out-of-range `frame_id` (1 to 0x1FFFFFFF), a `monitor_ms`
+outside 50..60000 or an expression that does not parse; 409 as for a PID
+(the bus guard, another chip job). The call holds the HTTP server for the
+listen time. The frames are read out before the poller is let go again:
+its next window takes the same slots (the bench caught the second page of
+a multiplexed message gone by the time it was decoded).
 
 **Protocol/width rule (bench-characterized 2026-07-06)**: the ATCRA
 hardware filter only matches ids of the ACTIVE protocol's width, a
@@ -1215,6 +1270,59 @@ fails cleanly into backoff: set the protocol via the type init /
 both widths regardless of protocol; it is the CRA that is
 width-bound.) On 29-bit protocols the monitor prints the id as four
 byte tokens (`18 DA F1 10 …`), handled.
+
+**The window opens on the protocol of the id's width (2026-11-14, the
+legacy firmware's rule).** v4.50 did it in `send_can_filter_cmd()`: on
+protocol 6 or 7 it tried 7 for a 29-bit id and 6 for an 11-bit one, on 8
+or 9 likewise 9 and 8, before `ATCRA`. The v6 rewrite had left the user to
+set the protocol, so a 29-bit filter on a car whose protocol is the
+11-bit one never saw its frame, and in a table whose rows set protocols
+themselves (a profile that mixes `ATSP6` and `ATSP7` rows) an 11-bit
+filter went stale behind a row that left the chip on 7 (both reproduced
+on the bench: the values stayed at 60 and 7 while the bus said 30 and 5).
+`flt_proto_for()` asks the pure `ap_flt_window_proto()` for the sibling at
+the same bit rate, sends `ATTP<p>` (tried, not stored in the chip) when
+the bus guard allows that protocol on the bus as it last saw it
+(`ap_guard_chain_ok()`: the sibling has the bus's bit rate), and
+`flt_settings_back()` puts the chip's own protocol back behind the
+window. Nothing is switched when the protocol in effect is none of the
+four (the chip's search, a K-line or J1850 protocol, the user's own CAN
+definitions): the window then opens on what the chip is on, as before.
+
+**What else v4.50 did with a filter, compared (2026-11-14).** The same:
+`ATCAF0` / `ATCAF1` around `ATMA` (lost in the rewrite, back since this
+date), custom filters (its `auto_pid.json` `can_filters`) beside the
+vehicle's (the car's `can_filters`), the vehicle's gated by the
+vehicle-specific switch, a test of one filter over HTTP
+(`/autopid/test_can_filter`). Different, on purpose: v4.50 listened for a
+fixed 1.1 s and kept a period per parameter (5 s when none was given),
+here a filter has its own `monitor_ms` and `period_ms`; v4.50 took every
+frame of the window, here one frame per parameter (the one of its
+multiplexer page). Different, and open: v4.50 ran a custom filter whatever
+the custom switch said (here `custom_enabled` gates it since this date),
+and under its low-voltage mode `disable_pid_requests` it went on
+monitoring filters while the requests paused; here a filter is a chip row
+and waits for the voltage pause in both `pause_mode`s.
+
+**Tests of the changes of 2026-11-14.** Host: `test_filter_type.c` (the
+tag, the two switches, a gated filter never picked, the transcript line
+of a frame read back by the monitor-line parser, the protocol of the id's
+width). Bench in the firmware repo: `.\test.ps1 canfilters` (`CAN FILTERS
+PASS`): frames from a PCAN on the unit's bus, one of them with a 29-bit
+id; a table of filters alone across a restart, the test route, a standard
+PID beside the windows, a row that leaves the chip on the 29-bit
+protocol, the unit's own page in Chrome, the two switches.
+
+**Memory (measured in the linked image, 2026-11-14).** PSRAM
+`.ext_ram.bss`: the poller's wanted-frame list `s_want` 3,072 B and the
+test route's own 3,072 B (256 entries of 12 B), the test route's hex
+buffer 388 B; the frame slots (34,816 B) and the monitor queue's store
+were there before. Internal RAM: nothing added, no task added. Stack
+(`-fstack-usage`): `flt_window` 816 B, `test_filter` 352 B,
+`ap_runner_test_filter` 144 B, `flt_proto_for` and `flt_settings_back`
+112 B each. High-water headroom on the bench unit with filter windows and
+filter tests running: the poller task `autopid` 9,208 B, the HTTP server
+task `httpd` 7,224 B (both on PSRAM stacks; the standard's floor is 1 KB).
 
 **Short frames**: the captured payload is the frame's REAL length
 (DLC), and expressions are bounds-checked against it, an expression
@@ -1501,6 +1609,8 @@ it in ("Same car as...") or sets it up. Proof: `autopid_newcar_bench.py`
 rows back) and `tools/webui_preview/probe_newcar.mjs`.
 
 ## Memory footprint (vehicle store, estimated)
+
+(The filter window and its test: measured, under "Filters".)
 
 Internal RAM: the `apid_veh` worker stack 6144 B (was 4096: it now runs
 the tables copy + the config reload) + its TCB, static; the scan task's

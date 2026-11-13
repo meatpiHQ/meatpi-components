@@ -147,6 +147,10 @@ typedef struct
     int      group;
     uint32_t period_ms;                   /* 0 = inherit group              */
     bool     enabled;
+    ap_pid_type_t type;                   /* whose switch gates it: SPECIFIC
+                                             for a filter of the vehicle's
+                                             set ("profile": true), else
+                                             CUSTOM (2026-11-14)            */
     uint16_t param_start;
     uint16_t param_count;
 } ap_filter_t;
@@ -397,6 +401,29 @@ void ap_guard_status_json(cJSON *obj);  /* adds "bus_guard": {...}         */
 
 /* ATMA filter window (autopid_filter.c: poller-task context) */
 bool ap_runner_run_filter(const ap_filter_t *f, const ap_param_t *params);
+
+/* what one parameter of a filter waits for in a window: any frame with the
+   filter's id, or the one whose multiplexer slice reads mux_val */
+typedef struct
+{
+    const char *mux_expr;       /* NULL or "" = any frame                */
+    float       mux_val;
+    bool        want;           /* false = nothing collected for it      */
+} ap_flt_want_t;
+
+/** One window for a test of a filter (POST /api/autopid/test "filter",
+ *  2026-11-14): what a poll of it does on the chip, nothing published. A
+ *  frame per wanted slot is kept, ap_flt_slot() hands them out. Caller
+ *  holds the job lock with the poller parked. ESP_ERR_TIMEOUT = no frame
+ *  with the id in @p monitor_ms; ESP_ERR_INVALID_STATE = the chip is busy;
+ *  @p elapsed_us = from ATMA to the first frame. */
+esp_err_t ap_runner_test_filter(uint32_t frame_id, uint32_t monitor_ms,
+                                const ap_flt_want_t *want, uint16_t n,
+                                int64_t *elapsed_us, char *transcript,
+                                size_t transcript_len);
+
+/** The frame slot @p i caught in the last window, NULL when it has none. */
+const uint8_t *ap_flt_slot(uint16_t i, size_t *len);
 
 /** One-shot test-a-PID through the real runner choreography (§11):
  *  type init chain, per-PID init, ATCRA, request, ATCRA off, exactly

@@ -26,6 +26,7 @@ idf_component_register(
          "test_bus.c"
          "test_store_words.c"
          "test_precan.c"
+         "test_filter_type.c"
          "${comp_dir}/autopid_proto.c"
          "${comp_dir}/autopid_resp_precan.c"
          "${comp_dir}/autopid_sched.c"

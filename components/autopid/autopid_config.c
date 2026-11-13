@@ -421,6 +421,11 @@ esp_err_t ap_config_parse(const char *json, ap_config_t *cfg, char *err,
         f->monitor_ms = (uint32_t)get_num(item, "monitor_ms", 1000);
         f->period_ms = (uint32_t)get_num(item, "period_ms", 0);
         f->enabled = get_bool(item, "enabled", true);
+        /* "profile": true = a filter of the vehicle's set (the web UI tags
+           what a profile brought and what was added on Vehicle Specific):
+           `specific_enabled` gates it, `custom_enabled` every other one */
+        f->type = get_bool(item, "profile", false) ? AP_PID_SPECIFIC
+                                                   : AP_PID_CUSTOM;
         copy_str(group, sizeof(group), item, "group");
         snprintf(owner, sizeof(owner), "filter %X", (unsigned)f->frame_id);
 

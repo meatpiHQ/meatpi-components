@@ -54,11 +54,16 @@
 
 static const char *TAG = "ha_webhooks";
 
-/* 8192 words = 32 KB (PSRAM, cheap): 24 KB overflowed once gzip landed,
- * the ROM tdefl deflate keeps its Huffman/blocking locals on the CALLER's
- * stack (several KB under an already-deep poster frame). Bench-verify
+/* The poster's stack in BYTES (StackType_t is one byte on xtensa). Until
+ * 2026-11-14 this read "8192 words = 32 KB": it was 8 KB all along, and
+ * the "24 KB" that overflowed once gzip landed was 6 KB (the ROM tdefl
+ * deflate keeps its Huffman/blocking locals on the CALLER's stack, several
+ * KB under an already-deep poster frame). Measured on the 8 KB stack,
+ * headroom left: a plain push 3.3 KB, an https push 3.1 KB, a push whose
+ * reply's settings are stored 2.6 KB. 16 KB in PSRAM is a real margin. A
+ * PSRAM stack overflows SILENTLY (standard, section 2): bench-verify
  * stack_hw via /api/status/tasks after any change here. */
-#define HW_STACK_WORDS 8192
+#define HW_STACK_BYTES (16 * 1024)
 #define HW_HTTP_TIMEOUT_MS 6000
 
 /* consecutive HTTP-403 cycles (HA identity rejection) before pushes
@@ -68,7 +73,7 @@ static const char *TAG = "ha_webhooks";
 
 static TaskHandle_t     s_task;
 static StaticTask_t     s_tcb;
-static StackType_t      s_stack[HW_STACK_WORDS] EXT_RAM_BSS_ATTR;
+static StackType_t      s_stack[HW_STACK_BYTES] EXT_RAM_BSS_ATTR;
 static volatile bool    s_run;
 
 /* consecutive identity-rejected (403) cycles; >= HW_REJECT_LIMIT pauses
@@ -518,7 +523,7 @@ esp_err_t hw_poster_start(void)
 
     s_run = true;
     s_task = xTaskCreateStatic(poster_task, "ha_webhook",
-                               HW_STACK_WORDS, NULL, 4, s_stack, &s_tcb);
+                               HW_STACK_BYTES, NULL, 4, s_stack, &s_tcb);
     return s_task != NULL ? ESP_OK : ESP_ERR_NO_MEM;
 }
 

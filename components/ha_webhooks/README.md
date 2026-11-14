@@ -83,10 +83,14 @@ identical on every product built from the V6 core.
   back to the plain body: delivery beats savings. Off by default:
   HA integrations older than 2026-07-10 can't inflate. STACK LESSON
   (bench, 2026-07-11): ROM tdefl keeps several KB of Huffman/blocking
-  locals on the CALLER's stack, the poster's 24 KB stack overflowed on
-  the first gzip push (clean canary panic); now 32 KB (PSRAM, cheap).
-  Bench-measured ratio ~2.3-2.4× on small (0.6-1.6 KB) payloads; bigger
-  autopid sets compress better.
+  locals on the CALLER's stack, the poster's stack overflowed on the first
+  gzip push (clean canary panic) and was enlarged. The sizes written down
+  then ("24 KB", "now 32 KB") were in words; `StackType_t` is one byte on
+  xtensa, so they were 6 KB and 8 KB. Measured 2026-11-14 on that 8 KB
+  stack, headroom left: a plain push 3.3 KB, an https push 3.1 KB, a push
+  whose reply's settings are stored 2.6 KB. The stack is 16 KB since
+  (PSRAM, cheap). Bench-measured ratio ~2.3-2.4× on small (0.6-1.6 KB)
+  payloads; bigger autopid sets compress better.
 - **TLS**: built-in bundle by default; `cert_set` for a private-cert HA;
   raw-IP HTTPS auto-skips CN (the chain is still verified;
   http_client_manager says so once a boot, in place of esp-tls's warning
@@ -214,6 +218,22 @@ identical on every product built from the V6 core.
   a small policy: after N consecutive connect failures on `url`, try
   `url2` first and re-probe `url` every few minutes (never drop it -
   driving home must switch back).
+
+## Memory footprint
+
+- **Task stack**: one, the poster (`ha_webhook`), 16 KB static in PSRAM
+  (8 KB until 2026-11-14). Measured headroom on the 8 KB stack: 3.3 KB
+  after plain pushes, 3.1 KB after https pushes, 2.6 KB after a push whose
+  reply's settings were stored (the deepest path).
+- **Static, PSRAM**: the live config and the stats (about 1 KB together).
+- **Heap, PSRAM**: the diff caches (the previous status, autopid, config
+  and gps sections as text), the ROM deflate's state when gzip is on
+  (about 166 KB, once), a push's body and its reply (at most 2 KB) while
+  it is under way.
+- **Internal RAM**: the task's TCB and the mutex.
+- **Flash**: a registration or a reply that changes the settings writes
+  the `ha_webhooks` settings document once; the same settings again are
+  not written (the Settings Manager's dedup; the bench asserts it).
 
 ## HTTP API
 

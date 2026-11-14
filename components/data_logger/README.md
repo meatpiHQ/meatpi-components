@@ -118,7 +118,10 @@ Actions:
 - `GET /api/logger/export?stream=params&since=<cursor>&limit=N[&name=<param>]`
   (`data_logger_export.c`): incremental pull of the params stream (jsonl
   and, since 2026-09-06, csv: 400 for the other engines, whose files the
-  UI fetches whole through `/api/fs/download`): a `{"_file":"<name>"}`
+  UI fetches whole through `/api/fs/download`; that 400, here and on
+  `/api/logger/gpx`, is an expected answer to the Home Assistant
+  integration's question at every start and is sent without a log line
+  since 2026-11-14, `dl_export_refuse_format()`): a `{"_file":"<name>"}`
   line ahead of each file's rows, the rows verbatim
   (`{"ts":<epoch ms>,"param":"<source>.<name>","value":n}`, or
   `ts_ms,source.name,value` for csv), then a FINAL

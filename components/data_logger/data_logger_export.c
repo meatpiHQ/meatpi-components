@@ -160,6 +160,20 @@ FILE *dl_export_open_locked(const char *path, bool *gated_here)
     return f;
 }
 
+esp_err_t dl_export_refuse_format(struct httpd_req *req)
+{
+    /* What httpd_resp_send_err(HTTPD_400_BAD_REQUEST, ...) sends, byte for
+     * byte, without its W line and without failing the handler (which logs
+     * a second W and drops the connection). The question is an expected
+     * one: the Home Assistant integration asks for the export at every
+     * start and every reconnect, and a device without Store and forward
+     * logs sqlite, so each of them cost two warnings (seen 2026-11-14). */
+    httpd_resp_set_status(req, "400 Bad Request");
+    httpd_resp_set_type(req, "text/html");
+    return httpd_resp_send(req, "params stream is not jsonl or csv",
+                           HTTPD_RESP_USE_STRLEN);
+}
+
 esp_err_t dl_export_get_handler(struct httpd_req *req)
 {
     const dl_cfg_t *cfg = dl_settings_config();
@@ -182,9 +196,7 @@ esp_err_t dl_export_get_handler(struct httpd_req *req)
 
     if (ext == NULL)
     {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
-                            "params stream is not jsonl or csv");
-        return ESP_FAIL;
+        return dl_export_refuse_format(req);
     }
 
     char query[160] = "";

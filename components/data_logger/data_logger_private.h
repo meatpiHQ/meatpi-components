@@ -532,6 +532,9 @@ size_t dl_export_walk(const char *buf, size_t n, const char *name, bool csv,
                       dl_export_send_fn send, void *ctx, bool *stop,
                       bool *aborted);
 esp_err_t dl_export_get_handler(struct httpd_req *req);
+/* the 400 of both routes when the params stream is sqlite or binary: an
+   expected answer, sent without a log line (data_logger_export.c) */
+esp_err_t dl_export_refuse_format(struct httpd_req *req);
 void dl_export_stats(data_logger_stats_t *out);   /* the export_* fields */
 /* the params files' epochs, ascending (the walk both routes share) */
 int dl_export_list_epochs(int64_t *out, int cap, const char *ext);

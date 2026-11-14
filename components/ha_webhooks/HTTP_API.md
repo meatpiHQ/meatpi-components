@@ -184,7 +184,10 @@ Incremental export of the numeric-params log stream: the store-and-forward
 source the integration's history backfill reads (`history.py`, aligned to
 this shape 2026-11-06). Requires the params stream `format` setting to be
 `jsonl` or `csv` (400 `params stream is not jsonl or csv` otherwise; the
-integration reports that in its diagnostics and imports nothing).
+integration reports that in its diagnostics and imports nothing). The
+integration asks at every start and every reconnect, and a device without
+Store and forward logs sqlite: since 2026-11-14 that 400 is sent without
+a log line (two W lines of the HTTP server per request until then).
 
 - `stream`: only `params` (default).
 - `since`: the cursor of a previous response (`<file-epoch>:<offset>`,

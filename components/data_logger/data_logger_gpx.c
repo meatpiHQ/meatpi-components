@@ -279,9 +279,7 @@ esp_err_t dl_gpx_get_handler(struct httpd_req *req)
 
     if (ext == NULL)
     {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
-                            "params stream is not jsonl or csv");
-        return ESP_FAIL;
+        return dl_export_refuse_format(req);
     }
 
     if (s_busy)

@@ -278,7 +278,7 @@ static void write_batch(int idx)
         dl_store_stats()->errors++;
         dl_events_error("write", (int)dl_store_stats()->errors);
 
-        if (st->eng->corrupt != NULL && st->eng->corrupt(st->ctx))
+        if (dl_store_file_is_bad(st))
         {
             dl_store_quarantine(st); /* set aside + fresh file: never retry a bad file */
             return;
@@ -427,6 +427,22 @@ esp_err_t dl_writer_start(void)
     {
         ESP_LOGW(TAG, "CAN drain task failed; can stream off");
         s_stream[DL_ST_CAN].active = false;
+    }
+
+    /* the internal RAM the files need is taken now, while the boot still
+       has it, and kept: an open hours later must not depend on a 4 KB
+       block being free in the internal heap (2026-11-14) */
+    for (int i = 0; i < DL_ST_COUNT; i++)
+    {
+        dl_stream_t *st = &s_stream[i];
+
+        if (st->active && st->eng->reserve != NULL &&
+            st->eng->reserve(st->ctx) != ESP_OK)
+        {
+            ESP_LOGW(TAG, "%s stream: no internal RAM for the stdio buffer "
+                     "yet; the open tries again",
+                     st->frames ? "CAN" : "params");
+        }
     }
 
     return ESP_OK;

@@ -268,11 +268,42 @@ PSRAM `.noinit` envelope so a crash or watchdog loses nothing queued
 an `esp_restart` shutdown hook calls it, so sleep entry and every
 planned restart close the files first.
 
+**A unit short of internal RAM (case 14, 2026-11-14).** The logger takes
+the internal RAM its files need once, at its start, and keeps it: the
+4 KB DMA-capable stdio buffer of each active stream that writes through
+one (every format but sqlite). Until then the buffer was taken at every
+open and freed at every close, and a file is closed more often than it
+looks: a rotation, a clock step, a write error, and every pause of the
+gate, which is how the web UI reads the active file (the Logger page's
+download, the dashboard's history). On a unit whose internal heap had no
+4 KB block left by then the next open failed, three in a row latched
+`logger_storage_error`, and every record from there on was dropped on a
+good card (the field report of 2026-11-13: 5.3 KB free, the largest
+block 3.6 KB). Below `DL_OPEN_RAM_MIN` (1 KB in one free block of the
+DMA-capable internal heap) no open is tried at all: `fopen()` needs a
+lock from the C library, and the C library aborts the unit when it cannot
+have one (the crash report of 2026-11-07, task `dl_writer`, in the sqlite
+engine's open), and every card transfer of a sector the file system keeps
+in PSRAM needs a one-sector bounce buffer from that heap. The fault's
+detail then reads `params: out of internal RAM` (or `can: ...`), not
+`params`, and a fault whose own latch found no RAM is tried again every
+lap and paid at the latest when the file opens again. Under the same
+floor an engine's "this file is corrupt" is no verdict about the file:
+the card reads fail for want of the bounce buffer and sqlite takes the
+zeros of a short read for "file is not a database"; the file is closed
+and tried again, never set aside (or deleted when the rename fails the
+same way) on that word. Two neighbours of the same state were fixed with
+it: a close that cannot flush no longer leaves the file locked
+(`external_storage`, the `f_close` guard), and a download of a card file
+no longer depends on the flash worker (`filesystem`, the stream helpers).
+
 ## Testing
 
-- Host: `host_test/` (42 tests: file-name/prefix rules, the export's start, line and window rules, hex filter
+- Host: `host_test/` (45 tests: file-name/prefix rules, the export's start, line and window rules, hex filter
   parse, `.wdl` + csv frame-encoder golden vectors, the recovery
-  helpers (torn text/.wdl tails, set-aside names, salvage sanity, CRC),
+  helpers (torn text/.wdl tails, set-aside names, salvage sanity, CRC,
+  the floor under an open, the fault's detail, no corrupt verdict under
+  the floor),
   and the clock rules (the 32-byte record layout, the re-base incl. the
   modulo-32 stamp compare, the monotonic relative time under a backward
   wall step, the rotation rule, the journal lines and markers byte-exact,
@@ -304,9 +335,13 @@ for by the 5 s default batch.
 
 PSRAM: ~250 KB static (param ring 12 KB + frame ring 192 KB at the
 8192 cap + writer 10 KB + drain 3 KB stacks + registries + CAN queue)
-plus ALL sqlite heap (SQLITE_CONFIG_MALLOC → PSRAM). Internal: 4 KB
-DMA-capable stdio buffer PER OPEN append-engine file (lazy heap,
-allocated at open, freed at close; must be DMA-capable or sdmmc
-bounce-buffer allocs fail under pressure) + FreeRTOS objects. The
+plus ALL sqlite heap (SQLITE_CONFIG_MALLOC → PSRAM). Internal: one 4 KB
+DMA-capable stdio buffer per ACTIVE stream of a format that writes
+through one (csv, jsonl, binary, candump, asc, mf4, blf; not sqlite):
+heap, taken when the logger starts and kept until the reboot (since
+2026-11-14; until then per open file, freed at close: see Robustness),
+4 KB with the params stream alone, 8 KB with the CAN stream too, nothing
+with the logger off; it must be DMA-capable or sdmmc bounce-buffer
+allocs fail under pressure. Plus the FreeRTOS objects. The
 writer/drain PSRAM stacks are safe because they only touch the SD
 card via SDMMC, never internal flash (§2 corollary doesn't apply).

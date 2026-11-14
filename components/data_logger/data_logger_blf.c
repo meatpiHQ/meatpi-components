@@ -128,6 +128,21 @@ static esp_err_t blf_patch_header(dl_blf_ctx_t *c)
     return ESP_OK;
 }
 
+/* the stdio buffer: taken once and kept until the reboot (2026-11-14, the
+ * reason is at ap_reserve in data_logger_append.c) */
+static esp_err_t blf_reserve(void *ctx)
+{
+    dl_blf_ctx_t *c = ctx;
+
+    if (c->buf == NULL)
+    {
+        c->buf = heap_caps_malloc(BLF_BUF_SZ,
+                                  MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+    }
+
+    return (c->buf != NULL) ? ESP_OK : ESP_ERR_NO_MEM;
+}
+
 static esp_err_t blf_open(void *ctx, const char *path, bool frames)
 {
     dl_blf_ctx_t *c = ctx;
@@ -139,10 +154,7 @@ static esp_err_t blf_open(void *ctx, const char *path, bool frames)
         return ESP_ERR_INVALID_STATE;
     }
 
-    c->buf = heap_caps_malloc(BLF_BUF_SZ,
-                              MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
-
-    if (c->buf == NULL)
+    if (blf_reserve(c) != ESP_OK)
     {
         ESP_LOGE(TAG, "no internal RAM for the stdio buffer");
         return ESP_ERR_NO_MEM;
@@ -153,8 +165,6 @@ static esp_err_t blf_open(void *ctx, const char *path, bool frames)
     if (f == NULL)
     {
         ESP_LOGE(TAG, "open %s failed (errno %d)", path, errno);
-        heap_caps_free(c->buf);
-        c->buf = NULL;
         return ESP_FAIL;
     }
 
@@ -175,8 +185,6 @@ static esp_err_t blf_open(void *ctx, const char *path, bool frames)
     if (fwrite(hdr, 1, sizeof(hdr), f) != sizeof(hdr))
     {
         fclose(f);
-        heap_caps_free(c->buf);
-        c->buf = NULL;
         return ESP_FAIL;
     }
 
@@ -193,14 +201,8 @@ static void blf_close(void *ctx)
     {
         (void)blf_flush_container(c);
         (void)blf_patch_header(c);
-        fclose((FILE *)c->f);
+        fclose((FILE *)c->f); /* the stdio buffer stays (blf_reserve) */
         c->f = NULL;
-    }
-
-    if (c->buf != NULL)
-    {
-        heap_caps_free(c->buf);
-        c->buf = NULL;
     }
 }
 
@@ -282,6 +284,7 @@ const dl_engine_t dl_engine_blf =
     .single_use = true,
     .open = blf_open,
     .close = blf_close,
+    .reserve = blf_reserve,
     .is_open = blf_is_open,
     .begin = blf_begin,
     .write = blf_write,

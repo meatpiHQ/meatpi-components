@@ -166,8 +166,27 @@ static void ap_repair_tail(const char *path, uint8_t fmt, char *stdio_buf)
  * PSRAM: FATFS hands big flushes straight to sdmmc, and a non-DMA
  * buffer makes the driver heap-allocate a bounce buffer PER TRANSFER,
  * which fails intermittently under load (bench 2026-07-07: EIO every
- * few thousand rows). Allocated at open / freed at close so an idle
- * stream costs zero internal RAM (~25 KB free at steady state). */
+ * few thousand rows). Taken ONCE (the writer's start, or the first open
+ * when the start found none) and KEPT until the reboot. Until 2026-11-14
+ * it was taken at every open and freed at every close: a rotation, a pause
+ * of the gate (the web UI reads the active file that way) or a write error
+ * closes the file, and on a unit whose internal heap had no 4 KB block
+ * left by then (5.3 KB free, the largest block 3.6 KB: the field report of
+ * 2026-11-13) the next open failed, three in a row latched
+ * `logger_storage_error`, and every record from there on was dropped on a
+ * good card. A logger that is switched off still costs no internal RAM. */
+static esp_err_t ap_reserve(void *ctx)
+{
+    dl_append_ctx_t *c = ctx;
+
+    if (c->buf == NULL)
+    {
+        c->buf = heap_caps_malloc(AP_BUF_SZ,
+                                  MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+    }
+
+    return (c->buf != NULL) ? ESP_OK : ESP_ERR_NO_MEM;
+}
 
 /* the ASC header carries an absolute date; rows are relative seconds */
 static int ap_asc_header(FILE *f, int64_t start_ms)
@@ -194,10 +213,7 @@ static esp_err_t ap_open(dl_append_ctx_t *c, const char *path,
         return ESP_ERR_INVALID_STATE;
     }
 
-    c->buf = heap_caps_malloc(AP_BUF_SZ,
-                              MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
-
-    if (c->buf == NULL)
+    if (ap_reserve(c) != ESP_OK)
     {
         ESP_LOGE(TAG, "no internal RAM for the stdio buffer");
         return ESP_ERR_NO_MEM;
@@ -210,8 +226,6 @@ static esp_err_t ap_open(dl_append_ctx_t *c, const char *path,
     if (f == NULL)
     {
         ESP_LOGE(TAG, "open %s failed (errno %d)", path, errno);
-        heap_caps_free(c->buf);
-        c->buf = NULL;
         return ESP_FAIL;
     }
 
@@ -251,8 +265,6 @@ static esp_err_t ap_open(dl_append_ctx_t *c, const char *path,
         {
             fclose(f);
             c->f = NULL;
-            heap_caps_free(c->buf);
-            c->buf = NULL;
             return ESP_FAIL;
         }
 
@@ -268,14 +280,8 @@ static void ap_close(void *ctx)
 
     if (c->f != NULL)
     {
-        fclose((FILE *)c->f);
+        fclose((FILE *)c->f); /* the stdio buffer is ours and stays (ap_reserve) */
         c->f = NULL;
-    }
-
-    if (c->buf != NULL)
-    {
-        heap_caps_free(c->buf);
-        c->buf = NULL;
     }
 }
 
@@ -401,6 +407,7 @@ const dl_engine_t dl_engine_csv =
     .ext = ".csv",
     .open = csv_open,
     .close = ap_close,
+    .reserve = ap_reserve,
     .is_open = ap_is_open,
     .begin = ap_begin,
     .write = csv_write,
@@ -506,6 +513,7 @@ const dl_engine_t dl_engine_binary =
     .resume_max = 16u * 1024u * 1024u, /* the torn-tail check reads it all */
     .open = bin_open,
     .close = ap_close,
+    .reserve = ap_reserve,
     .is_open = ap_is_open,
     .begin = ap_begin,
     .write = bin_write,
@@ -566,6 +574,7 @@ const dl_engine_t dl_engine_candump =
     .ext = ".log",
     .open = candump_open,
     .close = ap_close,
+    .reserve = ap_reserve,
     .is_open = ap_is_open,
     .begin = ap_begin,
     .write = candump_write,
@@ -608,6 +617,7 @@ const dl_engine_t dl_engine_asc =
     .single_use = true, /* rows are relative to the header date */
     .open = asc_open,
     .close = ap_close,
+    .reserve = ap_reserve,
     .is_open = ap_is_open,
     .begin = ap_begin,
     .write = asc_write,
@@ -655,6 +665,7 @@ const dl_engine_t dl_engine_jsonl =
     .ext = ".jsonl",
     .open = jsonl_open,
     .close = ap_close,
+    .reserve = ap_reserve,
     .is_open = ap_is_open,
     .begin = ap_begin,
     .write = jsonl_write,

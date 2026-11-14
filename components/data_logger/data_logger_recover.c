@@ -27,6 +27,8 @@
  *        - torn tails: how much of a text log / a .wdl log is intact
  *        - set-aside names for corrupt files (*.corrupt) and their parse
  *        - the PSRAM salvage envelope: ring index and record sanity, CRC
+ *        - an open against the internal heap: the floor under which none
+ *          is tried, and what the latched fault says about it
  */
 #include <string.h>
 
@@ -225,4 +227,37 @@ uint32_t dl_recover_crc32_update(uint32_t crc, const void *data, size_t len)
     }
 
     return ~crc;
+}
+
+/* ---- an open and the internal heap (2026-11-14) -------------------------- */
+
+bool dl_recover_open_ram_ok(size_t largest_internal_block)
+{
+    return largest_internal_block >= DL_OPEN_RAM_MIN;
+}
+
+bool dl_recover_corrupt_counts(bool engine_says_corrupt,
+                               size_t largest_internal_block)
+{
+    return engine_says_corrupt &&
+           dl_recover_open_ram_ok(largest_internal_block);
+}
+
+int dl_recover_fault_detail(char *out, size_t cap, bool frames, bool no_mem)
+{
+    int n = snprintf(out, cap, "%s%s", frames ? "can" : "params",
+                     no_mem ? ": out of internal RAM" : "");
+
+    if (n < 0 || (size_t)n >= cap)
+    {
+        /* never a cut text that reads as the other reason */
+        if (cap > 0)
+        {
+            out[0] = 0;
+        }
+
+        return 0;
+    }
+
+    return n;
 }

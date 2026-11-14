@@ -25,6 +25,9 @@ void test_corrupt_names_round_trip(void);
 void test_record_sanity(void);
 void test_ring_sanity_and_fill_recovery(void);
 void test_crc32_known_vector(void);
+void test_open_floor_is_one_kilobyte_in_one_block(void);
+void test_fault_detail_tells_the_memory_from_the_card(void);
+void test_corrupt_is_no_verdict_under_the_floor(void);
 
 /* test_clock.c */
 void test_record_layout_is_32_bytes_with_the_stamps_in_the_padding(void);
@@ -590,6 +593,9 @@ void app_main(void)
     RUN_TEST(test_record_sanity);
     RUN_TEST(test_ring_sanity_and_fill_recovery);
     RUN_TEST(test_crc32_known_vector);
+    RUN_TEST(test_open_floor_is_one_kilobyte_in_one_block);
+    RUN_TEST(test_fault_detail_tells_the_memory_from_the_card);
+    RUN_TEST(test_corrupt_is_no_verdict_under_the_floor);
     /* the clock (test_clock.c, README "Time") */
     RUN_TEST(test_record_layout_is_32_bytes_with_the_stamps_in_the_padding);
     RUN_TEST(test_rebase_adds_the_steps_that_came_after_the_record);

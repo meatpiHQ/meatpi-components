@@ -71,6 +71,21 @@ static uint32_t mono_ms_now(void)
     return (uint32_t)(esp_timer_get_time() / 1000);
 }
 
+/* the stdio buffer: taken once and kept until the reboot (2026-11-14, the
+ * reason is at ap_reserve in data_logger_append.c) */
+static esp_err_t mf4_reserve(void *ctx)
+{
+    dl_mf4_ctx_t *c = ctx;
+
+    if (c->buf == NULL)
+    {
+        c->buf = heap_caps_malloc(MF4_BUF_SZ,
+                                  MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+    }
+
+    return (c->buf != NULL) ? ESP_OK : ESP_ERR_NO_MEM;
+}
+
 static esp_err_t mf4_open(void *ctx, const char *path, bool frames)
 {
     dl_mf4_ctx_t *c = ctx;
@@ -82,10 +97,7 @@ static esp_err_t mf4_open(void *ctx, const char *path, bool frames)
         return ESP_ERR_INVALID_STATE;
     }
 
-    c->buf = heap_caps_malloc(MF4_BUF_SZ,
-                              MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
-
-    if (c->buf == NULL)
+    if (mf4_reserve(c) != ESP_OK)
     {
         ESP_LOGE(TAG, "no internal RAM for the stdio buffer");
         return ESP_ERR_NO_MEM;
@@ -97,8 +109,6 @@ static esp_err_t mf4_open(void *ctx, const char *path, bool frames)
 
     if (pre == NULL)
     {
-        heap_caps_free(c->buf);
-        c->buf = NULL;
         return ESP_ERR_NO_MEM;
     }
 
@@ -108,8 +118,6 @@ static esp_err_t mf4_open(void *ctx, const char *path, bool frames)
     {
         ESP_LOGE(TAG, "open %s failed (errno %d)", path, errno);
         heap_caps_free(pre);
-        heap_caps_free(c->buf);
-        c->buf = NULL;
         return ESP_FAIL;
     }
 
@@ -127,8 +135,6 @@ static esp_err_t mf4_open(void *ctx, const char *path, bool frames)
     if (!ok)
     {
         fclose(f);
-        heap_caps_free(c->buf);
-        c->buf = NULL;
         return ESP_FAIL;
     }
 
@@ -149,14 +155,8 @@ static void mf4_close(void *ctx)
         /* a clock step rotates the file without a batch in between: the
            header's start follows the corrected clock at the close too */
         (void)mf4_patch_start(c, (FILE *)c->f);
-        fclose((FILE *)c->f);
+        fclose((FILE *)c->f); /* the stdio buffer stays (mf4_reserve) */
         c->f = NULL;
-    }
-
-    if (c->buf != NULL)
-    {
-        heap_caps_free(c->buf);
-        c->buf = NULL;
     }
 }
 
@@ -289,6 +289,7 @@ const dl_engine_t dl_engine_mf4 =
     .single_use = true,
     .open = mf4_open,
     .close = mf4_close,
+    .reserve = mf4_reserve,
     .is_open = mf4_is_open,
     .begin = mf4_begin,
     .write = mf4_write,

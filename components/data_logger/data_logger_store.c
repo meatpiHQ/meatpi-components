@@ -183,14 +183,14 @@ static void fault_task(void *arg)
     vTaskDelete(NULL);
 }
 
-void dl_store_fault(const char *code, const char *detail)
+bool dl_store_fault(const char *code, const char *detail)
 {
     dl_fault_msg_t *m = heap_caps_malloc(sizeof(*m),
                                          MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
 
     if (m == NULL)
     {
-        return;
+        return false;
     }
 
     snprintf(m->code, sizeof(m->code), "%s", code);
@@ -199,7 +199,66 @@ void dl_store_fault(const char *code, const char *detail)
     if (xTaskCreate(fault_task, "dl_fault", 4096, m, 2, NULL) != pdPASS)
     {
         heap_caps_free(m);
-        ESP_LOGW(TAG, "fault %s not latched (no task)", code);
+        return false; /* the caller says so, once */
+    }
+
+    return true;
+}
+
+/* ---- the card and the internal heap ---------------------------------------------- */
+
+/* The largest free block of the DMA-capable internal heap: where a card
+ * transfer takes its one-sector bounce buffer from, and room enough for the
+ * lock the C library creates in fopen(). The RTC memory beside it counts as
+ * internal RAM but is not DMA-capable, so it is left out. */
+size_t dl_store_card_ram(void)
+{
+    return heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL |
+                                            MALLOC_CAP_DMA);
+}
+
+/* The engine calls the file corrupt: a verdict about the FILE only while
+ * the unit can read its card. Short of internal RAM the SD driver finds no
+ * bounce buffer (`sdmmc_cmd: allocate_dma_buf: not enough mem`), a read
+ * comes back short and sqlite takes the zeros for "file is not a
+ * database". Setting a good file aside on that word, or deleting it when
+ * the rename fails the same way, is the logger destroying its own records:
+ * seen on the bench with the internal heap at zero, 2026-11-14. The file
+ * is closed and tried again instead. */
+bool dl_store_file_is_bad(dl_stream_t *st)
+{
+    return dl_recover_corrupt_counts(st->eng->corrupt != NULL &&
+                                         st->eng->corrupt(st->ctx),
+                                     dl_store_card_ram());
+}
+
+/* A stream's `logger_storage_error` is owed until it is latched. The latch
+ * is a task with an internal stack, and a unit whose opens fail for want of
+ * internal RAM has none for that task either: the fault that says so would
+ * be the one that is lost. Tried again every lap, and paid at the latest
+ * when the file opens again. */
+static void pay_fault(dl_stream_t *st)
+{
+    char detail[48];
+
+    if (st->fault_owed == DL_OWED_NONE)
+    {
+        return;
+    }
+
+    dl_recover_fault_detail(detail, sizeof(detail), st->frames,
+                            st->fault_owed == DL_OWED_RAM);
+
+    if (dl_store_fault("logger_storage_error", detail))
+    {
+        st->fault_owed = DL_OWED_NONE;
+        st->fault_late = false;
+    }
+    else if (!st->fault_late)
+    {
+        ESP_LOGW(TAG, "fault logger_storage_error (%s) not latched yet: no "
+                 "internal RAM for its task; it is tried again", detail);
+        st->fault_late = true;
     }
 }
 
@@ -214,6 +273,23 @@ esp_err_t dl_store_open(dl_stream_t *st, bool force_new)
     if (st->eng->single_use)
     {
         force_new = true; /* relative-time / patched-header formats */
+    }
+
+    /* no open on a unit that cannot give it the internal RAM it needs
+       (DL_OPEN_RAM_MIN): the C library aborts inside fopen() there. Said
+       once per run of failures, the retries behind it at D */
+    size_t big = dl_store_card_ram();
+
+    if (!dl_recover_open_ram_ok(big))
+    {
+        ESP_LOG_LEVEL((st->open_fails == 0) ? ESP_LOG_WARN : ESP_LOG_DEBUG,
+                      TAG, "%s stream: no open with %u B in the largest "
+                      "free block of the internal heap (%u B free, %u B "
+                      "needed)", st->frames ? "CAN" : "params",
+                      (unsigned)big,
+                      (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                      (unsigned)DL_OPEN_RAM_MIN);
+        return ESP_ERR_NO_MEM;
     }
 
     mkdir(DL_DIR, 0775);
@@ -372,7 +448,12 @@ void dl_store_quarantine(dl_stream_t *st)
     }
 
     unlink(jpath); /* a hot journal must never meet a new file of that name */
-    dl_store_fault("logger_file_corrupt", orig);
+
+    if (!dl_store_fault("logger_file_corrupt", orig))
+    {
+        ESP_LOGW(TAG, "fault logger_file_corrupt not latched (no task)");
+    }
+
     s_stats.corrupt++;
     dl_events_error("corrupt", (int)s_stats.corrupt);
     ESP_LOGE(TAG, "%s is corrupt: set aside as %s; logging continues in a "
@@ -398,7 +479,7 @@ void dl_store_quarantine(dl_stream_t *st)
 }
 
 /* open the stream's file; a corrupt one is set aside on the spot; repeated
- * failures latch a fault and slow the retries down (case 10) */
+ * failures latch a fault and slow the retries down (cases 10 and 14) */
 bool dl_store_ensure_open(dl_stream_t *st)
 {
     if (st->eng->is_open(st->ctx))
@@ -406,13 +487,18 @@ bool dl_store_ensure_open(dl_stream_t *st)
         return true;
     }
 
-    if (dl_store_open(st, false) == ESP_OK)
+    esp_err_t err = dl_store_open(st, false);
+
+    if (err == ESP_OK)
     {
         st->open_fails = 0;
+        pay_fault(st); /* one that found no RAM for its latch at the time */
         return true;
     }
 
-    if (st->eng->corrupt != NULL && st->eng->corrupt(st->ctx))
+    /* an open the floor refused never reached the engine: its "corrupt"
+       would be the word of an earlier failure */
+    if (err != ESP_ERR_NO_MEM && dl_store_file_is_bad(st))
     {
         dl_store_quarantine(st);
 
@@ -427,11 +513,25 @@ bool dl_store_ensure_open(dl_stream_t *st)
 
     if (++st->open_fails == DL_OPEN_FAILS_FAULT)
     {
-        ESP_LOGE(TAG, "%s stream: cannot open a file on the card; backing "
-                 "off to 10 s retries", st->frames ? "CAN" : "params");
-        dl_store_fault("logger_storage_error",
-                       st->frames ? "can" : "params");
+        if (err == ESP_ERR_NO_MEM)
+        {
+            /* not the card: say so, nobody should go looking there */
+            ESP_LOGE(TAG, "%s stream: no internal RAM to open a file (%u B "
+                     "free, largest block %u B); backing off to 10 s "
+                     "retries", st->frames ? "CAN" : "params",
+                     (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                     (unsigned)dl_store_card_ram());
+            st->fault_owed = DL_OWED_RAM;
+        }
+        else
+        {
+            ESP_LOGE(TAG, "%s stream: cannot open a file on the card; "
+                     "backing off to 10 s retries",
+                     st->frames ? "CAN" : "params");
+            st->fault_owed = DL_OWED_CARD;
+        }
     }
 
+    pay_fault(st);
     return false;
 }

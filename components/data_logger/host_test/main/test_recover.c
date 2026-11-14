@@ -1,6 +1,7 @@
 /* Host tests for data_logger_recover.c: the pure recovery decisions
    (ROBUSTNESS.md): torn text tails, .wdl resync, corrupt names, the
-   PSRAM salvage sanity checks and the CRC. */
+   PSRAM salvage sanity checks, the CRC, and an open against the internal
+   heap (the floor and the fault's detail, case 14). */
 #include <string.h>
 
 #include "unity.h"
@@ -142,4 +143,56 @@ void test_crc32_known_vector(void)
     /* incremental == one shot */
     uint32_t a = dl_recover_crc32_update(0, "1234", 4);
     TEST_ASSERT_EQUAL_HEX32(crc, dl_recover_crc32_update(a, "56789", 5));
+}
+
+/* ---- an open and the internal heap (ROBUSTNESS.md case 14) ---------------- */
+
+void test_open_floor_is_one_kilobyte_in_one_block(void)
+{
+    /* the field report of 2026-11-13: 5.3 KB free, the largest block
+       3.6 KB. With the stdio buffer kept such a unit opens its file */
+    TEST_ASSERT_TRUE(dl_recover_open_ram_ok(3686));
+    TEST_ASSERT_TRUE(dl_recover_open_ram_ok(DL_OPEN_RAM_MIN));
+    /* under the floor no open is tried: fopen() would abort the unit when
+       the C library cannot have its lock (the crash of 2026-11-07) */
+    TEST_ASSERT_FALSE(dl_recover_open_ram_ok(DL_OPEN_RAM_MIN - 1));
+    TEST_ASSERT_FALSE(dl_recover_open_ram_ok(512));
+    TEST_ASSERT_FALSE(dl_recover_open_ram_ok(0));
+}
+
+void test_corrupt_is_no_verdict_under_the_floor(void)
+{
+    /* the engine says corrupt and the unit can read its card: the file is
+       set aside (ROBUSTNESS.md case 5) */
+    TEST_ASSERT_TRUE(dl_recover_corrupt_counts(true, 31744));
+    TEST_ASSERT_TRUE(dl_recover_corrupt_counts(true, DL_OPEN_RAM_MIN));
+    /* under the floor the card reads fail for want of a bounce buffer and
+       sqlite calls the zeros "not a database": a good file is not touched */
+    TEST_ASSERT_FALSE(dl_recover_corrupt_counts(true, DL_OPEN_RAM_MIN - 1));
+    TEST_ASSERT_FALSE(dl_recover_corrupt_counts(true, 12));
+    TEST_ASSERT_FALSE(dl_recover_corrupt_counts(true, 0));
+    /* and a file the engine did not call corrupt never is */
+    TEST_ASSERT_FALSE(dl_recover_corrupt_counts(false, 31744));
+    TEST_ASSERT_FALSE(dl_recover_corrupt_counts(false, 0));
+}
+
+void test_fault_detail_tells_the_memory_from_the_card(void)
+{
+    char out[48];
+
+    /* the card: the detail as it has been since 2026-09-07 */
+    TEST_ASSERT_EQUAL_INT(6, dl_recover_fault_detail(out, sizeof(out), false, false));
+    TEST_ASSERT_EQUAL_STRING("params", out);
+    TEST_ASSERT_EQUAL_INT(3, dl_recover_fault_detail(out, sizeof(out), true, false));
+    TEST_ASSERT_EQUAL_STRING("can", out);
+    /* the internal heap: named, so nobody looks for a fault on a good card */
+    TEST_ASSERT_EQUAL_INT(27, dl_recover_fault_detail(out, sizeof(out), false, true));
+    TEST_ASSERT_EQUAL_STRING("params: out of internal RAM", out);
+    TEST_ASSERT_EQUAL_INT(24, dl_recover_fault_detail(out, sizeof(out), true, true));
+    TEST_ASSERT_EQUAL_STRING("can: out of internal RAM", out);
+    /* it fits the fault store's 48-byte detail; a buffer too small for it
+       answers 0 and never a cut text read as the other reason */
+    TEST_ASSERT_TRUE(strlen("params: out of internal RAM") < 48);
+    TEST_ASSERT_EQUAL_INT(0, dl_recover_fault_detail(out, 10, false, true));
+    TEST_ASSERT_EQUAL_STRING("", out);
 }

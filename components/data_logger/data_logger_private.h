@@ -245,6 +245,11 @@ typedef struct
      * the record type stops there as at a torn tail, nothing lost) */
     esp_err_t (*mark)(void *ctx, const dl_clock_step_t *step);
     bool      mark_close_only;
+    /* optional (2026-11-14): take the internal RAM the engine's files need
+     * (the DMA-capable stdio buffer) and keep it until the reboot. The
+     * writer calls it at its start, open() again when that found none: no
+     * later open depends on a 4 KB block being free in the internal heap */
+    esp_err_t (*reserve)(void *ctx);
 } dl_engine_t;
 
 extern const dl_engine_t dl_engine_sqlite;   /* data_logger_db.c     */
@@ -271,7 +276,8 @@ typedef struct
                                     the host-test build               */
     uint64_t bytes;
     char    *buf;                /* 4 KB DMA-capable stdio buffer:
-                                    lazy INTERNAL heap, open→close     */
+                                    INTERNAL heap, taken once (reserve)
+                                    and kept until the reboot          */
     uint16_t next_id;            /* .wdl dictionary ids               */
     uint8_t  fmt;                /* DL_AP_*                           */
     bool     frames;             /* header/row shape at open          */
@@ -288,7 +294,7 @@ typedef struct                   /* MDF 4.10 (data_logger_mf4.c)      */
     uint32_t mono_open;          /* records are relative to this      */
     uint32_t dt_len_off;         /* patch targets (commit)            */
     uint32_t cg_cycle_off;
-    char    *buf;                /* lazy 4 KB DMA stdio buffer        */
+    char    *buf;                /* 4 KB DMA stdio buffer, kept       */
 } dl_mf4_ctx_t;
 
 typedef struct                   /* Vector BLF (data_logger_blf.c)    */
@@ -301,7 +307,7 @@ typedef struct                   /* Vector BLF (data_logger_blf.c)    */
     uint32_t mono_open;          /* messages are relative to this     */
     int64_t  last_rel_ms;        /* the newest message's offset       */
     uint32_t cfill;              /* container accumulation fill       */
-    char    *buf;                /* lazy 4 KB DMA stdio buffer        */
+    char    *buf;                /* 4 KB DMA stdio buffer, kept       */
 } dl_blf_ctx_t;
 
 typedef struct
@@ -398,7 +404,15 @@ typedef struct
     uint32_t           open_fails;    /* consecutive open failures        */
     uint32_t           corrupt_files; /* *.corrupt set aside for this stream */
     char               last_try[48];  /* file name of the last open attempt */
+    uint8_t            fault_owed;    /* DL_OWED_*: a fault not latched yet
+                                         (its latch needs internal RAM too) */
+    bool               fault_late;    /* said once that the latch waits   */
 } dl_stream_t;
+
+/* dl_stream_t.fault_owed */
+#define DL_OWED_NONE 0
+#define DL_OWED_CARD 1   /* the opens fail on the card                  */
+#define DL_OWED_RAM  2   /* the opens fail for want of internal RAM      */
 
 /* the storage counters the writer and the store share */
 typedef struct
@@ -410,6 +424,16 @@ typedef struct
 
 /* data_logger_store.c */
 #define DL_OPEN_FAILS_FAULT 3   /* consecutive open failures that latch a fault */
+/* An open takes internal RAM that nothing else can stand in for: the C
+ * library's lock of the stream (a FreeRTOS mutex: fopen() ABORTS when it
+ * cannot have one, the crash report of 2026-11-07 in task dl_writer) and a
+ * one-sector DMA-capable bounce buffer for each card transfer of a sector
+ * the file system keeps in PSRAM. With less than this in ONE free block of
+ * the DMA-capable internal heap (dl_store_card_ram) no open is tried: the
+ * stream waits and the rings absorb. The same floor decides whether an
+ * engine's "this file is corrupt" is a verdict about the file at all
+ * (dl_store_file_is_bad). 2026-11-14. */
+#define DL_OPEN_RAM_MIN 1024
 esp_err_t dl_store_open(dl_stream_t *st, bool force_new); /* the newest, or fresh */
 void      dl_store_close(dl_stream_t *st);
 void      dl_store_rotate(dl_stream_t *st);   /* close, a fresh file, the event */
@@ -417,8 +441,13 @@ bool      dl_store_ensure_open(dl_stream_t *st); /* a corrupt file is set aside 
                                                     the spot; repeated failures
                                                     latch a fault */
 void      dl_store_quarantine(dl_stream_t *st);
-void      dl_store_fault(const char *code, const char *detail); /* an internal-
-                                                    stack task latches it */
+bool      dl_store_fault(const char *code, const char *detail); /* an internal-
+                                                    stack task latches it; false =
+                                                    no RAM for that task now */
+size_t    dl_store_card_ram(void);    /* the largest free block a card transfer
+                                         can take its bounce buffer from */
+bool      dl_store_file_is_bad(dl_stream_t *st); /* the engine says corrupt AND
+                                         the unit can read its card */
 dl_store_stats_t *dl_store_stats(void);
 
 /* data_logger_writer.c */
@@ -447,6 +476,21 @@ bool     dl_recover_record_sane(const dl_record_t *r);
 bool     dl_recover_ring_sane(uint32_t cap, uint32_t cap_limit, uint32_t head,
                               uint32_t tail, uint32_t *fill);
 uint32_t dl_recover_crc32_update(uint32_t crc, const void *data, size_t len);
+/* an open is tried only with DL_OPEN_RAM_MIN bytes in one free block of the
+ * DMA-capable internal heap (the largest one is what the caller passes) */
+bool     dl_recover_open_ram_ok(size_t largest_internal_block);
+/* an engine's "corrupt" counts as a verdict about the FILE only while the
+ * unit can read its card: under the floor the SD driver finds no bounce
+ * buffer, reads come back short, and sqlite takes the zeros for "not a
+ * database" */
+bool     dl_recover_corrupt_counts(bool engine_says_corrupt,
+                                   size_t largest_internal_block);
+/* the detail of `logger_storage_error` for a stream whose opens keep
+ * failing: "params" / "can" for the card (as since 2026-09-07), and
+ * "params: out of internal RAM" when the open could not have the memory it
+ * needs, so nobody goes looking for a fault on a good card. Returns strlen */
+int      dl_recover_fault_detail(char *out, size_t cap, bool frames,
+                                 bool no_mem);
 /* sqlite salvage (data_logger_db.c): copy what can still be read from @p src
  * into a fresh @p dst with the stream's schema; rows copied in *rows_out */
 esp_err_t dl_sq_salvage(const char *src, const char *dst, bool frames,

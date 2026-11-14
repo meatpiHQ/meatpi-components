@@ -137,11 +137,21 @@ static void journal_append(const char *line, int n)
         return;
     }
 
-    char *buf = heap_caps_malloc(JOURNAL_BUF,
-                                 MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+    /* the floor of every open (DL_OPEN_RAM_MIN): the line is lost rather
+       than the unit (fopen() aborts when the C library gets no lock) */
+    char *buf = dl_recover_open_ram_ok(dl_store_card_ram())
+                    ? heap_caps_malloc(JOURNAL_BUF,
+                                       MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)
+                    : NULL;
 
     if (buf == NULL)
     {
+        if (!s_journal_warned)
+        {
+            ESP_LOGW(TAG, "clock journal: no internal RAM to write a line");
+            s_journal_warned = true;
+        }
+
         return;
     }
 

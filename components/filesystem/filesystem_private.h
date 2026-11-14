@@ -119,6 +119,27 @@ fs_lfs_kind_t fs_lfs_probe(const uint8_t *blk0, const uint8_t *blk1,
                            size_t len, uint32_t block_size,
                            uint32_t *block_count);
 
+/**
+ * A set of file descriptors (2026-11-14): the streams filesystem_open()
+ * handed out on the SD card. The stream helpers run such a stream's
+ * fread / fstat / fclose in line whatever the caller's stack is (the card
+ * goes through SDMMC, the flash cache stays on); every other descriptor is
+ * taken for a /data stream and marshalled to the flash worker when the
+ * caller's stack is in PSRAM. So a descriptor the set does not know, or one
+ * out of its range, is NOT in it: the safe side of the cache rule.
+ * FS_FDSET_MAX covers every descriptor the VFS can hand out (its table is
+ * FD_SETSIZE = 64 entries). Pure: host-tested. No locking of its own.
+ */
+#define FS_FDSET_MAX 64
+
+typedef struct
+{
+    uint32_t w[FS_FDSET_MAX / 32];
+} fs_fdset_t;
+
+void fs_fdset_put(fs_fdset_t *set, int fd, bool in);
+bool fs_fdset_has(const fs_fdset_t *set, int fd);
+
 /* ---- filesystem.c internals shared with filesystem_stream.c (esp target
  * only: never referenced by the host-built path module) ------------------- */
 

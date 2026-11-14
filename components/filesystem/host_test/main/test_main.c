@@ -18,6 +18,9 @@ void test_region_blank_detection(void);
 void test_lfs_probe_blank_ours_and_factory(void);
 void test_lfs_probe_other_and_bad_input(void);
 void test_api_hidden_folders(void);
+void test_fdset_knows_only_what_it_was_told(void);
+void test_fdset_forgets_a_closed_descriptor_and_takes_its_next_owner(void);
+void test_fdset_out_of_range_is_never_a_card_stream(void);
 
 void app_main(void)
 {
@@ -36,5 +39,8 @@ void app_main(void)
     RUN_TEST(test_lfs_probe_blank_ours_and_factory);
     RUN_TEST(test_lfs_probe_other_and_bad_input);
     RUN_TEST(test_api_hidden_folders);
+    RUN_TEST(test_fdset_knows_only_what_it_was_told);
+    RUN_TEST(test_fdset_forgets_a_closed_descriptor_and_takes_its_next_owner);
+    RUN_TEST(test_fdset_out_of_range_is_never_a_card_stream);
     UNITY_END();
 }

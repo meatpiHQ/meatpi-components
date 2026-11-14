@@ -57,8 +57,9 @@
  * synchronously, one at a time (the caller waits; a filesystem_list()
  * callback then runs on that worker's 6 KB stack, so keep callbacks small).
  * A stream from filesystem_open() is the caller's: use filesystem_fread(),
- * filesystem_fstat() and filesystem_fclose() on a /data stream from a
- * PSRAM-stack task (they marshal the call), plain stdio only from an
+ * filesystem_fstat() and filesystem_fclose() on it from a PSRAM-stack task
+ * (they marshal the call for a /data stream and run a card stream's in
+ * line, which needs no worker), plain stdio only from an
  * internal-stack task.
  */
 #pragma once
@@ -195,11 +196,16 @@ FILE *filesystem_open(const char *path, const char *mode);
 
 /**
  * The stream helpers for a PSRAM-stack caller (2026-10-31): fread, fstat
- * and fclose on a filesystem_open() handle, run on the worker when the
- * calling task's stack is in PSRAM, in line otherwise. They do not know
- * the handle's backend, so a call from a PSRAM stack is marshalled for
- * /sd streams too (harmless). filesystem_fread() returns the bytes read
- * (0 at the end or on an error, as fread does).
+ * and fclose on a filesystem_open() handle. A /data stream's call runs on
+ * the worker when the calling task's stack is in PSRAM, in line otherwise.
+ * An /sd stream's call always runs in line (since 2026-11-14: the card
+ * needs no internal stack, and a worker that is refused on a unit short of
+ * internal RAM must not leave a card file open and locked).
+ * filesystem_fread() returns the bytes read (0 at the end or on an error,
+ * as fread does; also 0 when the worker a /data stream needs is refused).
+ * filesystem_fclose() of a /data stream whose worker is refused tries
+ * again for a second, then says so at E and returns ESP_ERR_NO_MEM: that
+ * handle stays open until the restart.
  */
 size_t    filesystem_fread(void *buf, size_t len, FILE *f);
 esp_err_t filesystem_fstat(FILE *f, struct stat *st);

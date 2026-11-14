@@ -40,10 +40,20 @@
 #include <sys/stat.h>
 
 #include "esp_littlefs.h"
+#include "esp_log.h"
 #include "esp_vfs_fat.h" /* /sd capacity (backend mounted by external_storage) */
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "sdkconfig.h"
 
 #include "filesystem_private.h"
+
+static const char *TAG = "filesystem";
+
+/* the close of a /data stream whose worker is refused: tried again for a
+   second before the handle is given up (filesystem_fclose) */
+#define FS_CLOSE_TRIES   6
+#define FS_CLOSE_WAIT_MS 200
 
 /* ---- read ------------------------------------------------------------------- */
 
@@ -302,10 +312,52 @@ esp_err_t filesystem_list(const char *dir_path, filesystem_list_cb_t cb,
    The open of a /data stream reads the flash (the directory walk) and so
    runs on the worker for a PSRAM-stack caller; the stream itself is the
    caller's. Its reads, stat and close carry the rule when the caller uses
-   the helpers below: those do not know the backend of a handle, so they
-   marshal every call made from a PSRAM stack (an /sd stream from the HTTP
-   server task runs on the worker too, which is harmless and serializes
-   SD streaming behind the flash jobs for the duration of a chunk). */
+   the helpers below.
+
+   An /sd stream needs no worker: the card goes through SDMMC and the flash
+   cache stays on. The helpers know such a stream by its descriptor
+   (s_sd_fds, set at the open). Until 2026-11-14 they did not know a
+   handle's backend and marshalled every call made from a PSRAM stack, an
+   /sd stream's too, which was "harmless" only while the worker could be
+   had: the worker is a task with a 4 KB internal stack, created on demand,
+   and on a unit short of internal RAM it is refused. A download of a card
+   file from the HTTP server task then read nothing (an empty 200) and,
+   worse, never CLOSED its stream: the file stayed locked (FATFS FS_LOCK),
+   and when it was the logger's active file the logger could not open it
+   again until the restart (`open ... failed (errno 13)`, the fault
+   `logger_storage_error`). Found with the internal heap squeezed to 5.3 KB
+   on the bench. A descriptor the set does not know is taken for a /data
+   stream and marshalled: the safe side of the cache rule. */
+
+static fs_fdset_t s_sd_fds;
+static portMUX_TYPE s_sd_fds_mux = portMUX_INITIALIZER_UNLOCKED;
+
+/* fileno() takes the stream's lock: never inside the critical section */
+static void sd_stream_note(FILE *f, bool sd)
+{
+    int fd = fileno(f);
+
+    portENTER_CRITICAL(&s_sd_fds_mux);
+    fs_fdset_put(&s_sd_fds, fd, sd);
+    portEXIT_CRITICAL(&s_sd_fds_mux);
+}
+
+/* the call has to go to the worker: a PSRAM stack and not a card stream */
+static bool stream_needs_worker(FILE *f)
+{
+    if (fs_on_internal_stack())
+    {
+        return false;
+    }
+
+    int fd = fileno(f);
+    bool sd;
+
+    portENTER_CRITICAL(&s_sd_fds_mux);
+    sd = fs_fdset_has(&s_sd_fds, fd);
+    portEXIT_CRITICAL(&s_sd_fds_mux);
+    return !sd;
+}
 
 typedef struct
 {
@@ -331,15 +383,28 @@ FILE *filesystem_open(const char *path, const char *mode)
         return NULL;
     }
 
+    FILE *f;
+
     if (backend == FS_BACKEND_INTERNAL && !fs_on_internal_stack())
     {
         open_args_t a = { path, mode, NULL };
 
         (void)fs_run_internal(open_job, &a);
-        return a.f;
+        f = a.f;
+    }
+    else
+    {
+        f = fopen(path, mode);
     }
 
-    return fopen(path, mode);
+    if (f != NULL)
+    {
+        /* the descriptor may be one a closed stream left behind: say what
+           it is now, either way */
+        sd_stream_note(f, backend == FS_BACKEND_SD);
+    }
+
+    return f;
 }
 
 typedef struct
@@ -365,7 +430,7 @@ size_t filesystem_fread(void *buf, size_t len, FILE *f)
         return 0;
     }
 
-    if (!fs_on_internal_stack())
+    if (stream_needs_worker(f))
     {
         fread_args_t a = { buf, len, f, 0 };
 
@@ -396,7 +461,7 @@ esp_err_t filesystem_fstat(FILE *f, struct stat *st)
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (!fs_on_internal_stack())
+    if (stream_needs_worker(f))
     {
         fstat_args_t a = { f, st };
 
@@ -418,11 +483,35 @@ esp_err_t filesystem_fclose(FILE *f)
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (!fs_on_internal_stack())
+    if (stream_needs_worker(f))
     {
-        return fs_run_internal(fclose_job, f);
+        /* a /data stream from a PSRAM stack: only the worker may close it.
+           A refusal (no internal RAM for the worker's stack) is waited out
+           for a moment: a stream that is never closed is a handle lost
+           until the restart */
+        esp_err_t err = ESP_ERR_NO_MEM;
+
+        for (int i = 0; i < FS_CLOSE_TRIES && err == ESP_ERR_NO_MEM; i++)
+        {
+            if (i > 0)
+            {
+                vTaskDelay(pdMS_TO_TICKS(FS_CLOSE_WAIT_MS));
+            }
+
+            err = fs_run_internal(fclose_job, f);
+        }
+
+        if (err == ESP_ERR_NO_MEM)
+        {
+            ESP_LOGE(TAG, "a /data stream could not be closed: no internal "
+                     "RAM for the flash worker; its handle stays open until "
+                     "the restart");
+        }
+
+        return err;
     }
 
+    sd_stream_note(f, false); /* the descriptor goes back to the pool */
     return (fclose(f) == 0) ? ESP_OK : ESP_FAIL;
 }
 

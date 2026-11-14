@@ -95,8 +95,18 @@ exists.
   stream from `filesystem_open()` is the caller's: its open runs on the
   worker for a `/data` path, and `filesystem_fread()` /
   `filesystem_fstat()` / `filesystem_fclose()` carry the rule for the
-  reads, the stat and the close (they do not know a handle's backend, so a
-  call from a PSRAM stack is marshalled for `/sd` streams too, harmless).
+  reads, the stat and the close of a `/data` stream. An `/sd` stream's
+  calls run in line whatever the caller's stack is: the helpers know a card
+  stream by its descriptor, noted at the open (`fs_fdset_t`, pure,
+  host-tested). Until 2026-11-14 they marshalled an `/sd` stream's calls
+  too, which made every card download from the HTTP server task depend on
+  the flash worker, a task with a 4 KB internal stack created on demand:
+  on a unit short of internal RAM the worker is refused, the download read
+  nothing (an empty 200) and the stream was never closed, so the file
+  stayed locked (FATFS FS_LOCK). When that file was the logger's active
+  one, the logger could not open it again until the restart
+  (`logger_storage_error`). A `/data` stream whose worker is refused at
+  the close is tried again for a second and then given up with an E line.
   The streaming writes (`filesystem_write_open/chunk/commit/abort`) carry
   it for `/data` streams. This is what let `config_backup`'s copies worker
   move its 8 KB stack to PSRAM (2026-10-13) and the HTTP server task its
@@ -165,7 +175,10 @@ directories again. Proof: `config_backup_bench.py --factory` leg `b9`.
   blank, ours, the factory firmware's 1536 blocks, one erased block of the
   pair, the entry deeper in a block; a FAT boot sector, data blocks, the
   name without a struct, another block size, a version-1 filesystem, a
-  struct cut off by the probe's length, bad arguments). 13 tests. `idf.py --preview
+  struct cut off by the probe's length, bad arguments), the folders the
+  HTTP file surface never reaches, and the descriptor set of the card
+  streams (`fs_fdset_t`: only what it was told, a closed descriptor and its
+  next owner, out of range = never a card stream). 17 tests. `idf.py --preview
   set-target linux && idf.py build` (Linux host required), run the ELF.
 - **On-target (`test_apps/`):** mounts the real `storage` partition and exercises
   write/read roundtrip, atomicity (no temp leftover), nested auto-create,

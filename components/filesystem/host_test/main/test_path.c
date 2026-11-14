@@ -251,3 +251,70 @@ void test_api_hidden_folders(void)
     TEST_ASSERT_FALSE(filesystem_api_hidden("/sd/logs"));
     TEST_ASSERT_FALSE(filesystem_api_hidden(NULL));
 }
+
+/* ---- the descriptors of the SD streams (2026-11-14) ---------------------- */
+
+void test_fdset_knows_only_what_it_was_told(void)
+{
+    fs_fdset_t set = { { 0 } };
+
+    /* nothing noted: every stream is taken for a /data stream (the flash
+       worker), the safe side of the cache rule */
+    for (int fd = 0; fd < FS_FDSET_MAX; fd++)
+    {
+        TEST_ASSERT_FALSE(fs_fdset_has(&set, fd));
+    }
+
+    fs_fdset_put(&set, 3, true);
+    fs_fdset_put(&set, 31, true);
+    fs_fdset_put(&set, 32, true);
+    fs_fdset_put(&set, 63, true);
+    TEST_ASSERT_TRUE(fs_fdset_has(&set, 3));
+    TEST_ASSERT_TRUE(fs_fdset_has(&set, 31));
+    TEST_ASSERT_TRUE(fs_fdset_has(&set, 32));
+    TEST_ASSERT_TRUE(fs_fdset_has(&set, 63));
+    TEST_ASSERT_FALSE(fs_fdset_has(&set, 4));
+    TEST_ASSERT_FALSE(fs_fdset_has(&set, 30));
+    TEST_ASSERT_FALSE(fs_fdset_has(&set, 33));
+    TEST_ASSERT_FALSE(fs_fdset_has(&set, 62));
+}
+
+void test_fdset_forgets_a_closed_descriptor_and_takes_its_next_owner(void)
+{
+    fs_fdset_t set = { { 0 } };
+
+    /* a card stream on descriptor 7, closed: the descriptor goes back */
+    fs_fdset_put(&set, 7, true);
+    fs_fdset_put(&set, 7, false);
+    TEST_ASSERT_FALSE(fs_fdset_has(&set, 7));
+    /* a card stream closed with plain fclose() leaves its mark behind; the
+       next open through filesystem_open() says what the descriptor is now */
+    fs_fdset_put(&set, 9, true);
+    fs_fdset_put(&set, 9, false);  /* a /data stream took descriptor 9 */
+    TEST_ASSERT_FALSE(fs_fdset_has(&set, 9));
+    fs_fdset_put(&set, 9, true);   /* and a card stream after it */
+    TEST_ASSERT_TRUE(fs_fdset_has(&set, 9));
+    /* the neighbours are untouched */
+    TEST_ASSERT_FALSE(fs_fdset_has(&set, 8));
+    TEST_ASSERT_FALSE(fs_fdset_has(&set, 10));
+}
+
+void test_fdset_out_of_range_is_never_a_card_stream(void)
+{
+    fs_fdset_t set = { { 0xFFFFFFFFu, 0xFFFFFFFFu } };
+
+    /* fileno() of a broken stream is -1; a descriptor past the table
+       cannot exist: both go to the worker, never in line */
+    TEST_ASSERT_FALSE(fs_fdset_has(&set, -1));
+    TEST_ASSERT_FALSE(fs_fdset_has(&set, FS_FDSET_MAX));
+    TEST_ASSERT_FALSE(fs_fdset_has(&set, 1000));
+    TEST_ASSERT_FALSE(fs_fdset_has(NULL, 3));
+    /* and a put there changes nothing */
+    fs_fdset_put(&set, -1, false);
+    fs_fdset_put(&set, FS_FDSET_MAX, false);
+    fs_fdset_put(NULL, 3, true);
+    TEST_ASSERT_EQUAL_HEX32(0xFFFFFFFFu, set.w[0]);
+    TEST_ASSERT_EQUAL_HEX32(0xFFFFFFFFu, set.w[1]);
+    TEST_ASSERT_TRUE(fs_fdset_has(&set, 0));
+    TEST_ASSERT_TRUE(fs_fdset_has(&set, FS_FDSET_MAX - 1));
+}

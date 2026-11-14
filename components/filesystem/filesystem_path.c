@@ -22,8 +22,9 @@
 
 /**
  * @file filesystem_path.c
- * @brief Pure path validation/routing for the filesystem component, and
- *        the LittleFS superblock probe the mount runs first (2026-10-06).
+ * @brief Pure path validation/routing for the filesystem component, the
+ *        LittleFS superblock probe the mount runs first (2026-10-06) and
+ *        the descriptor set of the SD streams (2026-11-14).
  *        No IDF/VFS dependencies: compiled as-is by the host unit tests.
  */
 #include "filesystem_private.h"
@@ -325,4 +326,35 @@ fs_lfs_kind_t fs_lfs_probe(const uint8_t *blk0, const uint8_t *blk1,
     }
 
     return FS_LFS_OTHER;
+}
+
+/* ---- the descriptors of the SD streams (2026-11-14) ---------------------- */
+
+void fs_fdset_put(fs_fdset_t *set, int fd, bool in)
+{
+    if (set == NULL || fd < 0 || fd >= FS_FDSET_MAX)
+    {
+        return;
+    }
+
+    uint32_t bit = 1u << ((unsigned)fd % 32u);
+
+    if (in)
+    {
+        set->w[fd / 32] |= bit;
+    }
+    else
+    {
+        set->w[fd / 32] &= ~bit;
+    }
+}
+
+bool fs_fdset_has(const fs_fdset_t *set, int fd)
+{
+    if (set == NULL || fd < 0 || fd >= FS_FDSET_MAX)
+    {
+        return false;
+    }
+
+    return (set->w[fd / 32] & (1u << ((unsigned)fd % 32u))) != 0;
 }

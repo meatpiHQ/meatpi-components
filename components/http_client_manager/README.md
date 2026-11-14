@@ -63,7 +63,24 @@ client cert+key pair (when present) is offered = mutual TLS, the same
 model as mqtt_manager. **Live-verified 2026-07-04** against the bench
 TLS endpoint (socat + bench CA on rpi001:8443): with `cert_set` →
 status 200; without → correctly refused (the bundle doesn't trust the
-bench CA). `skip_common_name` exists for rare devices with broken certs.
+bench CA).
+
+`skip_common_name` drops the comparison of the certificate's name, never
+the verification of its chain. The callers set it for an `https://`
+address by IP (ha_webhooks, data_destinations): a Home Assistant or a
+receiver on the LAN whose certificate names a host, such as a Let's
+Encrypt certificate for a DuckDNS name reached at `https://192.168.1.10:8123`.
+esp-tls prints a W line on every such connection (`skip_common_name=true:
+hostname matching and SNI disabled ...`), one per push, which filled the
+log ring and the warning count of a device that pushes every 15 s (seen
+2026-11-14 with a Home Assistant on SSL). The manager therefore registers
+the tag `esp-tls-mbedtls` at ERROR (a quiet tag, log_manager README) and
+logs one I line a boot itself: `https to an address by IP: the
+certificate's chain is verified, its name is not compared`. A handshake
+that fails still logs its E lines (`mbedtls_ssl_handshake returned
+-0x2700` for a name or a chain that does not verify). To see esp-tls's own
+warnings again: `PUT /api/logs/level {"tag":"esp-tls-mbedtls","level":"warn"}`.
+Bench: `.\test.ps1 tlsbyip`.
 
 ## Auth helpers (pure, host-tested 5/5 incl. RFC vectors)
 

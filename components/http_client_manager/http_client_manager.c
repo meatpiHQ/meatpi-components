@@ -69,6 +69,15 @@ esp_err_t http_client_manager_init(void)
 {
     static const log_descriptor_t LOG_DESC =
         { "http_client_manager", ESP_LOG_INFO };
+    /* esp-tls prints a W line on EVERY connection that skips the name
+       check ("skip_common_name=true: ... Only intended for loopback / debug
+       clients"). The callers ask for the skip on purpose, for an https
+       address by IP (a Home Assistant or a destination on the LAN whose
+       certificate names a host; the chain is verified all the same), so
+       the line came with every push and filled the log ring. That tag is
+       kept to its errors; the manager says it once itself
+       (note_name_check_skipped) and a failed handshake still logs E. */
+    static const log_descriptor_t TLS_LOG = { "esp-tls-mbedtls", ESP_LOG_ERROR };
 
     if (s_inited)
     {
@@ -76,6 +85,7 @@ esp_err_t http_client_manager_init(void)
     }
 
     log_manager_register(&LOG_DESC);
+    log_manager_register(&TLS_LOG);
     s_limiter = xSemaphoreCreateCountingStatic(
         HTTP_CLIENT_MANAGER_MAX_CONCURRENT,
         HTTP_CLIENT_MANAGER_MAX_CONCURRENT, &s_limiter_buf);
@@ -315,6 +325,22 @@ esp_err_t hc_open_and_fetch(esp_http_client_handle_t client,
     }
 }
 
+/** Said once a boot, in place of the warning esp-tls prints on every such
+ *  connection (the descriptor in http_client_manager_init keeps that off). */
+static void note_name_check_skipped(void)
+{
+    static bool s_said;
+
+    if (s_said)
+    {
+        return;
+    }
+
+    s_said = true;
+    ESP_LOGI(TAG, "https to an address by IP: the certificate's chain is "
+                  "verified, its name is not compared");
+}
+
 esp_http_client_handle_t hc_client_for(const http_client_request_t *req,
                                        hdr_capture_t *cap)
 {
@@ -336,6 +362,11 @@ esp_http_client_handle_t hc_client_for(const http_client_request_t *req,
     if (hc_url_is_tls(req->url))
     {
         configure_tls(&cfg, req);
+
+        if (req->skip_common_name)
+        {
+            note_name_check_skipped();
+        }
     }
 
     esp_http_client_handle_t client = esp_http_client_init(&cfg);

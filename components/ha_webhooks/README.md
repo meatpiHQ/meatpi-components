@@ -88,7 +88,11 @@ identical on every product built from the V6 core.
   Bench-measured ratio ~2.3-2.4× on small (0.6-1.6 KB) payloads; bigger
   autopid sets compress better.
 - **TLS**: built-in bundle by default; `cert_set` for a private-cert HA;
-  raw-IP HTTPS auto-skips CN.
+  raw-IP HTTPS auto-skips CN (the chain is still verified;
+  http_client_manager says so once a boot, in place of esp-tls's warning
+  on every push: its README, TLS). The integration registers such a URL
+  for a Home Assistant whose own web server has SSL on and no Local
+  network URL (2026-11-14).
 - **Active on (2026-11-08, Ali).** `networks` names the station networks
   the pushes go out on (`""` = every network, else names separated by
   commas); the poster asks `wifi_manager_sta_on_network()` before every

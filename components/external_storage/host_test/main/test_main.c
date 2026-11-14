@@ -406,6 +406,59 @@ static void test_words_and_cluster_size(void)
     TEST_ASSERT_EQUAL_UINT32(32768, es_format_cluster_bytes(63864569856ull));
 }
 
+/* ---- the close guard (2026-11-14) --------------------------------------------- */
+
+/* FatFs's public open-mode bits, as a FIL carries them beside the two
+   status bits (ff.h: FA_READ, FA_WRITE; ff.c: FA_SEEKEND) */
+#define T_FA_READ    0x01
+#define T_FA_WRITE   0x02
+#define T_FA_SEEKEND 0x20
+
+static void test_close_that_worked_is_left_alone(void)
+{
+    uint8_t flag = T_FA_WRITE | ES_FA_MODIFIED | ES_FA_DIRTY;
+
+    TEST_ASSERT_FALSE(es_close_retry(true, false, &flag));
+    TEST_ASSERT_FALSE(es_close_retry(true, true, &flag));
+    TEST_ASSERT_EQUAL_HEX8(T_FA_WRITE | ES_FA_MODIFIED | ES_FA_DIRTY, flag);
+}
+
+static void test_failed_close_of_a_known_file_is_made_again_without_the_flush(void)
+{
+    /* the logger's file in the field report: open for appending, written
+       to, its sector buffer dirty, and the flush of the close failed for
+       want of a bounce buffer */
+    uint8_t flag = T_FA_READ | T_FA_WRITE | T_FA_SEEKEND | ES_FA_MODIFIED |
+                   ES_FA_DIRTY;
+
+    TEST_ASSERT_TRUE(es_close_retry(false, true, &flag));
+    /* nothing left to write: the second close goes straight to the release
+       of the lock; the open mode stays what it was */
+    TEST_ASSERT_EQUAL_HEX8(T_FA_READ | T_FA_WRITE | T_FA_SEEKEND, flag);
+    /* a file only read has nothing to drop and is still closed again */
+    flag = T_FA_READ;
+    TEST_ASSERT_TRUE(es_close_retry(false, true, &flag));
+    TEST_ASSERT_EQUAL_HEX8(T_FA_READ, flag);
+}
+
+static void test_failed_close_of_an_unknown_file_is_not_repeated(void)
+{
+    /* FatFs no longer knows the object (the card was unmounted, a stale
+       handle): a second close has no lock to release */
+    uint8_t flag = T_FA_WRITE | ES_FA_MODIFIED;
+
+    TEST_ASSERT_FALSE(es_close_retry(false, false, &flag));
+    TEST_ASSERT_EQUAL_HEX8(T_FA_WRITE | ES_FA_MODIFIED, flag);
+    TEST_ASSERT_FALSE(es_close_retry(false, true, NULL));
+}
+
+static void test_close_guard_bits_are_fatfs_own(void)
+{
+    /* ff.c R0.15: FA_MODIFIED 0x40, FA_DIRTY 0x80 (private to that file) */
+    TEST_ASSERT_EQUAL_HEX8(0x40, ES_FA_MODIFIED);
+    TEST_ASSERT_EQUAL_HEX8(0x80, ES_FA_DIRTY);
+}
+
 void app_main(void)
 {
     UNITY_BEGIN();
@@ -423,5 +476,9 @@ void app_main(void)
     RUN_TEST(test_probe_signature_without_partitions);
     RUN_TEST(test_probe_read_errors);
     RUN_TEST(test_words_and_cluster_size);
+    RUN_TEST(test_close_that_worked_is_left_alone);
+    RUN_TEST(test_failed_close_of_a_known_file_is_made_again_without_the_flush);
+    RUN_TEST(test_failed_close_of_an_unknown_file_is_not_repeated);
+    RUN_TEST(test_close_guard_bits_are_fatfs_own);
     UNITY_END();
 }

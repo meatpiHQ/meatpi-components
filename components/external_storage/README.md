@@ -65,6 +65,42 @@ with the error, after which the card is probed again. Removal mid-format
 fails the format and the state follows the pin. The detect task's stack
 headroom is logged after every format (the stack audit's rule).
 
+## A close that cannot flush still releases the file (2026-11-14)
+
+FatFs's `f_close()` flushes first and returns as soon as that fails,
+before it gives the file's lock back (`FF_FS_LOCK`); IDF's VFS wipes its
+own slot whatever the result. The file object is gone and the lock is
+not: until the card is mounted again nobody can open that file, for
+writing or for reading (`FR_LOCKED`, errno 13, the file API's 409 `file in
+use`).
+
+A flush fails on a healthy card when the unit is short of internal RAM:
+the SD driver takes a DMA-capable bounce buffer of one sector from the
+internal heap for every transfer from a buffer that is not DMA-capable or
+not aligned (FatFs keeps its sector windows in PSRAM), and logs `sdmmc_cmd:
+allocate_dma_buf: not enough mem` when there is none. The write fails, the
+writer closes its file, the close fails the same way. Seen on the bench
+with the internal heap squeezed to zero (the logger's database: `unable to
+open database file` every 10 s with all the memory back, its download 409
+with no file open anywhere), and it is what the field report of 2026-11-13
+describes: `logger_storage_error`, no file name on the Logger page, the
+newest log file not downloadable, on a good card.
+
+`es_close.c` wraps `f_close()` at link time (the lwip_guard / ip4_routes
+pattern: IDF has no hook there). When the first close fails and FatFs
+still knows the object, the guard drops the object's "modified" and
+"dirty" status bits and closes again: with nothing left to write FatFs
+goes straight to the release (the rule is the pure `es_close_retry()`,
+host-tested). What the failed flush did not bring to the card is lost, as
+after a power cut at that moment: the directory entry keeps the size of
+the last successful sync, and the logger's resume cuts a torn tail. The
+caller still gets the first close's error. One W line per such close:
+`a file's close could not flush (FatFs result N): its lock is released;
+what was not on the card yet is lost (K so far)`. The two status bits are
+FatFs's own (`FA_MODIFIED` 0x40, `FA_DIRTY` 0x80, private to `ff.c`,
+R0.15 as ESP-IDF 6.0.2 and 6.1 ship it): check them against `ff.c` when
+the IDF moves to another FatFs release; a host test pins the values.
+
 ## Dependencies
 
 `esp_driver_sdmmc`, `fatfs`, `esp_driver_gpio`, `esp_timer`,
@@ -86,8 +122,10 @@ internal flash).
 
 ## Tests
 
-- **Host (`host_test/`, 14 tests)**: the pure detect debouncer (3) and the
-  probe (11): boot records (FAT32, early-DOS FAT16 on its BPB, exFAT, NTFS,
+- **Host (`host_test/`, 18 tests)**: the pure detect debouncer (3), the
+  rule of the close guard (4: a close that worked is left alone, a failed
+  close of a known file is made again without the flush, an unknown file is
+  not, the two status bits are FatFs's own) and the probe (11): boot records (FAT32, early-DOS FAT16 on its BPB, exFAT, NTFS,
   refused variants), whole disks (super-floppy FAT, blank, an MBR with a
   FAT32 partition, the factory exFAT card, GPT, Linux, a never-formatted
   partition, a table pointing at itself, a signature without partitions,

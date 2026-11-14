@@ -23,8 +23,9 @@
 /**
  * @file external_storage_private.h
  * @brief Internal API + the pure parts (host-testable, no GPIO, no SDMMC):
- *        the detect-pin debouncer (es_detect.c) and the probe of what is on
- *        a card before any mount is tried (es_probe.c, 2026-10-25).
+ *        the detect-pin debouncer (es_detect.c), the probe of what is on
+ *        a card before any mount is tried (es_probe.c, 2026-10-25) and the
+ *        rule of the close guard (es_close_core.c, 2026-11-14).
  */
 #pragma once
 
@@ -127,6 +128,26 @@ typedef struct
 /** Fill @p out from the card in the slot (mounted or merely answering).
  *  False when no card answered. */
 bool es_card_details(es_card_details_t *out);
+
+/* ---- the close guard (es_close.c wraps FatFs's f_close, 2026-11-14) -------- */
+
+/* FatFs's own status bits of FIL.flag. ff.c keeps them to itself (R0.15,
+ * the copy ESP-IDF 6.0.2 and 6.1 ship): check them against ff.c when the
+ * IDF moves to another FatFs release. */
+#define ES_FA_MODIFIED 0x40   /* the file was written since its last sync  */
+#define ES_FA_DIRTY    0x80   /* its sector buffer waits to be written back */
+
+/**
+ * A close failed: must it be made again, to release the file's lock?
+ * Yes when the first close did not succeed and FatFs still knows the
+ * object (@p still_bound: FIL.obj.fs is set); the two status bits are then
+ * cleared in @p flag so that the second close has nothing to flush. No
+ * otherwise, and @p flag is left alone. Pure: host-tested.
+ */
+bool es_close_retry(bool first_ok, bool still_bound, uint8_t *flag);
+
+/** Closes that had to be made twice since boot. */
+uint32_t es_close_forced(void);
 
 #ifdef __cplusplus
 }

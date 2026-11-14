@@ -3,6 +3,8 @@ idf_component_register(
          "external_storage_settings.c"
          "es_detect.c"
          "es_probe.c"
+         "es_close.c"
+         "es_close_core.c"
          "external_storage_cli.c"
          "external_storage_http.c"
     INCLUDE_DIRS "include"
@@ -16,3 +18,16 @@ idf_component_register(
                   dev_status_manager log_manager cmdline_manager
                   http_server_manager settings_manager
 )
+
+# FatFs's f_close() returns as soon as its flush fails, before it releases
+# the file's lock, and IDF's VFS wipes its slot whatever the result: the
+# file stays locked until the card is mounted again (a unit short of
+# internal RAM gets there through the SD driver's bounce buffer). The link
+# wrap puts es_close.c in front of f_close (the lwip_guard / ip4_routes
+# pattern: there is no hook): a close that failed is made again without the
+# flush, so the lock is released. The -u beside the wrap makes the linker
+# take the wrapper out of this static library at its first scan (an
+# on-target test app links every component in the tree).
+target_link_libraries(${COMPONENT_LIB} INTERFACE
+                      "-Wl,--wrap=f_close"
+                      "-u __wrap_f_close")

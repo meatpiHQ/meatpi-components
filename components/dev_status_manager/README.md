@@ -17,7 +17,7 @@ they reset on reboot and are **not** settings.
 | Function | One-liner |
 |---|---|
 | `dev_status_manager_init()` | Create the event group; capture running partition + app descriptor. |
-| `dev_status_manager_start()` / `_stop()` | Lifecycle uniformity (§3); passive. |
+| `dev_status_manager_start()` / `_stop()` | Starts the internal-RAM guard's timer (below); nothing to stop. The composition root has to call it: the WiCAN firmware did not until 2026-11-14, so the guard never ran there and `internal_ram_low` was never latched. |
 | `dev_status_manager_set/clear/clear_all(bits)` | Publish state changes (masked to the 24 usable bits). |
 | `dev_status_manager_get/is_set/all_set/any_set(...)` | Snapshot queries. |
 | `dev_status_manager_wait_all/wait_any(bits, timeout)` | Block until a combination is reached (bits not consumed). |

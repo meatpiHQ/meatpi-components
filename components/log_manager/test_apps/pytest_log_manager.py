@@ -14,6 +14,10 @@ def test_log_manager(dut):
     dut.expect_exact("INIT ok=1")
     dut.expect_exact("SINK saw_probe=1 lines_gt0=1")
     dut.expect_exact("LEVEL filtered=1 passed=1")
+    # a descriptor below INFO: quiet across a wildcard, raised by name,
+    # quiet again after the next wildcard (2026-11-14)
+    dut.expect_exact("QUIET kept=1 raised=1 again=1")
+    dut.expect("LEVELS used=\\d+ cap_ge_64=1")
     dut.expect_exact("DISABLE unchanged=1")
     dut.expect_exact("BACKPRESSURE dropped_gt0=1")
     dut.expect_exact("PHASE1 rebooting")

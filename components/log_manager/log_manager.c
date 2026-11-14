@@ -49,7 +49,11 @@ static const char *TAG = "log_manager";
 #define LM_RING_SIZE   CONFIG_LOG_MANAGER_RING_SIZE
 #define LM_MAX_SINKS   12 /* §12 bounded registry: cross-component since
                              log_sinks (4 registrants); size for growth */
-#define LM_MAX_LEVELS  32
+/* §12 bounded registry: every component registers its TAG here, and a few
+   register a second, quieter one for a stack they wrap. 32 was full by
+   2026-11 (56 registrants in the tree) and said nothing: the registrants
+   past it lost their level without a line. PSRAM, 36 B a slot. */
+#define LM_MAX_LEVELS  96
 
 typedef struct
 {
@@ -401,6 +405,9 @@ esp_err_t log_manager_register(const log_descriptor_t *desc)
 
     if (s_level_count >= LM_MAX_LEVELS)
     {
+        /* §12: loud, and latched by the boot_errors net */
+        ESP_LOGE(TAG, "level table full (%d): '%s' not registered",
+                 LM_MAX_LEVELS, desc->name);
         return ESP_ERR_NO_MEM;
     }
 
@@ -413,6 +420,29 @@ esp_err_t log_manager_register(const log_descriptor_t *desc)
     return ESP_OK;
 }
 
+/**
+ * Put the quiet tags back after a level was set for "*".
+ *
+ * IDF empties its per-tag list on a wildcard set, so every level a
+ * descriptor applied is gone after it: after the one the settings apply
+ * at boot (settings_manager_start() comes after every _init()) and after
+ * one an operator sends at runtime. For a descriptor at INFO that changes
+ * nothing. A descriptor BELOW INFO is a deliberate quieting of a tag that
+ * logs per operation (a vendored stack, an IDF client): it holds until
+ * someone raises that tag by name, and a wildcard quieter than it wins.
+ */
+static void lm_keep_quiet_tags(esp_log_level_t wildcard_level)
+{
+    for (size_t i = 0; i < s_level_count; i++)
+    {
+        if (s_levels[i].level < ESP_LOG_INFO &&
+            s_levels[i].level < wildcard_level)
+        {
+            esp_log_level_set(s_levels[i].name, s_levels[i].level);
+        }
+    }
+}
+
 esp_err_t log_manager_set_level(const char *name, esp_log_level_t level)
 {
     if (name == NULL)
@@ -421,7 +451,26 @@ esp_err_t log_manager_set_level(const char *name, esp_log_level_t level)
     }
 
     esp_log_level_set(name, level); /* ephemeral: not persisted (§9.4) */
+
+    if (strcmp(name, "*") == 0)
+    {
+        lm_keep_quiet_tags(level);
+    }
+
     return ESP_OK;
+}
+
+void log_manager_levels_capacity(size_t *used, size_t *cap)
+{
+    if (used != NULL)
+    {
+        *used = s_level_count;
+    }
+
+    if (cap != NULL)
+    {
+        *cap = LM_MAX_LEVELS;
+    }
 }
 
 /* ---- sinks ------------------------------------------------------------------------- */

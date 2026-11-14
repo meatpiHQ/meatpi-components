@@ -68,6 +68,14 @@ Runtime, **ephemeral** per-TAG level (resets to persisted defaults on reboot).
 `CONFIG_LOG_MAXIMUM_LEVEL` are accepted but yield no extra output: the
 response says so.
 
+`"*"` sets every tag and drops the levels set by name before it. The
+quiet tags (a tag a component registered below INFO for a stack that logs
+per operation: `esp-tls-mbedtls` at ERROR, `esp_isotp` at WARN; the
+README's "Levels and quiet tags") keep their level across it, unless the
+wildcard is quieter. To hear one, name it:
+`{"tag":"esp-tls-mbedtls","level":"warn"}` lasts until the next `"*"` or
+the restart.
+
 **Response 200** `{"ok":true,"capped":false}`
 
 **Errors**: `400 {"error":"unknown level"}`.

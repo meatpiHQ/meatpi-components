@@ -62,7 +62,13 @@
 extern "C" {
 #endif
 
-/** Per-component registration (§9.2). @c name must equal the TAG (§10). */
+/** Per-component registration (§9.2). @c name must equal the TAG (§10).
+ *  A component that wraps a stack with its own TAG (a vendored library, an
+ *  IDF client) may register a second descriptor for it BELOW INFO to keep
+ *  a line that stack prints per operation out of the log: such a level
+ *  outlives the wildcard level the settings apply at boot and one set at
+ *  runtime (IDF drops every per-tag level on a wildcard set), until that
+ *  tag is raised by name. */
 typedef struct
 {
     const char     *name;
@@ -95,8 +101,14 @@ esp_err_t log_manager_register_settings(void);
 /** Register a component; applies @c default_level for its TAG. */
 esp_err_t log_manager_register(const log_descriptor_t *desc);
 
-/** Runtime, EPHEMERAL level change (resets to defaults on reboot). */
+/** Runtime, EPHEMERAL level change (resets to defaults on reboot). The
+ *  name "*" sets every tag and then puts the descriptors registered below
+ *  INFO back (see log_descriptor_t); a quieter wildcard wins over them. */
 esp_err_t log_manager_set_level(const char *name, esp_log_level_t level);
+
+/** Level-table occupancy (§12: every component registers here; main wires
+ *  this into the WICAN CAPS line). Either pointer may be NULL. */
+void log_manager_levels_capacity(size_t *used, size_t *cap);
 
 /** Cumulative E/W line counts since boot (health surface: a clean boot
  *  logs ZERO errors, the bench asserts it; every silent degradation is

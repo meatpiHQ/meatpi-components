@@ -87,7 +87,10 @@ static esp_err_t lm_on_apply(const cJSON *settings)
 
     if (cJSON_IsString(level) && level->valuestring != NULL)
     {
-        esp_log_level_set("*", parse_level(level->valuestring));
+        /* through the manager, not esp_log_level_set(): the wildcard wipes
+           every per-tag level the descriptors applied during the inits,
+           and the manager puts the quiet ones back */
+        log_manager_set_level("*", parse_level(level->valuestring));
     }
 
     lm_apply_sink_config(!cJSON_IsFalse(console), !cJSON_IsFalse(ring));

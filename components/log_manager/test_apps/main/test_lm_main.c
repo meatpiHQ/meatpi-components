@@ -104,6 +104,41 @@ void app_main(void)
                s_sink_lines > mid);
         log_manager_set_level("lm_test", ESP_LOG_INFO);
 
+        /* quiet tags: a descriptor below INFO keeps its level across a
+           wildcard set (IDF drops every per-tag level on one, and the
+           settings send one at every boot), is let through when raised by
+           name, and is quiet again after the next wildcard */
+        static const log_descriptor_t quiet = { "lm_quiet", ESP_LOG_ERROR };
+
+        ESP_ERROR_CHECK(log_manager_register(&quiet));
+        log_manager_set_level("*", ESP_LOG_INFO);
+
+        int q0 = s_sink_lines;
+
+        ESP_LOGW("lm_quiet", "kept out by the descriptor");
+        vTaskDelay(pdMS_TO_TICKS(100));
+
+        int q1 = s_sink_lines;
+
+        log_manager_set_level("lm_quiet", ESP_LOG_WARN);
+        ESP_LOGW("lm_quiet", "let through by name");
+        vTaskDelay(pdMS_TO_TICKS(100));
+
+        int q2 = s_sink_lines;
+
+        log_manager_set_level("*", ESP_LOG_INFO);
+        ESP_LOGW("lm_quiet", "kept out again");
+        vTaskDelay(pdMS_TO_TICKS(100));
+        printf("QUIET kept=%d raised=%d again=%d\n", q1 == q0, q2 > q1,
+               s_sink_lines == q2);
+
+        size_t lv_used = 0;
+        size_t lv_cap = 0;
+
+        log_manager_levels_capacity(&lv_used, &lv_cap);
+        printf("LEVELS used=%u cap_ge_64=%d\n", (unsigned)lv_used,
+               lv_cap >= 64);
+
         /* sink disable stops routing to it */
         int off_base = s_sink_lines;
 

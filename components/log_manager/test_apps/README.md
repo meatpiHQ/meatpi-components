@@ -11,7 +11,10 @@ partition table (rev 2.1). Run:
 
 Composition boot (log pipeline first, settings applied, task started), a
 custom sink receiving `ESP_LOGx` output end-to-end, runtime level control
-(DEBUG gated at INFO, passes after `set_level`), sink disable, **drop-oldest
+(DEBUG gated at INFO, passes after `set_level`), a quiet tag (a descriptor
+below INFO keeps its level across a wildcard set, is let through when raised
+by name and is quiet again after the next wildcard; the level table's
+occupancy), sink disable, **drop-oldest
 backpressure** (300-line burst from a priority-5 task (above the log task)
 must drop, never block), and the PSRAM ring surviving a genuine
 `esp_restart()` (a unique marker logged before the reset is found in the ring
@@ -25,6 +28,8 @@ Phase 1 (fresh flash: ring holds no phase marker):
 INIT ok=1
 SINK saw_probe=1 lines_gt0=1
 LEVEL filtered=1 passed=1
+QUIET kept=1 raised=1 again=1
+LEVELS used=2 cap_ge_64=1
 DISABLE unchanged=1
 BACKPRESSURE dropped_gt0=1
 PHASE1 rebooting

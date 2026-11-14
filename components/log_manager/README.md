@@ -50,13 +50,40 @@ PSRAM ring already covers the common case without touching flash at all.
 | `log_manager_init()` | Hook + console + ring adopt. **First init in main** (§9.6); synchronous routing until start. |
 | `log_manager_start()` / `_stop()` | Spawn/stop the log task (queued routing). |
 | `log_manager_register_settings()` | Register the `"log_manager"` settings descriptor: call after `settings_manager_init()`. |
-| `log_manager_register(desc)` | Per-component `{TAG, default_level}` (§9.2). |
-| `log_manager_set_level(name, level)` | Runtime, **ephemeral** level knob (§9.4). |
+| `log_manager_register(desc)` | Per-component `{TAG, default_level}` (§9.2). A descriptor below INFO quiets a wrapped stack's tag (Levels and quiet tags). |
+| `log_manager_set_level(name, level)` | Runtime, **ephemeral** level knob (§9.4). `"*"` sets every tag, then puts the quiet tags back. |
+| `log_manager_levels_capacity(*used, *cap)` | Level-table occupancy (§12; `WICAN CAPS log_levels=…`). |
 | `log_manager_add_sink(sink)` / `log_manager_sink_set_enabled(name, on)` | Pluggable routing. |
 | `log_manager_sink_get(index, *name, *enabled)` | Enumerate sinks (for `/api/logs/status`); `ESP_ERR_NOT_FOUND` past the end. |
 | `log_manager_sinks_capacity(*used, *cap)` | Sink-registry occupancy (§12; `WICAN CAPS log_sinks=…`). |
 | `log_manager_dropped_count()` | Backpressure drops since boot. |
 | `log_manager_ring_read(buf, len, *n)` / `log_manager_ring_clear()` | Crash-ring access (chronological, spans reboots). |
+
+## Levels and quiet tags
+
+Every component registers `{TAG, default_level}`. The table holds 96
+(`LM_MAX_LEVELS`; 32 until 2026-11-14, when it was full with 56 registrants
+in the tree and said nothing: a registrant past the end lost its level
+without a line). An overflow now logs E, and the occupancy is on the
+`WICAN CAPS log_levels=` boot line.
+
+IDF drops every per-tag level when a level is set for `*`, and the `level`
+setting does exactly that at boot, after every `_init()` has registered.
+A descriptor at INFO loses nothing by it. A descriptor **below INFO** is a
+deliberate quieting of a tag that logs per operation:
+
+| Tag | Level | Registered by | Why |
+|---|---|---|---|
+| `esp_isotp` | WARN | can_isotp_esp | the vendored stack logs every send at INFO |
+| `esp-tls-mbedtls` | ERROR | http_client_manager | esp-tls warns on every connection that skips the name check (https to an address by IP) |
+
+The manager puts those back after each wildcard set
+(`log_manager_set_level("*", …)`: the settings at boot and
+`PUT /api/logs/level` both go through it), unless the wildcard itself is
+quieter. Raising such a tag by name
+(`PUT /api/logs/level {"tag":"esp-tls-mbedtls","level":"warn"}`) works as
+for any tag and lasts until the next wildcard set or the restart. Until
+2026-11-14 the quieting held only until `settings_manager_start()`.
 
 ## Dependencies
 
@@ -96,7 +123,7 @@ defaults stay on `/api/settings/log_manager`.
 | Where | What | Size |
 |---|---|---|
 | Flash | code + rodata | 2.6 KiB |
-| PSRAM `.bss` | queue (64×258 B) + registries + log-task stack (4 KiB: `StackType_t` is bytes on xtensa, not words) | **21,856 B** |
+| PSRAM `.bss` | queue (64×258 B) + registries + log-task stack (4 KiB: `StackType_t` is bytes on xtensa, not words) | **24,160 B** (21,856 B measured, plus 2,304 B computed for the 64 level slots added 2026-11-14, 36 B each) |
 | PSRAM `.noinit` | crash ring + header + tuning guard | **16,472 B** |
 | Internal | spinlock, TCB, flags | **670 B** |
 | Producer cost | one 256 B line buffer on the caller's stack | per call |

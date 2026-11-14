@@ -697,6 +697,39 @@ bool wifi_manager_http_request_allowed(int sockfd)
     return false;
 }
 
+/* The same question for a connection the device opened itself (2026-11-14):
+ * did it leave through the station's address while the station's network is
+ * marked untrusted? Outbound traffic is not stopped by the gate above, but
+ * what comes back on it may not reconfigure the device: ha_webhooks takes
+ * no settings from the reply to such a push. */
+bool wifi_manager_addr_on_untrusted_sta(uint32_t local_ip4)
+{
+    int idx = s_connected_idx;
+    const wm_config_t *cfg = wm_settings_config();
+
+    if (idx < 0 || (size_t)idx >= cfg->sta_count || cfg->trusted[idx])
+    {
+        return false;           /* no STA session, or a trusted network */
+    }
+
+    if (local_ip4 == 0)
+    {
+        return true;            /* can't classify on an untrusted net:
+                                   fail CLOSED                          */
+    }
+
+    esp_netif_ip_info_t ip;
+
+    if (s_sta_netif == NULL ||
+        esp_netif_get_ip_info(s_sta_netif, &ip) != ESP_OK ||
+        ip.ip.addr == 0)
+    {
+        return false;           /* no STA address to leave through      */
+    }
+
+    return local_ip4 == ip.ip.addr;
+}
+
 /* The single radio parks on the associated AP's channel, so in APSTA the
    softAP beacons move there no matter what its config says. Mirror the real
    channel into the AP config so it survives a STA drop (no hop back to the

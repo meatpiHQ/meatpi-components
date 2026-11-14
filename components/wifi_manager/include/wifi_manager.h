@@ -245,6 +245,16 @@ bool wifi_manager_mode_has_ap(void);
  */
 bool wifi_manager_http_request_allowed(int sockfd);
 
+/**
+ * The gate's question for a connection the device opened itself
+ * (2026-11-14): true when the station is on a network marked untrusted and
+ * @p local_ip4 (the connection's own address, network byte order) is the
+ * station's. 0 (not an IPv4 connection) cannot be told apart and counts as
+ * the station's. ha_webhooks asks it before it takes settings from the
+ * reply to a push: what a registration would be refused, a reply is too.
+ */
+bool wifi_manager_addr_on_untrusted_sta(uint32_t local_ip4);
+
 esp_err_t wifi_manager_register_http(void);
 
 /** Register the `wifi` CLI command with cmdline_manager. Called

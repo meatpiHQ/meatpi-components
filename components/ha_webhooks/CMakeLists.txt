@@ -4,6 +4,7 @@ idf_component_register(
          "ha_webhooks_http.c"
          "ha_webhooks_payload.c"
          "ha_webhooks_post.c"
+         "ha_webhooks_reg.c"
          "ha_webhooks_cli.c"
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "."

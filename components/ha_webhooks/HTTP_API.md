@@ -31,9 +31,22 @@ the whole point of discovery) and persists.
 - Idempotent (re-POST of the same URL → 200), persisted across reboots.
 - No `Authorization` header / token is required (the webhook id inside
   the URL is the shared secret: contract v2 Security).
+- **`rev`** (optional, 2026-11-14, settings in the push reply below): the
+  revision Home Assistant gives this set of settings, 1 to 16 characters of
+  `A-Z a-z 0-9 _ -`. Stored with the settings and reported in every push as
+  `status.webhook_rev`. A body with a `rev` is held to every field, because
+  a stored revision has to stand for exactly what was sent: `interval`
+  required and a whole number from 1 to 3600, `enabled` a boolean when
+  present, each address at most 191 characters (not cut), `urls` an array of
+  strings. A body without a `rev` keeps the older, forgiving rules (a
+  missing or out of range `interval` keeps the current one, a long address
+  is cut) and leaves the device with no revision. Unknown keys are ignored
+  either way.
 
-**Responses**: `201 Created` first set · `200 OK` update · `400` bad URL
-(non-http/https, or `urls[0] != url`, or >2). Body = the GET shape.
+**Responses**: `201 Created` first set · `200 OK` update · `400` with the
+field's name as the text: `url` (missing, not http/https), `too many urls`,
+`url must match urls[0]`, `url entry`, and with a `rev` also `rev`,
+`interval`, `enabled`, `url too long`. Body = the GET shape.
 
 ## GET /api/webhook
 
@@ -49,13 +62,25 @@ Current config + runtime stats.
   "networks": "", "on_network": true,
   "status": "ok", "last_post": "2026-07-09T12:00:00Z", "retries": 0,
   "success_count": 42, "fail_count": 1,
-  "last_error": "", "last_error_time": ""
+  "last_error": "", "last_error_time": "",
+  "rev": "9f8e7d6c",
+  "reply": { "applied": 1, "ignored": 0, "last": "applied" }
 }
 ```
+- **`rev`** (2026-11-14): the revision the pushes report, `""` when none is
+  stored or the settings were changed since it was stored. (A device whose
+  webhook is pinned still shows its stored one here; its pushes carry no
+  `webhook_rev`.)
+- **`reply`**: what became of the reply bodies since boot. `applied` counts
+  the settings taken, `ignored` the bodies refused, `last` is the verdict on
+  the last reply that carried a body: `applied`, `same` (the revision in
+  use: nothing to do, counted in neither), `untrusted`, `pinned`,
+  `too_long`, `not_json`, `invalid`, `failed` (valid, the device could not
+  store it), `""` when no reply has carried a body.
 
 ## DELETE /api/webhook
 
-Clear + disable. `204 No Content`.
+Clear + disable, the revision with it. `204 No Content`.
 
 ## Telemetry (device → HA, outbound): the push contract
 
@@ -139,21 +164,115 @@ then carries `status` (+ `config`) only - a status-only push is valid
   a `cert_set` names a `cert_manager` CA for a private-cert HA; raw-IPv4
   HTTPS hosts auto-skip CN verification.
 
+- **`status.webhook_rev`** (2026-11-14): the revision of the webhook
+  settings in use, `""` when the device has none. In EVERY push, diff mode
+  included, so Home Assistant can decide on one push alone. Its presence
+  says "this firmware reads the reply to a push". It is left out while the
+  webhook is pinned on the device (`manual_override`): nothing is taken from
+  a reply then, as nothing is taken from a registration.
+
 **HA responses the poster honors** (contract v2): `204` delivered ·
 `503` transient (integration reloading) → retry next cycle · **`403`
 identity rejected** → no failover to the 2nd URL that cycle; after 3
 consecutive 403-cycles the poster PAUSES (`status: "rejected"` in
 `GET /api/webhook`) until the next `POST /api/webhook` registration or
 reboot, the contract's "stop; needs user attention" action. Other
-failures retry next cycle with `retries`/`last_error` tracked.
+failures retry next cycle with `retries`/`last_error` tracked. Any `2xx`
+is a delivered push, with or without a body.
+
+### Settings in the reply to a push (2026-11-14)
+
+Home Assistant can only register its webhook settings by calling the
+device, and a car that is asleep at that moment, or on LTE without a VPN,
+cannot be called, although the car itself reaches Home Assistant with
+every push. So Home Assistant may hand the settings over in its reply:
+
+```
+device                                        Home Assistant
+  | push, status.webhook_rev = "1a2b3c4d"          |
+  |----------------------------------------------->|  wants "9f8e7d6c"
+  | 200 {"webhook": {"rev": "9f8e7d6c", ...}}      |
+  |<-----------------------------------------------|
+  | (checked, stored, used from the next cycle)    |
+  | push, status.webhook_rev = "9f8e7d6c"          |
+  |----------------------------------------------->|  the same: 204
+```
+
+There is no acknowledgement and no queue: the device says what it has,
+Home Assistant repeats what it wants until the device says the same. A
+reply lost on the way is made good by a later push.
+
+The body of a **`200`** is read up to 2048 bytes:
+
+```json
+{ "webhook": { "rev": "9f8e7d6c",
+               "url": "http://192.168.1.10:8123/api/webhook/<id>",
+               "urls": ["http://192.168.1.10:8123/api/webhook/<id>",
+                        "https://ha.example.org/api/webhook/<id>"],
+               "enabled": true, "interval": 20 } }
+```
+
+`webhook` is the body of `POST /api/webhook` with a `rev`, and it is read
+by the same code under the same strict rules. What the device does:
+
+| The reply | The device |
+|---|---|
+| `204`, any `2xx` without a body, `{}`, a JSON object without `webhook` | Delivered, nothing else. |
+| `webhook.rev` is the revision in use | Nothing (`same`). |
+| A valid `webhook` from a server it may take settings from | Stores the settings and the revision in one write, uses them from the next cycle, reports the new revision (`applied`). The diff goes on: no full snapshot. |
+| A body over 2048 bytes, not a JSON object, or a `webhook` with a field that is off | The whole body is ignored (`too_long`, `not_json`, `invalid`). |
+| A `webhook` while the webhook is pinned on the device | Ignored (`pinned`). |
+| Any reply that is not `2xx` | As before; its body is not read for settings. |
+
+Whatever becomes of the body, the push was delivered: it is not counted
+as a failure and not sent again.
+
+**From whom settings are taken.** A reply can change where the device
+sends its data, so it is taken only where the server is known to be Home
+Assistant or where a registration would be accepted:
+
+- the push went over `https` to a host **name**: the certificate's chain
+  and its name were verified, wherever the device is; or
+- the push went to a **private address** (10/8, 172.16/12, 192.168/16,
+  100.64/10, 169.254/16, IPv6 unique-local and link-local: the home network
+  or a VPN tunnel) and did not leave through the station's address while
+  the station's network is marked untrusted (Settings > WiFi), the rule the
+  network-trust gate applies to `POST /api/webhook`.
+
+Everything else is ignored (`untrusted`): plain `http` to a public address
+(the reply crossed the internet in the clear), and `https` to an address
+by IP when that address is public or the network untrusted (the chain is
+verified there, the name is not compared, so any holder of a public
+certificate could answer). The device tells the two ends of the connection
+from its socket (`http_client_manager`: `conn_known`, `peer_private`,
+`local_ip4`).
+
+**The revision stays honest by itself.** It is stored beside a fingerprint
+of the four settings it names (`enabled`, `url`, `url2`, `interval_s`). A
+change by any route that knows nothing of revisions (the web interface, a
+registration without `rev`, `DELETE`, a restored backup, a factory reset)
+no longer matches the fingerprint and the device reports `""`. Home
+Assistant then sends its settings again: its options are the source of
+truth for these four, as they already are at every start of Home
+Assistant.
+
+One W line per kind of refusal (`settings in Home Assistant's reply not
+taken: <word>`), its repeats at D; one I line per set of settings taken,
+without the address (it carries the webhook id).
 
 ## Settings: `PUT /api/settings/ha_webhooks` (version 2)
 
 `enabled`, `url`, `url2`, `interval_s` (1..3600), `data_mode`
 (changed/full), `gzip` (v2, default false), `manual_override`,
-`cert_set`, `networks`, `cli`. Reboot-to-apply EXCEPT the URL/enable, which the
-discovery push (`POST /api/webhook`) applies live. Passwords: none.
-v1→v2 migration adds `gzip:false`.
+`cert_set`, `networks`, `rev`, `rev_sum`, `cli`. Reboot-to-apply EXCEPT the
+URL/enable/interval, which the discovery push (`POST /api/webhook`) and a
+push's reply apply live. Passwords: none. v1→v2 migration adds `gzip:false`.
+
+`rev` and `rev_sum` (2026-11-14, added keys with a default: no version
+bump): the revision Home Assistant gave the webhook settings and the
+fingerprint of the settings it was given for (8 hex characters). Written
+by a registration or a push's reply, never by a person: the web UI's card
+shows no row for them and sends them back unchanged with a save.
 
 `networks` (2026-11-08, "active on", an added key with a default: no
 version bump): `""` = every network, else the names of station networks

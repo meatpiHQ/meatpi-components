@@ -176,18 +176,98 @@ static bool url_is_raw_ip_https(const char *url)
     return true;
 }
 
+/* ---- settings in the reply (2026-11-14) ----------------------------------- */
+
+/**
+ * The reply to a delivered push may carry Home Assistant's webhook
+ * settings (`{"webhook": {...}}` in a 200): for a car it cannot reach to
+ * register them. Taken only where a registration would be (hw_reply_trusted),
+ * validated as a registration with a revision is, stored with the revision
+ * and used from the next lap. Whatever becomes of the body, the push was
+ * delivered.
+ */
+static hw_reply_t reply_process(const hw_config_t *sent, const char *url,
+                                const http_client_response_t *resp)
+{
+    /* one W line per kind of refusal, its repeats at D: a server that
+       answers every push with a body the device will not take must not
+       fill the log (standard, section 10) */
+    static hw_reply_t s_said;
+
+    if (resp->status_code != 200 || resp->len == 0)
+    {
+        return HW_REPLY_NONE;
+    }
+
+    /* the settings may have changed while the push was under way (a
+       registration, a DELETE): that change is newer than this reply */
+    hw_config_t cur;
+
+    if (!hw_config_get(&cur) || strcmp(cur.url, sent->url) != 0 ||
+        strcmp(cur.url2, sent->url2) != 0 || cur.enabled != sent->enabled ||
+        cur.interval_s != sent->interval_s || strcmp(cur.rev, sent->rev) != 0)
+    {
+        ESP_LOGD(TAG, "the settings changed during the push: reply left alone");
+        return HW_REPLY_NONE;
+    }
+
+    bool named = strncasecmp(url, "https://", 8) == 0 &&
+                 !url_is_raw_ip_https(url);
+    bool trusted = hw_reply_trusted(
+        named, resp->conn_known, resp->peer_private,
+        wifi_manager_addr_on_untrusted_sta(resp->local_ip4));
+    hw_config_t next;
+    hw_reg_err_t why = HW_REG_OK;
+    hw_reply_t r = hw_reply_decide(resp->data, resp->len, resp->truncated,
+                                   &cur, trusted, &next, &why);
+
+    if (r == HW_REPLY_APPLY && hw_config_apply_live(&next, false) != ESP_OK)
+    {
+        r = HW_REPLY_FAILED;
+    }
+
+    if (r == HW_REPLY_APPLY)
+    {
+        /* no address in the line: it carries the webhook id */
+        ESP_LOGI(TAG, "webhook settings taken from Home Assistant's reply: "
+                      "rev %s, interval %us, %s", next.rev,
+                 (unsigned)next.interval_s,
+                 next.url2[0] ? "two addresses" : "one address");
+        s_said = HW_REPLY_NONE;
+    }
+    else if (r != HW_REPLY_NONE && r != HW_REPLY_SAME)
+    {
+        if (r != s_said)
+        {
+            ESP_LOGW(TAG, "settings in Home Assistant's reply not taken: "
+                          "%s%s%s", hw_reply_str(r),
+                     r == HW_REPLY_INVALID ? ", " : "",
+                     r == HW_REPLY_INVALID ? hw_reg_err_str(why) : "");
+            s_said = r;
+        }
+        else
+        {
+            ESP_LOGD(TAG, "reply not taken again: %s", hw_reply_str(r));
+        }
+    }
+
+    return r;
+}
+
 /** Try each configured URL in order; first 2xx wins. Fills @p err;
- *  sets @p rejected on an HA identity rejection (HTTP 403). */
+ *  sets @p rejected on an HA identity rejection (HTTP 403) and @p reply to
+ *  what the delivering reply said about the webhook settings. */
 static bool post_failover(const hw_config_t *c, const void *body,
                           size_t body_len, bool gzipped,
                           char err[HW_ERR_LEN], char okstatus[HW_STATUS_LEN],
-                          bool *rejected)
+                          bool *rejected, hw_reply_t *reply)
 {
     static const char *const GZIP_HEADERS[] = { "Content-Encoding: gzip" };
     const char *urls[2] = { c->url, c->url2 };
 
     err[0] = '\0';
     *rejected = false;
+    *reply = HW_REPLY_NONE;
 
     for (int i = 0; i < 2; i++)
     {
@@ -207,6 +287,9 @@ static bool post_failover(const hw_config_t *c, const void *body,
             .cert_set = c->cert_set[0] != '\0' ? c->cert_set : NULL,
             .skip_common_name = url_is_raw_ip_https(urls[i]),
             .timeout_ms = HW_HTTP_TIMEOUT_MS,
+            /* a reply is empty, or a small settings object: one byte past
+               the limit is enough to know a body is too long */
+            .max_response = HW_REPLY_MAX + 1,
         };
         http_client_response_t resp = { 0 };
         esp_err_t r = http_client_manager_request(&req, &resp);
@@ -216,6 +299,7 @@ static bool post_failover(const hw_config_t *c, const void *body,
         if (ok)
         {
             snprintf(okstatus, HW_STATUS_LEN, "ok");
+            *reply = reply_process(c, urls[i], &resp);
             http_client_manager_free(&resp);
             return true;
         }
@@ -356,8 +440,9 @@ static void poster_task(void *arg)
         char err[HW_ERR_LEN] = "";
         char okstatus[HW_STATUS_LEN] = "";
         bool rejected = false;
+        hw_reply_t reply = HW_REPLY_NONE;
         bool ok = post_failover(&c, send_buf, send_len, gzipped, err,
-                                okstatus, &rejected);
+                                okstatus, &rejected, &reply);
 
         free(gz);
         free(body);
@@ -366,6 +451,21 @@ static void poster_task(void *arg)
         hw_stats_t st;
 
         hw_stats_get(&st);
+
+        if (reply != HW_REPLY_NONE)
+        {
+            if (reply == HW_REPLY_APPLY)
+            {
+                st.reply_applied++;
+            }
+            else if (reply != HW_REPLY_SAME)
+            {
+                st.reply_ignored++;
+            }
+
+            strlcpy(st.reply_last, hw_reply_str(reply),
+                    sizeof(st.reply_last));
+        }
 
         if (ok)
         {

@@ -33,7 +33,14 @@
  *              `sta_ip` since 2026-10-11 for issue #977, battery, VPN) and
  *              POSTs it to the webhook URL(s) with failover, while enabled
  *              and the network is up (autopid may be off: a status-only
- *              push is valid).
+ *              push is valid);
+ *   - the reply to a push (2026-11-14): Home Assistant may hand its webhook
+ *              settings back in a 200, for a car it cannot reach to
+ *              register them. `status.webhook_rev` reports the revision of
+ *              the settings in use; a registration may carry one (`rev`).
+ *              Schema: the keys `rev` and `rev_sum` were added with a
+ *              default (no version bump). Rules: HTTP_API.md, "Settings in
+ *              the reply to a push".
  *
  * Feature component: consumes http_server_manager, http_client_manager,
  * cert_manager, autopid (snapshot + cached config), dev_status_manager.

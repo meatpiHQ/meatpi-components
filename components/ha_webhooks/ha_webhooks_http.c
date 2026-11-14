@@ -41,12 +41,6 @@ static const char *TAG = "ha_webhooks";
 
 #define HW_BODY_MAX 2048
 
-static bool url_ok(const char *u)
-{
-    return u != NULL && (strncmp(u, "http://", 7) == 0 ||
-                         strncmp(u, "https://", 8) == 0);
-}
-
 static esp_err_t send_json(httpd_req_t *req, cJSON *o, const char *status)
 {
     char *js = cJSON_PrintUnformatted(o);
@@ -110,6 +104,21 @@ static cJSON *response_obj(void)
     cJSON_AddNumberToObject(o, "fail_count", (double)s.fail_count);
     cJSON_AddStringToObject(o, "last_error", s.last_error);
     cJSON_AddStringToObject(o, "last_error_time", s.last_error_time);
+
+    /* settings in the push reply (2026-11-14): the revision the pushes
+       report ("" = none, or the settings were changed since it was stored)
+       and what became of the reply bodies since boot */
+    cJSON_AddStringToObject(o, "rev", hw_rev_reported(&c));
+
+    cJSON *reply = cJSON_AddObjectToObject(o, "reply");
+
+    if (reply != NULL)
+    {
+        cJSON_AddNumberToObject(reply, "applied", (double)s.reply_applied);
+        cJSON_AddNumberToObject(reply, "ignored", (double)s.reply_ignored);
+        cJSON_AddStringToObject(reply, "last", s.reply_last);
+    }
+
     return o;
 }
 
@@ -165,10 +174,6 @@ static esp_err_t post_handler(httpd_req_t *req)
     bool have = hw_config_get(&cur);
     bool first = !have || cur.url[0] == '\0';
 
-    const cJSON *url = cJSON_GetObjectItemCaseSensitive(root, "url");
-    const cJSON *urls = cJSON_GetObjectItemCaseSensitive(root, "urls");
-    const cJSON *en = cJSON_GetObjectItemCaseSensitive(root, "enabled");
-    const cJSON *iv = cJSON_GetObjectItemCaseSensitive(root, "interval");
     const cJSON *mo = cJSON_GetObjectItemCaseSensitive(root,
                                                        "manual_override");
     bool has_mo = cJSON_IsBool(mo);
@@ -182,58 +187,17 @@ static esp_err_t post_handler(httpd_req_t *req)
         return send_json(req, response_obj(), "200 OK");
     }
 
-    if (!cJSON_IsString(url) || !url_ok(url->valuestring))
+    /* the fields: shared with the `webhook` object of a push reply. A body
+       with a `rev` is held to every field (2026-11-14); one without keeps
+       the older, forgiving rules and leaves the device with no revision */
+    hw_config_t c;
+    hw_reg_err_t bad = hw_reg_parse(root, &cur, false, &c);
+
+    if (bad != HW_REG_OK)
     {
         cJSON_Delete(root);
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "url");
-    }
-
-    hw_config_t c = cur;
-
-    strlcpy(c.url, url->valuestring, sizeof(c.url));
-    c.url2[0] = '\0';
-
-    if (cJSON_IsArray(urls))
-    {
-        int n = cJSON_GetArraySize(urls);
-
-        if (n > 2)
-        {
-            cJSON_Delete(root);
-            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
-                                       "too many urls");
-        }
-
-        const cJSON *u0 = cJSON_GetArrayItem(urls, 0);
-
-        if (!cJSON_IsString(u0) || strcmp(u0->valuestring, c.url) != 0)
-        {
-            cJSON_Delete(root);
-            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
-                                       "url must match urls[0]");
-        }
-
-        const cJSON *u1 = cJSON_GetArrayItem(urls, 1);
-
-        if (cJSON_IsString(u1))
-        {
-            if (!url_ok(u1->valuestring))
-            {
-                cJSON_Delete(root);
-                return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
-                                           "url entry");
-            }
-
-            strlcpy(c.url2, u1->valuestring, sizeof(c.url2));
-        }
-    }
-
-    c.enabled = cJSON_IsBool(en) ? cJSON_IsTrue(en) : true;
-
-    /* contract: HA's options dialog offers 1..3600 s */
-    if (cJSON_IsNumber(iv) && iv->valueint >= 1 && iv->valueint <= 3600)
-    {
-        c.interval_s = (uint32_t)iv->valueint;
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   hw_reg_err_str(bad));
     }
 
     if (has_mo)
@@ -243,7 +207,7 @@ static esp_err_t post_handler(httpd_req_t *req)
 
     cJSON_Delete(root);
 
-    esp_err_t r = hw_config_apply_live(&c);
+    esp_err_t r = hw_config_apply_live(&c, true);
 
     if (r != ESP_OK)
     {
@@ -265,8 +229,9 @@ static esp_err_t delete_handler(httpd_req_t *req)
     c.url2[0] = '\0';
     c.enabled = false;
     c.manual_override = false;
+    hw_rev_stamp(&c, NULL); /* nothing left for a revision to name */
 
-    (void)hw_config_apply_live(&c);
+    (void)hw_config_apply_live(&c, true);
 
     hw_stats_t s = { 0 };
 

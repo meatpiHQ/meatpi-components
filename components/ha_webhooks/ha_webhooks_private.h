@@ -24,14 +24,19 @@
  * @file ha_webhooks_private.h
  * @brief Internals shared between ha_webhooks.c (settings/lifecycle),
  *        ha_webhooks_http.c (the /api/webhook endpoint), ha_webhooks_post.c
- *        (the poster task) and ha_webhooks_cli.c.
+ *        (the poster task), ha_webhooks_reg.c (the registration object, the
+ *        revision and the reply rules: pure, host tested) and
+ *        ha_webhooks_cli.c.
  */
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include "esp_err.h"
+
+#include "cJSON.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -43,6 +48,9 @@ extern "C" {
 #define HW_STATUS_LEN    16
 #define HW_ERR_LEN       160
 #define HW_TS_LEN        32
+#define HW_REV_LEN       17    /* a revision: 16 characters + NUL          */
+#define HW_REV_SUM_LEN   9     /* its fingerprint: 8 hex characters + NUL  */
+#define HW_REPLY_MAX     2048  /* a longer reply body is ignored           */
 
 /** Boot-applied + live config (settings-backed, mutable by the URL push). */
 typedef struct
@@ -60,6 +68,11 @@ typedef struct
     char     networks[HW_NETS_LEN];  /* "active on" (2026-11-08): "" =
                                         every network, else the WiFi
                                         networks' names, comma-separated  */
+    char     rev[HW_REV_LEN];        /* the revision Home Assistant gave
+                                        the webhook settings (2026-11-14);
+                                        "" = none                         */
+    char     rev_sum[HW_REV_SUM_LEN]; /* the fingerprint of the settings
+                                        the revision was stored with      */
 } hw_config_t;
 
 /** Runtime stats: RAM only, never persisted (poster has no flash). */
@@ -73,7 +86,100 @@ typedef struct
     uint32_t retries;
     char     last_error[HW_ERR_LEN];
     char     last_error_time[HW_TS_LEN];
+    uint32_t reply_applied;          /* settings taken from a push reply  */
+    uint32_t reply_ignored;          /* reply bodies refused              */
+    char     reply_last[HW_STATUS_LEN]; /* hw_reply_str() of the last
+                                        reply that carried a body         */
 } hw_stats_t;
+
+/* ---- the registration object, the revision, the reply (ha_webhooks_reg.c) -
+ * Pure: strings and cJSON only, no IDF glue (host tested). */
+
+/** Why a registration object was refused. */
+typedef enum
+{
+    HW_REG_OK = 0,
+    HW_REG_URL,          /* url missing, or not http:// or https://        */
+    HW_REG_URL_LONG,     /* (strict) an address over HW_URL_LEN - 1        */
+    HW_REG_URLS_MANY,    /* more than two urls                             */
+    HW_REG_URLS_FIRST,   /* urls[0] is not url                             */
+    HW_REG_URLS_ENTRY,   /* urls[1] not http:// or https://                */
+    HW_REG_INTERVAL,     /* (strict) interval missing or outside 1..3600   */
+    HW_REG_ENABLED,      /* (strict) enabled present and not a boolean     */
+    HW_REG_REV,          /* rev not a revision, or missing where required  */
+} hw_reg_err_t;
+
+/** What a push's reply said about the webhook settings. */
+typedef enum
+{
+    HW_REPLY_NONE = 0,   /* no body, or a JSON object without `webhook`:
+                            a plain "delivered"                            */
+    HW_REPLY_APPLY,      /* the settings are to be stored                  */
+    HW_REPLY_SAME,       /* the revision is the one in use                 */
+    HW_REPLY_PINNED,     /* the user pinned the webhook on the device      */
+    HW_REPLY_UNTRUSTED,  /* not from where a registration would be taken   */
+    HW_REPLY_TOO_LONG,   /* the body went on past HW_REPLY_MAX             */
+    HW_REPLY_NOT_JSON,   /* the body is not a JSON object                  */
+    HW_REPLY_INVALID,    /* the webhook object failed validation           */
+    HW_REPLY_FAILED,     /* valid, the device could not store it           */
+} hw_reply_t;
+
+/** True for a revision: 1 to 16 characters of `A-Z a-z 0-9 _ -`. */
+bool hw_rev_valid(const char *rev);
+
+/** The fingerprint of the webhook settings a revision stands for (enabled,
+ *  url, url2, interval_s), 8 hex characters. */
+void hw_rev_sum(const hw_config_t *c, char out[HW_REV_SUM_LEN]);
+
+/** Give @p c the revision @p rev (NULL or "" = none) with the fingerprint
+ *  of its settings as they are now. */
+void hw_rev_stamp(hw_config_t *c, const char *rev);
+
+/** The revision to report for @p c: the stored one while the settings are
+ *  still the ones it was stored with, "" otherwise. Whatever route changed
+ *  them without a revision (the web interface, a restore, a factory reset)
+ *  is caught here, with no hook in that route. */
+const char *hw_rev_reported(const hw_config_t *c);
+
+/**
+ * Read a registration object (the body of `POST /api/webhook`, or the
+ * `webhook` object of a push reply) into @p out, starting from @p cur.
+ *
+ * Without a `rev` the legacy rules hold (a missing or out of range interval
+ * keeps the current one, a long address is cut) and @p out carries no
+ * revision. With a `rev` every field has to be right, or the object is
+ * refused: a stored revision must stand for exactly the settings Home
+ * Assistant sent. @p need_rev refuses an object without one (a reply).
+ * `manual_override` is the caller's business.
+ */
+hw_reg_err_t hw_reg_parse(const cJSON *obj, const hw_config_t *cur,
+                          bool need_rev, hw_config_t *out);
+
+/** The text of a refusal (the 400 body of `POST /api/webhook`). */
+const char *hw_reg_err_str(hw_reg_err_t e);
+
+/**
+ * May the reply to a push change the webhook settings? Only where the
+ * server is known to be Home Assistant, or where a registration would be
+ * taken: @p https_named = the push went over https to a host name (chain
+ * and name verified); else the peer has to be a private address
+ * (@p peer_known, @p peer_private) and the push must not have left through
+ * the station address of a network marked untrusted (@p via_untrusted_sta).
+ */
+bool hw_reply_trusted(bool https_named, bool peer_known, bool peer_private,
+                      bool via_untrusted_sta);
+
+/**
+ * Decide what the body of a 200 reply means. HW_REPLY_APPLY fills @p out
+ * (the settings to store, revision stamped); HW_REPLY_INVALID fills
+ * @p err. @p truncated = the body went on past the read limit.
+ */
+hw_reply_t hw_reply_decide(const char *body, size_t len, bool truncated,
+                           const hw_config_t *cur, bool trusted,
+                           hw_config_t *out, hw_reg_err_t *err);
+
+/** A word for `GET /api/webhook` and the log: "" for HW_REPLY_NONE. */
+const char *hw_reply_str(hw_reply_t r);
 
 /* ---- settings (ha_webhooks_settings.c) ------------------------------------ */
 
@@ -85,13 +191,24 @@ esp_err_t hw_settings_register(void);
 /** Copy the live config (mutex-guarded). false before configured. */
 bool hw_config_get(hw_config_t *out);
 
+/** The revision the pushes report, into @p out: hw_rev_reported() of the
+ *  live config, read under the lock without a copy of the config (the
+ *  payload builder sits deep on the poster's stack). False while there is
+ *  none to report: the webhook is pinned (manual_override) or the component
+ *  is unconfigured. */
+bool hw_rev_live(char out[HW_REV_LEN]);
+
 /** Store @p cfg as the live config (mutex-guarded) and mark the component
  *  configured. The write path for BOTH the boot on_apply and the URL push. */
 void hw_config_store(const hw_config_t *cfg);
 
 /** Apply a URL-push LIVE (update the cache the poster reads) AND persist
- *  it to settings so it survives reboot. Used by POST/DELETE /api/webhook. */
-esp_err_t hw_config_apply_live(const hw_config_t *cfg);
+ *  it to settings so it survives reboot. Used by POST/DELETE /api/webhook
+ *  (@p resync true: the next push is a full snapshot for a new Home
+ *  Assistant) and by a push reply (@p resync false: the same Home
+ *  Assistant, the diff goes on). Safe from a PSRAM stack: the Settings
+ *  Manager's storage runs through flash_jobs. */
+esp_err_t hw_config_apply_live(const hw_config_t *cfg, bool resync);
 
 /* ---- stats accessors (ha_webhooks.c) -------------------------------------- */
 

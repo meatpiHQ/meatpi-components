@@ -104,6 +104,45 @@ identical on every product built from the V6 core.
   dropdown with check boxes beside the other settings and its stats line
   reads `Waiting for <names>` while the pushes wait. The registration push
   keeps the stored list.
+- **Settings in the reply to a push (2026-11-14).** Home Assistant can
+  only register its webhook settings (the addresses, the post interval) by
+  calling the device, and a car that is asleep at that moment, or on LTE
+  without a VPN, cannot be called, although it reaches Home Assistant with
+  every push. So the settings may come back in the reply: a `200` with
+  `{"webhook": {...}}`, the registration's body plus a short revision
+  (`rev`). The device stores the revision with the settings and reports it
+  in every push (`status.webhook_rev`); Home Assistant repeats its settings
+  until the device reports the revision it wants. No acknowledgement, no
+  queue, a lost reply is made good by a later push. The rules, the wire
+  format and the verdict words: `HTTP_API.md`, "Settings in the reply to a
+  push". What matters in the code:
+  - **One reader for both ways in.** `hw_reg_parse()` reads the body of
+    `POST /api/webhook` and the reply's `webhook` object
+    (`ha_webhooks_reg.c`, pure, host tested). With a `rev` every field has
+    to be right; without one the older, forgiving rules hold and the device
+    is left with no revision.
+  - **From whom.** `hw_reply_trusted()`: https to a host name (chain and
+    name verified), or a private address not reached through the station
+    address of a network marked untrusted. https to an address by IP is
+    NOT "verified": the name is not compared there, so it falls under the
+    address rule. The two ends of the connection come from the socket
+    (`http_client_manager`), the station's side from
+    `wifi_manager_addr_on_untrusted_sta()`.
+  - **The revision cannot lie.** It is stored beside a fingerprint of the
+    four settings it names (`rev_sum`, FNV-1a over `enabled`, `url`, `url2`,
+    `interval_s`); `hw_rev_reported()` gives `""` as soon as they differ.
+    So a change through the web interface, a restored backup or a factory
+    reset needs no hook: Home Assistant sees `""` and sends its settings
+    again. Both keys live in the settings document, so settings and
+    revision are one atomic write.
+  - **The poster writes settings.** It runs on a PSRAM stack; the Settings
+    Manager's storage goes through `flash_jobs`, which is what makes
+    `hw_config_apply_live()` legal there. The reply path does not force a
+    full snapshot (the same Home Assistant, the diff goes on), and it leaves
+    a reply alone when the settings changed while the push was under way.
+  - **Pinned means deaf.** With `manual_override` the pushes carry no
+    `webhook_rev` (Home Assistant then sends nothing) and a reply's settings
+    are refused, as a registration is.
 - **Not the generic path.** For routing individual PIDs to arbitrary
   endpoints, use `event_manager` rules (`autopid.param → http.post`). This
   component is the fixed, always-on HA telemetry channel: different shape,
@@ -112,6 +151,26 @@ identical on every product built from the V6 core.
 
 ## Testing
 
+- `host_test/` (`.\test.ps1 host ha_webhooks`, 9 tests): the pure rules of
+  `ha_webhooks_reg.c`. The revision's alphabet and length, the fingerprint
+  (each of the four settings breaks it, the user's own settings do not),
+  the registration object without a revision (the older rules and their
+  400 texts) and with one (every field held), the trust rule's truth
+  table, and the decision on a reply body: delivered, applied, same,
+  pinned, untrusted, too long, not JSON, invalid.
+- `tools/testbench/ha/push_reply_bench.py` (`.\test.ps1 pushreply`, prints
+  `PUSH REPLY PASS`): settings in the reply to a push, on the device. A
+  stand-in for Home Assistant on the Pi (plain http and https, a public
+  address and an mDNS name for the run) answers the pushes the way each
+  leg asks and notes the revision every push reports. Taken, the same
+  again without a flash write, a 204, an empty 200, `{}`, not JSON, over
+  2048 bytes, a bad field, a 503; the settings and their revision across a
+  restart; a registration with a revision, with a bad field, without one;
+  pinned; the interval changed through the settings route; and from whom:
+  plain http to a private and to a public address, https by IP to both,
+  https by name. `-Untrusted` adds the station's network marked untrusted
+  (the DUT's USB-C on the PC). The record: `testing/pushreply.md` in the
+  firmware repo.
 - `tools/testbench/ha_webhook_bench.py` (live-suite stage `ha_webhook`): a
   mock HA receiver on the Pi → register via `POST /api/webhook` → assert
   `{status+device_id, autopid_data?, config}` telemetry, failover to
@@ -159,4 +218,6 @@ identical on every product built from the V6 core.
 ## HTTP API
 
 See `HTTP_API.md` in this directory. Routes: `GET/POST/DELETE
-/api/webhook`. Settings: `/api/settings/ha_webhooks`.
+/api/webhook`. Settings: `/api/settings/ha_webhooks` (version 2: `enabled`,
+`url`, `url2`, `interval_s`, `data_mode`, `gzip`, `manual_override`,
+`cert_set`, `networks`, `rev`, `rev_sum`, `cli`).

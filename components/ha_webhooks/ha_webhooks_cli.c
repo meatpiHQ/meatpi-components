@@ -75,6 +75,15 @@ static int cmd_webhook(int argc, char **argv)
                        s.last_error_time);
     }
 
+    /* settings in the push reply (2026-11-14) */
+    const char *rev = hw_rev_reported(&c);
+
+    cmdline_printf("rev:       %s\n", c.manual_override ? "(pinned: not reported)"
+                                      : rev[0] ? rev : "(none)");
+    cmdline_printf("reply:     applied %u  ignored %u  last %s\n",
+                   (unsigned)s.reply_applied, (unsigned)s.reply_ignored,
+                   s.reply_last[0] ? s.reply_last : "-");
+
     cmdline_printf("OK\n");
     return 0;
 }

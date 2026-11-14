@@ -95,6 +95,29 @@ bool hw_config_get(hw_config_t *out)
     return true;
 }
 
+bool hw_rev_live(char out[HW_REV_LEN])
+{
+    bool report = false;
+
+    out[0] = '\0';
+
+    if (!s_configured)
+    {
+        return false;
+    }
+
+    lock();
+
+    if (!s_cfg.manual_override)
+    {
+        strlcpy(out, hw_rev_reported(&s_cfg), HW_REV_LEN);
+        report = true;
+    }
+
+    unlock();
+    return report;
+}
+
 void hw_stats_get(hw_stats_t *out)
 {
     if (out == NULL)
@@ -130,10 +153,10 @@ void hw_config_store(const hw_config_t *cfg)
 /* ---- settings glue -------------------------------------------------------- */
 
 /** Build the persist doc for a URL push. The push OWNS url/url2/enabled/
- *  interval/manual_override; the user-owned fields (data_mode, cert_set,
- *  cli) are preserved from the CURRENTLY STORED settings so a discovery
- *  push never clobbers a user's /api/settings choice (settings_manager_set
- *  is a full replace). */
+ *  interval/manual_override and the revision (rev, rev_sum); the user-owned
+ *  fields (data_mode, cert_set, cli) are preserved from the CURRENTLY
+ *  STORED settings so a discovery push never clobbers a user's
+ *  /api/settings choice (settings_manager_set is a full replace). */
 static cJSON *config_to_json(const hw_config_t *c)
 {
     cJSON *o = cJSON_CreateObject();
@@ -187,6 +210,10 @@ static cJSON *config_to_json(const hw_config_t *c)
     cJSON_AddStringToObject(o, "url2", c->url2);
     cJSON_AddNumberToObject(o, "interval_s", (double)c->interval_s);
     cJSON_AddBoolToObject(o, "manual_override", c->manual_override);
+    /* the revision travels in the same document as the settings it names:
+       one atomic write, so a power cut leaves the old pair or the new one */
+    cJSON_AddStringToObject(o, "rev", c->rev);
+    cJSON_AddStringToObject(o, "rev_sum", c->rev_sum);
     /* preserved user settings */
     cJSON_AddStringToObject(o, "data_mode", data_mode);
     cJSON_AddStringToObject(o, "cert_set", cert_set);
@@ -202,7 +229,7 @@ static cJSON *config_to_json(const hw_config_t *c)
     return o;
 }
 
-esp_err_t hw_config_apply_live(const hw_config_t *cfg)
+esp_err_t hw_config_apply_live(const hw_config_t *cfg, bool resync)
 {
     if (cfg == NULL)
     {
@@ -216,8 +243,10 @@ esp_err_t hw_config_apply_live(const hw_config_t *cfg)
         return ESP_ERR_NO_MEM;
     }
 
-    /* persist (survives reboot): runs on the httpd task (internal stack,
-       flash-safe). Reboot-to-apply is deliberately bypassed for the URL
+    /* persist (survives reboot): the caller is the httpd task or the poster
+       (a push reply, 2026-11-14), both on PSRAM stacks; the Settings
+       Manager's storage runs through flash_jobs, and an unchanged document
+       is not written. Reboot-to-apply is deliberately bypassed for the URL
        push: also update the live cache so the poster picks it up now. */
     char err[96] = "";
     bool changed = false;
@@ -234,7 +263,11 @@ esp_err_t hw_config_apply_live(const hw_config_t *cfg)
 
     hw_config_store(cfg);
 
-    hw_poster_resync(); /* next post = full snapshot for the new HA */
+    if (resync)
+    {
+        hw_poster_resync(); /* next post = full snapshot for the new HA */
+    }
+
     return ESP_OK;
 }
 

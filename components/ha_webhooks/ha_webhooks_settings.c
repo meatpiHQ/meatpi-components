@@ -53,6 +53,13 @@ static const settings_field_t HW_FIELDS[] =
        (Settings > WiFi) the pushes go out on, names separated by commas;
        an added key with a default, no version bump */
     SETTINGS_STR ("networks",          HW_NETS_LEN - 1, ""),
+    /* the revision Home Assistant gave the webhook settings above and the
+       fingerprint of the settings it was given for (2026-11-14, settings in
+       the push reply): written by a registration or a push reply, never by
+       a person (the web UI hides both); added keys with a default, no
+       version bump */
+    SETTINGS_STR ("rev",               HW_REV_LEN - 1, ""),
+    SETTINGS_STR ("rev_sum",           HW_REV_SUM_LEN - 1, ""),
     SETTINGS_BOOL("cli",               true),
 };
 /* clang-format on */
@@ -92,6 +99,8 @@ static void config_from_json(const cJSON *s, hw_config_t *c)
         cJSON_GetObjectItemCaseSensitive(s, "manual_override"));
     copy_str(c->cert_set, sizeof(c->cert_set), s, "cert_set");
     copy_str(c->networks, sizeof(c->networks), s, "networks");
+    copy_str(c->rev, sizeof(c->rev), s, "rev");
+    copy_str(c->rev_sum, sizeof(c->rev_sum), s, "rev_sum");
 }
 
 /** v1 -> v2: the `gzip` field was added (default off). */

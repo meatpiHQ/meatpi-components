@@ -118,6 +118,19 @@ static cJSON *build_status(void)
     cJSON_AddStringToObject(s, "hw_version", CONFIG_WICAN_HW_VERSION);
     cJSON_AddStringToObject(s, "device_type", CONFIG_WICAN_DEVICE_TYPE);
 
+    /* the revision of the webhook settings in use (2026-11-14): Home
+       Assistant compares it with the one it wants and hands its settings
+       over in the reply to this push while they differ. "" = none. The key
+       says "this firmware reads replies", so it is left out while the user
+       pinned the webhook here (manual_override): nothing is taken from a
+       reply then, as nothing is taken from a registration. */
+    char rev[HW_REV_LEN];
+
+    if (hw_rev_live(rev))
+    {
+        cJSON_AddStringToObject(s, "webhook_rev", rev);
+    }
+
     /* the manifest updater's word (2026-10-18): the integration's update
        entity reads these instead of the GitHub release list */
     if (s_fw_provider != NULL)
@@ -439,8 +452,10 @@ char *hw_payload_build(bool full_mode)
     add_section(root, "status", status, full, status_cache);
 
     /* contract v2: status.device_id / fw_version / hw_version are
-       guaranteed in EVERY push (identity check + update entity). Diff
-       mode drops unchanged keys, so overlay them from the fresh build. */
+       guaranteed in EVERY push (identity check + update entity), and so is
+       webhook_rev where the status has it (Home Assistant decides on this
+       push alone whether its reply carries settings). Diff mode drops
+       unchanged keys, so overlay them from the fresh build. */
     cJSON *sent = cJSON_GetObjectItemCaseSensitive(root, "status");
 
     if (sent == NULL)
@@ -451,7 +466,8 @@ char *hw_payload_build(bool full_mode)
     if (sent != NULL && status != NULL)
     {
         static const char *IDENTITY_KEYS[] =
-        { "device_id", "fw_version", "hw_version", "fw_update_available" };
+        { "device_id", "fw_version", "hw_version", "fw_update_available",
+          "webhook_rev" };
 
         for (size_t i = 0;
              i < sizeof(IDENTITY_KEYS) / sizeof(IDENTITY_KEYS[0]); i++)

@@ -2,6 +2,7 @@ idf_component_register(
     SRCS "http_client_manager.c"
          "http_client_manager_events.c"
          "http_client_manager_auth.c"
+         "http_client_manager_conn.c"
          "http_client_manager_download.c"
          "http_client_manager_upload.c"
     INCLUDE_DIRS "include"

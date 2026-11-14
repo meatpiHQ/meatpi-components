@@ -390,7 +390,8 @@ esp_http_client_handle_t hc_client_for(const http_client_request_t *req,
  *  @p buf. Runs entirely on the caller's task under the limiter. */
 static esp_err_t do_request(const http_client_request_t *req,
                             uint8_t *buf, size_t cap, size_t *out_len,
-                            int *out_status, bool *out_truncated)
+                            int *out_status, bool *out_truncated,
+                            hc_conn_t *conn)
 {
     esp_http_client_handle_t client = hc_client_for(req, NULL);
 
@@ -405,6 +406,11 @@ static esp_err_t do_request(const http_client_request_t *req,
     size_t got = 0;
 
     *out_truncated = false;
+
+    if (err == ESP_OK)
+    {
+        hc_conn_read(client, conn); /* while the socket is certainly open */
+    }
 
     while (err == ESP_OK && got < cap)
     {
@@ -486,7 +492,9 @@ esp_err_t http_client_manager_request(const http_client_request_t *req,
     size_t len = 0;
     int status = -1;
     bool truncated = false;
-    esp_err_t err = do_request(req, buf, cap, &len, &status, &truncated);
+    hc_conn_t conn = { 0 };
+    esp_err_t err = do_request(req, buf, cap, &len, &status, &truncated,
+                               &conn);
 
     xSemaphoreGive(s_limiter);
 
@@ -502,6 +510,9 @@ esp_err_t http_client_manager_request(const http_client_request_t *req,
     out->len = len;
     out->status_code = status;
     out->truncated = truncated;
+    out->conn_known = conn.known;
+    out->peer_private = conn.peer_private;
+    out->local_ip4 = conn.local_ip4;
     return ESP_OK;
 }
 

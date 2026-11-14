@@ -61,6 +61,20 @@ esp_err_t hc_open_and_fetch(esp_http_client_handle_t client,
                             const http_client_request_t *req,
                             int *status, int64_t *total, int *hops);
 
+/** Where a request went: the response's conn_known, peer_private and
+ *  local_ip4 (http_client_manager.h). */
+typedef struct
+{
+    bool known;
+    bool peer_private;
+    uint32_t local_ip4;
+} hc_conn_t;
+
+/** Read the two ends of @p client's open connection from its socket
+ *  (http_client_manager_conn.c). @p out stays zeroed (known = false) when
+ *  there is no socket or the addresses cannot be read. */
+void hc_conn_read(esp_http_client_handle_t client, hc_conn_t *out);
+
 /** The concurrency limiter (4 requests device-wide). */
 void hc_limiter_take(void);
 void hc_limiter_give(void);

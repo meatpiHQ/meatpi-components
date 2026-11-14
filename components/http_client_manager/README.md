@@ -43,6 +43,20 @@ the legacy read unbounded bodies to heap; this one can't be OOM'd by a
 fat endpoint. `http_client_response_t.truncated` (2026-10-18) says the body
 went on past the cap.
 
+**Where the request went (2026-11-14).** The response also carries the two
+ends of the connection, read from its socket once the headers were in:
+`conn_known` (the two below are valid), `peer_private` (the server's
+address is not routed on the internet: 10/8, 172.16/12, 192.168/16,
+100.64/10, 169.254/16, IPv6 unique-local and link-local, an IPv4-mapped
+address by the IPv4 rule) and `local_ip4` (the device's own IPv4 the
+request left from, network byte order, 0 when it is not an IPv4
+connection). `ha_webhooks` takes settings from the reply to a push only
+where it would take a registration, and asks with these (its
+`HTTP_API.md`, "Settings in the reply to a push"). The classification is
+pure (`hc_ip4_private()`, `hc_ip6_private()`, host tested); the socket read
+is `http_client_manager_conn.c`. The streamed GET, the download and the
+upload do not fill them.
+
 ## Redirects (2026-10-18)
 
 The engine never calls `esp_http_client_perform`, so IDF's own redirect
@@ -82,7 +96,7 @@ that fails still logs its E lines (`mbedtls_ssl_handshake returned
 warnings again: `PUT /api/logs/level {"tag":"esp-tls-mbedtls","level":"warn"}`.
 Bench: `.\test.ps1 tlsbyip`.
 
-## Auth helpers (pure, host-tested 5/5 incl. RFC vectors)
+## Auth helpers (pure, host-tested: 7 tests incl. RFC vectors, the redirect rule and the address classes)
 
 `bearer_token` → `Authorization: Bearer …`; `basic_username/password` →
 `Authorization: Basic base64(u:p)` (own tiny base64, RFC 4648 vectors);
@@ -107,7 +121,10 @@ Bench fixtures on rpi001: `wican-http-8080` (python http.server) and
   700 lines).
 - `http_client_manager_download.c`: the atomic download to the filesystem.
 - `http_client_manager_upload.c`: the chunked upload with progress.
-- `http_client_manager_auth.c`: PURE url/base64/auth/header helpers.
+- `http_client_manager_auth.c`: PURE url/base64/auth/header helpers, the
+  redirect rule and the class of an address (private or not).
+- `http_client_manager_conn.c`: the two ends of a request's connection,
+  read from its socket (2026-11-14).
 
 ## Memory (verified against the main sdkconfig)
 

@@ -165,3 +165,28 @@ bool hc_redirect_follow(int status, bool is_get, int hops, int max_hops)
     return status == 301 || status == 302 || status == 303 || status == 307 ||
            status == 308;
 }
+
+/* ---- where a request went (2026-11-14) -------------------------------------- */
+
+bool hc_ip4_private(const uint8_t a[4])
+{
+    return a[0] == 10 ||                               /* 10/8          */
+           (a[0] == 172 && (a[1] & 0xF0) == 16) ||     /* 172.16/12     */
+           (a[0] == 192 && a[1] == 168) ||             /* 192.168/16    */
+           (a[0] == 100 && (a[1] & 0xC0) == 64) ||     /* 100.64/10     */
+           (a[0] == 169 && a[1] == 254);               /* 169.254/16    */
+}
+
+bool hc_ip6_private(const uint8_t a[16])
+{
+    static const uint8_t V4MAP[12] =
+        { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF };
+
+    if (memcmp(a, V4MAP, sizeof(V4MAP)) == 0)
+    {
+        return hc_ip4_private(a + 12); /* an IPv4 peer on a v6 socket */
+    }
+
+    return (a[0] & 0xFE) == 0xFC ||                    /* fc00::/7      */
+           (a[0] == 0xFE && (a[1] & 0xC0) == 0x80);    /* fe80::/10     */
+}

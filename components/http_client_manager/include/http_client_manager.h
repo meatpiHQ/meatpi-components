@@ -82,6 +82,14 @@ typedef struct
     size_t len;
     int status_code;   /* -1 when the transport failed                  */
     bool truncated;    /* the body went on past max_response (2026-10-18) */
+    /* where the request went (2026-11-14): read from the connection's
+       socket once the headers were in. ha_webhooks takes settings from a
+       push's reply only where it would take a registration.              */
+    bool conn_known;   /* the two below are valid                         */
+    bool peer_private; /* the server's address is private, link-local or
+                          unique-local (not routed on the internet)       */
+    uint32_t local_ip4; /* the device's own IPv4 the request left from,
+                           network byte order; 0 = not an IPv4 connection */
 } http_client_response_t;
 
 /** Optional auth; set whichever apply (they combine). */

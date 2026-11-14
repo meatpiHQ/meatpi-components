@@ -60,5 +60,14 @@ bool hc_redirect_follow(int status, bool is_get, int hops, int max_hops);
 
 #define HC_MAX_REDIRECTS 3
 
+/** Where a request went (2026-11-14, ha_webhooks' rule for a push's reply):
+ *  true for an address that is not routed on the internet. IPv4 (4 bytes,
+ *  network order): 10/8, 172.16/12, 192.168/16, 100.64/10 (carrier NAT and
+ *  the VPN tunnels' range), 169.254/16. IPv6 (16 bytes): unique-local
+ *  fc00::/7, link-local fe80::/10, and an IPv4-mapped address by the IPv4
+ *  rule. Loopback and everything else: false. */
+bool hc_ip4_private(const uint8_t a[4]);
+bool hc_ip6_private(const uint8_t a[16]);
+
 /* event_manager glue (http_client_manager_events.c) */
 void hcm_events_register(void);

@@ -333,6 +333,7 @@ esp_err_t dl_frame_push(const dl_record_t *rec);
 typedef struct
 {
     bool     log;
+    bool     log_tx;             /* can_log_tx: sent frames too       */
     uint32_t filter;
     uint32_t mask;
     bool     ext;

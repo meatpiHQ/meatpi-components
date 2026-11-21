@@ -62,6 +62,9 @@ static const settings_field_t FIELDS[] =
     SETTINGS_STR("can_filter", 10, ""),  /* hex id; "" = ALL frames   */
     SETTINGS_STR("can_mask", 10, "7FF"), /* hex; used with can_filter */
     SETTINGS_BOOL("can_ext", false),
+    /* also record the frames the WiCAN itself sends (a schema-compatible
+     * addition: a stored document without it gets the default, off) */
+    SETTINGS_BOOL("can_log_tx", false),
     SETTINGS_INT("can_max_file_mb", 1, 128, 8),
     SETTINGS_INT("can_max_files", 1, 500, 50),
     SETTINGS_INT("ring_len", 512, DL_CAN_RING_MAX, 2048),
@@ -135,6 +138,8 @@ static esp_err_t on_apply(const cJSON *settings)
         cJSON_GetObjectItemCaseSensitive(settings, "can_log"));
     s_cfg.can.ext = cJSON_IsTrue(
         cJSON_GetObjectItemCaseSensitive(settings, "can_ext"));
+    s_cfg.can.log_tx = cJSON_IsTrue(
+        cJSON_GetObjectItemCaseSensitive(settings, "can_log_tx"));
     s_cfg.can.monitor_all = (filter[0] == '\0');
     s_cfg.can.filter = 0;
     s_cfg.can.mask = 0x7FF;

@@ -164,3 +164,13 @@ size_t ap_flt_frame_line(uint32_t frame_id, const uint8_t *data, size_t len,
  *  2026-10-03). AT/ST/VT commands return true (nothing to verify). PURE. */
 bool ap_payload_matches_cmd(const char *cmd, const uint8_t *payload,
                             size_t payload_len);
+
+/** The request a raw row's cmd carries, for ap_payload_matches_cmd(). With
+ *  the chip's CAN formatting off (ATCAF0) a row's cmd is the whole data
+ *  field: an ISO-TP single frame starts with its length byte, so the
+ *  service is the second byte, not the first. A GMLAN $AA packet read is
+ *  answered by UUDT frames that start with the packet's number, with no
+ *  response service. @return the cmd from its service on (an ISO-TP single
+ *  frame whose answer echoes the service), or NULL = nothing to compare
+ *  (no single frame, a $AA read, a non-hex command). PURE. */
+const char *ap_raw_cmd_request(const char *cmd);

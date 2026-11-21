@@ -171,6 +171,63 @@ bool ap_payload_matches_cmd(const char *cmd, const uint8_t *payload,
     return true;
 }
 
+const char *ap_raw_cmd_request(const char *cmd)
+{
+    /* the frame's bytes as the chip reads them: hex pairs, spaces ignored */
+    const char *p = cmd;
+    const char *service_at = NULL;
+    uint8_t pci = 0;
+    uint8_t service = 0;
+    size_t n_pairs = 0;
+
+    for (;;)
+    {
+        while (*p == ' ')
+        {
+            p++;
+        }
+
+        if (!isxdigit((unsigned char)p[0]) ||
+            !isxdigit((unsigned char)p[1]))
+        {
+            break;
+        }
+
+        char pair[3] = { p[0], p[1], '\0' };
+        uint8_t byte = (uint8_t)strtol(pair, NULL, 16);
+
+        if (n_pairs == 0)
+        {
+            pci = byte;
+        }
+        else if (n_pairs == 1)
+        {
+            service = byte;
+            service_at = p;
+        }
+
+        n_pairs++;
+        p += 2;
+    }
+
+    /* an ISO-TP single frame: length 1..7 in byte 0, that many bytes
+       after it. Anything else (a raw frame of another kind, an AT/ST
+       command) carries no service to compare */
+    if (pci < 0x01 || pci > 0x07 || n_pairs < (size_t)pci + 1)
+    {
+        return NULL;
+    }
+
+    /* GMLAN readDataByPacketIdentifier: the answers are UUDT frames that
+       start with the packet's number, no response service (GMW3110 $AA) */
+    if (service == 0xAA)
+    {
+        return NULL;
+    }
+
+    return service_at;
+}
+
 /** ISO-TP reassembly over the frames of ONE responder id (PCI in byte
  *  0; non-ISO-TP lines taken raw). @return assembled byte count. */
 static size_t assemble_header_frames(const ap_line_t *lines, int n_lines,

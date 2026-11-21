@@ -426,6 +426,62 @@ void test_resp_payload_matches_cmd(void)
     TEST_ASSERT_TRUE(ap_payload_matches_cmd("STM", rpm, sizeof(rpm)));
 }
 
+void test_resp_raw_cmd_request(void)
+{
+    /* ATCAF0: the cmd is the whole frame, the service behind the length */
+    TEST_ASSERT_EQUAL_STRING("010C", ap_raw_cmd_request("02010C"));
+    TEST_ASSERT_EQUAL_STRING("22F40C", ap_raw_cmd_request("0322F40C"));
+    TEST_ASSERT_EQUAL_STRING("010C1", ap_raw_cmd_request("02010C1"));
+    TEST_ASSERT_EQUAL_STRING("01 0C", ap_raw_cmd_request("02 01 0C"));
+    /* the frame padded to 8 bytes */
+    TEST_ASSERT_EQUAL_STRING("010CAAAAAAAAAA",
+                             ap_raw_cmd_request("02010CAAAAAAAAAA"));
+    /* a GMLAN $AA packet read: no response service to compare */
+    TEST_ASSERT_NULL(ap_raw_cmd_request("03AA0107"));
+    TEST_ASSERT_NULL(ap_raw_cmd_request("03 AA 01 07"));
+    /* no ISO-TP single frame: a first frame, a length past the bytes, a
+       zero length, one byte only */
+    TEST_ASSERT_NULL(ap_raw_cmd_request("100A2E0101020304"));
+    TEST_ASSERT_NULL(ap_raw_cmd_request("05010C"));
+    TEST_ASSERT_NULL(ap_raw_cmd_request("00010C"));
+    TEST_ASSERT_NULL(ap_raw_cmd_request("02"));
+    /* AT/ST commands and the empty cmd */
+    TEST_ASSERT_NULL(ap_raw_cmd_request("STPX D:03AA0107,R:1"));
+    TEST_ASSERT_NULL(ap_raw_cmd_request("ATRV"));
+    TEST_ASSERT_NULL(ap_raw_cmd_request(""));
+}
+
+void test_resp_raw_row_guard(void)
+{
+    uint8_t out[AP_PAYLOAD_MAX];
+    size_t n;
+
+    /* Mode 01 PID 0C sent raw: the length byte is not the service, so the
+       cmd as written never matches; the request behind it does */
+    TEST_ASSERT_EQUAL(ESP_OK,
+                      ap_resp_to_payload("7E8 04 41 0C 1A F8 AA AA AA\r",
+                                         out, sizeof(out), &n));
+    TEST_ASSERT_FALSE(ap_payload_matches_cmd("02010C", out, n));
+    TEST_ASSERT_TRUE(ap_payload_matches_cmd(ap_raw_cmd_request("02010C"),
+                                            out, n));
+
+    /* and cross-talk is still caught: PID 05's answer is not PID 0C's */
+    TEST_ASSERT_EQUAL(ESP_OK,
+                      ap_resp_to_payload("7E8 03 41 05 5A AA AA AA AA\r",
+                                         out, sizeof(out), &n));
+    TEST_ASSERT_FALSE(ap_payload_matches_cmd(ap_raw_cmd_request("02010C"),
+                                             out, n));
+
+    /* a 2014 Traverse's instrument cluster on single-wire CAN: $AA packet
+       07 answers on 0x54C with the packet number first, the odometer in
+       metres behind it. The cmd as written never matches */
+    TEST_ASSERT_EQUAL(ESP_OK,
+                      ap_resp_to_payload("54C 07 0A 48 A7 83 00 00 00\r",
+                                         out, sizeof(out), &n));
+    TEST_ASSERT_FALSE(ap_payload_matches_cmd("03AA0107", out, n));
+    TEST_ASSERT_NULL(ap_raw_cmd_request("03AA0107"));
+}
+
 /* ---- ATMA filter frames (Phase 4) --------------------------------------------------- */
 
 void test_filter_frame_shapes(void)
@@ -2031,6 +2087,8 @@ void app_main(void)
     RUN_TEST(test_resp_headers_on_isotp_multiframe);
     RUN_TEST(test_resp_errors);
     RUN_TEST(test_resp_payload_matches_cmd);
+    RUN_TEST(test_resp_raw_cmd_request);
+    RUN_TEST(test_resp_raw_row_guard);
     RUN_TEST(test_resp_multi_ecu_payloads);
 
     RUN_TEST(test_filter_frame_shapes);

@@ -491,20 +491,36 @@ static bool row_ask(const ap_pid_t *pid, const ap_param_t *params)
                              pid->rxheader);
     }
 
-    if (ap_resp_to_payload(resp, payload, sizeof(payload), &payload_len)
-            != ESP_OK)
+    /* with the chip's CAN formatting off (ATCAF0 in an init), the cmd is
+       the whole frame: the service the guard compares sits behind the
+       ISO-TP length byte, and a frame with no service to compare (a GMLAN
+       $AA packet read, a raw frame of another kind) has only the row's own
+       receive filter for a guard */
+    const char *request = pid->cmd;
+
+    if ((mem->moved & AP_SETS_RAW) != 0)
     {
-        ESP_LOGD(TAG, "%s: no payload in response", pid->name);
-        return false;
+        request = ap_raw_cmd_request(pid->cmd);
     }
 
-    /* cross-talk guard: another chip master's response (WS-OBD bridge,
-       CLI) can land in our request window, never cache it (Phase 1b) */
-    if (!ap_payload_matches_cmd(pid->cmd, payload, payload_len))
+    if (request != NULL)
     {
-        ESP_LOGD(TAG, "%s: response echo mismatch (cross-talk?)",
-                 pid->name);
-        return false;
+        if (ap_resp_to_payload(resp, payload, sizeof(payload), &payload_len)
+                != ESP_OK)
+        {
+            ESP_LOGD(TAG, "%s: no payload in response", pid->name);
+            return false;
+        }
+
+        /* cross-talk guard: another chip master's response (WS-OBD
+           bridge, CLI) can land in our request window, never cache it
+           (Phase 1b) */
+        if (!ap_payload_matches_cmd(request, payload, payload_len))
+        {
+            ESP_LOGD(TAG, "%s: response echo mismatch (cross-talk?)",
+                     pid->name);
+            return false;
+        }
     }
 
     /* the bytes the row's expressions index: the reply as the chip

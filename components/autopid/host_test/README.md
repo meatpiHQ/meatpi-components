@@ -25,7 +25,7 @@ filesystem). Run via `.\test.ps1 host autopid`.
 | lowest responder wins | 7E9 + 7E8 both answer → only 7E8 kept (legacy rule) |
 | headers-on ISO-TP multiframe | FF `10 14` + CFs `21/22` reassembled to 0x14 bytes (VIN) |
 | error lines | NO DATA / CAN ERROR / `?` → ESP_FAIL; only-noise/empty → ESP_ERR_NOT_FOUND |
-| cross-talk guard | `ap_payload_matches_cmd`: payload must echo (service\|0x40)+identifier (010C vs 0105, UDS 22xx DIDs, mode 03, response-count hint digit); AT/ST/VT unchecked |
+| cross-talk guard | `ap_payload_matches_cmd`: payload must echo (service\|0x40)+identifier (010C vs 0105, UDS 22xx DIDs, mode 03, response-count hint digit); AT/ST/VT unchecked; a raw (`ATCAF0`) row's cmd read behind its ISO-TP length byte, GMLAN `$AA` packet reads unchecked (`ap_raw_cmd_request`) |
 | ATMA filter frames | legacy header shapes (contiguous `123`/`18DAF110`, byte-split ids), id mismatch skipped, the REAL bench `<DATA ERROR` suffix (markers skipped, bytes kept), noise/header-only rejected |
 | **filter stream: busy bus** | crowded monitor (many other ids + noise + pre-ATCRA buffered frames), target = ONE frame among them, fed at EVERY chunk size 1..200: chunk-boundary reassembly can't miss it |
 | filter stream: duplicates | same id repeating in one window → FIRST frame wins (collector stops); a fresh window picks up the newest traffic |

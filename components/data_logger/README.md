@@ -54,7 +54,12 @@ touches a file.
   (needs can_manager `enabled`; `silent` mode recommended for passive
   logging). `can_filter`/`can_mask`/`can_ext` (hex strings) select
   ids; empty filter = ALL frames. One small drain task moves the
-  subscription queue into the frame ring.
+  subscription queue into the frame ring. `can_log_tx` (off by default)
+  also records the frames the WiCAN itself sends (J2534 requests, AutoPID
+  polls...), which the bus never echoes back: a can_manager TX tap
+  (`can_manager_set_tx_tap`) pushes them into the same queue, through the
+  same filter. A sent frame is recorded like a received one: the file
+  formats carry no direction.
 - **rules**: the `logger.write {source?, name, value}` event action,
   any event's values, user-selected (see Events below).
 
@@ -97,10 +102,11 @@ rotation, then fetch. Rotated files are always free.
 `flush_ms` (100 to 60000, **5000** since 2026-09-07), `autopid_log` (off|changed|all, off),
 `can_log` (false), `can_format`
 (binary|csv|sqlite|mf4|blf|candump|asc|jsonl, binary), `can_filter`
-(hex id, "" = all), `can_mask` (hex, "7FF"), `can_ext` (false),
+(hex id, "" = all), `can_mask` (hex, "7FF"), `can_ext` (false), `can_log_tx` (false),
 `can_max_file_mb` (1 to 128, 8), `can_max_files` (1 to 500, 50), `ring_len`
 (512 to 8192, 2048), `cli` (true). v1→v2 migration is a pass-through;
-format-enum ADDITIONS are schema-compatible (no version bump).
+format-enum ADDITIONS are schema-compatible (no version bump), and so is
+`can_log_tx` (a stored document without it is filled with the default).
 
 ## Events (event_manager)
 

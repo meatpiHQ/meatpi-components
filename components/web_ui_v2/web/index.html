@@ -1598,7 +1598,7 @@ const LABELS={
   sleep_mv:"Sleep voltage (V)",wake_mv:"Wake-up voltage (V)",wake_delay_ms:"Wake up after (s)",sleep_delay_min:"Sleep after (min)",periodic_wakeup:"Periodic wake-up",wakeup_interval_min:"Wake up every (min)",
   /* data_logger */
   "data_logger.format":"File format",max_file_mb:"Max file size (MB)",max_files:"Files kept",batch_rows:"Rows per batch",
-  flush_ms:"Flush interval (ms)",autopid_log:"Record parameters",can_log:"Record CAN frames",can_format:"File format",
+  flush_ms:"Flush interval (ms)",autopid_log:"Record parameters",can_log:"Record CAN frames",can_log_tx:"Include frames WiCAN sends",can_format:"File format",
   can_filter:"CAN ID (hex)",can_mask:"Mask (hex)",can_ext:"29-bit (extended) IDs",can_max_file_mb:"CAN max file size (MB)",
   can_max_files:"CAN files kept",ring_len:"Frame buffer (frames)",
   /* espnetlink */
@@ -1704,6 +1704,7 @@ const HELP={
   can_filter:"Hex CAN ID to record (blank = all frames).",
   can_mask:"Hex mask: a frame is recorded when (ID AND mask) equals (filter AND mask).",
   can_log:"Copies frames from the CAN bus as they arrive: the bus must be on (Settings → CAN bus).",
+  can_log_tx:"Also records the frames WiCAN itself puts on the bus (J2534 and diagnostic requests, parameter polls), which the bus never sends back to it. They go through the same ID filter and are stored like received frames.",
   autopid_log:"Off records nothing from polling; When a value changes keeps files small; Every poll keeps every sample.",
   batch_rows:"Rows written to the card in one go: bigger batches mean fewer writes but more lost if power is cut.",
   flush_ms:"Longest time a row waits in memory before it is written to the card. Longer = fewer card writes; a power cut loses at most this much, a crash or restart loses nothing.",
@@ -4362,7 +4363,7 @@ PAGES.logger=async(view)=>{
     const example=()=>"e.g. "+(isExt()?"18DAF110":"7E8");
     let filterMode=!!vals.can_filter,lastId=vals.can_filter||"7E8",canRowsRef=null;
     const HIDE_FILTER=["x_ext","x_id","x_mask"];
-    const canRows=await form(["can_log","can_format","can_max_file_mb","can_max_files","ring_len"],{advanced:["ring_len"],
+    const canRows=await form(["can_log","can_log_tx","can_format","can_max_file_mb","can_max_files","ring_len"],{advanced:["ring_len"],
       visible:st=>{if(!st.can_log)return["can_log"];if(filterMode||!canRowsRef)return null;
         return canRowsRef.map(r=>r.dataset.key).filter(k=>!HIDE_FILTER.includes(k));}});
     canRowsRef=canRows;

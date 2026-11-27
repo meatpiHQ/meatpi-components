@@ -34,6 +34,11 @@
  *
  * Filter settings (`can_filter`/`can_mask`/`can_ext`) map 1:1 onto
  * can_manager_subscribe_queue(); empty can_filter = monitor_all.
+ *
+ * `can_log_tx` (off by default) adds the frames the WiCAN sends: a CAN
+ * node does not receive its own frames, so the RX fan-out never carries
+ * them. A can_manager TX tap pushes them into the same queue, through
+ * the same filter.
  */
 #include <string.h>
 #include <sys/time.h>
@@ -45,6 +50,7 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 
+#include "can_core_filter.h"
 #include "can_manager.h"
 
 #include "data_logger_private.h"
@@ -66,9 +72,12 @@ static StackType_t s_stack[3072] EXT_RAM_BSS_ATTR;
 
 static int s_sub_idx = -1;
 
+static void tx_tap_apply(void);
+
 void dl_can_configure(const dl_can_cfg_t *cfg)
 {
     s_cfg = *cfg;
+    tx_tap_apply();
 }
 
 uint32_t dl_can_queued(void)
@@ -91,6 +100,37 @@ static void frame_to_record(const can_core_frame_t *f,
     rec->u.f.flags = (uint8_t)((f->ext ? DL_FRAME_EXT : 0) |
                                (f->rtr ? DL_FRAME_RTR : 0));
     memcpy(rec->u.f.data, f->data, rec->u.f.dlc);
+}
+
+/* can_manager calls this right after it transmits a frame (`can_log_tx`).
+ * Push it into the same queue as the RX fan-out so the drain task logs
+ * sent and received frames identically, and through the same filter;
+ * non-blocking, a full queue drops the frame. Runs in the sender's task
+ * context (can_manager_send), never an ISR. */
+static void log_tx_frame(const can_core_frame_t *f)
+{
+    if (s_q == NULL)
+    {
+        return;
+    }
+
+    if (!s_cfg.monitor_all &&
+        (f->ext != s_cfg.ext ||
+         !can_core_filter_match(f->id, s_cfg.filter, s_cfg.mask)))
+    {
+        return;
+    }
+
+    (void)xQueueSend(s_q, f, 0);
+}
+
+/* the tap is registered only while both settings ask for it and the
+ * queue exists, so a logger that is off costs can_manager_send nothing */
+static void tx_tap_apply(void)
+{
+    bool on = (s_q != NULL) && s_cfg.log && s_cfg.log_tx;
+
+    can_manager_set_tx_tap(on ? log_tx_frame : NULL);
 }
 
 static void drain_task(void *arg)
@@ -158,6 +198,8 @@ esp_err_t dl_can_start(void)
                                    sizeof(s_stack) / sizeof(s_stack[0]),
                                    NULL, 3, s_stack, &s_tcb);
     }
+
+    tx_tap_apply();
 
     return (s_task != NULL) ? ESP_OK : ESP_FAIL;
 }

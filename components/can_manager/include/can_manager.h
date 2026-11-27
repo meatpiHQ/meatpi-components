@@ -116,6 +116,15 @@ bool can_manager_tx_ready(void);
  *  client writes a whole ISO-TP block) waits on this between frames. */
 bool can_manager_tx_room(void);
 
+/** A read-only tap on every frame can_manager_send() puts on the bus. The
+ *  data logger registers one when its `can_log_tx` setting is on, so the
+ *  SD CAN log also carries what the WiCAN sends: a CAN node never receives
+ *  its own frames, so the RX fan-out does not have them. Runs in the
+ *  caller's task context right after a successful transmit: keep it short
+ *  and non-blocking. One tap; NULL (default) is off. */
+typedef void (*can_tx_tap_t)(const can_core_frame_t *frame);
+void can_manager_set_tx_tap(can_tx_tap_t tap);
+
 /**
  * @brief A tester states the bus bitrate (a J2534 CONNECT's baud, an slcan
  *        client's `S` command).

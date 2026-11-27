@@ -50,6 +50,7 @@ static const char *TAG = "can_manager";
 static bool s_started;
 static bool s_running;
 static void (*s_bus_up_hook)(void);
+static can_tx_tap_t s_tx_tap;           /* data logger's TX-frame tap (NULL = off) */
 
 /* start / stop / probe never overlap (the probe borrows the one handle) */
 static SemaphoreHandle_t s_life;
@@ -291,6 +292,11 @@ struct can_core_handle_s *can_manager_core_handle(void)
     return s_running ? &s_bus : NULL;
 }
 
+void can_manager_set_tx_tap(can_tx_tap_t tap)
+{
+    s_tx_tap = tap;
+}
+
 esp_err_t can_manager_send(uint32_t id, bool ext, bool rtr,
                            const uint8_t *data, uint8_t dlc)
 {
@@ -319,6 +325,11 @@ esp_err_t can_manager_send(uint32_t id, bool ext, bool rtr,
 
     if (can_core_transmit(&s_bus, &f, 100) == ELM327_OK)
     {
+        can_tx_tap_t tap = s_tx_tap;   /* the frame went out: let the logger see it */
+        if (tap != NULL)
+        {
+            tap(&f);
+        }
         return ESP_OK;
     }
 

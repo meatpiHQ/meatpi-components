@@ -96,7 +96,11 @@ vehicle) is done and bench-proven:
 A script can flash an ECU from a firmware file on the **SD card**:
 - `obd_file_size("/sd/..")` → bytes; `obd_file_read("/sd/..", off, len)`
   → hex (SD-only paths, no `..`; `/data` rejected: internal-flash reads
-  would fault the PSRAM runner stack, SD/SDMMC is cache-safe).
+  would fault the PSRAM runner stack, SD/SDMMC is cache-safe). Known issue
+  (2026-11-27, 6.0.0-beta.12): one run reading SD this way ended in a
+  "Cache error" reset whose cause is not established; the `flash_file_*`
+  bindings read and write SD through `flash_jobs` (an internal stack) as a
+  precaution.
 - `obd_transfer_file("/sd/..", off, size, block_len[, bsc])` → bytes sent
   (nil on fail); streams UDS `36 <bsc> <block>` C-side (no MB image
   through Berry strings), awaits each `76 <bsc>`, honors the ECU's

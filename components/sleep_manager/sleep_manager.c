@@ -87,6 +87,7 @@ static sm_activity_t s_activity;
 const char SM_WHY_LOG[] = "log";
 const char SM_WHY_CHIP_UPDATE[] = "chip_update";
 const char SM_WHY_FW_UPDATE[] = "fw_update";
+const char SM_WHY_ECU_FLASH[] = "ecu_flash";
 static const char *s_activity_why = "";
 static bool        s_update_hold_logged;
 
@@ -216,6 +217,12 @@ static void hold_for_update(uint32_t now, const char *why)
                            SM_ACTIVITY_HOLD_MS, SM_ACTIVITY_CAP_MS))
     {
         return; /* nothing counts: nothing to hold */
+    }
+
+    if (why == SM_WHY_ECU_FLASH)
+    {
+        /* past the cap too, for the ladder only (sm_ladder_push) */
+        sm_ladder_push(&s_policy, s_run, now + SM_ACTIVITY_HOLD_MS);
     }
 
     s_activity_why = why;

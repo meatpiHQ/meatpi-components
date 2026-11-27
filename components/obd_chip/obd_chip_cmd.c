@@ -509,6 +509,20 @@ static esp_err_t request_in_session(const char *cmd, char *resp,
 esp_err_t obd_chip_request(const char *cmd, char *resp, size_t resp_len,
                            TickType_t timeout)
 {
+    if (obd_gate_bus_locked())
+    {
+        /* an ECU is being flashed from the TWAI side (obd_gate's bus lock,
+           2026-11-27): AutoPID, uds_manager and J2534 through the chip wait */
+        obd_gate_bus_lock_refused();
+
+        if (resp != NULL && resp_len > 0)
+        {
+            resp[0] = '\0';
+        }
+
+        return ESP_ERR_INVALID_STATE;
+    }
+
     if (!obd_parse_sets_protocol(cmd))
     {
         if (s_switch_owed && resp != NULL && resp_len > 0 &&

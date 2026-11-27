@@ -41,6 +41,21 @@ void test_examples_are_valid_scripts(void);
 void test_examples_only_use_documented_bindings(void);
 void test_examples_json_lists_without_sources(void);
 
+/* test_flash.c: ISO-TP frames, the flash lock, the checksums */
+void test_tp_single_frame_padded(void);
+void test_tp_extended_address_single(void);
+void test_tp_multi_frame_segmentation(void);
+void test_tp_extended_address_round_trip(void);
+void test_tp_sequence_error_and_overflow(void);
+void test_tp_flow_control_parse(void);
+void test_tp_rejects_bad_lengths(void);
+void test_tp_block_size_flow_control(void);
+void test_lock_lifecycle(void);
+void test_lock_tx_gate(void);
+void test_lock_http_gate(void);
+void test_crc_catalogue(void);
+void test_adler32_and_sum(void);
+
 void test_gpio_denylist(void);
 void test_gpio_can_alias_needs_stop(void);
 void test_gpio_only_can_tx_is_driven(void);
@@ -155,6 +170,20 @@ void app_main(void)
     RUN_TEST(test_pwm_span);
     RUN_TEST(test_gpio_touch_release);
     RUN_TEST(test_pwm_default_idle);
+
+    RUN_TEST(test_tp_single_frame_padded);
+    RUN_TEST(test_tp_extended_address_single);
+    RUN_TEST(test_tp_multi_frame_segmentation);
+    RUN_TEST(test_tp_extended_address_round_trip);
+    RUN_TEST(test_tp_sequence_error_and_overflow);
+    RUN_TEST(test_tp_flow_control_parse);
+    RUN_TEST(test_tp_rejects_bad_lengths);
+    RUN_TEST(test_tp_block_size_flow_control);
+    RUN_TEST(test_lock_lifecycle);
+    RUN_TEST(test_lock_tx_gate);
+    RUN_TEST(test_lock_http_gate);
+    RUN_TEST(test_crc_catalogue);
+    RUN_TEST(test_adler32_and_sum);
 
     UNITY_END();
 }

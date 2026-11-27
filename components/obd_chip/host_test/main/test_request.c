@@ -197,6 +197,20 @@ void obd_gate_release(const void *owner)
     (void)owner;
 }
 
+/* obd_gate's bus lock (2026-11-27, an ECU flash): test_bus_lock.c sets it */
+bool test_obd_bus_locked;
+unsigned test_obd_bus_refusals;
+
+bool obd_gate_bus_locked(void)
+{
+    return test_obd_bus_locked;
+}
+
+void obd_gate_bus_lock_refused(void)
+{
+    test_obd_bus_refusals++;
+}
+
 /* ---- helpers ------------------------------------------------------------- */
 
 static obd_cmd_memory_t s_mem0;     /* the counters when the test began */

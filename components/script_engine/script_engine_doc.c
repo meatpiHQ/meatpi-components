@@ -52,6 +52,7 @@ static const struct
     { "gpio",    "GPIO" },
     { "events",  "Events & rules" },
     { "file",    "SD-card files & ECU flashing" },
+    { "flash",   "ECU flashing: sessions, frames and the lock" },
 };
 
 bool se_doc_group_ok(const char *id)
@@ -191,23 +192,28 @@ static const se_bind_doc_t BIND_DOCS[] =
       "var sent = obd_transfer_file('/sd/fw/ecu.bin', 0, n, 128)" },
 };
 
+#define N_BIND_DOCS (sizeof(BIND_DOCS) / sizeof(BIND_DOCS[0]))
+
+/* the flash_* entries follow (script_engine_doc_flash.c) */
 size_t se_bind_doc_count(void)
 {
-    return sizeof(BIND_DOCS) / sizeof(BIND_DOCS[0]);
+    return N_BIND_DOCS + se_flash_doc_count();
 }
 
 const se_bind_doc_t *se_bind_doc(size_t i)
 {
-    return (i < se_bind_doc_count()) ? &BIND_DOCS[i] : NULL;
+    return (i < N_BIND_DOCS) ? &BIND_DOCS[i] : se_flash_doc(i - N_BIND_DOCS);
 }
 
 const se_bind_doc_t *se_bind_doc_find(const char *name)
 {
     for (size_t i = 0; name != NULL && i < se_bind_doc_count(); i++)
     {
-        if (strcmp(BIND_DOCS[i].name, name) == 0)
+        const se_bind_doc_t *d = se_bind_doc(i);
+
+        if (strcmp(d->name, name) == 0)
         {
-            return &BIND_DOCS[i];
+            return d;
         }
     }
 
@@ -359,7 +365,7 @@ cJSON *se_doc_reference(const se_doc_ctx_t *ctx)
 
     for (size_t i = 0; i < se_bind_doc_count(); i++)
     {
-        const se_bind_doc_t *d = &BIND_DOCS[i];
+        const se_bind_doc_t *d = se_bind_doc(i);
         cJSON *b = cJSON_CreateObject();
 
         cJSON_AddStringToObject(b, "name", d->name);

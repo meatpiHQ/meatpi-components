@@ -85,6 +85,29 @@ bool     se_settings_exclusive(void);      /* scripts hold the bus (autopid off)
  * ECU access when the setting is on; the runner releases it after EVERY run
  * next to se_obd_autorelease(). */
 void se_bus_hold_release(void);
+/* take it (idempotent): the flash bindings' first transmission */
+void se_bus_hold(void);
+/* raise when an ECU flash holds the lock (the non-flash bus bindings) */
+void se_refuse_when_locked(bvm *vm);
+/* Stop was pressed (the kill switch the bindings poll) */
+bool se_run_killed(void);
+
+/* An async run (script_engine.c): takes @p src (heap, freed by the runner)
+ * and @p params (may be NULL); @p run_id gets its number for the status.
+ * ESP_ERR_INVALID_STATE: busy or disabled. The only way to run while an
+ * ECU flash holds the lock (a recovery run, admitted by the HTTP gate). */
+struct cJSON;
+esp_err_t   script_engine_run_async(char *src, struct cJSON *params,
+                                    uint32_t *run_id);
+/* what the last async run printed (live while it runs) */
+const char *se_async_output(void);
+/* /data/scripts/<name>[.be] into a fresh PSRAM buffer (caller frees) */
+esp_err_t   se_load_stored(const char *name, char **src);
+/* POST /api/scripts/run with "async": true (script_engine_http_flash.c);
+ * takes @p root */
+esp_err_t   se_http_run_async(void *req, struct cJSON *root);
+/* GET status, POST answer and release (script_engine_http_flash.c) */
+esp_err_t   se_flash_register_http(void);
 
 /* After every run: drop a can_rx subscription, release GPIO, restart CAN
  * if the script called can_stop(). */

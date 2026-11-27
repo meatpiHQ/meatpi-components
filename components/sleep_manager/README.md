@@ -187,6 +187,16 @@ uploadconfirm` leg U5. The store-and-forward bench
 (`tools/testbench/ha/ha_history_backfill_bench.py`) holds the device at
 12.5 V while the integration pulls and reads the deadline move.
 
+**An ECU being flashed holds the same way since 2026-11-27:**
+`sleep_manager_set_busy_check(fn)` takes one more writer's check, asked by
+`sm_update_busy()` before the chip and the image; the script engine wires
+it to `script_engine_busy_reason()`, true while a run past `flash_commit()`
+writes an ECU. `activity_why` is then `ecu_flash` and the log line says "ECU flash".
+Unlike an update, an ECU flash holds the ladder's countdown past the
+activity cap (`sm_ladder_push`): a write stopped half-way leaves a car that
+does not start. The critical floor keeps the cap and the entry's 180 s
+wait stays, so a battery near flat still decides in the end.
+
 ## Bench safety (meatpi 2026-07-07, mandatory)
 
 - The state task arms only after a **15 s boot grace**: a bootloop

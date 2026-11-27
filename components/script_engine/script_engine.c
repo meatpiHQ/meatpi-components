@@ -47,7 +47,12 @@
 #include "flash_jobs.h"
 #include "log_manager.h"
 
+#include "can_manager.h"
+#include "http_server_manager.h"
+#include "sleep_manager.h"
+
 #include "script_engine_doc.h"
+#include "script_engine_flash.h"
 #include "script_engine_private.h"
 
 static const char *TAG = "script_engine";
@@ -78,6 +83,13 @@ static StaticSemaphore_t s_go_buf, s_done_buf;
 
 /* shared run slot (guarded by s_lock) */
 static const char *s_run_src;
+/* an async run (POST /api/scripts/run {"async": true}): the runner frees
+ * its source and ends it; the HTTP side reads its output from the status */
+static volatile bool s_async_run;
+static char *s_async_src;
+static cJSON *s_run_params;
+static uint32_t s_async_run_id;
+EXT_RAM_BSS_ATTR static char s_async_out[SE_OUT_MAX];
 static char *s_run_out;
 static size_t s_run_out_cap;
 static esp_err_t s_run_result;
@@ -88,6 +100,13 @@ static esp_err_t s_run_result;
  * v1 (enable BE_USE_DEBUG_HOOK for that): real scripts do I/O. */
 void se_check_budget(bvm *vm)
 {
+    /* past flash_commit() a run is never killed: Stop became a request
+       (flash_abort_requested) and the budget stopped counting */
+    if (se_flash_budget_exempt())
+    {
+        return;
+    }
+
     if (s_kill)
     {
         be_raise(vm, "killed", "script stopped by request");
@@ -116,11 +135,21 @@ static void do_run(void)
         berry_port_set_capture(out, cap);
     }
 
+    char err_line[160] = "";
+
+    if (!s_run_check)
+    {
+        se_flash_run_begin(s_run_params, s_async_run,
+                           s_async_run ? s_async_run_id : 0);
+        s_run_params = NULL;
+    }
+
     bvm *vm = be_vm_new();
 
     if (vm == NULL)
     {
         if (out) snprintf(out, cap, "vm alloc failed");
+        snprintf(err_line, sizeof(err_line), "vm alloc failed");
         s_run_result = ESP_ERR_NO_MEM;
     }
     else
@@ -145,6 +174,8 @@ static void do_run(void)
             const char *msg = (be_top(vm) >= 1) ? be_tostring(vm, -1) : "?";
 
             ESP_LOGW(TAG, "script error: %s: %s", kind ? kind : "?",
+                     msg ? msg : "?");
+            snprintf(err_line, sizeof(err_line), "%s: %s", kind ? kind : "?",
                      msg ? msg : "?");
 
             if (out != NULL)
@@ -175,6 +206,12 @@ static void do_run(void)
         be_vm_delete(vm);
     }
 
+    /* the flash run's end: sessions closed, the lock follows the outcome */
+    if (!s_run_check)
+    {
+        se_flash_run_end(s_run_result == ESP_OK, err_line);
+    }
+
     /* A script can never leak the OBD claim: normal end, error, and
      * kill all land here (tester-present disarmed, transport freed). */
     se_obd_autorelease();
@@ -192,7 +229,20 @@ static void runner_task(void *arg)
     {
         xSemaphoreTake(s_go, portMAX_DELAY);
         do_run();
-        xSemaphoreGive(s_done);
+
+        if (s_async_run)
+        {
+            /* nobody waits on an async run: end it here */
+            free(s_async_src);
+            s_async_src = NULL;
+            s_run_src = NULL;
+            s_async_run = false;
+            s_busy = false;
+        }
+        else
+        {
+            xSemaphoreGive(s_done);
+        }
     }
 }
 
@@ -215,6 +265,21 @@ static esp_err_t run_common(const char *src, char *out, size_t cap, bool check)
         return ESP_ERR_INVALID_STATE; /* busy */
     }
 
+    if (s_busy)
+    {
+        xSemaphoreGive(s_lock); /* an async run is in flight */
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    /* an ECU flash holds the lock: no rule, console or synchronous run may
+       transmit as the runner; a recovery run is async, started over HTTP
+       (the lock gate admits it). A syntax check runs nothing. */
+    if (!check && se_flash_lock_held())
+    {
+        xSemaphoreGive(s_lock);
+        return ESP_ERR_NOT_ALLOWED;
+    }
+
     s_busy = true;
     s_kill = false;
     s_run_check = check;
@@ -232,7 +297,7 @@ static esp_err_t run_common(const char *src, char *out, size_t cap, bool check)
 
     if (xSemaphoreTake(s_done, wait) != pdTRUE)
     {
-        s_kill = true;                    /* ask it to unwind */
+        script_engine_kill();             /* ask it to unwind */
         xSemaphoreTake(s_done, portMAX_DELAY);
     }
 
@@ -254,7 +319,79 @@ esp_err_t script_engine_check(const char *src, char *out, size_t cap)
 
 void script_engine_kill(void)
 {
-    s_kill = true;
+    if (!se_flash_stop()) /* after a commit Stop is a request, never a kill */
+    {
+        s_kill = true;
+    }
+}
+
+bool se_run_killed(void)
+{
+    return s_kill;
+}
+
+/* ---- async runs ------------------------------------------------------------ */
+
+esp_err_t script_engine_run_async(char *src, cJSON *params, uint32_t *run_id)
+{
+    if (!s_started || !se_settings_enabled() || s_runner == NULL)
+    {
+        free(src);
+        cJSON_Delete(params);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (xSemaphoreTake(s_lock, pdMS_TO_TICKS(100)) != pdTRUE)
+    {
+        free(src);
+        cJSON_Delete(params);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (s_busy)
+    {
+        xSemaphoreGive(s_lock);
+        free(src);
+        cJSON_Delete(params);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    s_busy = true;
+    s_kill = false;
+    s_run_check = false;
+    s_async_run = true;
+    s_async_run_id = se_flash_next_run_id();
+
+    if (run_id != NULL)
+    {
+        *run_id = s_async_run_id;
+    }
+
+    s_run_start_ms = esp_log_timestamp();
+    s_async_src = src;
+    s_run_src = src;
+    s_run_params = params;
+    memset(s_async_out, 0, sizeof(s_async_out)); /* no tail of a past run */
+    s_run_out = s_async_out;
+    s_run_out_cap = sizeof(s_async_out);
+    s_run_result = ESP_FAIL;
+    xSemaphoreGive(s_go);
+    xSemaphoreGive(s_lock);
+    return ESP_OK;
+}
+
+const char *se_async_output(void)
+{
+    return s_async_out;
+}
+
+/* the lock gate for http_server_manager */
+static bool http_lock_gate(int method, const char *uri)
+{
+    bool read_only = method == HTTP_GET || method == HTTP_HEAD ||
+                     method == HTTP_OPTIONS;
+
+    return script_engine_http_allowed(read_only, uri);
 }
 
 /* ---- stored scripts (/data/scripts/<name>.be) ------------------------------- */
@@ -348,6 +485,20 @@ esp_err_t script_engine_run_file(const char *name, char *out, size_t cap)
     return err;
 }
 
+esp_err_t se_load_stored(const char *name, char **src)
+{
+    if (!se_script_name_ok(name))
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    se_loader_req_t req = { .name = name, .src = NULL };
+    esp_err_t err = flash_jobs_run(loader_job, &req);
+
+    *src = req.src;
+    return err;
+}
+
 bool script_engine_busy(void)
 {
     return s_busy;
@@ -368,6 +519,18 @@ esp_err_t script_engine_init(void)
     {
         s_lock = xSemaphoreCreateMutexStatic(&s_lock_buf);
     }
+
+    /* ECU flashing, at init so no start of another component can come
+       first: a restart in the middle comes back locked (the NVS record,
+       read through flash_jobs: NVS and flash_jobs are up before this);
+       while the lock holds only the runner transmits, the OBD chip sends
+       nothing, HTTP changes are refused (423) and no sleep entry starts
+       under a committed run. Independent of the settings: a degraded
+       script engine still keeps a half-written ECU locked. */
+    se_flash_boot();
+    can_manager_set_tx_gate(script_engine_tx_allowed);
+    (void)http_server_manager_set_lock_gate(http_lock_gate);
+    sleep_manager_set_busy_check(script_engine_busy_reason);
 
     return se_settings_register();
 }
@@ -392,6 +555,8 @@ esp_err_t script_engine_start(void)
                                      SE_RUNNER_STACK, NULL, SE_RUNNER_PRIO,
                                      s_runner_stack, &s_runner_tcb);
     }
+
+    se_flash_set_runner(s_runner); /* the one sender the TX gate admits */
 
     s_started = true;
     ESP_LOGI(TAG, "started (%s, max_runtime %lu ms)",

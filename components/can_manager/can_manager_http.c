@@ -54,7 +54,7 @@ static esp_err_t can_get_handler(httpd_req_t *req)
     can_manager_probe_t probe;
     uint32_t probe_age_ms = 0;
     char body[640]; /* the reply goes out in pieces: the frame stays small
-                       (the first piece is 500 characters at most) */
+                       (the first piece is 520 characters at most) */
 
     (void)can_manager_status(&st);
     can_manager_last_probe(&probe, &probe_age_ms);
@@ -81,6 +81,7 @@ static esp_err_t can_get_handler(httpd_req_t *req)
              "\"tx_done\":%lu,\"tx_retries\":%lu,\"tx_lost\":%lu,"
              "\"dispatch_drops\":%lu,"
              "\"rx_bad\":%lu,\"rx_storms\":%lu,\"rx_deaf\":%lu,\"tx_refused\":%lu,"
+             "\"tx_gated\":%lu,"
              "\"link_switches\":%lu,\"link_demotions\":%lu,"
              "\"bus_off\":%lu,\"recoveries\":%lu,",
              st.enabled ? "true" : "false",
@@ -109,6 +110,7 @@ static esp_err_t can_get_handler(httpd_req_t *req)
              (unsigned long)st.stats.rx_storms,
              (unsigned long)st.stats.rx_deaf,
              (unsigned long)st.stats.tx_refused,
+             (unsigned long)st.stats.tx_gated,
              (unsigned long)st.link.switches,
              (unsigned long)st.link.demotions,
              (unsigned long)st.stats.bus_off_count,

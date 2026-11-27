@@ -23,6 +23,8 @@ void sm_chip_watch_tests(void); /* test_chip_watch.c: the OBD chip in the naps *
 static sm_cfg_t s_cfg;
 static sm_policy_t s_p;
 
+void sm_flash_hold_tests(void);
+
 void setUp(void)
 {
     s_cfg.sleep_v = 13.1f;
@@ -690,5 +692,6 @@ void app_main(void)
     RUN_TEST(test_activity_only_what_counts);
     RUN_TEST(test_activity_clock_wrap_safe);
     sm_chip_watch_tests(); /* test_chip_watch.c */
+    sm_flash_hold_tests(); /* test_flash_hold.c */
     UNITY_END();
 }

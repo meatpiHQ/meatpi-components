@@ -118,6 +118,18 @@ bool obd_gate_diag_acked(void);
  *  to wait for, e.g. autopid disabled). */
 bool obd_gate_diag_wait_ack(uint32_t wait_ms);
 
+/* ---- bus lock (2026-11-27, the script engine's ECU flash) -----------------
+ * Unlike everything above, NOT fail-open: while an ECU is half-written the
+ * OBD chip must not put anything on the bus at all. obd_chip_send() and
+ * obd_chip_request() refuse while it is set (ESP_ERR_INVALID_STATE),
+ * whatever the `enabled` setting says; the refusals are counted. One
+ * owner: the script engine, which sets it while its flash lock holds. */
+void     obd_gate_set_bus_lock(bool locked);
+bool     obd_gate_bus_locked(void);
+/** Count one chip request refused by the lock (obd_chip calls this). */
+void     obd_gate_bus_lock_refused(void);
+uint32_t obd_gate_bus_lock_refusals(void);
+
 /* Ready-made hooks for an ESP-side engine's gate callbacks: ctx
  * is the engine instance pointer (the per-engine owner identity). */
 void obd_gate_engine_acquire(void *ctx);

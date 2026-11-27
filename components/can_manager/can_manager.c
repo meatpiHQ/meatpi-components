@@ -291,12 +291,28 @@ struct can_core_handle_s *can_manager_core_handle(void)
     return s_running ? &s_bus : NULL;
 }
 
+static bool (*s_send_gate)(void);
+
+void can_manager_set_tx_gate(bool (*gate)(void))
+{
+    s_send_gate = gate;
+    can_core_set_tx_gate(gate);
+}
+
 esp_err_t can_manager_send(uint32_t id, bool ext, bool rtr,
                            const uint8_t *data, uint8_t dlc)
 {
     if (!s_running)
     {
         return ESP_ERR_INVALID_STATE;
+    }
+
+    /* asked here too, so a gated sender learns why (core says only BUSY);
+       counted here, as the core never sees these */
+    if (s_send_gate != NULL && !s_send_gate())
+    {
+        s_bus.stats.tx_gated++;
+        return ESP_ERR_NOT_ALLOWED;
     }
 
     if (dlc > 8 || (dlc > 0 && data == NULL))

@@ -435,6 +435,13 @@ void can_core_quiesce(can_core_handle_t *handle)
 /* -------------------------------------------------------------------------
  * can_core_transmit
  * ------------------------------------------------------------------------- */
+static bool (*s_tx_gate)(void);
+
+void can_core_set_tx_gate(bool (*gate)(void))
+{
+    s_tx_gate = gate;
+}
+
 elm327_err_t can_core_transmit(can_core_handle_t *handle,
                                   const can_core_frame_t *frame,
                                   uint32_t timeout_ms)
@@ -442,6 +449,13 @@ elm327_err_t can_core_transmit(can_core_handle_t *handle,
     if (!handle || !frame || !handle->initialised)
     {
         return ELM327_ERR_INVALID_ARG;
+    }
+
+    /* the ECU flash lock: only its own sender may talk */
+    if (s_tx_gate != NULL && !s_tx_gate())
+    {
+        handle->stats.tx_gated++;
+        return ELM327_ERR_BUSY;
     }
 
 #ifdef ESP_PLATFORM

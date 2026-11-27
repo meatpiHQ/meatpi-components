@@ -91,6 +91,10 @@ const se_bind_doc_t *se_bind_doc(size_t i);
 const se_bind_doc_t *se_bind_doc_find(const char *name);
 bool                 se_doc_group_ok(const char *id);
 
+/* the flash_* entries (script_engine_doc_flash.c), listed after the rest */
+size_t               se_flash_doc_count(void);
+const se_bind_doc_t *se_flash_doc(size_t i);
+
 /* ---- examples (script_engine_examples.c) --------------------------------- */
 
 size_t              se_example_count(void);

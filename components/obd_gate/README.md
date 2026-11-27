@@ -77,6 +77,20 @@ holder leaves. Independent of the `enabled` setting. Lives here because
 autopid depends on uds_manager (a direct call would be a dependency cycle)
 and both requesters already depend on this policy component.
 
+## Bus lock (2026-11-27, the script engine's ECU flash)
+
+`obd_gate_set_bus_lock(bool)` / `obd_gate_bus_locked()`: while set,
+`obd_chip_send()` and `obd_chip_request()` refuse with
+`ESP_ERR_INVALID_STATE` and count the refusal
+(`obd_gate_bus_lock_refusals()`). It is the opposite of the rest of this
+component on purpose: not fail-open, not expiring, independent of
+`enabled`. The script engine sets it while its flash lock holds (from a
+script's `flash_commit()` until the run ends well or the lock is released,
+and from boot when the WiCAN restarted mid-flash), so the apps bridged to
+the chip (BLE, TCP, WS, USB), AutoPID and the chip transports of J2534 and
+uds_manager cannot put frames on the bus of a half-written ECU. The TWAI
+side has its own gate in can_manager.
+
 ## Settings (`obd_gate`, v1, reboot-to-apply)
 
 | key | type | default | |

@@ -454,6 +454,14 @@ esp_err_t obd_chip_send(const uint8_t *data, size_t len)
         return ESP_ERR_INVALID_STATE;
     }
 
+    if (obd_gate_bus_locked())
+    {
+        /* an ECU is being flashed from the TWAI side (obd_gate's bus lock,
+           2026-11-27): nothing of an app's may reach that bus */
+        obd_gate_bus_lock_refused();
+        return ESP_ERR_INVALID_STATE;
+    }
+
     /* EEPROM guard (obd_chip_guard.h): apps re-send ATSP on every connect
        and a terminal user can type ATPP, rewrite the two with RAM twins
        in place, refuse the rest with the ELM "?" the sender expects, so

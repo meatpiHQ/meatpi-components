@@ -45,14 +45,27 @@
 #include "obd_chip.h"
 #include "ota_manager.h"
 
+#include "sleep_manager.h"
 #include "sleep_manager_private.h"
 
 static const char *TAG = "sleep_manager";
 
 #define SM_FW_UPDATE_WAIT_MS (180 * 1000)
 
+static const char *(*s_busy_check)(void);
+
+void sleep_manager_set_busy_check(const char *(*fn)(void))
+{
+    s_busy_check = fn;
+}
+
 const char *sm_update_busy(void)
 {
+    if (s_busy_check != NULL && s_busy_check() != NULL)
+    {
+        return SM_WHY_ECU_FLASH;
+    }
+
     if (obd_chip_update_in_progress())
     {
         return SM_WHY_CHIP_UPDATE;
@@ -68,6 +81,11 @@ const char *sm_update_busy(void)
 
 const char *sm_update_name(const char *why)
 {
+    if (why == SM_WHY_ECU_FLASH)
+    {
+        return "ECU flash";
+    }
+
     return (why == SM_WHY_FW_UPDATE) ? "firmware update"
                                      : "OBD chip firmware update";
 }

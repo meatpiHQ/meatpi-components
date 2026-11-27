@@ -101,7 +101,8 @@ stand for.
   RX queue overflow = the can_core RX task starved) + `dispatch_drops`
   (drop-oldest in a subscriber queue = that consumer's drain starved),
   `rx_bad` / `rx_deaf` /
-  `tx_refused`, `err{stuff,form,bit,ack,other}`, `probe{}`, and
+  `tx_refused`, `tx_gated` (refused by the transmit gate: an ECU flash
+  holds the bus), `err{stuff,form,bit,ack,other}`, `probe{}`, and
   `subscribers[]` (`idx`, `name`, `drops`) of `subscribers_max`.
 - `can` CLI (`can -z` zeroes counters; `can send <id> [hexbytes] [-r]`
   transmits one frame: 3 hex digits = 11-bit id, more = 29-bit).
@@ -191,6 +192,20 @@ queue and go out after the recovery. The frames in flight when a node is
 stopped are counted in `tx_lost` as well, so at rest `tx` = `tx_done` +
 `tx_lost`. The bench: the firmware repo's `tools/testbench/can/
 can_busoff_slots_bench.py` (`CAN BUSOFF SLOTS PASS`), 18 real bus-offs.
+
+## A transmit gate: one sender holds the bus (2026-11-27)
+
+`can_manager_set_tx_gate(bool (*gate)(void))` installs a process-wide
+gate at the one place every frame passes, `can_core_transmit()`: while it
+returns false the frame is refused (`ELM327_ERR_BUSY`, counted in
+`tx_gated`), and `can_manager_send()` answers `ESP_ERR_NOT_ALLOWED`. The
+gate is called in the sender's context, so it can tell senders apart by
+their task. Refusals show as `tx_gated` in `GET /api/can` and the `can`
+command. The script engine sets it for its ECU flash lock: after a
+script's `flash_commit()` only the script runner may transmit, and SLCAN,
+J2534, GVRET, RealDash, MQTT and every other binding are refused until the
+flash ends or is released. The OBD chip is a second node on the same bus;
+obd_gate's bus lock covers it (AutoPID, the bridged apps). NULL removes it; one gate.
 
 ## Receive-error storms and the interrupt watchdog (`rx_storms`, 2026-10-03)
 

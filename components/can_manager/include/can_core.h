@@ -222,6 +222,8 @@ typedef struct
                                   a wrong bitrate produces, without a frame. */
     uint32_t tx_refused;     /**< Transmits asked while the node may not talk
                                   (listening, mismatch, being reconfigured). */
+    uint32_t tx_gated;       /**< Transmits the TX gate refused (another
+                                  sender holds the bus: an ECU flash). */
     uint32_t rx_storms;      /**< Receive-error storms (>= 20 000 errors/s, a
                                   bitrate close to the bus's) that masked the
                                   controller's interrupts until the next node
@@ -430,6 +432,15 @@ void can_core_set_monitor_all(can_core_handle_t *handle,
 void can_core_set_rx_queue_monitor_all(can_core_handle_t *handle,
                                          int idx,
                                          bool monitor_all);
+
+/**
+ * @brief A process-wide transmit gate (2026-11-27, the script engine's ECU
+ *        flash lock): when set and it returns false, can_core_transmit()
+ *        refuses the frame with ELM327_ERR_BUSY before it reaches the
+ *        driver. Called in the sender's context, so a gate may tell senders
+ *        apart by their task. NULL removes it. One gate; the last set wins.
+ */
+void can_core_set_tx_gate(bool (*gate)(void));
 
 /**
  * @brief Transmit a single CAN frame from any caller task.

@@ -25,8 +25,14 @@
  * @brief The /api/scripts surface:
  *          GET  /api/scripts             list stored scripts (+ enabled/busy)
  *          POST /api/scripts/run         {src|name} -> {ok, output}
+ *                                        {src|name|path, async: true,
+ *                                         params} -> 202, then the status
  *          POST /api/scripts/check       {src} -> {ok[, error]} (compile only)
- *          POST /api/scripts/stop        kill switch
+ *          POST /api/scripts/stop        kill switch (after flash_commit():
+ *                                        an abort request)
+ *          GET  /api/scripts/status      an async run (script_engine_http_flash.c)
+ *          POST /api/scripts/answer      a flash_ask() prompt's answer
+ *          POST /api/scripts/release     leave a failed ECU flash's lock
  *          GET  /api/scripts/reference   the scripting reference (doc.c)
  *          GET  /api/scripts/examples    the example gallery (no sources);
  *                                        ?id=<id> -> that example's source
@@ -47,6 +53,7 @@
 
 #include "script_engine.h"
 #include "script_engine_doc.h"
+#include "script_engine_flash.h"
 #include "script_engine_private.h"
 
 static const char *TAG = "script_engine";
@@ -131,6 +138,11 @@ static esp_err_t run_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
+    if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(root, "async")))
+    {
+        return se_http_run_async(req, root); /* takes root */
+    }
+
     const cJSON *src = cJSON_GetObjectItemCaseSensitive(root, "src");
     const cJSON *name = cJSON_GetObjectItemCaseSensitive(root, "name");
     bool by_name = cJSON_IsString(name) && name->valuestring[0] != '\0';
@@ -177,6 +189,13 @@ static esp_err_t run_handler(httpd_req_t *req)
         cJSON_AddStringToObject(o, "error",
                                 "busy or script_engine disabled");
         httpd_resp_set_status(req, "409 Conflict");
+    }
+    else if (err == ESP_ERR_NOT_ALLOWED)
+    {
+        cJSON_AddBoolToObject(o, "ok", false);
+        cJSON_AddStringToObject(o, "error", "an ECU flash holds the lock: a "
+                                "recovery run is async (\"async\": true)");
+        httpd_resp_set_status(req, "423 Locked");
     }
     else
     {
@@ -286,9 +305,15 @@ static esp_err_t list_handler(httpd_req_t *req)
 
 static esp_err_t stop_handler(httpd_req_t *req)
 {
-    script_engine_kill();
+    bool committed = se_flash_lock_state() == SE_LOCK_COMMITTED &&
+                     script_engine_busy();
+
+    script_engine_kill(); /* after a commit: a request, never a kill */
     httpd_resp_set_type(req, "application/json");
-    return httpd_resp_send(req, "{\"ok\":true}", HTTPD_RESP_USE_STRLEN);
+    return httpd_resp_send(req,
+                           committed ? "{\"ok\":true,\"abort_requested\":true}"
+                                     : "{\"ok\":true}",
+                           HTTPD_RESP_USE_STRLEN);
 }
 
 /* ---- reference + examples (the engine describes itself) ------------------------ */
@@ -354,6 +379,11 @@ esp_err_t script_engine_register_http(void)
 
     esp_err_t err = http_server_manager_register_handlers(
         URIS, sizeof(URIS) / sizeof(URIS[0]));
+
+    if (err == ESP_OK)
+    {
+        err = se_flash_register_http();
+    }
 
     if (err == ESP_OK)
     {

@@ -116,6 +116,12 @@ bool can_manager_tx_ready(void);
  *  client writes a whole ISO-TP block) waits on this between frames. */
 bool can_manager_tx_room(void);
 
+/** The transmit gate (can_core_set_tx_gate): while it returns false, every
+ *  frame from every sender is refused (ESP_ERR_NOT_ALLOWED from
+ *  can_manager_send). The script engine sets it for its ECU flash lock,
+ *  admitting only its own runner. NULL removes it. */
+void can_manager_set_tx_gate(bool (*gate)(void));
+
 /**
  * @brief A tester states the bus bitrate (a J2534 CONNECT's baud, an slcan
  *        client's `S` command).

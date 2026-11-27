@@ -36,6 +36,7 @@ void test_request_bus_requests_held_while_a_switch_is_owed(void);
 void test_request_owed_switch_ends_with_the_echo_on(void);
 void test_request_switch_inside_the_callers_transaction(void);
 void test_request_no_hold_no_switch(void);
+void test_bus_lock_refuses_request_and_send(void);
 void test_claim_exclusive_holder_claims_again(void);
 void test_claim_reserved_for_the_update(void);
 void test_claim_waiters_counted(void);
@@ -123,6 +124,7 @@ void app_main(void)
     RUN_TEST(test_request_owed_switch_ends_with_the_echo_on);
     RUN_TEST(test_request_switch_inside_the_callers_transaction);
     RUN_TEST(test_request_no_hold_no_switch);
+    RUN_TEST(test_bus_lock_refuses_request_and_send);
     RUN_TEST(test_claim_exclusive_holder_claims_again);
     RUN_TEST(test_claim_reserved_for_the_update);
     RUN_TEST(test_claim_waiters_counted);

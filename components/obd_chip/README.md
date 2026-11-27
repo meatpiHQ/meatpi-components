@@ -541,6 +541,15 @@ start-up's version question on a silent wire ends the engine with
 console `update:  idle; not checked: the chip did not answer (nothing was
 written)` where both said "last update: ESP_ERR_TIMEOUT", which the reporter
 of #1075 read as a failed chip write. `last` keeps the error name.
+## An ECU flash on the bus: obd_gate's bus lock (2026-11-27)
+
+While a script engine ECU flash holds its lock, `obd_gate_bus_locked()` is
+true and `obd_chip_send()` and `obd_chip_request()` refuse at once with
+`ESP_ERR_INVALID_STATE` (counted in `obd_gate_bus_lock_refusals()`): the
+bridged apps, AutoPID, and the J2534 and uds_manager chip transports put
+nothing on the bus of a half-written ECU. Checked after the bring-up wait
+and the update guard, before the EEPROM guard.
+
 ## Firmware update (verified legacy flow: do not improvise)
 
 `VTVERS` (expect `MIC3624 …`) → `VTDLMIC3422` → `VTDLDT<line>` per record

@@ -5,6 +5,7 @@ set(comp_dir "${CMAKE_CURRENT_LIST_DIR}/../..")
 idf_component_register(
     SRCS "test_main.c"
          "test_chip_watch.c"
+         "test_flash_hold.c"
          "${comp_dir}/sleep_manager_policy.c"
          "${comp_dir}/sleep_manager_chip.c"
     INCLUDE_DIRS "${comp_dir}/include" "${comp_dir}"

@@ -54,6 +54,7 @@
 
 #include "script_engine_doc.h"
 #include "script_engine_gpio.h"
+#include "script_engine_flash.h"
 #include "script_engine_private.h"
 
 /* Set when this run called can_stop(); the epilogue brings the bus back. */
@@ -92,6 +93,7 @@ void se_script_epilogue(void)
 int se_b_can_start(bvm *vm)
 {
     se_check_budget(vm);
+    se_refuse_when_locked(vm);
 
     esp_err_t err = can_manager_start();
     bool up = err == ESP_OK && can_manager_core_handle() != NULL;
@@ -108,6 +110,8 @@ int se_b_can_start(bvm *vm)
 int se_b_can_stop(bvm *vm)
 {
     se_check_budget(vm);
+    se_refuse_when_locked(vm); /* never the bus away from a flash */
+    se_tp_bus_down();          /* flash sessions die with the bus */
 
     esp_err_t err = can_manager_stop();
 
@@ -402,6 +406,7 @@ static bool flag_arg(bvm *vm, int idx)
 int se_b_can_send(bvm *vm)
 {
     se_check_budget(vm);
+    se_refuse_when_locked(vm);
 
     if (be_top(vm) < 3 || !be_isstring(vm, 1) || !be_isstring(vm, 3) ||
         !(be_isint(vm, 2) || be_isstring(vm, 2)))

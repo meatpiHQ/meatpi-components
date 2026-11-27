@@ -72,6 +72,22 @@ esp_err_t http_server_manager_set_request_gate(http_request_gate_fn_t fn)
     return ESP_OK;
 }
 
+static http_lock_gate_fn_t s_lock_gate;
+
+esp_err_t http_server_manager_set_lock_gate(http_lock_gate_fn_t fn)
+{
+    s_lock_gate = fn;
+    return ESP_OK;
+}
+
+static esp_err_t lock_reject(httpd_req_t *req)
+{
+    httpd_resp_set_status(req, "423 Locked");
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_sendstr(
+        req, "{\"error\":\"locked: an ECU is being flashed\"}");
+}
+
 uint16_t http_server_manager_port(void)
 {
     return HTTP_SERVER_MANAGER_PORT;
@@ -153,6 +169,12 @@ static esp_err_t hsm_gate_trampoline(httpd_req_t *req)
     if (!ws_frame && !request_has_password(req))
     {
         return auth_reject(req);
+    }
+
+    if (!ws_frame && s_lock_gate != NULL &&
+        !s_lock_gate(req->method, req->uri))
+    {
+        return lock_reject(req);
     }
 
     /* the flash audit (2026-10-31): the SPI flash counters before and

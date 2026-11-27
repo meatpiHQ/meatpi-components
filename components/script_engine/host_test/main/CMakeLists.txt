@@ -12,11 +12,15 @@ idf_component_register(
          "test_reflash.c"
          "test_doc.c"
          "test_gpio.c"
+         "test_flash.c"
          "${comp_dir}/script_engine_gpio.c"
          "${comp_dir}/script_engine_name.c"
          "${comp_dir}/script_engine_obd.c"
          "${comp_dir}/script_engine_doc.c"
          "${comp_dir}/script_engine_examples.c"
+         "${comp_dir}/script_engine_doc_flash.c"
+         "${comp_dir}/script_engine_tp_core.c"
+         "${comp_dir}/script_engine_flash_core.c"
     INCLUDE_DIRS "${comp_dir}" "${comp_dir}/include"
     REQUIRES unity
 )

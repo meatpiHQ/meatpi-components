@@ -34,7 +34,9 @@
 static const settings_field_t FIELDS[] =
 {
     SETTINGS_BOOL("enabled", false),
-    SETTINGS_INT("max_runtime_ms", 100, 120000, 10000),
+    /* up to an hour (2026-11-27): an ECU read takes ~17 min, a write
+       ~2.5; a run that called flash_commit() stops counting anyway */
+    SETTINGS_INT("max_runtime_ms", 100, 3600000, 10000),
     /* Gates the UDS reflash services (0x34/0x35/0x36/0x37 +
      * obd_transfer_file) from scripts: mirrors j2534's allow_reflash,
      * default OFF: a script can diagnose freely but cannot reprogram an

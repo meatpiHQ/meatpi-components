@@ -31,8 +31,16 @@
  * path, big UDS payloads go through the uds.* binding (script-owned),
  * never the event queue.
  *
- * Settings ("script_engine", reboot-to-apply): enabled, max_runtime_ms,
- * cli.
+ * Settings ("script_engine", reboot-to-apply): enabled, max_runtime_ms
+ * (100..3600000 since 2026-11-27, was 100..120000: a build from before
+ * that resets a stored value above 120000, and with it the whole object,
+ * to the defaults), allow_reflash, exclusive, cli.
+ *
+ * ECU flashing (2026-11-27, script_engine_flash.c): an async run may call
+ * flash_commit(). From then until it ends well (or an operator releases a
+ * failed one) the device is locked: the budget and the kill switch no
+ * longer apply to it, Stop becomes a request the script reads, only the
+ * runner transmits, and no other run starts.
  */
 #pragma once
 
@@ -51,7 +59,9 @@ esp_err_t script_engine_stop(void);
 
 /**
  * Run Berry source synchronously (caller's context), capturing output.
- * Serialized: ESP_ERR_INVALID_STATE if a script is already running.
+ * Serialized: ESP_ERR_INVALID_STATE if a script is already running (an
+ * async one included); ESP_ERR_NOT_ALLOWED while an ECU flash holds the
+ * lock. A synchronous run cannot flash_commit().
  * @param src   Berry source.
  * @param out   optional buffer for captured print()/error output.
  * @param cap   size of @p out.
@@ -74,11 +84,21 @@ esp_err_t script_engine_check(const char *src, char *out, size_t cap);
  */
 esp_err_t script_engine_run_file(const char *name, char *out, size_t cap);
 
-/** Request the running script stop (checked at the debug hook). */
+/** Request the running script stop (checked at every binding call). After
+ *  the run's flash_commit() it is a request the script reads with
+ *  flash_abort_requested(), never a kill. */
 void script_engine_kill(void);
 
-/** True while a script is executing. */
+/** True while a script is executing (an async one included). */
 bool script_engine_busy(void);
+
+/**
+ * Why the device must not sleep or restart now, or NULL: a run past its
+ * flash_commit() is writing an ECU. The script engine feeds it to
+ * sleep_manager itself; the composition root adds it to the restart hold
+ * (restart_tracker_set_hold), next to the OBD chip's update.
+ */
+const char *script_engine_busy_reason(void);
 
 esp_err_t script_engine_register_http(void); /* /api/scripts* */
 

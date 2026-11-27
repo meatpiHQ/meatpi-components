@@ -140,10 +140,12 @@ static int cmd_can(int argc, char **argv)
                    (unsigned long)st.stats.arb_lost,
                    (unsigned long)st.stats.bus_errors);
     cmdline_printf("Receive errors: %lu  Error storms: %lu  Deaf looks: %lu  "
-                   "Refused tx: %lu\n", (unsigned long)st.stats.rx_bad,
+                   "Refused tx: %lu  Gated tx: %lu\n",
+                   (unsigned long)st.stats.rx_bad,
                    (unsigned long)st.stats.rx_storms,
                    (unsigned long)st.stats.rx_deaf,
-                   (unsigned long)st.stats.tx_refused);
+                   (unsigned long)st.stats.tx_refused,
+                   (unsigned long)st.stats.tx_gated);
     cmdline_printf("Frames lost: controller FIFO %lu, receive queue %lu\n",
                    (unsigned long)st.stats.rx_overrun,
                    (unsigned long)st.stats.rx_missed);

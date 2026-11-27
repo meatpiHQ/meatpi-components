@@ -129,6 +129,18 @@ esp_err_t http_server_manager_set_asset_fetcher(http_asset_fetch_fn_t fn);
 typedef bool (*http_request_gate_fn_t)(int sockfd);
 esp_err_t http_server_manager_set_request_gate(http_request_gate_fn_t fn);
 
+/**
+ * Optional lock gate (2026-11-27, the script engine's ECU flash lock):
+ * called for every HTTP request that passed the admission gate and the
+ * password, with its method (HTTP_GET, HTTP_POST, ...) and URI (query
+ * included). Return false to refuse it with 423 Locked: while an ECU is
+ * being written, nothing may reboot, update or reconfigure the device.
+ * WebSocket frames are not asked (their handshake, a GET, was). Fast and
+ * non-blocking (httpd task). NULL removes it. One gate.
+ */
+typedef bool (*http_lock_gate_fn_t)(int method, const char *uri);
+esp_err_t http_server_manager_set_lock_gate(http_lock_gate_fn_t fn);
+
 /** The TCP port the server listens on (80 unless overridden at build
  *  time) - for in-device clients that replay requests over loopback
  *  (ble_http). */

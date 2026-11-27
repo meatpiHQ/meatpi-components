@@ -146,6 +146,36 @@ void obd_gate_get_stats(obd_gate_stats_t *out)
 
 /* ---- ESP-side engine hooks (ctx = the engine instance pointer) -------------- */
 
+/* ---- bus lock ---------------------------------------------------------------- */
+
+static volatile bool s_bus_locked;
+static volatile uint32_t s_bus_lock_refusals;
+
+void obd_gate_set_bus_lock(bool locked)
+{
+    if (s_bus_locked != locked)
+    {
+        s_bus_locked = locked;
+        ESP_LOGI(TAG, "bus lock %s: the OBD chip %s", locked ? "ON" : "OFF",
+                 locked ? "sends nothing" : "may send again");
+    }
+}
+
+bool obd_gate_bus_locked(void)
+{
+    return s_bus_locked;
+}
+
+void obd_gate_bus_lock_refused(void)
+{
+    s_bus_lock_refusals++;
+}
+
+uint32_t obd_gate_bus_lock_refusals(void)
+{
+    return s_bus_lock_refusals;
+}
+
 /* ---- diagnostics hold -------------------------------------------------- */
 
 static og_diag_t s_diag;

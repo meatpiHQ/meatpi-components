@@ -151,6 +151,14 @@ static void push_out(uint32_t *deadline, uint32_t until)
     }
 }
 
+void sm_ladder_push(sm_policy_t *p, bool ladder_on, uint32_t until_ms)
+{
+    if (ladder_on && p->state == SLEEP_MANAGER_LOW_VOLTAGE)
+    {
+        push_out(&p->t_low, until_ms);
+    }
+}
+
 bool sm_hold_apply(sm_policy_t *p, bool ladder_on, sm_critical_t *c,
                    uint32_t now_ms, uint32_t hold_ms)
 {

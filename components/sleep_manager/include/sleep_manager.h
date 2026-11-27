@@ -158,6 +158,13 @@ esp_err_t sleep_manager_hold(uint32_t minutes);
  *  of 1..600, ESP_ERR_INVALID_STATE when nothing counts. */
 esp_err_t sleep_manager_activity(uint32_t seconds);
 
+/** Another firmware writer (2026-11-27: the script engine's ECU flash):
+ *  @p fn returns a short reason while it must not be put to sleep, NULL
+ *  otherwise. Treated like the device's own firmware update: a running
+ *  countdown is held away, and the entry sequence waits for it, both
+ *  within the same bounds. One check; NULL removes it. */
+void sleep_manager_set_busy_check(const char *(*fn)(void));
+
 /** Force a sleep entry for the bench: enters the full sequence, then
  *  auto-reboots after @p wake_after_s regardless of voltage (so a
  *  USB-powered bench unit always comes back). */
